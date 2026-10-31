@@ -83,3 +83,7 @@ The [3D Actor Explorer](dx2ed_3d/README.md) combines textured GLB scenes from th
 - No gameplay writes, proprietary retail content, or new actor creation.
 
 Windows users can run `START_DX2ED_3D.bat` from the repository root. The research ZIP is distributed separately. The viewport rendering is still awaiting a Windows user GPU test; headless Chromium here lacks WebGL2.
+
+## Native 3D editor prototype
+
+The browser-based DX2Ed viewport remains experimental. The new [Godot-based native viewer](native_editor/README.md) uses Godot 4's GLB importer and built-in 3D renderer to display DX2Ed-exported scenes alongside `actors.json` entity metadata. It is read-only, not yet a standalone EXE, and Windows GPU rendering still requires hands-on validation. The ZIP release includes a wholly original two-cube fixture to help isolate renderer issues from game asset conversion.
