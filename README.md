@@ -10,6 +10,10 @@ Our goal is a practical, UnrealEd-style modding SDK inspired by the original Deu
 
 Tested with the retail Penthouse Upper and Lower levels: respectively 471 and 1,000 placed static meshes exported, zero missing mesh actors, 88 and 113 embedded diffuse textures. **Not a full map editor or a game-compatible import/rebuild tool.** See [exporter setup and limitations](map_exporter/README.md).
 
+## New: DX2Ed Native Editor 0.2
+
+The [Godot-based native editor](native_editor/README.md) can now **open a retail `.gmp` map directly** and automatically build a private textured GLB cache plus searchable actor data. Requires Godot 4.3+ and Python 3.9+. The original game files remain untouched. This is still an experimental read-only editor, not a full level writer.
+
 ## Project status
 
 This is an **early research repository**, not a downloadable full level editor.
