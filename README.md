@@ -72,3 +72,14 @@ python .\actor_explorer\dx2_actor_explorer.py --gui
 ```
 
 This does **not** save changes back to the game. Future work will connect it to an editable 3D viewport.
+
+## DX2Ed 3D Actor Explorer 0.2 (experimental alpha)
+
+The [3D Actor Explorer](dx2ed_3d/README.md) combines textured GLB scenes from the map exporter with Actor Explorer's engine and gameplay property inspector.
+
+- Builds a textured DX2 map scene from a user-supplied `.gmp` plus the required `.ibd` bundles, or reuses a previously exported GLB with matching source-map SHA-256.
+- Displays an orbitable WebGL2 3D viewport alongside searchable actor lists and per-actor engine property panels. Mesh selection uses original `DX2ExportIndex` glTF metadata.
+- Requires Python 3.9+ and an accelerated WebGL2 browser. No Node/npm/CDN dependency. Starts a read-only HTTP server bound to `127.0.0.1`.
+- No gameplay writes, proprietary retail content, or new actor creation.
+
+Windows users can run `START_DX2ED_3D.bat` from the repository root. The research ZIP is distributed separately. The viewport rendering is still awaiting a Windows user GPU test; headless Chromium here lacks WebGL2.
