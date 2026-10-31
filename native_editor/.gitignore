@@ -1,0 +1,10 @@
+.godot/
+*.tmp
+*.bak
+*.log
+# NEVER commit DX2 retail assets or exported user maps
+*.gmp
+*.ibd
+*.d2u
+*.tsd
+*.t3u
