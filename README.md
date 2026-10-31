@@ -4,6 +4,12 @@
 
 Our goal is a practical, UnrealEd-style modding SDK inspired by the original Deus Ex SDK and informed by research into Thief: Deadly Shadows' editor (T3Ed). The engine branches are related, but T3Ed has **not** been successfully ported to DX2.
 
+## Available now: DX2 Map Exporter 0.1
+
+**[Open the standalone map exporter](map_exporter/)** or double-click [START_MAP_EXPORTER.bat](START_MAP_EXPORTER.bat) after cloning the repository and installing Python 3.9+ with Tkinter. This read-only GUI lists your installed `.gmp` maps, detects associated mission and graphics `.ibd` resources, and exports textured `.glb` scenes with JSON reports for Blender. A command-line mode is also included.
+
+Tested with the retail Penthouse Upper and Lower levels: respectively 471 and 1,000 placed static meshes exported, zero missing mesh actors, 88 and 113 embedded diffuse textures. **Not a full map editor or a game-compatible import/rebuild tool.** See [exporter setup and limitations](map_exporter/README.md).
+
 ## Project status
 
 This is an **early research repository**, not a downloadable full level editor.
@@ -26,7 +32,7 @@ Work to date (validated in individual research prototypes):
 - [Read-only TriggerScript bundle probe](tools/scripts/dx2_script_bundle_probe.py), with [documentation](docs/IBD_PROBE.md).
 - [Fixture-free tests](tests/) and [GitHub Actions syntax and test checks](.github/workflows/verify.yml).
 
-Both parsers were imported from the research source archive and verified against its original Git blob hashes. The larger multi-module map exporter and v0.28 TriggerScript writer have **not yet** been integrated and should not be treated as available from this checkout.
+Both parsers were imported from the research source archive and verified against its original Git blob hashes. The map exporter is now integrated above. The v0.28 TriggerScript writer and the other research prototypes have **not yet** been integrated into this checkout.
 
 ## Source archive
 
