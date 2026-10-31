@@ -20,6 +20,14 @@ Work to date (validated in individual research prototypes):
 
 **Not yet supported:** creating arbitrary new actors or maps; authoring/recompiling scripts; editing arbitrary `.ibd` bundles; a general NPC mesh/animation importer; a finished GUI editor.
 
+## Source checked into this repository
+
+- [IBD resource and static-mesh inspector](tools/maps/dx2bundles.py), including individual-mesh GLB export, with [documentation](docs/IBD_MESH.md).
+- [Read-only TriggerScript bundle probe](tools/scripts/dx2_script_bundle_probe.py), with [documentation](docs/IBD_PROBE.md).
+- [Fixture-free tests](tests/) and [GitHub Actions syntax and test checks](.github/workflows/verify.yml).
+
+Both parsers were imported from the research source archive and verified against its original Git blob hashes. The larger multi-module map exporter and v0.28 TriggerScript writer have **not yet** been integrated and should not be treated as available from this checkout.
+
 ## Source archive
 
 A **54-file source-only starter package** has been prepared separately as `DX2Ed_GitHub_Starter_Source_0.1.zip`. This repository is being populated from that package in stages; do not mistake the current checkout for the full historical research toolkit. Existing tools may require original game files and specific runtime hashes.
