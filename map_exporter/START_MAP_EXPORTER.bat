@@ -1,13 +1,16 @@
 @echo off
-cd /d "%~dp0map_exporter"
+setlocal
+set "APP=%~dp0map_exporter"
+if not exist "%APP%\dx2_map_exporter.py" set "APP=%~dp0"
+cd /d "%APP%"
 where py >nul 2>nul
-if %ERRORLEVEL%==0 (
+if not errorlevel 1 (
     py -3 dx2_map_exporter.py gui
 ) else (
     python dx2_map_exporter.py gui
 )
 if errorlevel 1 (
     echo.
-    echo The exporter could not start. Install Python 3.9 or later, including tkinter.
+    echo Could not start DX2 Map Exporter. Install Python 3.9 or later with tkinter.
     pause
 )
