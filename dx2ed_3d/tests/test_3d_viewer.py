@@ -19,6 +19,26 @@ class ViewerTests(unittest.TestCase):
                       'showmeshes','pick(event)','Focus selected','canvas id="view"'):
             self.assertIn(token,text)
 
+    def test_fallback_contract(self):
+        src=app.TEMPLATE.read_text(encoding='utf-8')
+        for token in ('init2dFallback()', '2D fallback:', 'chrome://gpu',
+                      'nearest(e)', '3D rendering unavailable'):
+            self.assertIn(token,src)
+
+    def test_webgl1_compatibility_contract(self):
+        src=app.TEMPLATE.read_text(encoding='utf-8')
+        for token in ("getContext('webgl2'", "getContext('webgl'", "OES_vertex_array_object",
+                      "gl.bindAttribLocation(prog,0,'pos')", 'texture2D(tex,vuv)',
+                      'makeVAO()', 'bindVAO(', 'WebGL1', 'WebGL2'):
+            self.assertIn(token,src)
+
+    def test_diagnostics_and_failed_context_recovery(self):
+        src=app.TEMPLATE.read_text(encoding='utf-8')
+        for token in ('const old=canvas;canvas=old.cloneNode(false)', '3D scene load failed:',
+                      'Shader setup failed:', 'gl.getError()', 'draw calls',
+                      "webglcontextlost", 'await activateFallback('):
+            self.assertIn(token,src)
+
     def test_missing_map_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(FileNotFoundError):
