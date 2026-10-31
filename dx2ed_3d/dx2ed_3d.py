@@ -120,7 +120,7 @@ def gui():
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
     import queue
-    root = tk.Tk(); root.title('DX2Ed 3D Actor Explorer 0.2'); root.geometry('840x485')
+    root = tk.Tk(); root.title('DX2Ed 3D Actor Explorer 0.2.2'); root.geometry('840x485')
     vars = {x:tk.StringVar() for x in ('map','output','bundle','system','logic','existing')}
     vars['output'].set(str(Path.home()/'Documents'/'DX2Ed_3D_Exports'))
     jobs=queue.Queue(); working=False
