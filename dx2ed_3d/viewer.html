@@ -20,7 +20,7 @@ button{cursor:pointer}button:hover{background:#344f6b}button:disabled{opacity:.4
 details{border:1px solid #30465a;border-radius:7px;overflow:hidden;margin:8px 0}summary{font-weight:600;background:#1a3043;padding:9px 11px;cursor:pointer;font-size:12px}pre{font:11px/1.5 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;padding:10px;margin:0;background:#111f30;color:#c4d6e9}.error{color:#ffbaab}
 @media(max-width:1020px){main{grid-template-columns:230px minmax(250px,1fr) 290px}}@media(max-width:720px){body{overflow:auto}main{height:auto;display:flex;flex-direction:column}section{height:48vh}}
 </style></head><body>
-<header><div><div class="logo">◈ DX2Ed <em>3D Actor Explorer 0.2</em></div><div class="small" id="mapname">Loading original map metadata...</div></div><div class="meta" id="counts">Read-only game viewer</div></header>
+<header><div><div class="logo">◈ DX2Ed <em>3D Actor Explorer 0.2.2</em></div><div class="small" id="mapname">Loading original map metadata...</div></div><div class="meta" id="counts">Read-only game viewer</div></header>
 <main>
 <section><div class="toolbar"><input id="search" placeholder="Search actor, class, mesh, script..." aria-label="Search actors"><select id="classfilter" aria-label="Filter by actor class"><option value="">All actor classes</option></select><span id="matches" class="stats"></span></div><div id="actorlist" class="list"></div></section>
 <section><div id="stage"><canvas id="view" aria-label="Textured 3D map viewport"></canvas><canvas id="highlights" aria-hidden="true"></canvas><div class="overlay"><b>Textured DX2 map viewport</b><br>Drag: orbit · Right/Shift+drag: pan<br>Wheel: zoom · Click mesh: select actor<br>Double-click mesh: focus camera</div><div id="panelbuttons"><button id="home" title="Frame full level">Whole level</button><button id="focus" title="Frame selected actor">Focus selected</button><button id="top" title="Top-down camera">Top view</button></div><div id="renderstatus" role="status">Loading GLB scene...</div></div><div class="checkbar"><label><input type="checkbox" id="showbsp" checked>Level geometry</label><label><input type="checkbox" id="showmeshes" checked>Placed meshes</label><label><input type="checkbox" id="showtextures" checked>Textures</label><label><input type="checkbox" id="showmarkers">Actor markers</label></div></section>
@@ -32,7 +32,7 @@ details{border:1px solid #30465a;border-radius:7px;overflow:hidden;margin:8px 0}
 const $=id=>document.getElementById(id);
 const el=(name,value,cls)=>{const n=document.createElement(name);if(value!==undefined)n.textContent=String(value);if(cls)n.className=cls;return n};
 const setStatus=(text,isError=false)=>{$('renderstatus').textContent=text;$('renderstatus').className=isError?'error':''};
-let actors=[],visible=[],chosen=null,byExport=new Map(),nodesByExport=new Map();
+let actors=[],visible=[],chosen=null,byExport=new Map(),nodesByExport=new Map(),fallback=null;
 let G=null, bin=null, sceneNodes=[], sceneBounds=null, meshPrimitives=[], materials=[], textures=[], fullCount=0;
 function kv(box,key,value){let n=el('div',undefined,'kv');n.append(el('div',key,'key'),el('div',typeof value==='string'?value:JSON.stringify(value),'val'));box.append(n)}
 function showDetails(a){const box=$('detail');box.replaceChildren();$('selection').textContent=a.name;
@@ -45,20 +45,92 @@ if(a.trigger_script_serialized){box.append(el('h3','Serialized TriggerScript fie
 box.append(el('h3','Tagged engine properties'));let dd=el('details');dd.open=true;dd.append(el('summary',Object.keys(a.tagged).length+' decoded properties'),el('pre',JSON.stringify(a.tagged,null,2)));box.append(dd);
 box.append(el('h3','Gameplay properties'));for(let prop of a.game_properties){let p=el('details');p.append(el('summary',`${prop.name} (#${prop.id}) · ${prop.type}`),el('pre',JSON.stringify(prop,null,2)));box.append(p)}
 }
-function selectActor(actor, focus=false){if(!actor)return;chosen=actor;showDetails(actor);for(let n of $('actorlist').children)n.classList.toggle('selected',n.dataset.export===String(actor.export));paintHighlight();if(focus&&G)focusActor(actor)}
+function selectActor(actor, focus=false){if(!actor)return;chosen=actor;showDetails(actor);for(let n of $('actorlist').children)n.classList.toggle('selected',n.dataset.export===String(actor.export));paintHighlight();if(fallback)fallback.draw();if(focus){if(G)focusActor(actor);else if(fallback)fallback.focus(actor)}}
 function filter(){const needle=$('search').value.trim().toLowerCase(),cls=$('classfilter').value;
 visible=actors.filter(a=>(!cls||a.class===cls)&&(!needle||[a.name,a.class,a.mesh||'',...a.script_ids,...a.game_properties.map(g=>g.name)].join(' ').toLowerCase().includes(needle)));
 $('matches').textContent=`${visible.length.toLocaleString()} / ${actors.length.toLocaleString()} actors`;
 let list=$('actorlist');list.replaceChildren();const frag=document.createDocumentFragment();
-for(let a of visible){let n=el('div',undefined,'item');n.dataset.export=String(a.export);n.append(el('b',a.name),el('div',a.class+(a.mesh?' · '+a.mesh:''),'sub'));if(a===chosen)n.classList.add('selected');n.addEventListener('click',()=>selectActor(a,true));frag.append(n)}list.append(frag);paintHighlight()}
-const canvas=$('view'), highlight=$('highlights');let gl=canvas.getContext('webgl2',{alpha:false,antialias:true});if(!gl){
- try{const d=await fetch('actors.json',{cache:'no-store'}).then(r=>r.json());actors=d.actors;byExport=new Map(actors.map(a=>[a.export,a]));$('mapname').textContent=d.meta.map;$('counts').textContent=`${actors.length.toLocaleString()} actors · ${d.meta.classes} classes`;[...new Set(actors.map(a=>a.class))].sort().forEach(cls=>{let o=el('option',cls);o.value=cls;$('classfilter').append(o)});visible=actors;filter();$('search').addEventListener('input',filter);$('classfilter').addEventListener('change',filter)}catch(e){console.error(e)}
- setStatus('WebGL2 is unavailable. Actor inspection still works. Enable browser hardware acceleration for the 3D viewport.',true);return;}
-const vs=`#version 300 es\nprecision highp float;layout(location=0) in vec3 pos;layout(location=1) in vec3 nor;layout(location=2) in vec2 uv;uniform mat4 mvp;uniform mat4 model;out vec2 vuv;out vec3 vnormal;void main(){vuv=uv;vnormal=mat3(model)*nor;gl_Position=mvp*vec4(pos,1.0);}`;
-const fs=`#version 300 es\nprecision highp float;in vec2 vuv;in vec3 vnormal;uniform vec4 factor;uniform vec3 emissive;uniform int hasTexture;uniform sampler2D tex;out vec4 color;void main(){vec4 c=factor;if(hasTexture==1)c*=texture(tex,vuv);vec3 N=normalize(vnormal);float light=0.77+0.22*abs(dot(N,normalize(vec3(.35,.8,.48))));color=vec4(c.rgb*light+emissive*.32,c.a);if(color.a<.01)discard;}`;
+for(let a of visible){let n=el('div',undefined,'item');n.dataset.export=String(a.export);n.append(el('b',a.name),el('div',a.class+(a.mesh?' · '+a.mesh:''),'sub'));if(a===chosen)n.classList.add('selected');n.addEventListener('click',()=>selectActor(a,true));frag.append(n)}list.append(frag);paintHighlight();if(fallback)fallback.draw()}
+let canvas=$('view');const highlight=$('highlights');
+// Usable map-based fallback when browser graphics initialization fails.
+// This deliberately renders no fake 3D; the coordinate plot is honest about its limits.
+function init2dFallback(){
+ const ctx=canvas.getContext('2d');if(!ctx)throw Error('Canvas2D is unavailable');
+ let cx=0,cy=0,scale=1,zoom=1,drag=null;
+ const points=actors.filter(a=>a.location&&Number.isFinite(a.location[0])&&Number.isFinite(a.location[1]));
+ const xs=points.map(a=>a.location[0]), ys=points.map(a=>a.location[1]);
+ const xmin=Math.min(...xs),xmax=Math.max(...xs),ymin=Math.min(...ys),ymax=Math.max(...ys);
+ function size(){return [Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight)]}
+ function fit(){const [w,h]=size();cx=(xmin+xmax)*.5;cy=(ymin+ymax)*.5;scale=Math.min((w-72)/Math.max(1,xmax-xmin),(h-72)/Math.max(1,ymax-ymin));zoom=1;draw()}
+ function location(a){const [w,h]=size();return [w/2+(a.location[0]-cx)*scale*zoom,h/2-(a.location[1]-cy)*scale*zoom]}
+ function niceStep(span){let power=10**Math.floor(Math.log10(Math.max(1e-10,span)));let u=span/power;return (u>5?10:u>2?5:u>1?2:1)*power}
+ function draw(){const [w,h]=size(),dpr=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.max(1,Math.floor(w*dpr));canvas.height=Math.max(1,Math.floor(h*dpr));ctx.setTransform(dpr,0,0,dpr,0,0);
+ ctx.fillStyle='#101e2b';ctx.fillRect(0,0,w,h);let span=95/(scale*zoom),grid=niceStep(span);
+ ctx.strokeStyle='#223d50';ctx.lineWidth=1;ctx.beginPath();for(let x=Math.ceil((cx-w/2/(scale*zoom))/grid)*grid;x<cx+w/2/(scale*zoom);x+=grid){let px=w/2+(x-cx)*scale*zoom;ctx.moveTo(px,0);ctx.lineTo(px,h)}
+ for(let y=Math.ceil((cy-h/2/(scale*zoom))/grid)*grid;y<cy+h/2/(scale*zoom);y+=grid){let py=h/2-(y-cy)*scale*zoom;ctx.moveTo(0,py);ctx.lineTo(w,py)}ctx.stroke();
+ ctx.font='12px Segoe UI,Arial,sans-serif';ctx.fillStyle='#9fbbce';ctx.fillText('DX2 WORLD X / Y (top-down)',15,23);ctx.fillText('Grid: '+grid.toLocaleString()+' unreal units',15,40);
+ for(let a of visible){if(!a.location)continue;if(a.mesh&&!$('showmeshes').checked)continue;if(!a.mesh&&!$('showmarkers').checked)continue;let [px,py]=location(a);if(px<-10||px>w+10||py<-10||py>h+10)continue;ctx.beginPath();ctx.arc(px,py,a===chosen?7:(a.mesh?3.2:2.4),0,Math.PI*2);ctx.fillStyle=a===chosen?'#ffc35c':a.mesh?'#6fc2ea':'#d5b36e';ctx.fill()}
+ if(chosen&&chosen.location){let [x,y]=location(chosen);ctx.strokeStyle='#ffd49a';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,10,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#ffdfab';ctx.fillText(chosen.name,x+14,y-11)}
+ }
+ function focus(a){cx=a.location[0];cy=a.location[1];zoom=Math.max(zoom,3);draw()}
+ function nearest(e){let r=canvas.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,best=null,bestD=14**2;for(let a of visible){if(!a.location)continue;let [x,y]=location(a),d=(px-x)**2+(py-y)**2;if(d<bestD){best=a;bestD=d}}return best}
+ canvas.addEventListener('contextmenu',e=>e.preventDefault());
+ canvas.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,moved:0};canvas.setPointerCapture(e.pointerId)});
+ canvas.addEventListener('pointermove',e=>{if(!drag)return;let dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;drag.moved+=Math.abs(dx)+Math.abs(dy);cx-=dx/(scale*zoom);cy+=dy/(scale*zoom);draw()});
+ canvas.addEventListener('pointerup',e=>{if(!drag)return;let click=drag.moved<6;drag=null;if(click){let a=nearest(e);if(a)selectActor(a)}});
+ canvas.addEventListener('dblclick',e=>{let a=nearest(e);if(a)selectActor(a,true)});
+ canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.025,Math.min(200,zoom*Math.exp(-e.deltaY*.0015)));draw()},{passive:false});
+ $('home').addEventListener('click',fit);$('top').addEventListener('click',fit);$('focus').addEventListener('click',()=>{if(chosen)focus(chosen)});
+ $('search').addEventListener('input',filter);$('classfilter').addEventListener('change',filter);
+ $('showmeshes').addEventListener('change',draw);$('showmarkers').addEventListener('change',draw);
+ for(let id of ['showbsp','showtextures']){$(id).disabled=true;$(id).closest('label').title='Only available in 3D mode'}
+ $('showmarkers').checked=true;
+ document.querySelector('.overlay').innerHTML='<b>2D actor map fallback</b><br>3D rendering unavailable<br>Drag: pan · Wheel: zoom · Click: select actor<br>Use the actor list and inspector normally';
+ window.addEventListener('resize',draw);
+ fallback={draw,focus,fit};fit();
+}
+// We try WebGL2 first, then WebGL1 plus the standard vertex-array extension.
+// DX2Ed GLBs use UNSIGNED_SHORT indices, so WebGL1 does not need uint32 extensions.
+let gl=canvas.getContext('webgl2',{alpha:false,antialias:true});
+const gl2=!!gl;
+if(!gl)gl=canvas.getContext('webgl',{alpha:false,antialias:true})||canvas.getContext('experimental-webgl',{alpha:false,antialias:true});
+const rendererName=gl?(gl2?'WebGL2':'WebGL1'):'Canvas2D';
+async function activateFallback(message){
+ console.warn('DX2Ed switching to top-down fallback:',message);
+ if(!actors.length){try{
+   const r=await fetch('actors.json',{cache:'no-store'});if(!r.ok)throw Error('actors.json HTTP '+r.status);
+   const d=await r.json();actors=d.actors;byExport=new Map(actors.map(a=>[a.export,a]));
+   $('mapname').textContent=d.meta.map;$('counts').textContent=`${actors.length.toLocaleString()} actors · ${d.meta.classes} classes`;
+   [...new Set(actors.map(a=>a.class))].sort().forEach(cls=>{let o=el('option',cls);o.value=cls;$('classfilter').append(o)});
+   visible=actors;
+ }catch(e){console.error('Actor metadata loading failed',e);setStatus('Cannot load actor data: '+e.message,true);return;}}
+ // A canvas with an active WebGL context cannot also create a 2D context.
+ // Replace it to guarantee that fallback works even if shaders or GLB loading fail.
+ const old=canvas;canvas=old.cloneNode(false);old.replaceWith(canvas);
+ G=null;sceneBounds=null;filter();init2dFallback();
+ $('search').addEventListener('input',filter);$('classfilter').addEventListener('change',filter);
+ setStatus('2D fallback: '+message+'. Check browser GPU acceleration / chrome://gpu.',true);
+}
+if(!gl){await activateFallback('WebGL1 and WebGL2 unavailable');return;}
+const vaoExt=gl2?null:gl.getExtension('OES_vertex_array_object');
+if(!gl2&&!vaoExt){await activateFallback('WebGL1 vertex-array extension unavailable');return;}
+const makeVAO=()=>gl2?gl.createVertexArray():vaoExt.createVertexArrayOES();
+const bindVAO=v=>gl2?gl.bindVertexArray(v):vaoExt.bindVertexArrayOES(v);
+const vs=gl2?
+ `#version 300 es\nprecision highp float;layout(location=0) in vec3 pos;layout(location=1) in vec3 nor;layout(location=2) in vec2 uv;uniform mat4 mvp;uniform mat4 model;out vec2 vuv;out vec3 vnormal;void main(){vuv=uv;vnormal=mat3(model)*nor;gl_Position=mvp*vec4(pos,1.0);}`:
+ `precision highp float;attribute vec3 pos;attribute vec3 nor;attribute vec2 uv;uniform mat4 mvp;uniform mat4 model;varying vec2 vuv;varying vec3 vnormal;void main(){vuv=uv;vnormal=mat3(model)*nor;gl_Position=mvp*vec4(pos,1.0);}`;
+const fs=gl2?
+ `#version 300 es\nprecision highp float;in vec2 vuv;in vec3 vnormal;uniform vec4 factor;uniform vec3 emissive;uniform int hasTexture;uniform sampler2D tex;out vec4 color;void main(){vec4 c=factor;if(hasTexture==1)c*=texture(tex,vuv);vec3 N=normalize(vnormal);float light=0.77+0.22*abs(dot(N,normalize(vec3(.35,.8,.48))));color=vec4(c.rgb*light+emissive*.32,c.a);if(color.a<.01)discard;}`:
+ `precision highp float;varying vec2 vuv;varying vec3 vnormal;uniform vec4 factor;uniform vec3 emissive;uniform int hasTexture;uniform sampler2D tex;void main(){vec4 c=factor;if(hasTexture==1)c*=texture2D(tex,vuv);vec3 N=normalize(vnormal);float light=0.77+0.22*abs(dot(N,normalize(vec3(.35,.8,.48))));gl_FragColor=vec4(c.rgb*light+emissive*.32,c.a);if(gl_FragColor.a<.01)discard;}`;
 function shader(type,source){let s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s}
-let prog=gl.createProgram();gl.attachShader(prog,shader(gl.VERTEX_SHADER,vs));gl.attachShader(prog,shader(gl.FRAGMENT_SHADER,fs));gl.linkProgram(prog);if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(prog));
-const uniforms=Object.fromEntries(['mvp','model','factor','emissive','hasTexture','tex'].map(x=>[x,gl.getUniformLocation(prog,x)]));
+let prog,uniforms;
+try{prog=gl.createProgram();gl.attachShader(prog,shader(gl.VERTEX_SHADER,vs));gl.attachShader(prog,shader(gl.FRAGMENT_SHADER,fs));
+ if(!gl2){gl.bindAttribLocation(prog,0,'pos');gl.bindAttribLocation(prog,1,'nor');gl.bindAttribLocation(prog,2,'uv');}
+ gl.linkProgram(prog);if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(prog));
+ uniforms=Object.fromEntries(['mvp','model','factor','emissive','hasTexture','tex'].map(x=>[x,gl.getUniformLocation(prog,x)]));
+}catch(e){console.error(e);await activateFallback('Shader setup failed: '+e.message);return;}
+canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();setStatus(rendererName+' context lost. Reload to retry or use fallback.',true)});
+
 gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.CULL_FACE);gl.clearColor(.037,.068,.096,1);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
 const eyeDirection=(a,b)=>normalize(sub(a,b)),sub=(a,b)=>a.map((x,i)=>x-b[i]),add=(a,b)=>a.map((x,i)=>x+b[i]),mul=(a,t)=>a.map(x=>x*t),dot=(a,b)=>a.reduce((s,x,i)=>s+x*b[i],0),cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],normalize=a=>{let n=Math.hypot(...a)||1;return a.map(x=>x/n)};
 const idMat=()=>[1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
@@ -78,18 +150,26 @@ function loadGLB(arraybuffer){const view=new DataView(arraybuffer);if(view.getUi
 function rawBytes(bvIndex){let v=G.bufferViews[bvIndex];return bin.subarray(v.byteOffset||0,(v.byteOffset||0)+v.byteLength)}
 function meshBox(mi){let points=[];for(let p of G.meshes[mi].primitives){let a=G.accessors[p.attributes.POSITION];if(a.min&&a.max)points.push(...corners({lo:a.min,hi:a.max}))}return points.length?bounds(points):null}
 async function createResources(){const bufferCache=new Map();function vbo(i){if(bufferCache.has(i))return bufferCache.get(i);let a=G.accessors[i],view=G.bufferViews[a.bufferView];if(a.byteOffset)throw Error('Nonzero accessor offsets are not yet supported');if(view.byteStride)throw Error('Interleaved attributes are not supported');let ob=gl.createBuffer();gl.bindBuffer((view.target===34963)?gl.ELEMENT_ARRAY_BUFFER:gl.ARRAY_BUFFER,ob);gl.bufferData((view.target===34963)?gl.ELEMENT_ARRAY_BUFFER:gl.ARRAY_BUFFER,rawBytes(a.bufferView),gl.STATIC_DRAW);bufferCache.set(i,ob);return ob}
-meshPrimitives=G.meshes.map(mesh=>mesh.primitives.map(p=>{let vao=gl.createVertexArray();gl.bindVertexArray(vao);for(const [name,loc,size] of [['POSITION',0,3],['NORMAL',1,3],['TEXCOORD_0',2,2]]){let idx=p.attributes[name];if(idx===undefined){gl.disableVertexAttribArray(loc);if(loc===1)gl.vertexAttrib3f(1,0,1,0);if(loc===2)gl.vertexAttrib2f(2,0,0);continue}let a=G.accessors[idx];gl.bindBuffer(gl.ARRAY_BUFFER,vbo(idx));gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,size,a.componentType,!!a.normalized,0,0)}let ia=G.accessors[p.indices];gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,vbo(p.indices));gl.bindVertexArray(null);return {vao,count:ia.count,type:ia.componentType,mat:p.material??-1}}));
+meshPrimitives=G.meshes.map(mesh=>mesh.primitives.map(p=>{let vao=makeVAO();bindVAO(vao);for(const [name,loc,size] of [['POSITION',0,3],['NORMAL',1,3],['TEXCOORD_0',2,2]]){let idx=p.attributes[name];if(idx===undefined){gl.disableVertexAttribArray(loc);if(loc===1)gl.vertexAttrib3f(1,0,1,0);if(loc===2)gl.vertexAttrib2f(2,0,0);continue}let a=G.accessors[idx];gl.bindBuffer(gl.ARRAY_BUFFER,vbo(idx));gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,size,a.componentType,!!a.normalized,0,0)}let ia=G.accessors[p.indices];gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,vbo(p.indices));bindVAO(null);return {vao,count:ia.count,type:ia.componentType,mat:p.material??-1}}));
 materials=G.materials||[];let sources=G.textures||[];textures=Array.from({length:sources.length},()=>null);let images=G.images||[];
-await Promise.all(sources.map(async(src,i)=>{let image=images[src.source];if(!image||image.bufferView===undefined)return;try{let blob=new Blob([rawBytes(image.bufferView)],{type:image.mimeType||'image/png'});let bmp=await createImageBitmap(blob);let tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,bmp);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);gl.generateMipmap(gl.TEXTURE_2D);textures[i]=tex;bmp.close()}catch(e){console.warn('Texture decode failed',i,e)}}));
+await Promise.all(sources.map(async(src,i)=>{let image=images[src.source];if(!image||image.bufferView===undefined)return;try{let blob=new Blob([rawBytes(image.bufferView)],{type:image.mimeType||'image/png'});let bmp=await createImageBitmap(blob);let tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,bmp);const pot=n=>(n>0&&(n&(n-1))===0);const mip=gl2||(pot(bmp.width)&&pot(bmp.height));
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,mip?gl.LINEAR_MIPMAP_LINEAR:gl.LINEAR);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,mip?gl.REPEAT:gl.CLAMP_TO_EDGE);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,mip?gl.REPEAT:gl.CLAMP_TO_EDGE);
+ if(mip)gl.generateMipmap(gl.TEXTURE_2D);textures[i]=tex;bmp.close()}catch(e){console.warn('Texture decode failed',i,e)}}));
 let allBounds=[];sceneNodes=[];nodesByExport.clear();
 for(let raw of G.nodes){if(raw.mesh===undefined)continue;let box=meshBox(raw.mesh),mat=raw.matrix||idMat(),worldBox=box?bounds(corners(box).map(p=>transform(mat,p))):null;let exp=raw.extras?.DX2ExportIndex;let node={name:raw.name,mesh:raw.mesh,mat,box:worldBox,export:exp??null,bsp:exp===undefined};sceneNodes.push(node);if(worldBox)allBounds.push(...corners(worldBox));if(exp!==undefined)nodesByExport.set(exp,node)}
 if(!allBounds.length)throw Error('GLB contains no renderable geometry');sceneBounds=bounds(allBounds);fullCount=sceneNodes.length;frameLevel();}
 let drawing=false;
-function draw(){if(!G||!sceneBounds)return;const dpr=Math.min(window.devicePixelRatio||1,2),w=Math.max(1,Math.floor(canvas.clientWidth*dpr)),h=Math.max(1,Math.floor(canvas.clientHeight*dpr));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(prog);gl.uniform1i(uniforms.tex,0);
+let drawCalls=0,lastGLError=0;function draw(){if(!G||!sceneBounds)return;drawCalls=0;const dpr=Math.min(window.devicePixelRatio||1,2),w=Math.max(1,Math.floor(canvas.clientWidth*dpr)),h=Math.max(1,Math.floor(canvas.clientHeight*dpr));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(prog);gl.uniform1i(uniforms.tex,0);
 const VP=worldProjection();const passes=[false,true];for(let transparent of passes){if(transparent){gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false)}else{gl.disable(gl.BLEND);gl.depthMask(true)}
 for(let node of sceneNodes){if(node.bsp&&!$('showbsp').checked)continue;if(!node.bsp&&!$('showmeshes').checked)continue;let mv=matMul(VP,node.mat);gl.uniformMatrix4fv(uniforms.mvp,false,new Float32Array(mv));gl.uniformMatrix4fv(uniforms.model,false,new Float32Array(node.mat));
-for(let p of meshPrimitives[node.mesh]){let mat=materials[p.mat]||{},base=mat.pbrMetallicRoughness||{},factor=base.baseColorFactor||[1,1,1,1],em=mat.emissiveFactor||[0,0,0],isBlend=mat.alphaMode==='BLEND'||factor[3]<.98;if(isBlend!==transparent)continue;gl.uniform4fv(uniforms.factor,factor);gl.uniform3fv(uniforms.emissive,em);let texture=textures[base.baseColorTexture?.index];let hasTexture=!!(texture&&$('showtextures').checked);gl.uniform1i(uniforms.hasTexture,hasTexture?1:0);if(hasTexture){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture)}gl.bindVertexArray(p.vao);gl.drawElements(gl.TRIANGLES,p.count,p.type,0)}}}
-gl.bindVertexArray(null);gl.depthMask(true);paintHighlight();}
+for(let p of meshPrimitives[node.mesh]){let mat=materials[p.mat]||{},base=mat.pbrMetallicRoughness||{},factor=base.baseColorFactor||[1,1,1,1],em=mat.emissiveFactor||[0,0,0],isBlend=mat.alphaMode==='BLEND'||factor[3]<.98;if(isBlend!==transparent)continue;gl.uniform4fv(uniforms.factor,factor);gl.uniform3fv(uniforms.emissive,em);let texture=textures[base.baseColorTexture?.index];let hasTexture=!!(texture&&$('showtextures').checked);gl.uniform1i(uniforms.hasTexture,hasTexture?1:0);if(hasTexture){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture)}bindVAO(p.vao);gl.drawElements(gl.TRIANGLES,p.count,p.type,0);drawCalls++}}}
+bindVAO(null);gl.depthMask(true);lastGLError=gl.getError();
+ if(lastGLError!==gl.NO_ERROR)setStatus(`${rendererName}: OpenGL error ${lastGLError} · ${drawCalls} draw calls`,true);
+ else setStatus(`${rendererName} · ${sceneNodes.length.toLocaleString()} 3D nodes · ${drawCalls.toLocaleString()} draw calls · read-only`);
+ paintHighlight();}
 function paintHighlight(){let ctx=highlight.getContext('2d'),dpr=Math.min(window.devicePixelRatio||1,2),w=highlight.clientWidth,h=highlight.clientHeight;highlight.width=Math.floor(w*dpr);highlight.height=Math.floor(h*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);if(!G||!sceneBounds)return;let VP=worldProjection();
 if($('showmarkers').checked){ctx.fillStyle='#d3b96b';for(let a of visible.slice(0,2500)){if(nodesByExport.has(a.export))continue;let p=projectPoint([a.location[0]*.01905,a.location[2]*.01905,a.location[1]*.01905],VP);if(!p)continue;ctx.fillRect(p[0]-1.5,p[1]-1.5,3,3)}}
 if(!chosen)return;let node=nodesByExport.get(chosen.export),pts=node?.box?corners(node.box).map(p=>projectPoint(p,VP)).filter(Boolean):[];
@@ -110,7 +190,7 @@ const data=await fetch('actors.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw
 [...new Set(actors.map(a=>a.class))].sort((a,b)=>a.localeCompare(b)).forEach(cls=>{let o=el('option',cls);o.value=cls;$('classfilter').append(o)});
 visible=actors;filter();
 const response=await fetch('scene.glb',{cache:'no-store'});if(!response.ok)throw Error('scene.glb HTTP '+response.status);setStatus('Decoding meshes and textures...');[G,bin]=loadGLB(await response.arrayBuffer());await createResources();
-setStatus(`${sceneNodes.length.toLocaleString()} 3D nodes loaded · ${(G.meshes||[]).length} unique meshes · ${(G.images||[]).length} images · Read-only`);draw();
-}catch(error){console.error(error);setStatus('Cannot load 3D scene: '+error.message+'. Please use the DX2Ed launcher / localhost server.',true)}
-})();
+draw();
+}catch(error){console.error(error);await activateFallback('3D scene load failed: '+error.message)}
+})().catch(error=>{console.error('DX2Ed initialization error',error);const el=document.getElementById('renderstatus');if(el){el.textContent='Viewer initialization failed: '+error.message;el.className='error'}});
 </script></body></html>
