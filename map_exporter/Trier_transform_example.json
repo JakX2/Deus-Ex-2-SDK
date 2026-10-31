@@ -1,0 +1,8 @@
+{
+  "schema": "DX2Ed-transform-overrides-v1",
+  "map": "M3_Germany_Trier.gmp",
+  "actors": {
+    "StaticMeshActor__92": {"scale": [1, -1, 1]},
+    "StaticMeshActor__146": {"scale": [1, -1, 1]}
+  }
+}
