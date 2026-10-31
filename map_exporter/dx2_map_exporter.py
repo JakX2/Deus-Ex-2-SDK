@@ -100,7 +100,34 @@ def choose_bundles(level: LevelChoice, manual: Iterable[Path]) -> list[Path]:
     return sources
 
 
-def run_export(level: LevelChoice, output: Path, manual: list[Path] | None=None, strict: bool=False) -> dict:
+
+def load_transform_overrides(path: Path, map_name: str) -> dict[str, tuple[float,float,float]]:
+    """Validate a per-map, export-only correction file. Never patch retail maps."""
+    try:
+        data = json.loads(Path(path).read_text(encoding='utf-8'))
+    except json.JSONDecodeError as error:
+        raise ValueError(f'Invalid transform override JSON: {error}') from error
+    if not isinstance(data,dict) or data.get('schema') != 'DX2Ed-transform-overrides-v1':
+        raise ValueError('Expected schema DX2Ed-transform-overrides-v1')
+    if data.get('map') != map_name:
+        raise ValueError(f'Override map must be {map_name!r}; received {data.get("map")!r}')
+    entries=data.get('actors')
+    if not isinstance(entries,dict):
+        raise ValueError('Transform override actors must be an object mapping actor names to scale arrays')
+    if len(entries)>20000:
+        raise ValueError('Too many overrides')
+    from math import isfinite
+    corrected={}
+    for name, record in entries.items():
+        if not isinstance(name,str) or not name.strip() or not isinstance(record,dict) or set(record) != {'scale'}:
+            raise ValueError(f'Invalid override record for {name!r}: only scale is supported')
+        values=record['scale']
+        if not isinstance(values,list) or len(values)!=3 or any(isinstance(v,bool) or not isinstance(v,(int,float)) or not isfinite(v) or v==0 or abs(v)>100 for v in values):
+            raise ValueError(f'Invalid scale for actor {name!r}: supply three finite, nonzero numbers (maximum magnitude 100)')
+        corrected[name]=tuple(float(v) for v in values)
+    return corrected
+
+def run_export(level: LevelChoice, output: Path, manual: list[Path] | None=None, strict: bool=False, transform_overrides: Path | None=None, alternate_skin_fallback: bool=True) -> dict:
     output = output.expanduser().resolve()
     if output.suffix.casefold() != '.glb':
         raise ValueError('Output must end in .glb')
@@ -113,7 +140,8 @@ def run_export(level: LevelChoice, output: Path, manual: list[Path] | None=None,
         print('WARNING: No shared graphics bundle found; some models or materials may be missing.',file=sys.stderr)
     report_path = output.with_suffix('.report.json')
     # The original exporter runs read-only and embeds PNGs in the GLB.
-    report = export_level(level.path,bundles,output,report_path)
+    overrides=load_transform_overrides(transform_overrides,level.path.name) if transform_overrides else {}
+    report = export_level(level.path,bundles,output,report_path,overrides,alternate_skin_fallback=alternate_skin_fallback)
     if report['missing_mesh_actors']:
         msg=f"WARNING: {len(report['missing_mesh_actors'])} placed static meshes were missing. Inspect {report_path}."
         print(msg,file=sys.stderr)
@@ -129,7 +157,7 @@ def run_gui(initial: Path | None = None) -> None:
     import queue
 
     root=tk.Tk()
-    root.title('DX2 Map Exporter 0.1 | Deus Ex: Invisible War')
+    root.title('DX2 Map Exporter 0.2 | Deus Ex: Invisible War')
     root.geometry('865x610')
     root.minsize(710,490)
     root.columnconfigure(0,weight=1)
@@ -137,6 +165,8 @@ def run_gui(initial: Path | None = None) -> None:
 
     path_var=tk.StringVar(value=str(initial or Path.home()))
     out_var=tk.StringVar(value=str(Path.home()/'Desktop'/'DX2_Exports'))
+    overrides_var=tk.StringVar(value='')
+    alt_skins_var=tk.BooleanVar(value=True)
     status=tk.StringVar(value='Choose your Deus Ex Invisible War installation to scan for maps.')
     rows=[]
     events=queue.Queue()
@@ -149,6 +179,10 @@ def run_gui(initial: Path | None = None) -> None:
     def browse_output():
         val=filedialog.askdirectory(title='Select export directory')
         if val:out_var.set(val)
+
+    def browse_overrides():
+        val=filedialog.askopenfilename(title='Optional map-specific transform overrides',filetypes=[('JSON files','*.json')])
+        if val:overrides_var.set(val)
 
     def scan():
         nonlocal rows
@@ -181,7 +215,7 @@ def run_gui(initial: Path | None = None) -> None:
         status.set('Exporting; decoding meshes and textures. This may take a little while.')
         def worker():
             try:
-                result=run_export(lv,output)
+                result=run_export(lv,output,transform_overrides=Path(overrides_var.get()) if overrides_var.get().strip() else None,alternate_skin_fallback=alt_skins_var.get())
                 events.put(('ok',output,result))
             except Exception as e:events.put(('error',str(e)))
         threading.Thread(target=worker,daemon=True).start()
@@ -212,6 +246,10 @@ def run_gui(initial: Path | None = None) -> None:
     dst=ttk.LabelFrame(root,text='Export output folder',padding=12);dst.grid(row=1,column=0,sticky='ew',padx=12,pady=5);dst.columnconfigure(0,weight=1)
     ttk.Entry(dst,textvariable=out_var).grid(row=0,column=0,sticky='ew')
     ttk.Button(dst,text='Browse...',command=browse_output).grid(row=0,column=1,padx=6)
+    ttk.Label(dst,text='Optional transform overrides JSON (per map):').grid(row=1,column=0,sticky='w',pady=(8,2))
+    ttk.Entry(dst,textvariable=overrides_var).grid(row=2,column=0,sticky='ew')
+    ttk.Button(dst,text='Browse...',command=browse_overrides).grid(row=2,column=1,padx=6)
+    ttk.Checkbutton(dst,text='Approximate missing materials using available alternate mesh skins',variable=alt_skins_var).grid(row=3,column=0,sticky='w',pady=(7,0))
     ttk.Label(root,text='Select the map to export (mission resource bundle detected automatically):').grid(row=2,column=0,sticky='w',padx=15,pady=(8,2))
     mid=ttk.Frame(root);mid.grid(row=3,column=0,sticky='nsew',padx=12,pady=5);mid.columnconfigure(0,weight=1);mid.rowconfigure(0,weight=1)
     tree=ttk.Treeview(mid,columns=('map','mission','shared'),show='headings',selectmode='browse')
@@ -241,6 +279,8 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument('--map',required=True,help='Map filename from the list command')
     e.add_argument('--output','-o',required=True,type=Path,help='New .glb output path')
     e.add_argument('--bundle',action='append',default=[],type=Path,help='Override/extra resource bundle; repeat in priority order')
+    e.add_argument('--transform-overrides',type=Path,help='Per-map JSON with optional actor scale/mirror corrections')
+    e.add_argument('--no-alternate-skins',action='store_true',help='Preserve unresolved original material placeholders rather than preview alternate mesh skins')
     e.add_argument('--strict',action='store_true',help='Fail if placed static meshes are missing (export/report still created)')
     g=sub.add_parser('gui',help='Open a desktop graphical map chooser')
     g.add_argument('--game-root',type=Path)
@@ -257,11 +297,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f'Found {len(rows)} maps.')
     elif args.command=='export':
         level=resolve_map(args.game_root,args.map)
-        report=run_export(level,args.output,args.bundle,args.strict)
+        report=run_export(level,args.output,args.bundle,args.strict,args.transform_overrides,not args.no_alternate_skins)
         print(json.dumps({'status':'ok','glb':str(args.output.resolve()),'report':str(args.output.with_suffix('.report.json').resolve()),
                           'actors':report['placed_real_mesh_actors'],'triangles':report['total_scene_triangles'],
                           'embedded_textures':report['embedded_diffuse_images'],
-                          'missing_mesh_actors':len(report['missing_mesh_actors'])},indent=2))
+                          'missing_mesh_actors':len(report['missing_mesh_actors']),
+                          'transform_overrides_applied':len(report['actor_transform_overrides_applied'])},indent=2))
     return 0
 
 
