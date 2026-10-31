@@ -15,7 +15,25 @@ python --version
 python tools/check_source.py
 ```
 
-When additional research modules are integrated, their command-line `--help` options will document their inputs.
+## First usable commands
+
+Inspect your own game resource bundles without changing them:
+
+```powershell
+python .\\tools\\maps\\dx2bundles.py stats "C:\\path\\to\\m1_hub_penthouse_upper.ibd"
+python .\\tools\\maps\\dx2bundles.py list "C:\\path\\to\\m1_hub_penthouse_upper.ibd" --type staticmesh
+python .\\tools\\scripts\\dx2_script_bundle_probe.py --game-root "C:\\path\\to\\Content\\DX2"
+```
+
+See [bundle/mesh instructions](IBD_MESH.md) and [script-bundle instructions](IBD_PROBE.md).
+
+Run asset-free tests with:
+
+```powershell
+python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+The full v0.28 script editor and textured-map exporter require additional research modules not yet migrated into this repository. Those components remain available in the separately prepared source-only starter archive.
 
 ## Working with game data
 
