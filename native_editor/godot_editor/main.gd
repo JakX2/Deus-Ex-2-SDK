@@ -1,6 +1,7 @@
 extends Control
 ## DX2Ed native viewer: a READ-ONLY Godot 4 GLB + GMP actor inspector.
-## Requires only scenes already exported by DX2Ed. No runtime game assets bundled.
+## Can open an original DX2 .gmp using the bundled read-only Python backend.
+## No runtime game assets bundled. Exports are cached outside the game folder.
 
 var world_view: SubViewport
 var view_container: SubViewportContainer
@@ -13,6 +14,10 @@ var inspector: TextEdit
 var status_label: Label
 var glb_dialog: FileDialog
 var json_dialog: FileDialog
+var gmp_dialog: FileDialog
+var bundle_dialog: FileDialog
+var chosen_ibd: String = ""
+var build_thread: Thread = null
 var actors: Array = []
 var visible_actors: Array = []
 var actors_by_name: Dictionary = {}
@@ -38,7 +43,7 @@ func _ready() -> void:
     _make_world()
     _make_material()
     _update_camera()
-    status_label.text = "Ready. Open a DX2Ed scene.glb, or launch with a generated export folder."
+    status_label.text = "Ready. Open an original DX2 .gmp map (Python 3 required) or an existing GLB."
     var args := OS.get_cmdline_user_args()
     if args.size() > 0:
         call_deferred("open_export_folder", str(args[0]))
@@ -49,6 +54,16 @@ func _make_ui() -> void:
     add_child(base)
     var toolbar := HBoxContainer.new()
     base.add_child(toolbar)
+    var gmp_btn := Button.new()
+    gmp_btn.text = "Open DX2 map (.gmp)"
+    gmp_btn.tooltip_text = "Automatically convert the original DX2 map and matching IBD resources to a private cache"
+    gmp_btn.pressed.connect(func(): gmp_dialog.popup_centered_ratio(0.78))
+    toolbar.add_child(gmp_btn)
+    var bundle_btn := Button.new()
+    bundle_btn.text = "IBD override..."
+    bundle_btn.tooltip_text = "Optional: select a matching .ibd bundle when the automatic lookup cannot find it"
+    bundle_btn.pressed.connect(func(): bundle_dialog.popup_centered_ratio(0.72))
+    toolbar.add_child(bundle_btn)
     var demo_btn := Button.new()
     demo_btn.text = "Load demo cubes"
     demo_btn.pressed.connect(func(): load_glb(ProjectSettings.globalize_path("res://demo/scene.glb")))
@@ -112,6 +127,18 @@ func _make_ui() -> void:
     status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     bottom.add_child(status_label)
 
+    gmp_dialog = FileDialog.new()
+    gmp_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    gmp_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    gmp_dialog.filters = PackedStringArray(["*.gmp ; Deus Ex Invisible War map"])
+    gmp_dialog.file_selected.connect(open_gmp)
+    add_child(gmp_dialog)
+    bundle_dialog = FileDialog.new()
+    bundle_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    bundle_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    bundle_dialog.filters = PackedStringArray(["*.ibd ; Invisible War resource bundle"])
+    bundle_dialog.file_selected.connect(_select_ibd)
+    add_child(bundle_dialog)
     glb_dialog = FileDialog.new()
     glb_dialog.access = FileDialog.ACCESS_FILESYSTEM
     glb_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -124,6 +151,74 @@ func _make_ui() -> void:
     json_dialog.filters = PackedStringArray(["*.json ; DX2Ed actor metadata"])
     json_dialog.file_selected.connect(load_actors)
     add_child(json_dialog)
+
+func _select_ibd(path: String) -> void:
+    chosen_ibd = path
+    status_label.text = "Optional IBD selected: " + path.get_file()
+
+func open_gmp(path: String) -> void:
+    if build_thread != null:
+        status_label.text = "Already processing a map. Please finish this load first."
+        return
+    if not FileAccess.file_exists(path):
+        status_label.text = "Map not found: " + path
+        return
+    var backend := ProjectSettings.globalize_path("res://backend/dx2_native_backend.py")
+    if not FileAccess.file_exists(backend):
+        status_label.text = "Missing Python backend: " + backend
+        return
+    var cache_root := OS.get_user_data_dir().path_join("map_cache")
+    status_label.text = "Processing " + path.get_file() + " ... First load creates a cached 3D scene and actor metadata."
+    build_thread = Thread.new()
+    var result := build_thread.start(_run_backend.bind(backend, path, cache_root, chosen_ibd))
+    if result != OK:
+        build_thread = null
+        status_label.text = "Could not start map worker: " + error_string(result)
+
+func _run_backend(script: String, gmp_path: String, cache_root: String, ibd_path: String) -> void:
+    var args := PackedStringArray([script, "--map", gmp_path, "--output-root", cache_root])
+    if ibd_path != "":
+        args.append_array(PackedStringArray(["--bundle", ibd_path]))
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        # On Windows the Python launcher may be on PATH even if python.exe isn't.
+        var py_args := PackedStringArray(["-3"])
+        py_args.append_array(args)
+        output.clear()
+        code = OS.execute("py", py_args, output, true)
+    call_deferred("_backend_finished", code, "\n".join(output))
+
+func _backend_finished(code: int, output: String) -> void:
+    if build_thread != null:
+        build_thread.wait_to_finish()
+        build_thread = null
+    var message := ""
+    var parsed: Variant = null
+    for line in output.strip_edges().split("\n"):
+        var record := line.strip_edges()
+        if record.begins_with("{"):
+            var candidate: Variant = JSON.parse_string(record)
+            if typeof(candidate) == TYPE_DICTIONARY and candidate.has("status"):
+                parsed = candidate
+    if typeof(parsed) == TYPE_DICTIONARY and parsed.get("status") == "ok" and code == 0:
+        var scene_path := str(parsed.get("glb", ""))
+        var actor_path := str(parsed.get("actors_json", ""))
+        if not FileAccess.file_exists(scene_path) or not FileAccess.file_exists(actor_path):
+            status_label.text = "Map backend succeeded but output files are missing."
+            return
+        load_glb(scene_path)
+        # load_glb automatically loads the adjacent actors.json.
+        status_label.text = "%s: %d actors, %d meshes (%s). Read-only." % [str(parsed.get("map", "DX2 map")), int(parsed.get("actors", 0)), mesh_count, "cached" if parsed.get("cached", false) else "new export"]
+        return
+    if typeof(parsed) == TYPE_DICTIONARY and parsed.has("message"):
+        message = str(parsed.get("message", ""))
+    elif output.strip_edges() != "":
+        message = output.strip_edges().substr(0, 400)
+    else:
+        message = "Python not available. Install Python 3 and ensure python or py is on PATH."
+    status_label.text = "Could not open DX2 map: " + message
+    push_warning("DX2Ed map importer: " + message)
 
 func _make_world() -> void:
     world_view = SubViewport.new()
