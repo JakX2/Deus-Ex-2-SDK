@@ -60,3 +60,15 @@ Back up your game. Only test modified files on a separate installation or verifi
 See [Getting Started](docs/GETTING_STARTED.md), [Safety](docs/SAFETY.md), and [Provenance](docs/PROVENANCE.md).
 
 **Research-stage project: contributions welcome after source licensing is settled.**
+
+## Actor Explorer (research prototype)
+
+The [Actor Explorer](actor_explorer/README.md) provides a read-only, offline, interactive actor view generated from your installed DX2 `.gmp` map. Search actor names, filter by class, inspect tagged/gameplay properties, and optionally join a locally generated TriggerScript logic index. Python 3.9+ is required.
+
+From the repository checkout on Windows:
+
+```powershell
+python .\actor_explorer\dx2_actor_explorer.py --gui
+```
+
+This does **not** save changes back to the game. Future work will connect it to an editable 3D viewport.
