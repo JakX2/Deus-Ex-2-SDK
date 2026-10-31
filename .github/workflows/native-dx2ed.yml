@@ -1,0 +1,25 @@
+name: Native DX2Ed scene-fixture checks
+
+on:
+  push:
+    paths:
+      - 'native_editor/**'
+      - '.github/workflows/native-dx2ed.yml'
+  pull_request:
+    paths:
+      - 'native_editor/**'
+      - '.github/workflows/native-dx2ed.yml'
+  workflow_dispatch:
+
+jobs:
+  fixture-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Generate original demo scene
+        run: python native_editor/tests/make_demo_scene.py
+      - name: Test GLB structure, actor links, and safety
+        run: python -m unittest discover -s native_editor/tests -v
