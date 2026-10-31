@@ -8,6 +8,9 @@ Our goal is a practical, UnrealEd-style modding SDK inspired by the original Deu
 
 This is an **early research repository**, not a downloadable full level editor.
 
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/de511541-593d-471e-b042-dc1883511ce0" />
+
+
 Work to date (validated in individual research prototypes):
 
 - Read DX2 `.gmp` maps and `.ibd` resource bundles; export textured geometry to Blender/glTF.
