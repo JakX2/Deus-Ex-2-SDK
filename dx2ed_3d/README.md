@@ -1,6 +1,6 @@
-# DX2Ed 3D Actor Explorer 0.2 (experimental)
+# DX2Ed 3D Actor Explorer 0.2.2 (experimental)
 
-**Textured 3D level viewport plus read-only actor inspector, using original Invisible War maps.** Windows GUI; requires Python 3.9+ and a modern browser with WebGL2 (Chrome, Edge, Firefox).
+**Textured WebGL2/WebGL1 viewport (when available) with a functional 2D actor-map fallback, plus a read-only actor inspector.** Windows GUI; requires Python 3.9+ and a modern browser with WebGL2 or WebGL1 (Chrome, Edge, Firefox).
 
 The 3D GLB uses our existing DX2Ed map exporter. Each mesh node stores `DX2ExportIndex`, which this editor matches with a decoded actor from the GMP. Selecting a mesh gives you the name, class, position, rotation, game properties and linked scripts. This is **not** yet the Thief 3 Editor and **cannot save changes to a GMP map**.
 
@@ -48,7 +48,7 @@ python dx2ed_3d.py build --map "C:\path\to\M1_Seattle_Hub_Penthouse_Upper.gmp" -
 ## Known limits
 
 - **Read-only**. No transforms, script edits, new actor placement or game-compatible map saves.
-- Renderer is experimental and was not visually verified under headless Chromium because the CI/container browser has no WebGL2. The actor inspector and generated GLB data were validated with original sample maps.
+- Renderer is experimental and not visually verified under headless Chromium because the test browser has no WebGL context, including WebGL1. The actor inspector and generated GLB data were validated with original sample maps.
 - Mesh hit testing uses world-space AABBs, not per-triangle ray tracing. Occlusion and small props may require list selection.
 - Textures are approximated using the exporter's glTF materials. Some original DX2 effect shaders, normals, animations, and lighting remain unsupported.
 - Skeletal characters and effects are not represented as fully rigged scene models.
@@ -59,3 +59,20 @@ python dx2ed_3d.py build --map "C:\path\to\M1_Seattle_Hub_Penthouse_Upper.gmp" -
 ## Source and licensing
 
 Research code; licensing/provenance audit is pending. Original game files remain proprietary. Retain source files in a private workspace until the source provenance audit is finished.
+
+## v0.2.1 diagnostics and fallback
+
+If WebGL2 is unavailable, the viewport **switches to a top-down 2D actor map** instead of a blank screen. Actor search, selection, pan, zoom, and property inspection remain usable. This is not textured 3D. The status at the bottom explains why the fallback started. For Google Chrome or Edge, try enabling hardware acceleration in browser settings, restart, and inspect `chrome://gpu` or `edge://gpu`.
+
+If the status instead says that 3D nodes loaded but the canvas appears dark, send a screenshot with the **bottom viewport status** visible and the browser developer console errors (F12). Those are different failures. No changes to source game files are involved.
+
+## v0.2.2: WebGL1 and diagnostics
+
+- WebGL2 remains preferred. If unavailable, DX2Ed now attempts **WebGL1** with `OES_vertex_array_object`, which is common in older browsers/driver configurations.
+- Two compatible GLSL shader versions, explicit WebGL1 attribute locations, and legal non-power-of-two texture sampling rules are included.
+- If both hardware APIs fail, or a shader/scene load fails, the browser creates a clean Canvas2D viewport and shows the actor map. The prior version could leave a dark WebGL canvas after a late error.
+- The bottom viewport status now reports `WebGL2`, `WebGL1` or `2D fallback`, and in 3D shows node and draw-call counts or a GL error.
+- **This does not guarantee the black viewport is fixed on a particular GPU**. It adds another supported rendering path and better failure diagnostics.
+- For testing, run with an original Penthouse or Seattle Club map. If dark, capture the bottom status text; if it says `WebGL2 · ... draw calls`, the render path is active and we need graphics-specific debugging.
+
+All modes remain read-only and never modify the game files.
