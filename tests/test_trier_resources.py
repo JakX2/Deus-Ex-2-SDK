@@ -11,6 +11,9 @@ from dx2_map_exporter import resolve_map,run_export,load_transform_overrides
 from dx2level import actor_matrix
 
 ROOT=Path(__file__).resolve().parents[1]
+EXAMPLE=ROOT/'Trier_transform_example.json'
+if not EXAMPLE.is_file():
+    EXAMPLE=ROOT/'map_exporter'/'Trier_transform_example.json'
 @unittest.skipUnless(os.environ.get('DX2_TEST_TRIER'),'Set DX2_TEST_TRIER to directory holding original Trier GMP and IBD')
 class TrierMapTests(unittest.TestCase):
     def test_trier_export_and_material_provenance(self):
@@ -18,7 +21,7 @@ class TrierMapTests(unittest.TestCase):
         mapszip=Path(os.environ['DX2_TEST_SHARED'])
         original=(src/'M3_Germany_Trier.gmp').read_bytes()
         with tempfile.TemporaryDirectory() as td:
-            result=run_export(resolve_map(src,'M3_Germany_Trier.gmp'),Path(td)/'Trier.glb',manual=[src/'m3_trier.ibd',mapszip],transform_overrides=ROOT/'Trier_transform_example.json')
+            result=run_export(resolve_map(src,'M3_Germany_Trier.gmp'),Path(td)/'Trier.glb',manual=[src/'m3_trier.ibd',mapszip],transform_overrides=EXAMPLE)
             self.assertEqual(result['placed_real_mesh_actors'],956)
             self.assertEqual(result['missing_mesh_actors'],[])
             self.assertEqual(result['alternate_skin_previews'],{'0_pipes-brownrust':'0_pipes-orange','0_pipes-brownrustdark':'0_pipes-orange'})
@@ -41,7 +44,7 @@ class TrierMapTests(unittest.TestCase):
 
 class OverrideValidationTests(unittest.TestCase):
     def test_exact_actor_ids(self):
-        x=load_transform_overrides(ROOT/'Trier_transform_example.json','M3_Germany_Trier.gmp')
+        x=load_transform_overrides(EXAMPLE,'M3_Germany_Trier.gmp')
         self.assertEqual(sorted(x),['StaticMeshActor__146','StaticMeshActor__92'])
         self.assertEqual(x['StaticMeshActor__92'],(1,-1,1))
 if __name__=='__main__': unittest.main()
