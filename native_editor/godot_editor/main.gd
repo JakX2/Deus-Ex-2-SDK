@@ -208,6 +208,8 @@ func _backend_finished(code: int, output: String) -> void:
             status_label.text = "Map backend succeeded but output files are missing."
             return
         load_glb(scene_path)
+        if scene_root == null:
+            return # Keep the descriptive GLB error instead of reporting success.
         # load_glb automatically loads the adjacent actors.json.
         status_label.text = "%s: %d actors, %d meshes (%s). Read-only." % [str(parsed.get("map", "DX2 map")), int(parsed.get("actors", 0)), mesh_count, "cached" if parsed.get("cached", false) else "new export"]
         return
