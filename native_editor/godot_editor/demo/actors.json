@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "schema": "DX2Ed-fixture-original",
+    "actors": 2,
+    "read_only": true
+  },
+  "actors": [
+    {
+      "name": "StaticMeshActor__1",
+      "class": "StaticMeshActor",
+      "export": 1,
+      "location": [
+        -3.5,
+        0.0,
+        0.0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "mesh": {
+        "name": "OriginalDemoCube"
+      },
+      "tagged": {
+        "test_note": "Synthetic authored fixture; not a DX2 asset"
+      },
+      "game_properties": [],
+      "scripts": []
+    },
+    {
+      "name": "StaticMeshActor__2",
+      "class": "StaticMeshActor",
+      "export": 2,
+      "location": [
+        3.5,
+        0.0,
+        0.0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "mesh": {
+        "name": "OriginalDemoCube"
+      },
+      "tagged": {
+        "test_note": "Synthetic authored fixture; not a DX2 asset"
+      },
+      "game_properties": [],
+      "scripts": []
+    }
+  ]
+}
