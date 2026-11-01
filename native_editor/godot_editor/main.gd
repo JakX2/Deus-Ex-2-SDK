@@ -11,6 +11,14 @@ var camera: Camera3D
 var actor_list: ItemList
 var search_box: LineEdit
 var category_filter: OptionButton
+var hierarchy_tree: Tree
+var hierarchy_items: Dictionary = {}
+var hierarchy_syncing := false
+var inspector_title: Label
+var inspector_details: Label
+var inspector_transform_section: VBoxContainer
+var inspector_spins: Dictionary = {}
+var inspector_syncing := false
 var inspector: TextEdit
 var status_label: Label
 var glb_dialog: FileDialog
@@ -258,27 +266,83 @@ func _make_ui() -> void:
     category_filter.selected = 0
     category_filter.item_selected.connect(func(_index): _refresh_actor_list())
     sidebar.add_child(category_filter)
+    hierarchy_tree = Tree.new()
+    hierarchy_tree.columns = 1
+    hierarchy_tree.hide_root = false
+    hierarchy_tree.select_mode = Tree.SELECT_MULTI
+    hierarchy_tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    hierarchy_tree.multi_selected.connect(_hierarchy_multi_selected)
+    hierarchy_tree.item_activated.connect(func(): focus_selected())
+    sidebar.add_child(hierarchy_tree)
+    # Retain the old list as a hidden compatibility model for existing picker
+    # diagnostics; the new Hierarchy is the visible selection surface.
     actor_list = ItemList.new()
+    actor_list.visible = false
     actor_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
     actor_list.select_mode = ItemList.SELECT_MULTI
     actor_list.multi_selected.connect(_actor_list_multi_selected)
     actor_list.item_activated.connect(func(_index): focus_selected())
     sidebar.add_child(actor_list)
 
-    var right := VSplitContainer.new()
-    right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    horizontal.add_child(right)
+    var scene_pane := VBoxContainer.new()
+    scene_pane.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    scene_pane.custom_minimum_size.x = 440
+    horizontal.add_child(scene_pane)
+    var scene_label := Label.new()
+    scene_label.text = "Scene  |  Godot preview, read-only source assets"
+    scene_pane.add_child(scene_label)
     view_container = SubViewportContainer.new()
     view_container.stretch = true
     view_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
     view_container.custom_minimum_size = Vector2(400, 360)
-    right.add_child(view_container)
+    scene_pane.add_child(view_container)
+
+    var inspector_pane := VBoxContainer.new()
+    inspector_pane.custom_minimum_size.x = 285
+    inspector_pane.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    horizontal.add_child(inspector_pane)
+    var heading := Label.new()
+    heading.text = "Inspector"
+    inspector_pane.add_child(heading)
+    inspector_title = Label.new()
+    inspector_title.text = "Nothing selected"
+    inspector_pane.add_child(inspector_title)
+    inspector_details = Label.new()
+    inspector_details.text = "Select an actor or rendered mesh in the Scene or Hierarchy."
+    inspector_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    inspector_pane.add_child(inspector_details)
+    inspector_transform_section = VBoxContainer.new()
+    inspector_pane.add_child(inspector_transform_section)
+    var transform_heading := Label.new()
+    transform_heading.text = "Transform  |  Preview only"
+    inspector_transform_section.add_child(transform_heading)
+    var transform_grid := GridContainer.new()
+    transform_grid.columns = 4
+    inspector_transform_section.add_child(transform_grid)
+    for mode in ["Position", "Rotation", "Scale"]:
+        var label := Label.new()
+        label.text = mode
+        transform_grid.add_child(label)
+        for axis in range(3):
+            var spin := SpinBox.new()
+            spin.min_value = -1000000.0
+            spin.max_value = 1000000.0
+            spin.step = 0.01 if mode != "Rotation" else 1.0
+            spin.custom_minimum_size.x = 67
+            spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+            spin.tooltip_text = mode + " " + ["X", "Y", "Z"][axis] + " (Godot coordinates)"
+            spin.value_changed.connect(_inspector_transform_changed.bind(mode, axis))
+            transform_grid.add_child(spin)
+            inspector_spins[mode + str(axis)] = spin
+    var property_heading := Label.new()
+    property_heading.text = "Source actor details (read-only)"
+    inspector_pane.add_child(property_heading)
     inspector = TextEdit.new()
     inspector.editable = false
-    inspector.custom_minimum_size = Vector2(0, 160)
     inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    inspector.text = "Select an actor to inspect its original DX2 properties."
-    right.add_child(inspector)
+    inspector.text = "Select an actor to inspect original DX2 properties."
+    inspector_pane.add_child(inspector)
+    inspector_transform_section.visible = false
     restore_all_dialog = ConfirmationDialog.new()
     restore_all_dialog.title = "Restore all prop edits?"
     restore_all_dialog.dialog_text = "Restore all original prop transforms and remove every draft copy?\nThis also clears the saved draft for this map.\nYou can undo during this session."
