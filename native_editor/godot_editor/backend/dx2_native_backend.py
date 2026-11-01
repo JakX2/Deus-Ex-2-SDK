@@ -48,7 +48,7 @@ def map_inputs(map_path: Path, manual_bundles: list[Path]):
     bundles = choose_bundles(level, manual_bundles)
     return level, bundles
 
-def get_cache_key(map_path: Path, bundles: list[Path], system_path: Path | None = None, preview_club_stairs: bool = False):
+def get_cache_key(map_path: Path, bundles: list[Path], system_path: Path | None = None, preview_club_stairs: bool = False, preview_auto_roll: bool = False):
     sources = {'map': {'name': map_path.name, 'sha256': sha256(map_path)},
                'bundles': [{'name': p.name, 'sha256': sha256(p)} for p in bundles]}
     if system_path is not None:
@@ -59,7 +59,13 @@ def get_cache_key(map_path: Path, bundles: list[Path], system_path: Path | None 
                                   p.stat().st_size, p.stat().st_mtime_ns) for p in system_files]
         else:
             sources['system'] = {'name': system_path.name, 'sha256': sha256(system_path)}
-    payload = json.dumps({'version': CACHE_VERSION, 'inputs': sources, 'preview_club_stairs': bool(preview_club_stairs)}, sort_keys=True)
+    options = {'version': CACHE_VERSION, 'inputs': sources,
+               'preview_club_stairs': bool(preview_club_stairs)}
+    # Keep previous OFF-mode cache keys and their saved drafts untouched.
+    # ON creates a separate visual cache; retail GMP/IBD stay unchanged.
+    if preview_auto_roll:
+        options['preview_auto_roll_v1'] = True
+    payload = json.dumps(options, sort_keys=True)
     return hashlib.sha256(payload.encode('utf8')).hexdigest()[:20], sources
 
 def enrich_placement_report(actors: list[dict], bundles: list[Path], report: dict) -> bool:
@@ -145,7 +151,7 @@ def enrich_placement_report(actors: list[dict], bundles: list[Path], report: dic
 
 def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | None = None,
           system_path: Path | None = None, force: bool = False,
-          preview_club_stairs: bool = False) -> dict:
+          preview_club_stairs: bool = False, preview_auto_roll: bool = False) -> dict:
     level, bundles = map_inputs(map_path, manual_bundles or [])
     map_path = level.path.resolve()
     output_root = Path(output_root).expanduser().resolve()
@@ -155,7 +161,8 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
         system_path = Path(system_path).expanduser().resolve()
         if not system_path.exists():
             raise FileNotFoundError(f'System source not found: {system_path}')
-    key, source_hashes = get_cache_key(map_path, bundles, system_path, preview_club_stairs)
+    key, source_hashes = get_cache_key(map_path, bundles, system_path, preview_club_stairs,
+                                       preview_auto_roll)
     folder = output_root / (map_path.stem + '_' + key)
     glb = folder / 'scene.glb'
     actor_json = folder / 'actors.json'
@@ -191,13 +198,16 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
                         'glb': str(glb), 'actors_json': str(actor_json),
                         'assets_json': str(assets_json),
                         'archetypes_json': str(archetypes_json),
-                        'map': map_path.name, 'actors': len(actors_doc['actors'])}
+                        'map': map_path.name, 'actors': len(actors_doc['actors']),
+                        'auto_roll': bool(preview_auto_roll),
+                        'auto_roll_count': len(cached_report.get('auto_roll_preview_corrections', []))}
         except (OSError, ValueError, KeyError, TypeError):
             pass
     folder.mkdir(parents=True, exist_ok=True)
     try:
         report = run_export(level, glb, manual=bundles,
-                            preview_club_stairs=preview_club_stairs)
+                            preview_club_stairs=preview_club_stairs,
+                            preview_auto_roll=preview_auto_roll)
         meta, actors = actor_records(map_path, system_path)
         # Match exporter decisions by the original package export index, not
         # by the display name. Keep original game properties intact.
@@ -239,6 +249,8 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
             'assets_json': str(assets_json),
             'archetypes_json': str(archetypes_json),
             'map': map_path.name, 'actors': len(actors),
+            'auto_roll': bool(preview_auto_roll),
+            'auto_roll_count': len(report.get('auto_roll_preview_corrections', [])),
             'mesh_actors': report.get('placed_real_mesh_actors'),
             'missing_mesh_actors': len(report.get('missing_mesh_actors', []))}
 
@@ -251,6 +263,8 @@ def main(argv=None):
     parser.add_argument('--force', action='store_true')
     parser.add_argument('--preview-club-stairs', action='store_true',
                         help='Experimental Seattle Club stair Roll preview; changes GLB only')
+    parser.add_argument('--preview-auto-roll', action='store_true',
+                        help='Hypothesis: invert nontrivial roll on all rendered actors; GLB preview only')
     parser.add_argument('--inspect', action='store_true',
                         help='Only locate required resource bundles; do not export')
     args = parser.parse_args(argv)
@@ -264,7 +278,8 @@ def main(argv=None):
             result = build(args.map, args.output_root,
                            manual_bundles=args.bundle,
                            system_path=args.system, force=args.force,
-                           preview_club_stairs=args.preview_club_stairs)
+                           preview_club_stairs=args.preview_club_stairs,
+                           preview_auto_roll=args.preview_auto_roll)
         print(json.dumps(result, ensure_ascii=True))
         return 0
     except Exception as error:
