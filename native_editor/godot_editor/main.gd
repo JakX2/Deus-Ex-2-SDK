@@ -2048,8 +2048,10 @@ func _mesh_geometry_material_summary(actor: Dictionary, node: MeshInstance3D = n
                 for item in material_rows:
                     if typeof(item) == TYPE_DICTIONARY:
                         var name := str(item.get("name", ""))
-                        if not name.is_empty() and not names.has(name):
-                            names.append(name)
+                        var resolution := str(item.get("resolution", "unknown"))
+                        var detail := name + " [" + resolution + "]"
+                        if not name.is_empty() and not names.has(detail):
+                            names.append(detail)
                 if not names.is_empty():
                     lines.append("Source materials: " + ", ".join(names.slice(0, 5)) +
                         (" (more)" if names.size() > 5 else ""))
