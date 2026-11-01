@@ -49,8 +49,8 @@
       "title": "Actor class palette and property browser",
       "status": "partial",
       "phase": 1,
-      "evidence": "DX2Ed actors.json + conservative class hints; T3Ed ModeAdd, ModeAddVolume icons",
-      "next_step": "Decoded DX2 Gamesys class inheritance and typed editing"
+      "evidence": "DX2Ed Actor Explorer numeric IDs and class hints; 0.4.1 Inspector supports scalar bool/byte/int/float/string drafts with validation and undo. Original T3Ed actor-property workflows.",
+      "next_step": "Recover reliable DX2 Gamesys class inheritance and named field types; support object links and validated write-back only after native serializers."
     },
     {
       "id": "source_project",
