@@ -17,7 +17,7 @@ import sys
 import tempfile
 import zipfile
 
-VERSION = "DX2Ed-zip-stage-v1"
+VERSION = "DX2Ed-zip-stage-v2"
 MAP_NAME = "M1_Seattle_Club.gmp"
 MISSION_NAME = "m1_club.ibd"
 REQUIRED_SHARED = {"kernel_gfxall.ibd", "mainmenu_gfxall.ibd"}
@@ -62,6 +62,23 @@ def members(path: Path) -> list[tuple[zipfile.ZipInfo, str]]:
                 raise ValueError("ZIP symbolic link forbidden: " + normalized)
             result.append((info, normalized))
         return result
+
+
+def discover_single_pair(path: Path) -> tuple[str, str]:
+    """Autodetect a mission ZIP containing exactly one GMP and one IBD.
+
+    Ambiguous archives fail closed. Nothing is ever executed or modified.
+    """
+    found: dict[str, list[str]] = {".gmp": [], ".ibd": []}
+    for _info, name in members(path):
+        base = PurePosixPath(name).name
+        suffix = PurePosixPath(base).suffix.casefold()
+        if suffix in found:
+            found[suffix].append(base)
+    if len(found[".gmp"]) != 1 or len(found[".ibd"]) != 1:
+        raise ValueError("DX2 mission ZIP must contain exactly one GMP and one IBD; "
+                         "provide explicit --map-name/--mission-name for other archives")
+    return found[".gmp"][0], found[".ibd"][0]
 
 
 def select_files(club: Path, maps: Path, system: Path | None,
@@ -163,6 +180,10 @@ def prepare(club: Path, maps: Path, output_root: Path,
     for source in archives:
         if not source.is_file():
             raise FileNotFoundError(source)
+    if map_name.casefold() == "auto" or mission_name.casefold() == "auto":
+        if map_name.casefold() != "auto" or mission_name.casefold() != "auto":
+            raise ValueError("Use auto for both map and mission, or specify both names")
+        map_name, mission_name = discover_single_pair(club)
     selection = select_files(club, maps, system, map_name, mission_name)
 
     # Role-based keys avoid collisions if different directories both contain
@@ -175,7 +196,7 @@ def prepare(club: Path, maps: Path, output_root: Path,
     key = hashlib.sha256(key_input.encode("utf-8")).hexdigest()[:20]
     root = output_root.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
-    stage = root / ("Seattle_Club_" + key)
+    stage = root / (Path(map_name).stem + "_" + key)
     if stage.exists():
         if not _verified_cache(stage, key):
             raise ValueError("Staged cache exists but verification failed: " + str(stage))
@@ -237,8 +258,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--maps", required=True, type=Path)
     parser.add_argument("--system", type=Path, help="Optional System archive")
     parser.add_argument("--output-root", required=True, type=Path)
-    parser.add_argument("--map-name", default=MAP_NAME)
-    parser.add_argument("--mission-name", default=MISSION_NAME)
+    parser.add_argument("--map-name", default=MAP_NAME, help="GMP filename, or auto for a single-map ZIP")
+    parser.add_argument("--mission-name", default=MISSION_NAME, help="IBD filename, or auto for a single-map ZIP")
     args = parser.parse_args(argv)
     try:
         print(json.dumps(prepare(args.club, args.maps, args.output_root,
