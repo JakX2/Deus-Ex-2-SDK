@@ -16,7 +16,13 @@ var glb_dialog: FileDialog
 var json_dialog: FileDialog
 var gmp_dialog: FileDialog
 var bundle_dialog: FileDialog
+var club_zip_dialog: FileDialog
+var shared_zip_dialog: FileDialog
+var system_zip_dialog: FileDialog
 var chosen_ibd: String = ""
+var chosen_shared_zip: String = ""
+var chosen_system_zip: String = ""
+var chosen_system_path: String = ""
 var build_thread: Thread = null
 var actors: Array = []
 var visible_actors: Array = []
@@ -97,6 +103,27 @@ func _make_ui() -> void:
     hint.text = "  Left drag orbit  |  Right drag pan  |  Wheel zoom  |  Click select"
     toolbar.add_child(hint)
 
+    var zip_bar := HBoxContainer.new()
+    base.add_child(zip_bar)
+    var shared_zip_btn := Button.new()
+    shared_zip_btn.text = "Shared ZIP..."
+    shared_zip_btn.tooltip_text = "Select maps.zip containing Kernel_GFXALL and MainMenu_GFXALL bundles"
+    shared_zip_btn.pressed.connect(func(): shared_zip_dialog.popup_centered_ratio(0.73))
+    zip_bar.add_child(shared_zip_btn)
+    var system_zip_btn := Button.new()
+    system_zip_btn.text = "System ZIP... (optional)"
+    system_zip_btn.tooltip_text = "Select System.zip for game-system actor metadata"
+    system_zip_btn.pressed.connect(func(): system_zip_dialog.popup_centered_ratio(0.73))
+    zip_bar.add_child(system_zip_btn)
+    var club_zip_btn := Button.new()
+    club_zip_btn.text = "Open Seattle Club ZIP..."
+    club_zip_btn.tooltip_text = "Safely stage the Club ZIP with the selected shared resources and open the GMP"
+    club_zip_btn.pressed.connect(func(): club_zip_dialog.popup_centered_ratio(0.73))
+    zip_bar.add_child(club_zip_btn)
+    var zip_hint := Label.new()
+    zip_hint.text = "  Select shared resources, optional System, then Club ZIP"
+    zip_bar.add_child(zip_hint)
+
     var horizontal := HSplitContainer.new()
     horizontal.size_flags_vertical = Control.SIZE_EXPAND_FILL
     base.add_child(horizontal)
@@ -140,7 +167,7 @@ func _make_ui() -> void:
     gmp_dialog.access = FileDialog.ACCESS_FILESYSTEM
     gmp_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
     gmp_dialog.filters = PackedStringArray(["*.gmp ; Deus Ex Invisible War map"])
-    gmp_dialog.file_selected.connect(open_gmp)
+    gmp_dialog.file_selected.connect(_open_gmp_file)
     add_child(gmp_dialog)
     bundle_dialog = FileDialog.new()
     bundle_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -161,9 +188,103 @@ func _make_ui() -> void:
     json_dialog.file_selected.connect(load_actors)
     add_child(json_dialog)
 
+    shared_zip_dialog = FileDialog.new()
+    shared_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    shared_zip_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    shared_zip_dialog.filters = PackedStringArray(["*.zip ; DX2 shared map resources ZIP"])
+    shared_zip_dialog.file_selected.connect(_select_shared_zip)
+    add_child(shared_zip_dialog)
+    system_zip_dialog = FileDialog.new()
+    system_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    system_zip_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    system_zip_dialog.filters = PackedStringArray(["*.zip ; DX2 System ZIP"])
+    system_zip_dialog.file_selected.connect(_select_system_zip)
+    add_child(system_zip_dialog)
+    club_zip_dialog = FileDialog.new()
+    club_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    club_zip_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    club_zip_dialog.filters = PackedStringArray(["*.zip ; DX2 Seattle Club ZIP"])
+    club_zip_dialog.file_selected.connect(_open_club_zip)
+    add_child(club_zip_dialog)
+
 func _select_ibd(path: String) -> void:
     chosen_ibd = path
     status_label.text = "Optional IBD selected: " + path.get_file()
+
+func _open_gmp_file(path: String) -> void:
+    # Direct GMP load should not accidentally reuse a System path from a
+    # previous ZIP staging session.
+    chosen_system_path = ""
+    open_gmp(path)
+
+func _select_shared_zip(path: String) -> void:
+    chosen_shared_zip = path
+    status_label.text = "Shared map resources selected: " + path.get_file()
+
+func _select_system_zip(path: String) -> void:
+    chosen_system_zip = path
+    status_label.text = "Optional System ZIP selected: " + path.get_file()
+
+func _open_club_zip(path: String) -> void:
+    if build_thread != null:
+        status_label.text = "Already processing a map or archive."
+        return
+    if chosen_shared_zip.is_empty() or not FileAccess.file_exists(chosen_shared_zip):
+        status_label.text = "Choose Shared ZIP (maps.zip) before opening the Club ZIP."
+        return
+    if not FileAccess.file_exists(path):
+        status_label.text = "Club ZIP not found: " + path
+        return
+    var backend := ProjectSettings.globalize_path("res://backend/dx2_zip_stage.py")
+    if not FileAccess.file_exists(backend):
+        status_label.text = "ZIP staging script is missing: " + backend
+        return
+    var cache_root := OS.get_user_data_dir().path_join("zip_staging")
+    build_thread = Thread.new()
+    status_label.text = "Preparing Seattle Club source archives in a private, read-only cache..."
+    var result := build_thread.start(_run_zip_stage.bind(backend, path, chosen_shared_zip, chosen_system_zip, cache_root))
+    if result != OK:
+        build_thread = null
+        status_label.text = "Could not start ZIP worker: " + error_string(result)
+
+func _run_zip_stage(script: String, club: String, shared: String, system_zip: String, cache_root: String) -> void:
+    var args := PackedStringArray([script, "--club", club, "--maps", shared, "--output-root", cache_root])
+    if system_zip != "":
+        args.append_array(PackedStringArray(["--system", system_zip]))
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        var py_args := PackedStringArray(["-3"])
+        py_args.append_array(args)
+        output.clear()
+        code = OS.execute("py", py_args, output, true)
+    call_deferred("_zip_stage_finished", code, "\n".join(output))
+
+func _zip_stage_finished(code: int, output: String) -> void:
+    if build_thread != null:
+        build_thread.wait_to_finish()
+        build_thread = null
+    var parsed: Variant = null
+    for line in output.strip_edges().split("\n"):
+        var candidate: Variant = JSON.parse_string(line.strip_edges())
+        if typeof(candidate) == TYPE_DICTIONARY and candidate.has("status"):
+            parsed = candidate
+    if code != 0 or typeof(parsed) != TYPE_DICTIONARY or parsed.get("status") != "ok":
+        var description := "ZIP staging failed. Verify source ZIP files and Python installation."
+        if typeof(parsed) == TYPE_DICTIONARY:
+            description = str(parsed.get("message", description))
+        status_label.text = description
+        return
+    var map_path := str(parsed.get("map", ""))
+    if not FileAccess.file_exists(map_path):
+        status_label.text = "ZIP staging completed but the map is missing: " + map_path
+        return
+    chosen_ibd = ""
+    var system_value: Variant = parsed.get("system", null)
+    chosen_system_path = str(system_value) if typeof(system_value) == TYPE_STRING else ""
+    # The existing GMP importer now sees the original Club IBD and the shared
+    # IBD packages side by side. Source ZIPs remain untouched.
+    open_gmp(map_path)
 
 func open_gmp(path: String) -> void:
     if build_thread != null:
@@ -179,15 +300,17 @@ func open_gmp(path: String) -> void:
     var cache_root := OS.get_user_data_dir().path_join("map_cache")
     status_label.text = "Processing " + path.get_file() + " ... First load creates a cached 3D scene and actor metadata."
     build_thread = Thread.new()
-    var result := build_thread.start(_run_backend.bind(backend, path, cache_root, chosen_ibd))
+    var result := build_thread.start(_run_backend.bind(backend, path, cache_root, chosen_ibd, chosen_system_path))
     if result != OK:
         build_thread = null
         status_label.text = "Could not start map worker: " + error_string(result)
 
-func _run_backend(script: String, gmp_path: String, cache_root: String, ibd_path: String) -> void:
+func _run_backend(script: String, gmp_path: String, cache_root: String, ibd_path: String, system_path: String) -> void:
     var args := PackedStringArray([script, "--map", gmp_path, "--output-root", cache_root])
     if ibd_path != "":
         args.append_array(PackedStringArray(["--bundle", ibd_path]))
+    if system_path != "":
+        args.append_array(PackedStringArray(["--system", system_path]))
     var output: Array = []
     var code := OS.execute("python", args, output, true)
     if code == -1:
