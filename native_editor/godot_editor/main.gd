@@ -1549,7 +1549,7 @@ func _find_editable_property(actor: Dictionary, id: int) -> Dictionary:
         return item
     if kind in ["byte", "int"] and typeof(value) in [TYPE_INT, TYPE_FLOAT]:
         var number: float = float(value)
-        if is_finite(number) and floorf(number) == number:
+        if not is_nan(number) and not is_inf(number) and floorf(number) == number:
             return item
     if kind == "float" and typeof(value) in [TYPE_INT, TYPE_FLOAT]:
         if is_finite(float(value)):
@@ -1566,7 +1566,7 @@ func _validated_scalar(kind: String, value: Variant) -> Variant:
         if typeof(value) not in [TYPE_INT, TYPE_FLOAT]:
             return null
         var numeric := float(value)
-        if not is_finite(numeric) or floorf(numeric) != numeric:
+        if is_nan(numeric) or is_inf(numeric) or floorf(numeric) != numeric:
             return null
         if kind == "byte" and (numeric < 0 or numeric > 255):
             return null
@@ -1574,7 +1574,7 @@ func _validated_scalar(kind: String, value: Variant) -> Variant:
             return null
         return int(numeric)
     if kind == "float":
-        if typeof(value) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(value)):
+        if typeof(value) not in [TYPE_INT, TYPE_FLOAT] or (is_nan(float(value)) or is_inf(float(value))):
             return null
         return float(value) if absf(float(value)) <= 1000000.0 else null
     if kind == "string":
