@@ -34,6 +34,7 @@ var asset_pending_folder := ""
 var hierarchy_items: Dictionary = {}
 var hierarchy_syncing := false
 var inspector_title: Label
+var inspector_summary: Label
 var inspector_details: Label
 var placement_inspector: Label
 var inspector_transform_section: VBoxContainer
@@ -500,6 +501,10 @@ func _make_ui() -> void:
     inspector_title = Label.new()
     inspector_title.text = "Nothing selected"
     inspector_pane.add_child(inspector_title)
+    inspector_summary = Label.new()
+    inspector_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    inspector_summary.text = "Geometry: none selected\nMaterial: select a mesh"
+    inspector_pane.add_child(inspector_summary)
     inspector_details = Label.new()
     inspector_details.text = "Select an actor or rendered mesh in the Scene or Hierarchy."
     inspector_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -2008,12 +2013,78 @@ func _refresh_placement_panel() -> void:
     )
 
 
+func _mesh_geometry_material_summary(actor: Dictionary, node: MeshInstance3D = null) -> String:
+    # Keep basic source type and material info immediately visible even when
+    # the long original actor properties and mesh metadata require scrolling.
+    var lines: Array[String] = []
+    if not actor.is_empty():
+        lines.append("Actor: " + str(actor.get("class", "Unknown")) +
+            "  |  " + _actor_category(actor))
+        var resource: Variant = actor.get("mesh", null)
+        var mesh_name := ""
+        if typeof(resource) == TYPE_STRING:
+            mesh_name = str(resource)
+        elif typeof(resource) == TYPE_DICTIONARY:
+            mesh_name = str(resource.get("name", ""))
+        if not mesh_name.is_empty():
+            lines.append("Geometry: static mesh | " + mesh_name)
+        else:
+            lines.append("Geometry: logical actor (no linked mesh)")
+        var skin: Variant = actor.get("render_skin", null)
+        if typeof(skin) == TYPE_DICTIONARY:
+            lines.append("Skin: " + str(skin.get("selected", "(unavailable)")) +
+                " [" + str(skin.get("status", "unknown")) + "]")
+            var material_rows: Variant = skin.get("materials", [])
+            if typeof(material_rows) == TYPE_ARRAY:
+                var names: Array[String] = []
+                for item in material_rows:
+                    if typeof(item) == TYPE_DICTIONARY:
+                        var name := str(item.get("name", ""))
+                        if not name.is_empty() and not names.has(name):
+                            names.append(name)
+                if not names.is_empty():
+                    lines.append("Source materials: " + ", ".join(names.slice(0, 5)) +
+                        (" (more)" if names.size() > 5 else ""))
+    if is_instance_valid(node) and node.mesh != null:
+        if actor.is_empty():
+            var kind := "BSP render geometry" if str(node.name).begins_with("BSP_") else "Unlinked mesh geometry"
+            if str(node.name).begins_with("DraftProp_"):
+                kind = "Editor-only draft geometry"
+            lines.append("Geometry: " + kind + " | " + str(node.name))
+        var surface_count := node.mesh.get_surface_count()
+        lines.append("Surfaces: " + str(surface_count))
+        var material_names: Array[String] = []
+        for index in range(mini(surface_count, 8)):
+            var material: Material = node.get_active_material(index)
+            if material != null:
+                var label := material.resource_name
+                if label.is_empty():
+                    label = material.get_class()
+                if not material_names.has(label):
+                    material_names.append(label)
+        if not material_names.is_empty():
+            lines.append("Preview materials: " + ", ".join(material_names.slice(0, 4)) +
+                (" (more)" if material_names.size() > 4 else ""))
+    if lines.is_empty():
+        return "Geometry: none selected\nMaterial: select an actor or rendered mesh"
+    return "\n".join(lines)
+
+
 func _refresh_inspector_panel() -> void:
     if inspector_title == null or inspector_transform_section == null:
         return
     _refresh_brush_inspector()
     _refresh_placement_panel()
     var nodes := _selection_nodes()
+    var current_actor: Dictionary = {}
+    var current_mesh: MeshInstance3D = null
+    if nodes.size() == 1:
+        current_mesh = nodes[0]
+        if actors_by_name.has(str(nodes[0].name)):
+            current_actor = actors_by_name[str(nodes[0].name)]
+    elif nodes.is_empty() and not selected_actor.is_empty():
+        current_actor = selected_actor
+    inspector_summary.text = _mesh_geometry_material_summary(current_actor, current_mesh)
     var eligible := _draft_selected_is_prop()
     inspector_transform_section.visible = eligible
     _refresh_actor_property_editor()
