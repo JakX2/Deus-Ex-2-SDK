@@ -332,7 +332,7 @@ func _make_ui() -> void:
     for choice in [
         "All actors", "Static meshes", "Brushes", "Lights",
         "Volumes / triggers", "Item candidates", "Physics candidates",
-        "Gameplay / other"
+        "Gameplay / other", "Review mesh placement"
     ]:
         category_filter.add_item(choice)
     category_filter.selected = 0
@@ -1029,9 +1029,12 @@ func _actor_category(actor: Dictionary) -> String:
     return "Gameplay / other"
 
 
-func _category_visible(category: String) -> bool:
+func _category_visible(category: String, actor: Dictionary = {}) -> bool:
     if category_filter == null or category_filter.selected <= 0:
         return true
+    if category_filter.selected == 8:
+        var evidence: Variant = actor.get("placement_diagnostic", {})
+        return typeof(evidence) == TYPE_DICTIONARY and bool(evidence.get("needs_review", false))
     var values := [
         "All actors", "Static mesh", "Brush", "Light",
         "Volume / trigger", "Item candidate", "Physics candidate", "Gameplay / other"
@@ -1049,7 +1052,7 @@ func _refresh_actor_list() -> void:
         var name := str(actor.get("name", ""))
         var kind := str(actor.get("class", ""))
         var group := _actor_category(actor)
-        if not _category_visible(group):
+        if not _category_visible(group, actor):
             continue
         var meshname := ""
         var mesh_metadata: Variant = actor.get("mesh")
@@ -1450,8 +1453,11 @@ func _refresh_hierarchy() -> void:
             categories[group] = folder
         var name := str(actor.get("name", ""))
         var leaf := hierarchy_tree.create_item(categories[group])
-        leaf.set_text(0, name)
-        leaf.set_tooltip_text(0, str(actor.get("class", "?")))
+        var evidence: Variant = actor.get("placement_diagnostic", {})
+        var needs_review := typeof(evidence) == TYPE_DICTIONARY and bool(evidence.get("needs_review", false))
+        leaf.set_text(0, name + ("  [bounds?]" if needs_review else ""))
+        leaf.set_tooltip_text(0, str(actor.get("class", "?")) +
+            (" | Source mesh bounds/pivot require review" if needs_review else ""))
         leaf.set_metadata(0, name)
         hierarchy_items[name] = leaf
 
