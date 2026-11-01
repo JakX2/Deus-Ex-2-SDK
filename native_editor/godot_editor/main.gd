@@ -2798,11 +2798,7 @@ func _native_export_finished(code: int, output: String) -> void:
         native_export_thread.wait_to_finish()
         native_export_thread = null
     native_export_target = ""
-    var result: Variant = null
-    for line in output.strip_edges().split("\n"):
-        var item: Variant = JSON.parse_string(line.strip_edges())
-        if typeof(item) == TYPE_DICTIONARY and item.has("status"):
-            result = item
+    var result: Variant = JSON.parse_string(output.strip_edges())
     if code == 0 and typeof(result) == TYPE_DICTIONARY and result.get("status") == "written-unverified":
         status_label.text = "EXPERIMENTAL GMP copy saved: " + str(result.get("output", "")) + " | Existing actor translation ONLY. Not verified in game."
         return
