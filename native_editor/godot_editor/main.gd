@@ -23,6 +23,8 @@ var chosen_ibd: String = ""
 var chosen_shared_zip: String = ""
 var chosen_system_zip: String = ""
 var chosen_system_path: String = ""
+var preview_club_stairs := false
+var last_gmp_path: String = ""
 var build_thread: Thread = null
 var actors: Array = []
 var visible_actors: Array = []
@@ -120,6 +122,12 @@ func _make_ui() -> void:
     club_zip_btn.tooltip_text = "Safely stage the Club ZIP with the selected shared resources and open the GMP"
     club_zip_btn.pressed.connect(func(): club_zip_dialog.popup_centered_ratio(0.73))
     zip_bar.add_child(club_zip_btn)
+    var stairs_toggle := CheckBox.new()
+    stairs_toggle.text = "Experimental stair Roll"
+    stairs_toggle.tooltip_text = "Compare the unmodified retail transform preview with a reversible Seattle Club-only test. Reloads the level."
+    stairs_toggle.button_pressed = false
+    stairs_toggle.toggled.connect(_set_stair_preview)
+    zip_bar.add_child(stairs_toggle)
     var zip_hint := Label.new()
     zip_hint.text = "  Select shared resources, optional System, then Club ZIP"
     zip_bar.add_child(zip_hint)
@@ -217,6 +225,15 @@ func _open_gmp_file(path: String) -> void:
     chosen_system_path = ""
     open_gmp(path)
 
+func _set_stair_preview(enabled: bool) -> void:
+    preview_club_stairs = enabled
+    if build_thread != null:
+        status_label.text = "Stair preview changed. Reopen the map after the current import completes."
+    elif last_gmp_path != "" and FileAccess.file_exists(last_gmp_path):
+        open_gmp(last_gmp_path)
+    else:
+        status_label.text = "Stair Roll preview: " + ("experimental" if enabled else "original") + ". Open a DX2 map."
+
 func _select_shared_zip(path: String) -> void:
     chosen_shared_zip = path
     status_label.text = "Shared map resources selected: " + path.get_file()
@@ -297,20 +314,23 @@ func open_gmp(path: String) -> void:
     if not FileAccess.file_exists(backend):
         status_label.text = "Missing Python backend: " + backend
         return
+    last_gmp_path = path
     var cache_root := OS.get_user_data_dir().path_join("map_cache")
     status_label.text = "Processing " + path.get_file() + " ... First load creates a cached 3D scene and actor metadata."
     build_thread = Thread.new()
-    var result := build_thread.start(_run_backend.bind(backend, path, cache_root, chosen_ibd, chosen_system_path))
+    var result := build_thread.start(_run_backend.bind(backend, path, cache_root, chosen_ibd, chosen_system_path, preview_club_stairs))
     if result != OK:
         build_thread = null
         status_label.text = "Could not start map worker: " + error_string(result)
 
-func _run_backend(script: String, gmp_path: String, cache_root: String, ibd_path: String, system_path: String) -> void:
+func _run_backend(script: String, gmp_path: String, cache_root: String, ibd_path: String, system_path: String, stair_preview: bool) -> void:
     var args := PackedStringArray([script, "--map", gmp_path, "--output-root", cache_root])
     if ibd_path != "":
         args.append_array(PackedStringArray(["--bundle", ibd_path]))
     if system_path != "":
         args.append_array(PackedStringArray(["--system", system_path]))
+    if stair_preview:
+        args.append("--preview-club-stairs")
     var output: Array = []
     var code := OS.execute("python", args, output, true)
     if code == -1:
