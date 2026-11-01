@@ -1885,6 +1885,7 @@ func _copy_rotation_research() -> void:
 func _refresh_inspector_panel() -> void:
     if inspector_title == null or inspector_transform_section == null:
         return
+    _refresh_brush_inspector()
     var nodes := _selection_nodes()
     var eligible := _draft_selected_is_prop()
     inspector_transform_section.visible = eligible
@@ -2406,6 +2407,118 @@ func _finish_gizmo_drag() -> void:
     gizmo_drag_active = false
     _record_edit("Drag " + editor_tool, gizmo_undo_before)
     gizmo_undo_before.clear()
+
+
+func _update_brush_form(index: int) -> void:
+    if brush_kind_control == null:
+        return
+    var index_safe := clampi(index, 0, BrushGeometry.TYPES.size() - 1)
+    var spec: Dictionary = BrushGeometry.default_spec(BrushGeometry.TYPES[index_safe])
+    for axis in range(3):
+        brush_size_controls[axis].set_value_no_signal(float(spec["size"][axis]))
+    brush_steps_control.set_value_no_signal(float(spec["steps"]))
+    brush_steps_control.editable = spec["kind"] == "Stairs"
+
+
+func _place_preview_brush() -> void:
+    if scene_root == null:
+        status_label.text = "Load a map before constructing a preview brush."
+        return
+    var kind := BrushGeometry.TYPES[brush_kind_control.selected]
+    var size := []
+    for field in brush_size_controls:
+        size.append(float(field.value))
+    var spec: Dictionary = BrushGeometry.validate({
+        "kind": kind, "size": size, "steps": int(brush_steps_control.value)
+    })
+    if spec.is_empty():
+        status_label.text = "Invalid brush dimensions or step count."
+        return
+    var before := _capture_edit_state()
+    var name := "DraftProp_" + str(next_prop_copy_id)
+    next_prop_copy_id += 1
+    var draft := _new_draft_copy("Brush::" + kind, name,
+                               Transform3D(Basis.IDENTITY, camera_target))
+    if not is_instance_valid(draft):
+        return
+    _set_brush_spec(name, spec)
+    _clear_selection()
+    _add_selection_mesh(draft)
+    _refresh_selection_inspector()
+    _record_edit("Create " + kind + " preview brush", before)
+    status_label.text = "Created " + kind + " preview brush. No DX2 BSP/collision was written."
+
+
+func _set_brush_spec(name: String, raw: Variant) -> bool:
+    if not draft_prop_copies.has(name):
+        return false
+    var spec: Dictionary = BrushGeometry.validate(raw)
+    if spec.is_empty() or str(draft_prop_sources.get(name, "")) != "Brush::" + str(spec["kind"]):
+        return false
+    var mesh: Mesh = BrushGeometry.build_mesh(spec)
+    if mesh == null:
+        return false
+    var node: MeshInstance3D = draft_prop_copies[name]
+    node.mesh = mesh
+    var surface_material := StandardMaterial3D.new()
+    surface_material.albedo_color = Color(0.36, 0.72, 0.82, 0.75)
+    surface_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    surface_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    node.material_override = surface_material
+    draft_brush_specs[name] = spec
+    pick_faces_by_mesh.clear()
+    return true
+
+
+func _refresh_brush_inspector() -> void:
+    if brush_inspector_panel == null:
+        return
+    var nodes := _selection_nodes()
+    var show := nodes.size() == 1 and draft_brush_specs.has(str(nodes[0].name)) if nodes.size() == 1 else false
+    brush_inspector_panel.visible = show
+    if not show:
+        return
+    var spec: Dictionary = draft_brush_specs[str(nodes[0].name)]
+    brush_inspector_syncing = true
+    for axis in range(3):
+        brush_inspector_sizes[axis].set_value_no_signal(float(spec["size"][axis]))
+    brush_inspector_steps.set_value_no_signal(float(spec["steps"]))
+    brush_inspector_steps.editable = spec["kind"] == "Stairs"
+    brush_inspector_syncing = false
+
+
+func _change_brush_dimension(value: float, axis: int) -> void:
+    if brush_inspector_syncing:
+        return
+    var nodes := _selection_nodes()
+    if nodes.size() != 1:
+        return
+    var name := str(nodes[0].name)
+    if not draft_brush_specs.has(name):
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    spec["size"][axis] = value
+    var before := _capture_edit_state()
+    if _set_brush_spec(name, spec):
+        _refresh_prop_inspection()
+        _record_edit("Resize brush " + name, before)
+
+
+func _change_brush_steps(value: float) -> void:
+    if brush_inspector_syncing:
+        return
+    var nodes := _selection_nodes()
+    if nodes.size() != 1:
+        return
+    var name := str(nodes[0].name)
+    if not draft_brush_specs.has(name):
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    spec["steps"] = int(value)
+    var before := _capture_edit_state()
+    if _set_brush_spec(name, spec):
+        _refresh_prop_inspection()
+        _record_edit("Edit stair count " + name, before)
 
 
 func _draft_source_name(instance: MeshInstance3D) -> String:
