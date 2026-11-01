@@ -23,12 +23,31 @@ from dx2bundles import load_bundles,parse_mesh
 from dx2textures import parse_material,parse_texture,to_png
 
 
-def rotation_matrix(rot):
-    """Rz(yaw) * Ry(-pitch) * Rx(roll), in UE x,y,z basis."""
+# Map-specific, reversible preview correction supported by retail Seattle Club
+# mesh bounds and nearby BSP blocks. Do not extrapolate to other maps or actors.
+CLUB_STAIR_MESHES = frozenset({'1hub_club-stair-12ft', '1hub_penthouseb1_stair1'})
+
+
+def preview_roll_sign(map_name, mesh_name):
+    """Return -1 only for the two confirmed Seattle Club stair mesh types.
+
+    Original game rotator values remain unchanged in actor metadata.
+    """
+    if (str(map_name).casefold() == 'm1_seattle_club.gmp'
+            and str(mesh_name).casefold() in CLUB_STAIR_MESHES):
+        return -1
+    return 1
+
+
+def rotation_matrix(rot, roll_sign=1):
+    """Rz(yaw) * Ry(-pitch) * Rx(roll_sign * roll), UE basis.
+
+    roll_sign=-1 is an opt-in export-only correction, not a native rewrite.
+    """
     pitch,yaw,roll=[float(x or 0)*math.pi/32768 for x in (rot or [0,0,0])]
     cp,sp=math.cos(-pitch),math.sin(-pitch)
     cy,sy=math.cos(yaw),math.sin(yaw)
-    cr,sr=math.cos(roll),math.sin(roll)
+    cr,sr=math.cos(roll * roll_sign),math.sin(roll * roll_sign)
     # Apply Rx -> Ry -> Rz in that order
     rx=((1,0,0),(0,cr,-sr),(0,sr,cr))
     ry=((cp,0,sp),(0,1,0),(-sp,0,cp))
@@ -37,13 +56,13 @@ def rotation_matrix(rot):
     return multiply(rz,multiply(ry,rx))
 
 
-def actor_matrix(actor, local_scale=(1.0, 1.0, 1.0)):
+def actor_matrix(actor, local_scale=(1.0, 1.0, 1.0), roll_sign=1):
     """Actor node matrix in column-major glTF order.
 
     local_scale is a visually reversible export-only correction in glTF axes.
     It is *not* guaranteed to correspond to a native DX2 actor scale field.
     """
-    R=rotation_matrix(actor.get('rotation'))
+    R=rotation_matrix(actor.get('rotation'), roll_sign=roll_sign)
     # Gltf coordinate basis = UE (x,z,y), with coordinate swap on both sides
     P=(0,2,1)
     a=[[R[P[i]][P[j]] * local_scale[j] for j in range(3)] for i in range(3)]
@@ -297,6 +316,7 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
     if unknown:
         raise ValueError("Transform overrides reference actors not in map: "+", ".join(unknown))
     applied_overrides=[]
+    club_stair_preview_fixes=[]
     for actor in actors:
         met=actor.get('mesh')
         if not met:continue
@@ -314,9 +334,17 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
             scale=transform_overrides.get(actor['name'],(1.0,1.0,1.0))
             if actor['name'] in transform_overrides:
                 applied_overrides.append({'actor':actor['name'],'local_scale':list(scale)})
-            builder.node({'name':actor['name'],'mesh':mid,'matrix':actor_matrix(actor,scale),
+            roll_sign=preview_roll_sign(pkg.path.name,name)
+            if roll_sign == -1:
+                club_stair_preview_fixes.append({'actor':actor['name'],
+                    'export':actor['export'],'mesh':name,
+                    'source_roll':(actor.get('rotation') or [0,0,0])[2],
+                    'preview_roll_sign':roll_sign})
+            builder.node({'name':actor['name'],'mesh':mid,
+              'matrix':actor_matrix(actor,scale,roll_sign=roll_sign),
               'extras':{'DX2ExportIndex':actor['export'],'DX2Class':actor['class'],
                         'DX2MeshName':name,'DX2MapLocation':[actor['x'],actor['y'],actor['z']],
+                        'DX2PreviewRollSign':roll_sign,
                         'DX2ExportScaleOverride':list(scale) if actor['name'] in transform_overrides else None}})
             actors_real.append(actor)
     missed=sorted(set(transform_overrides)-{x["actor"] for x in applied_overrides})
@@ -329,6 +357,7 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
          'used_bundles':[b.name for b in allbundles],
          'bundle_resource_name_collisions':{str(k):v for k,v in collisions.items()},
          'actor_transform_overrides_applied':applied_overrides,
+         'club_stair_preview_roll_corrections':club_stair_preview_fixes,
          'source_actor_positions':len(actors),
          'mesh_linked_actors':sum('mesh' in a for a in actors),
          'placed_real_mesh_actors':len(actors_real),'missing_mesh_actors':miss,
