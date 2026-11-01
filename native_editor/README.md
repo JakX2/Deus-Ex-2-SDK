@@ -421,3 +421,45 @@ python native_editor/godot_editor/backend/dx2_asset_catalog.py --bundle "C:\DX2\
 The catalog is read-only and has fixture-only regression tests. Original game
 archives are never published or changed. Godot screenshots and in-game tests
 are still required before marking new content-authoring features complete.
+
+## 0.4.1-preview: typed DX2 actor-property drafts
+
+In the Inspector, selecting a decoded **original actor** (including
+logical-only actors with no rendered mesh) opens an Actor properties panel.
+It displays **unambiguous scalar Gamesys properties** using native controls:
+
+- Boolean values: checkbox.
+- Byte, integer and floating-point values: bounded numeric field.
+- Short string values: text field, committed on Enter.
+- Filter by decoded property name, numeric ID or scalar type.
+- Values changed from the source are marked with an asterisk. **Reset values**
+  restores the selected actor's decoded source values and is undoable.
+
+The original actor metadata remains unchanged, with original source
+values still displayed in the read-only Inspector. Properties use the
+**original numeric property ID**, type and actor export index. If a property
+has duplicate IDs, an unknown/complex type, an out-of-range value, or it
+represents an object reference, mesh reference (ID 43) or TriggerScript
+(ID 92), DX2Ed keeps it **locked** instead of guessing its meaning. This
+experimental editor supports `bool`, `byte`, `int`, `float` and
+`string` only; source `name`, `struct`, `array`, `object` and other
+types are read-only. Editable numbers are conservatively limited to +/-1e6,
+bytes to 0..255 and text to 512 characters. The first 48 matching scalar
+fields are shown to keep the Inspector responsive.
+
+Typed property changes participate in **Ctrl+Z / Ctrl+Y**, **Save draft**,
+**Load draft**, per-actor **Reset values**, and **Restore All**. Drafts
+are backward-compatible `DX2Ed-prop-draft-v1` JSON containing an optional
+`property_edits` list of actor name, source export, numeric property ID,
+type and override value. Loading validates **all** entries against the
+current map before applying anything. Existing transforms/copies remain
+compatible. The original GMP, IBD and Gamesys package **are never written**.
+
+These are **SDK-side metadata changes only**. Edits do not yet affect
+live game logic, physics or TriggerScript execution, and native package
+round-tripping remains a separate, unverified milestone. Only simple
+decoded scalar types are exposed intentionally.
+
+CI uses synthetic actors to validate editing, search, undo/redo, sidecar
+round trips, rejecting restricted references, logical-actor selection and
+Restore All, plus the existing Godot 4.3 scene tests.
