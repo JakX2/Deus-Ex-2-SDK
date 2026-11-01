@@ -504,3 +504,48 @@ DX2Ed to refresh the local catalog before trying unplaced assets.
 The CI tests use fixture-only meshes and a synthetic two-cube Godot scene to
 check resource identity, GLB output, duplication, undo/redo, draft recovery
 and Restore All. Real-map interactive placement still needs Windows testing.
+
+## 0.4.3-preview: Gamesys class palette and observed actor templates
+
+The left workspace now has a **Classes** tab alongside Hierarchy and Assets.
+It displays two separately sourced kinds of DX2 class information:
+
+- **Declared classes** read from the user's original System/GameSys
+  `.d2u` UnrealScript `TextBuffer` declarations, when a System folder,
+  System ZIP or supported class catalog JSON was supplied. Each entry keeps
+  its qualified package name and declared parent class.
+- **Observed classes** seen in the loaded original `.gmp`, even without
+  System data. Each class shows how many source actors use it, an example
+  original actor and its exported mesh when available. In duplicate-name
+  cases, class-to-package attribution is *not guessed*.
+
+The new backend cache `archetypes.json` is generated alongside
+`actors.json`, `scene.glb` and `assets.json`. Old valid map caches are
+upgraded **in place** to preserve JSON drafts. The palette is searchable by
+class, qualified package, parent class or example mesh. **Inspect example
+actor** focuses the original actor. **Place template draft** copies the
+rendered visual mesh of an observed actor near the current editor camera
+target, with its class, original actor name and original GMP export index
+stored separately as provenance.
+
+A template is **only a reversible 3D visual draft**. It is *not* a native
+Gamesys instantiation: it has no synthesized class inheritance, default
+properties, package export, AI, collision or TriggerScript logic. The
+palette refuses to place a class that lacks a valid rendered example.
+The existing Undo/Redo, Duplicate, Save/Load draft, and Restore All systems
+preserve this template provenance, and sidecar reload validates the
+class-name/original-actor/export tuple against the source catalog before
+loading anything. Older prop drafts without template metadata still work.
+
+The `dx2_archetype_catalog.py` module performs conservative class matching:
+it never silently selects a GameSys package when two declared classes share
+a short name. Actor property signatures come from observed instances,
+not assumed constructor defaults or validated inherited schemas. This
+is the foundation for later typed actor construction, not proof of working
+game-engine spawn support.
+
+Fixture-only Python tests cover declared inheritance, observed examples,
+unmatched classes, ambiguous short names and synthetic catalog files.
+Godot 4.3 smoke tests exercise the new tab, visual template placement,
+Undo/Redo, sidecar persistence and rejection of invalid template provenance.
+In-game round trips and native class creation remain future work.
