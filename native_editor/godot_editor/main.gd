@@ -10,6 +10,7 @@ var scene_root: Node3D
 var camera: Camera3D
 var actor_list: ItemList
 var search_box: LineEdit
+var category_filter: OptionButton
 var inspector: TextEdit
 var status_label: Label
 var glb_dialog: FileDialog
@@ -218,6 +219,16 @@ func _make_ui() -> void:
     search_box.placeholder_text = "Filter name, class, mesh..."
     search_box.text_changed.connect(func(_value): _refresh_actor_list())
     sidebar.add_child(search_box)
+    category_filter = OptionButton.new()
+    for choice in [
+        "All actors", "Static meshes", "Brushes", "Lights",
+        "Volumes / triggers", "Item candidates", "Physics candidates",
+        "Gameplay / other"
+    ]:
+        category_filter.add_item(choice)
+    category_filter.selected = 0
+    category_filter.item_selected.connect(func(_index): _refresh_actor_list())
+    sidebar.add_child(category_filter)
     actor_list = ItemList.new()
     actor_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
     actor_list.item_selected.connect(_actor_list_selected)
@@ -587,6 +598,31 @@ func _mesh_world_aabb(instance: MeshInstance3D) -> AABB:
         result = result.expand(instance.global_transform * local.get_endpoint(i))
     return result
 
+func _actor_category(actor: Dictionary) -> String:
+    # This is class-name *discovery*, NOT proof of rigid-body physics,
+    # inventory behavior, or final in-game script inheritance.
+    var raw := str(actor.get("class", ""))
+    var kind := raw.to_lower()
+    if kind == "staticmeshactor": return "Static mesh"
+    if kind == "brush": return "Brush"
+    if kind == "light" or kind.ends_with("light"): return "Light"
+    if "volume" in kind or "trigger" in kind: return "Volume / trigger"
+    if "pickup" in kind or "inventory" in kind or "item" in kind: return "Item candidate"
+    if "physicsprop" in kind or "rigidbody" in kind or "kactor" in kind or "pushable" in kind:
+        return "Physics candidate"
+    return "Gameplay / other"
+
+
+func _category_visible(category: String) -> bool:
+    if category_filter == null or category_filter.selected <= 0:
+        return true
+    var values := [
+        "All actors", "Static mesh", "Brush", "Light",
+        "Volume / trigger", "Item candidate", "Physics candidate", "Gameplay / other"
+    ]
+    return category == values[category_filter.selected]
+
+
 func _refresh_actor_list() -> void:
     actor_list.clear()
     visible_actors.clear()
@@ -596,16 +632,19 @@ func _refresh_actor_list() -> void:
             continue
         var name := str(actor.get("name", ""))
         var kind := str(actor.get("class", ""))
+        var group := _actor_category(actor)
+        if not _category_visible(group):
+            continue
         var meshname := ""
         var mesh_metadata: Variant = actor.get("mesh")
         if typeof(mesh_metadata) == TYPE_DICTIONARY:
             meshname = str(mesh_metadata.get("name", ""))
         elif typeof(mesh_metadata) == TYPE_STRING:
             meshname = str(mesh_metadata)
-        if query != "" and query not in (name + " " + kind + " " + meshname).to_lower():
+        if query != "" and query not in (name + " " + kind + " " + meshname + " " + group).to_lower():
             continue
         visible_actors.append(actor)
-        actor_list.add_item(name + "  [" + kind + "]")
+        actor_list.add_item(name + "  [" + kind + " | " + group + "]")
     if visible_actors.is_empty() and not actors.is_empty():
         status_label.text = "No actors match search."
 
@@ -644,6 +683,8 @@ func _format_actor_diagnostic(actor: Dictionary) -> String:
         "Actor: " + name,
         "Source map: " + (current_source_map_name if not current_source_map_name.is_empty() else "(not recorded)"),
         "Class: " + str(actor.get("class", "Unknown")),
+        "Editor category (class hint): " + _actor_category(actor),
+        "Physics / inventory semantics: not validated by this classification",
         "GMP export index: " + str(actor.get("export", "?")),
         "Mesh resource: " + mesh_name,
         "GMP position (UE units): " + str(source_location),
@@ -683,6 +724,7 @@ func _format_mesh_diagnostic(mesh_instance: MeshInstance3D) -> String:
     return "\n".join([
         "DX2Ed map geometry diagnostic (read-only)",
         "Rendered mesh node: " + str(mesh_instance.name),
+        "Editor category: " + ("BSP render geometry" if str(mesh_instance.name).begins_with("BSP_") else "Unlinked rendered geometry"),
         "Original DX2 actor metadata: not matched; may be BSP or imported geometry",
         "Godot global transform: " + str(mesh_instance.global_transform),
         "Godot world AABB: " + str(box.position) + " size " + str(box.size),
