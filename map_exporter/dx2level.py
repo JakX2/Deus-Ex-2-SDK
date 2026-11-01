@@ -20,7 +20,7 @@ from pathlib import Path
 import struct
 from dx2scene import Package,find_bsp,mesh_metadata,scene_data,SCALE,unreal_to_world
 from dx2bundles import load_bundles,parse_mesh
-from dx2placement import analyze_mesh_placement, summarize_placement
+from dx2placement import analyze_mesh_placement, summarize_placement, add_world_transform_evidence
 from dx2textures import parse_material,parse_texture,to_png
 
 
@@ -367,7 +367,8 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
             unique_meshes[key]={'mesh':m,'bundle':b.name,'gltf_by_skin':{}}
         resource=unique_meshes[key]
         m=resource['mesh'];triangles+=len(m.indices)//3
-        placement_diagnostics.append(analyze_mesh_placement(actor, m, resource['bundle']))
+        placement_diagnostics.append(add_world_transform_evidence(
+            analyze_mesh_placement(actor, m, resource['bundle']), actor_matrix(actor)))
         requested_skin=actor_requested_skin(actor)
         skin_index,skin_name,skin_status=resolve_skin_variant(m,requested_skin)
         if skin_status=='requested_skin_missing':
