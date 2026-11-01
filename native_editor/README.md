@@ -58,3 +58,47 @@ node. Selection now prioritizes real actor meshes over broad BSP bounding boxes.
 See [Seattle Club findings](Seattle_Club_Transform_Findings.md).
 The editor remains read-only; there is **no global geometry rotation fix** in
 this release. Godot visual runtime tests remain to be done on Windows.
+
+## Experimental 0.2.2: exact geometry picking (development branch)
+
+The Seattle Club diagnostic picker now tests **rendered triangles** after a fast
+ray/AABB broad-phase check. This prevents a large BSP box or a hollow mesh's
+bounding box from stealing clicks on nearby props. The nearest surface wins;
+an actor and BSP surface at effectively the same distance prefer the actor.
+The original actor-name mapping and **Copy mesh info** feature remain in place.
+
+The copied report now includes a "Pick method: rendered triangle" line, the
+Godot-space hit position and distance. Vertex faces are cached by imported mesh
+resource and discarded on map reload; all changes are in the read-only viewer.
+
+This branch also fixes the diagnostic's mismatch with retail Actor Explorer
+JSON, whose `mesh` field is a string, `mesh_bounds` is a separate field, and
+`location` is an [x, y, z] array.
+
+### Validation (requires Godot 4.3 or newer)
+
+Run the asset-free headless smoke test from the **repository root**:
+
+```powershell
+godot --headless --path native_editor/godot_editor --script res://tests/smoke_triangle_picking.gd
+```
+
+The script checks solid triangle hits, rotated/scaled hits, an AABB false
+positive, and the Actor Explorer JSON field layout. An output line beginning
+`DX2Ed triangle picking smoke: PASS` is expected on success.
+
+Then run the Python source/backend tests:
+
+```powershell
+python -m unittest discover -s native_editor/tests -v
+```
+
+Finally, open `M1_Seattle_Club.gmp` in the graphical viewer and click a
+suspicious object. Use **Copy mesh info** to inspect its identity, transform,
+world bounds, and exact surface hit. Compare prop selection against the same
+spot on the retail map.
+
+**Limits:** this is a source-level change awaiting the above Godot runtime and
+Windows/Seattle Club checks. Meshes without readable triangle faces cannot be
+picked by bounding box as a substitute; transparent visual effects and gameplay
+visibility are not yet modeled. This does not modify any original GMP/IBD.
