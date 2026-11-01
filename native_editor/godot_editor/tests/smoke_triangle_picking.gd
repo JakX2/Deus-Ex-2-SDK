@@ -63,7 +63,10 @@ func _run() -> void:
     var diagnosis: String = viewer._format_actor_diagnostic({
         "name": "TestActor", "class": "StaticMeshActor", "export": 7,
         "mesh": "FixtureMesh", "mesh_bounds": [[-1, -1, -1], [1, 1, 1]],
-        "location": [10, 20, 30], "rotation": [0, 16384, 0]
+        "location": [10, 20, 30], "rotation": [0, 16384, 0],
+        "render_skin": {"requested": "Tan Stones", "selected": "Tan Stones",
+            "status": "matched", "materials": [
+                {"name": "SyntheticTan", "resolution": "missing_diffuse_texture"}]}
     })
     if not diagnosis.contains("Mesh resource: FixtureMesh") or not diagnosis.contains("10, 20, 30"):
         _fail("Actor Explorer schema did not reach diagnostic")
@@ -109,6 +112,10 @@ func _run() -> void:
         return
     if viewer.draft_prop_copies.values()[0].global_position.y < 0.1:
         _fail("draft sidecar did not restore edited transform")
+        return
+
+    if not diagnosis.contains("Exported skin: Tan Stones") or not diagnosis.contains("Skin material: SyntheticTan | missing_diffuse_texture"):
+        _fail("skin diagnostics should show exact missing texture status")
         return
 
     print("DX2Ed triangle picking smoke: PASS (faces, transforms, sparse AABB, actor schema)")
