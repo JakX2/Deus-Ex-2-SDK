@@ -665,3 +665,36 @@ game before adopting any new coordinate convention.
 Python fixture tests check matching and mismatching GMP/IBD/vertex bounds,
 large mesh-local pivots, missing evidence and cache upgrades; the Godot 4.3
 smoke test checks the nested Inspector, warning filter and evidence panel.
+
+## 0.5.3-preview: Restore the right Inspector at normal screen widths
+
+The right-side Inspector vanished in Windows screenshots because the long
+**single-line** top, resource and prop toolbars expanded the minimum width
+of the entire editor beyond the application viewport. The Scene and Inspector
+could have a formally correct nested split yet still end up outside the
+visible window. DX2Ed now uses **wrapping toolbars**, a bounded Scene/Inspector
+split, and a **vertically scrollable Inspector**. This keeps detailed
+original actor data and editable property controls reachable on typical
+1280–1440px windows instead of clipping them offscreen.
+
+Selecting a rendered map actor now shows a compact top summary:
+
+- **Actor class and geometric category** (static mesh, BSP render geometry,
+  volume/trigger, logical actor or editor-only draft, as applicable).
+- **Original static mesh name** and the number of rendered mesh surfaces.
+- **Selected source skin** and **source material names with resolution status**
+  when supplied by the importer.
+- **Preview material names**, where the GLB renderer exposes them.
+- The previous read-only **Source actor details**, including original
+  rotations, position, mesh bounds and decoded properties, remain in the
+  scrollable pane below. Source geometry placement evidence and the rotation
+  lab also remain available.
+
+These categories are derived from known actor class hints, GLB surfaces
+and export-time material resolution reports, **not verified runtime shader,
+physics or gameplay classes**.
+
+Godot 4.3 CI now exercises a **1280×720 window layout** and fails if the
+toolbar exceeds the editor width or if the Inspector ends outside it. It
+also tests that the geometry/material summary and read-only detail pane
+are available. As always, real Windows layout verification is still useful.
