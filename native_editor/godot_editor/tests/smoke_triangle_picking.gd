@@ -209,6 +209,16 @@ func _run() -> void:
     if viewer.hierarchy_tree == null or viewer.inspector_title == null:
         _fail("Hierarchy / Inspector panes were not constructed")
         return
+    # HSplitContainer has only two content panes. A previous third direct
+    # child caused the Inspector to vanish at common screen resolutions.
+    var inner_split: Node = viewer.inspector_title.get_parent().get_parent()
+    if not inner_split is HSplitContainer or inner_split.get_child_count() != 2:
+        _fail("Inspector and Scene must share a nested two-child HSplitContainer")
+        return
+    var outer_split: Node = inner_split.get_parent()
+    if not outer_split is HSplitContainer or outer_split.get_child_count() != 2:
+        _fail("Outer split must show Hierarchy and Scene/Inspector group")
+        return
     if not viewer.hierarchy_items.has("StaticMeshActor__1") or not viewer.hierarchy_items.has("StaticMeshActor__2"):
         _fail("Hierarchy missing the two synthetic scene actors")
         return
@@ -219,6 +229,26 @@ func _run() -> void:
         _fail("Hierarchy selection did not choose the rendered actor")
         return
     viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    var audit_actor: Dictionary = viewer.actors_by_name["StaticMeshActor__1"]
+    audit_actor["placement_diagnostic"] = {
+        "status": "observed", "needs_review": true,
+        "mesh_pivot_to_center_m": 3.2,
+        "ibd_vertex_bounds_max_delta_ue": 0.0,
+        "gmp_vertex_bounds_max_delta_ue": 20.0,
+        "warnings": ["gmp_vertex_bounds_disagree"]
+    }
+    viewer._refresh_inspector_panel()
+    if not viewer.placement_inspector.visible or not viewer.placement_inspector.text.contains("gmp_vertex_bounds_disagree"):
+        _fail("Placement Inspector should display original GMP/IBD bounds evidence")
+        return
+    viewer.category_filter.select(8)
+    viewer._refresh_actor_list()
+    if viewer.visible_actors.size() != 1 or str(viewer.visible_actors[0].get("name", "")) != "StaticMeshActor__1":
+        _fail("Review mesh placement filter must show only flagged source actors")
+        return
+    viewer.category_filter.select(0)
+    viewer._refresh_actor_list()
+    viewer.select_actor(audit_actor)
     # Catalog UI includes resources not already placed in the scene.
     viewer.asset_catalog = {"schema":"DX2Ed-asset-catalog-v1", "assets":[
         {"name":"SyntheticStair","kind":"staticmesh","bundle":"fictional.ibd","resource_index":1,"bytes":128},
