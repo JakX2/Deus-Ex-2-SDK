@@ -121,6 +121,14 @@ func _run() -> void:
     if abs(original.global_position.x - before.x - 0.25) > 0.001:
         _fail("preview move must use default 0.25-metre step")
         return
+    viewer._undo_edit()
+    if original.global_position.distance_to(before) > 0.001:
+        _fail("Ctrl+Z should undo the first move")
+        return
+    viewer._redo_edit()
+    if abs(original.global_position.x - before.x - 0.25) > 0.001:
+        _fail("Ctrl+Y should redo the first move")
+        return
     viewer._reset_selected_prop()
     if original.global_position.distance_to(before) > 0.001:
         _fail("reset prop did not restore original transform")
@@ -163,6 +171,14 @@ func _run() -> void:
     if viewer.draft_prop_copies.size() != 1:
         _fail("duplicate did not produce a preview prop")
         return
+    viewer._undo_edit()
+    if viewer.draft_prop_copies.size() != 0:
+        _fail("Undo should remove the duplicated preview prop")
+        return
+    viewer._redo_edit()
+    if viewer.draft_prop_copies.size() != 1:
+        _fail("Redo should recreate the duplicate under its original name")
+        return
     var preview: MeshInstance3D = viewer.selected_mesh
     viewer._move_selected_prop(Vector3.UP)
     viewer._rotate_selected_prop(15.0)
@@ -180,6 +196,33 @@ func _run() -> void:
         return
     if viewer.draft_prop_copies.values()[0].global_position.y < 0.1:
         _fail("draft sidecar did not restore edited transform")
+        return
+
+    # Restore All must clear live edits AND the saved draft. It remains undoable.
+    viewer._restore_all_edits()
+    if viewer.draft_prop_copies.size() != 0:
+        _fail("Restore All must remove every preview copy")
+        return
+    if original.global_position.distance_to(before) > 0.001:
+        _fail("Restore All must restore the original imported pose")
+        return
+    var empty_draft: Variant = JSON.parse_string(FileAccess.get_file_as_string(viewer._draft_file_path()))
+    if typeof(empty_draft) != TYPE_DICTIONARY or not empty_draft["moved"].is_empty() or not empty_draft["copies"].is_empty():
+        _fail("Restore All should persist an empty sidecar draft")
+        return
+    viewer._undo_edit()
+    if viewer.draft_prop_copies.size() != 1:
+        _fail("Restore All should be undoable for the current session")
+        return
+    viewer._redo_edit()
+    if viewer.draft_prop_copies.size() != 0:
+        _fail("Restore All should be redoable")
+        return
+    # A fresh edit after undo clears redo history.
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    viewer._move_selected_prop(Vector3.RIGHT)
+    if not viewer.redo_stack.is_empty():
+        _fail("New edits should clear redo history")
         return
 
     if not diagnosis.contains("Exported skin: Tan Stones") or not diagnosis.contains("Skin material: SyntheticTan | missing_diffuse_texture"):
