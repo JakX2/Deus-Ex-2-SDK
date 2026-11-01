@@ -1094,7 +1094,11 @@ func _inspect_archetype_template() -> void:
 func _place_archetype_template() -> void:
     var source := str(selected_archetype.get("template_actor", ""))
     var qualified := str(selected_archetype.get("qualified", ""))
-    var expected_export := int(selected_archetype.get("template_export", -1))
+    var template_export: Variant = selected_archetype.get("template_export", null)
+    if typeof(template_export) not in [TYPE_INT, TYPE_FLOAT]:
+        status_label.text = "Class has no verified original export index; visual placement unavailable."
+        return
+    var expected_export := int(template_export)
     if scene_root == null or not meshes_by_actor.has(source) or not actors_by_name.has(source):
         status_label.text = "Class lacks a rendered example; cannot create a safe visual draft."
         return
