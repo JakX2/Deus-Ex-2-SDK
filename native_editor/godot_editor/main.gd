@@ -911,6 +911,7 @@ func _clear_current_scene() -> void:
     property_editor_last_key = ""
     draft_prop_copies.clear()
     draft_prop_sources.clear()
+    draft_brush_specs.clear()
     next_prop_copy_id = 1
     undo_stack.clear()
     redo_stack.clear()
@@ -1228,6 +1229,8 @@ func _draft_source_is_valid(source: String) -> bool:
         return true
     if source.begins_with("AssetMesh::"):
         return not _asset_record(source.trim_prefix("AssetMesh::")).is_empty()
+    if source.begins_with("Brush::"):
+        return BrushGeometry.TYPES.has(source.trim_prefix("Brush::"))
     return false
 
 
@@ -1906,6 +1909,7 @@ func _refresh_inspector_panel() -> void:
         var template: Dictionary = draft_template_provenance.get(name, {})
         inspector_details.text = (
             "Preview-only mesh: " + str(draft_prop_sources.get(name, "?")) +
+            ("\nBrush: " + str(draft_brush_specs[name].get("kind", "")) if draft_brush_specs.has(name) else "") +
             ("\nTemplate class: " + str(template.get("qualified", "")) if not template.is_empty() else "") +
             "\nNo native DX2 actor, physics or scripts")
     elif actors_by_name.has(name):
@@ -2269,7 +2273,8 @@ func _capture_edit_state() -> Dictionary:
             copies[name] = {
                 "source": str(draft_prop_sources.get(name, "")),
                 "transform": copy.global_transform,
-                "class_template": draft_template_provenance.get(name, {}).duplicate(true)
+                "class_template": draft_template_provenance.get(name, {}).duplicate(true),
+                "brush": draft_brush_specs.get(name, {}).duplicate(true)
             }
     return {
         "moved": moved,
@@ -2299,6 +2304,7 @@ func _apply_edit_state(state: Dictionary) -> void:
     draft_prop_copies.clear()
     draft_prop_sources.clear()
     draft_template_provenance.clear()
+    draft_brush_specs.clear()
     next_prop_copy_id = 1
     var moved: Dictionary = state.get("moved", {})
     for name in moved:
@@ -2315,6 +2321,9 @@ func _apply_edit_state(state: Dictionary) -> void:
         if _draft_source_is_valid(source):
             var rebuilt := _new_draft_copy(source, str(name), info["transform"])
             if is_instance_valid(rebuilt):
+                var brush: Variant = info.get("brush", {})
+                if typeof(brush) == TYPE_DICTIONARY and not brush.is_empty():
+                    _set_brush_spec(str(name), brush)
                 var prov: Variant = info.get("class_template", {})
                 if typeof(prov) == TYPE_DICTIONARY and _valid_template_provenance(prov, source):
                     if not prov.is_empty():
@@ -2534,7 +2543,10 @@ func _new_draft_copy(source_name: String, copy_name: String, world_transform: Tr
         return null
     var mesh: Mesh = null
     var source: MeshInstance3D = null
-    if source_name.begins_with("AssetMesh::"):
+    if source_name.begins_with("Brush::"):
+        var kind := source_name.trim_prefix("Brush::")
+        mesh = BrushGeometry.build_mesh(BrushGeometry.default_spec(kind))
+    elif source_name.begins_with("AssetMesh::"):
         var resource_name := source_name.trim_prefix("AssetMesh::")
         if not _load_asset_mesh(resource_name):
             return null
@@ -2556,6 +2568,8 @@ func _new_draft_copy(source_name: String, copy_name: String, world_transform: Tr
     duplicate.global_transform = world_transform
     draft_prop_copies[copy_name] = duplicate
     draft_prop_sources[copy_name] = source_name
+    if source_name.begins_with("Brush::"):
+        _set_brush_spec(copy_name, BrushGeometry.default_spec(source_name.trim_prefix("Brush::")))
     all_mesh_instances.append(duplicate)
     return duplicate
 
@@ -2574,6 +2588,8 @@ func _duplicate_selected_prop() -> void:
         next_prop_copy_id += 1
         var new_copy := _new_draft_copy(source, name, node.global_transform)
         if is_instance_valid(new_copy):
+            if draft_brush_specs.has(str(node.name)):
+                _set_brush_spec(name, draft_brush_specs[str(node.name)])
             if draft_template_provenance.has(str(node.name)):
                 draft_template_provenance[name] = draft_template_provenance[str(node.name)].duplicate(true)
             copies.append(new_copy)
@@ -2637,6 +2653,7 @@ func _reset_selected_prop() -> void:
             draft_prop_copies.erase(name)
             draft_prop_sources.erase(name)
             draft_template_provenance.erase(name)
+            draft_brush_specs.erase(name)
             all_mesh_instances.erase(node)
             node.free()
             removed += 1
@@ -2705,7 +2722,8 @@ func _save_prop_draft() -> void:
         if is_instance_valid(duplicate):
             copies.append({"name": name, "from_actor": draft_prop_sources[name],
                            "transform": _transform_to_array(duplicate.global_transform),
-                           "class_template": draft_template_provenance.get(name, {}).duplicate(true)})
+                           "class_template": draft_template_provenance.get(name, {}).duplicate(true),
+                           "brush": draft_brush_specs.get(name, {}).duplicate(true)})
     var document := {
         "schema": "DX2Ed-prop-draft-v1",
         "map_cache": current_folder,
@@ -2748,8 +2766,21 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
         if typeof(entry) != TYPE_DICTIONARY or _array_to_transform(entry.get("transform")) == null:
             status_label.text = "Prop draft contains an invalid transform."
             return
-    # Validate class-template attribution before modifying anything.
+    # Validate all brush dimensions and provenance before changing anything.
     for entry in copies:
+        var source := str(entry.get("from_actor", ""))
+        var brush: Variant = entry.get("brush", {})
+        if typeof(brush) != TYPE_DICTIONARY:
+            status_label.text = "Invalid brush metadata. Nothing loaded."
+            return
+        if source.begins_with("Brush::"):
+            var checked: Dictionary = BrushGeometry.validate(brush)
+            if checked.is_empty() or source != "Brush::" + str(checked["kind"]):
+                status_label.text = "Untrusted brush source or dimensions. Nothing loaded."
+                return
+        elif not brush.is_empty():
+            status_label.text = "Brush metadata cannot be attached to a non-brush."
+            return
         var prov: Variant = entry.get("class_template", {})
         if typeof(prov) != TYPE_DICTIONARY or not _valid_template_provenance(prov, str(entry.get("from_actor", ""))):
             status_label.text = "Draft has an untrusted class template attribution; nothing loaded."
@@ -2771,6 +2802,7 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
     draft_prop_copies.clear()
     draft_prop_sources.clear()
     draft_template_provenance.clear()
+    draft_brush_specs.clear()
     next_prop_copy_id = 1
     for entry in moved:
         var name := str(entry.get("actor", ""))
@@ -2783,6 +2815,9 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
             continue
         var instance := _new_draft_copy(from_actor, name, _array_to_transform(entry["transform"]))
         if is_instance_valid(instance):
+            var brush: Dictionary = entry.get("brush", {})
+            if not brush.is_empty():
+                _set_brush_spec(name, brush)
             var prov: Dictionary = entry.get("class_template", {})
             if not prov.is_empty():
                 draft_template_provenance[name] = prov.duplicate(true)
