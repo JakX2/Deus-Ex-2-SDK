@@ -130,6 +130,28 @@ func _run() -> void:
         _fail("demo actor has no mesh")
         return
     var before := original.global_position
+    # Source rotator 16384 = 90 degrees. Axis remapping must match exporter.
+    var converted: Basis = viewer._ue_rotator_basis([0, 16384, 0])
+    if (converted * Vector3.RIGHT).distance_to(Vector3.BACK) > 0.001:
+        _fail("Unreal Yaw 90 should map Godot X to +Z")
+        return
+    if not viewer.rotation_lab_panel.visible or viewer.rotation_lab_modes.item_count != 6:
+        _fail("Rotation Lab must expose six reversible hypotheses for a placed actor")
+        return
+    var original_basis := original.global_transform.basis
+    viewer.rotation_lab_modes.select(2)  # Extra +90 deg yaw
+    viewer._preview_rotation_hypothesis()
+    if original.global_transform.basis == original_basis:
+        _fail("Rotation Lab preview should change the rendered basis")
+        return
+    viewer._undo_edit()
+    if original.global_transform.basis != original_basis:
+        _fail("Rotation Lab orientation preview must undo cleanly")
+        return
+    var lab_report: String = viewer._rotation_evidence_text()
+    if not lab_report.contains("GMP rotator") or not lab_report.contains("Original export"):
+        _fail("Rotation evidence must include original source and alternative hypotheses")
+        return
     if not viewer.inspector_transform_section.visible:
         _fail("Editable static mesh must expose Inspector transforms")
         return
