@@ -21,7 +21,7 @@ for relative in ('map_exporter', 'actor_explorer'):
 from dx2_map_exporter import list_levels, choose_bundles, run_export
 from dx2_actor_explorer import actor_records
 
-CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.0'
+CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.4-club-stair-preview-v1'
 
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
