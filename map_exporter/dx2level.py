@@ -73,6 +73,37 @@ def actor_matrix(actor, local_scale=(1.0, 1.0, 1.0), roll_sign=1):
             t[0],t[1],t[2],1]
 
 
+def actor_requested_skin(actor):
+    """Read the original placed-actor skin name from Gamesys property 0x38.
+
+    It is a per-instance choice, not a property of the StaticMesh resource.
+    """
+    for prop in actor.get('game_properties', []):
+        if prop.get('id') != 56 or not isinstance(prop.get('value'), dict):
+            continue
+        value = prop['value'].get('Skin')
+        if isinstance(value, str) and value.strip() and value.strip().casefold() != 'none':
+            return value.strip()
+    return None
+
+
+def resolve_skin_variant(mesh, requested_skin=None):
+    """Return (index, selected name, status), never guessing a missing variant.
+
+    Names are case-insensitive but otherwise must match the IBD skin name.
+    """
+    if not mesh.skins:
+        return 0, None, 'no_skins'
+    default = mesh.skins[0].get('name', 'Default')
+    if not requested_skin:
+        return 0, default, 'mesh_default'
+    for index, variant in enumerate(mesh.skins):
+        name = variant.get('name', '')
+        if name.casefold().strip() == requested_skin.casefold().strip():
+            return index, name, 'matched'
+    return 0, default, 'requested_skin_missing'
+
+
 class Builder:
     def __init__(self,resources,materials,textures,alternate_skin_fallback=True):
         self.resources=resources;self.material_sources=materials;self.texture_sources=textures
@@ -223,12 +254,14 @@ class Builder:
         idx=len(self.doc['materials']);self.doc['materials'].append(entry)
         self.mat_cache[key]=idx
         return idx
-    def mesh_data(self,mesh,source_bundle):
+    def mesh_data(self,mesh,source_bundle,skin_index=0):
         xyz=[unreal_to_world(x) for x in mesh.positions]
         normal=[(n[0],n[2],n[1]) for n in mesh.normals]
         attrs={'POSITION':self.vectors(xyz,3),'NORMAL':self.vectors(normal,3),
                'TEXCOORD_0':self.vectors(mesh.uv,2,'VEC2')}
-        skin=mesh.skins[0]['materials'] if mesh.skins else []
+        if mesh.skins and not (0 <= skin_index < len(mesh.skins)):
+            raise ValueError(f'Invalid skin index {skin_index} for {mesh.name}')
+        skin=mesh.skins[skin_index]['materials'] if mesh.skins else []
         prim=[]
         for si,sec in enumerate(mesh.sections):
             inds=mesh.indices[sec['first_index']:sec['first_index']+sec['index_count']]
@@ -239,7 +272,7 @@ class Builder:
             alternate=None
             if self.alternate_skin_fallback and 'holo' not in name.casefold() and 'membrane' not in name.casefold():
                 if name.casefold() not in self.material_sources and name.casefold() not in self.texture_sources:
-                    for variant in mesh.skins[1:]:
+                    for variant in (v for i,v in enumerate(mesh.skins) if i != skin_index):
                         options=variant.get('materials',[])
                         if (si<len(options) and options[si].casefold() in self.material_sources
                             and options[si].casefold().split('-',1)[0] == name.casefold().split('-',1)[0]):
@@ -249,7 +282,8 @@ class Builder:
             prim.append({'attributes':attrs,'indices':accessor,'material':self.material(name,source_bundle,alternate),'mode':4})
         if not prim:return None
         idx=len(self.doc['meshes']);self.doc['meshes'].append({'name':mesh.name,'primitives':prim,
-                              'extras':{'bundle':source_bundle,'meshTriangles':sum(s['index_count']//3 for s in mesh.sections)}})
+                              'extras':{'bundle':source_bundle,'meshTriangles':sum(s['index_count']//3 for s in mesh.sections),
+                                        'DX2SkinVariant':mesh.skins[skin_index]['name'] if mesh.skins else None}})
         return idx
     def bsp_block(self,block,index):
         prim=[]
@@ -317,6 +351,8 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
         raise ValueError("Transform overrides reference actors not in map: "+", ".join(unknown))
     applied_overrides=[]
     club_stair_preview_fixes=[]
+    selected_actor_skins=[]
+    missing_actor_skins=[]
     for actor in actors:
         met=actor.get('mesh')
         if not met:continue
@@ -326,10 +362,21 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
         if key not in unique_meshes:
             b,r=source
             m=parse_mesh(b,r)
-            unique_meshes[key]={'mesh':m,'bundle':b.name,
-                'gltf':builder.mesh_data(m,b.name)}
-        m=unique_meshes[key]['mesh'];triangles+=len(m.indices)//3
-        mid=unique_meshes[key]['gltf']
+            unique_meshes[key]={'mesh':m,'bundle':b.name,'gltf_by_skin':{}}
+        resource=unique_meshes[key]
+        m=resource['mesh'];triangles+=len(m.indices)//3
+        requested_skin=actor_requested_skin(actor)
+        skin_index,skin_name,skin_status=resolve_skin_variant(m,requested_skin)
+        if skin_status=='requested_skin_missing':
+            missing_actor_skins.append({'actor':actor['name'],'export':actor['export'],
+                'mesh':name,'requested':requested_skin,'fallback_skin':skin_name,
+                'available_skins':[variant.get('name','') for variant in m.skins]})
+        if requested_skin:
+            selected_actor_skins.append({'actor':actor['name'],'export':actor['export'],
+                'mesh':name,'requested':requested_skin,'selected':skin_name,'status':skin_status})
+        if skin_index not in resource['gltf_by_skin']:
+            resource['gltf_by_skin'][skin_index]=builder.mesh_data(m,resource['bundle'],skin_index)
+        mid=resource['gltf_by_skin'][skin_index]
         if mid is not None:
             scale=transform_overrides.get(actor['name'],(1.0,1.0,1.0))
             if actor['name'] in transform_overrides:
@@ -344,7 +391,8 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
               'matrix':actor_matrix(actor,scale,roll_sign=roll_sign),
               'extras':{'DX2ExportIndex':actor['export'],'DX2Class':actor['class'],
                         'DX2MeshName':name,'DX2MapLocation':[actor['x'],actor['y'],actor['z']],
-                        'DX2PreviewRollSign':roll_sign,
+                        'DX2RequestedSkin':requested_skin,'DX2SelectedSkin':skin_name,
+                        'DX2SkinStatus':skin_status,'DX2PreviewRollSign':roll_sign,
                         'DX2ExportScaleOverride':list(scale) if actor['name'] in transform_overrides else None}})
             actors_real.append(actor)
     missed=sorted(set(transform_overrides)-{x["actor"] for x in applied_overrides})
@@ -357,6 +405,8 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
          'used_bundles':[b.name for b in allbundles],
          'bundle_resource_name_collisions':{str(k):v for k,v in collisions.items()},
          'actor_transform_overrides_applied':applied_overrides,
+         'actor_skin_selections':selected_actor_skins,
+         'actor_skin_variant_missing':missing_actor_skins,
          'club_stair_preview_enabled':bool(preview_club_stairs),
          'club_stair_preview_roll_corrections':club_stair_preview_fixes,
          'source_actor_positions':len(actors),
