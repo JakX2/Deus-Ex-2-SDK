@@ -957,6 +957,155 @@ func _update_camera() -> void:
     camera.global_position = camera_target + offset
     camera.look_at(camera_target, Vector3.UP)
 
+## The gizmo lives outside the imported GLB and is never included in
+## actor selection, scene exports, or the original game data.
+func _gizmo_color(axis: Vector3) -> Color:
+    if axis.x > 0.5: return Color(0.98, 0.26, 0.24)
+    if axis.y > 0.5: return Color(0.29, 0.94, 0.32)
+    return Color(0.28, 0.52, 1.0)
+
+
+func _create_transform_gizmo() -> void:
+    _refresh_gizmo_shape()
+
+
+func _refresh_gizmo_shape() -> void:
+    if gizmo_root == null:
+        return
+    for old_handle in gizmo_handles:
+        if is_instance_valid(old_handle):
+            old_handle.queue_free()
+    gizmo_handles.clear()
+    var axes := [Vector3.RIGHT, Vector3.UP, Vector3.BACK]
+    for axis in axes:
+        var handle := MeshInstance3D.new()
+        handle.name = editor_tool + "_axis_" + str(gizmo_handles.size())
+        handle.set_meta("axis", axis)
+        var tint := StandardMaterial3D.new()
+        tint.albedo_color = _gizmo_color(axis)
+        tint.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+        tint.cull_mode = BaseMaterial3D.CULL_DISABLED
+        tint.no_depth_test = true
+        handle.material_override = tint
+        handle.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        if editor_tool == "rotate":
+            var torus := TorusMesh.new()
+            torus.inner_radius = 0.80
+            torus.outer_radius = 0.90
+            handle.mesh = torus
+            handle.quaternion = Quaternion(Vector3.UP, axis)
+        elif editor_tool == "scale":
+            var cube := BoxMesh.new()
+            cube.size = Vector3(0.23, 0.23, 0.23)
+            handle.mesh = cube
+            handle.position = axis * 0.92
+        else:
+            var shaft := CylinderMesh.new()
+            shaft.top_radius = 0.015
+            shaft.bottom_radius = 0.050
+            shaft.height = 0.90
+            handle.mesh = shaft
+            handle.position = axis * 0.52
+            handle.quaternion = Quaternion(Vector3.UP, axis)
+        gizmo_root.add_child(handle)
+        gizmo_handles.append(handle)
+    _update_gizmo_pose()
+
+
+func _update_gizmo_pose() -> void:
+    if gizmo_root == null:
+        return
+    var show := _draft_selected_is_prop()
+    gizmo_root.visible = show
+    if not show:
+        return
+    gizmo_root.global_position = selected_mesh.global_position
+    # Keep the handles about the same apparent size while zooming.
+    var distance := camera.global_position.distance_to(gizmo_root.global_position)
+    var scale_size := clamp(distance * 0.11, 0.14, 12.0)
+    gizmo_root.scale = Vector3.ONE * scale_size
+
+
+func _gizmo_axis_scalar(mouse_position: Vector2, pivot: Vector3, axis: Vector3) -> Variant:
+    var ray := _mouse_ray(mouse_position)
+    if ray.is_empty():
+        return null
+    var look := camera.global_position - pivot
+    var normal := look - axis * look.dot(axis)
+    if normal.length_squared() < 0.0001:
+        var fallback := Vector3.UP if abs(axis.dot(Vector3.UP)) < 0.9 else Vector3.RIGHT
+        normal = fallback - axis * fallback.dot(axis)
+    normal = normal.normalized()
+    var plane := Plane(normal, normal.dot(pivot))
+    var point: Variant = plane.intersects_ray(ray["origin"], ray["direction"])
+    if point == null:
+        return null
+    return (point - pivot).dot(axis)
+
+
+func _begin_gizmo_drag() -> bool:
+    if not _draft_selected_is_prop():
+        return false
+    _update_gizmo_pose()
+    var ray := _mouse_ray(view_container.get_local_mouse_position())
+    if ray.is_empty():
+        return false
+    var best_distance := INF
+    var best_axis := Vector3.ZERO
+    for handle in gizmo_handles:
+        if not is_instance_valid(handle):
+            continue
+        var hit := _ray_mesh_triangles(handle, ray["origin"], ray["direction"])
+        if not hit.is_empty() and float(hit["distance"]) < best_distance:
+            best_distance = float(hit["distance"])
+            best_axis = handle.get_meta("axis")
+    if best_axis == Vector3.ZERO:
+        return false
+    gizmo_drag_axis = best_axis
+    gizmo_drag_pivot = selected_mesh.global_position
+    gizmo_start_transform = selected_mesh.global_transform
+    gizmo_drag_start_screen = view_container.get_local_mouse_position()
+    var scalar: Variant = _gizmo_axis_scalar(gizmo_drag_start_screen, gizmo_drag_pivot, best_axis)
+    gizmo_drag_start_scalar = float(scalar) if scalar != null else 0.0
+    gizmo_drag_active = true
+    return true
+
+
+func _apply_gizmo_drag() -> void:
+    if not gizmo_drag_active or not _draft_selected_is_prop():
+        return
+    var distance := camera.global_position.distance_to(gizmo_drag_pivot)
+    var mouse := view_container.get_local_mouse_position()
+    if editor_tool == "rotate":
+        var angle := (mouse.x - gizmo_drag_start_screen.x) * 0.012
+        if Input.is_key_pressed(KEY_CTRL):
+            angle = snapped(angle, deg_to_rad(15.0))
+        var rotated := gizmo_start_transform
+        rotated.basis = Basis(gizmo_drag_axis, angle) * gizmo_start_transform.basis
+        selected_mesh.global_transform = rotated
+    else:
+        var scalar: Variant = _gizmo_axis_scalar(mouse, gizmo_drag_pivot, gizmo_drag_axis)
+        if scalar == null:
+            return
+        var change := float(scalar) - gizmo_drag_start_scalar
+        if editor_tool == "move":
+            if Input.is_key_pressed(KEY_CTRL):
+                change = snapped(change, float(prop_edit_step.value))
+            var translated := gizmo_start_transform
+            translated.origin += gizmo_drag_axis * change
+            selected_mesh.global_transform = translated
+        elif editor_tool == "scale":
+            var factor := clamp(1.0 + change / max(0.5, distance * 0.18), 0.05, 100.0)
+            if Input.is_key_pressed(KEY_CTRL):
+                factor = max(0.05, snapped(factor, 0.1))
+            var transformed := gizmo_start_transform
+            var axis_index := 0 if gizmo_drag_axis.x > 0.5 else (1 if gizmo_drag_axis.y > 0.5 else 2)
+            transformed.basis[axis_index] = gizmo_start_transform.basis[axis_index] * factor
+            selected_mesh.global_transform = transformed
+    _update_gizmo_pose()
+    _refresh_prop_inspection()
+
+
 func _camera_offset() -> Vector3:
     return Vector3(
         sin(orbit_yaw) * cos(orbit_pitch), sin(orbit_pitch),
