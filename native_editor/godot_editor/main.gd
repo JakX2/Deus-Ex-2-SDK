@@ -29,6 +29,7 @@ var inspector_syncing := false
 var property_editor_panel: VBoxContainer
 var property_editor_rows: VBoxContainer
 var property_editor_note: Label
+var property_filter: LineEdit
 var property_overrides: Dictionary = {} # Actor name -> decimal property ID -> scalar
 var property_editor_syncing := false
 var property_editor_last_key := ""
@@ -418,6 +419,20 @@ func _make_ui() -> void:
     var property_heading_edit := Label.new()
     property_heading_edit.text = "Actor properties  |  Draft edits only"
     property_editor_panel.add_child(property_heading_edit)
+    var property_toolbar := HBoxContainer.new()
+    property_editor_panel.add_child(property_toolbar)
+    property_filter = LineEdit.new()
+    property_filter.placeholder_text = "Filter property ID, name or type..."
+    property_filter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    property_filter.text_changed.connect(func(_query):
+        property_editor_last_key = ""
+        _refresh_actor_property_editor())
+    property_toolbar.add_child(property_filter)
+    var reset_actor_properties := Button.new()
+    reset_actor_properties.text = "Reset values"
+    reset_actor_properties.tooltip_text = "Discard this actor's draft scalar overrides, with Ctrl+Z support"
+    reset_actor_properties.pressed.connect(_reset_actor_property_edits)
+    property_toolbar.add_child(reset_actor_properties)
     property_editor_note = Label.new()
     property_editor_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     property_editor_panel.add_child(property_editor_note)
@@ -1593,7 +1608,8 @@ func _refresh_actor_property_editor() -> void:
         actor = selected_actor
     var name := str(actor.get("name", ""))
     property_editor_panel.visible = not name.is_empty()
-    var key := name + "|" + JSON.stringify(property_overrides.get(name, {}))
+    var query := property_filter.text.strip_edges().to_lower() if property_filter != null else ""
+    var key := name + "|" + query + "|" + JSON.stringify(property_overrides.get(name, {}))
     if not property_editor_panel.visible:
         property_editor_last_key = ""
         return
@@ -1619,6 +1635,9 @@ func _refresh_actor_property_editor() -> void:
         if supported > 48:
             continue
         var kind := str(safe.get("type", "")).to_lower()
+        var prop_label := str(safe.get("name", "Property_" + str(id)))
+        if query != "" and query not in (prop_label + " " + str(id) + " " + kind).to_lower():
+            continue
         var current: Variant = property_overrides.get(name, {}).get(str(id), safe.get("value"))
         var row := HBoxContainer.new()
         property_editor_rows.add_child(row)
@@ -1681,6 +1700,24 @@ func _actor_property_changed(value: Variant, name: String, id: int) -> void:
     _refresh_actor_property_editor()
     _record_edit("Property " + str(id) + " on " + name, before)
     status_label.text = "Saved actor property " + str(id) + " as preview metadata. Ctrl+Z to undo."
+
+
+func _reset_actor_property_edits() -> void:
+    var name := ""
+    var nodes := _selection_nodes()
+    if nodes.size() == 1 and actors_by_name.has(str(nodes[0].name)):
+        name = str(nodes[0].name)
+    elif nodes.is_empty() and not selected_actor.is_empty():
+        name = str(selected_actor.get("name", ""))
+    if name.is_empty() or not property_overrides.has(name):
+        status_label.text = "This actor has no edited scalar property values."
+        return
+    var before := _capture_edit_state()
+    property_overrides.erase(name)
+    property_editor_last_key = ""
+    _refresh_actor_property_editor()
+    _record_edit("Reset actor properties " + name, before)
+    status_label.text = "Restored this actor's original property values; Ctrl+Z to undo."
 
 
 func _serialize_property_edits() -> Array:
@@ -1845,6 +1882,7 @@ func _capture_edit_state() -> Dictionary:
         "copies": copies,
         "property_edits": property_overrides.duplicate(true),
         "selected": selected_meshes.keys().duplicate(),
+        "selected_logical_actor": str(selected_actor.get("name", "")) if selected_meshes.is_empty() else "",
         "next_id": next_prop_copy_id
     }
 
@@ -1891,7 +1929,13 @@ func _apply_edit_state(state: Dictionary) -> void:
             node = meshes_by_actor[name]
         if is_instance_valid(node):
             _add_selection_mesh(node)
-    _refresh_selection_inspector()
+    if _selection_nodes().is_empty() and actors_by_name.has(str(state.get("selected_logical_actor", ""))):
+        selected_actor = actors_by_name[str(state["selected_logical_actor"])]
+        selected_diagnostic = _format_actor_diagnostic(selected_actor)
+        inspector.text = selected_diagnostic + "\n\n--- ORIGINAL ACTOR PROPERTIES ---\n" + JSON.stringify(selected_actor, "  ")
+        _refresh_inspector_panel()
+    else:
+        _refresh_selection_inspector()
     _sync_actor_list_selection()
     _refresh_hierarchy()
     _update_gizmo_pose()
