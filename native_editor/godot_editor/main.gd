@@ -792,34 +792,132 @@ func _copy_selection_details() -> void:
     DisplayServer.clipboard_set(selected_diagnostic)
     status_label.text = "Copied selection diagnostic to clipboard. Paste it into your bug report."
 
+func _selection_nodes() -> Array[MeshInstance3D]:
+    var nodes: Array[MeshInstance3D] = []
+    for node in selected_meshes.values():
+        if is_instance_valid(node):
+            nodes.append(node)
+    return nodes
+
+
+func _selection_pivot() -> Vector3:
+    var nodes := _selection_nodes()
+    if nodes.is_empty():
+        return Vector3.ZERO
+    var pivot := Vector3.ZERO
+    for node in nodes:
+        pivot += node.global_position
+    return pivot / float(nodes.size())
+
+
+func _add_selection_mesh(mesh_instance: MeshInstance3D) -> void:
+    if not is_instance_valid(mesh_instance):
+        return
+    var name := str(mesh_instance.name)
+    if selected_meshes.has(name):
+        selected_mesh = mesh_instance
+        return
+    selected_meshes[name] = mesh_instance
+    selection_original_overlays[name] = mesh_instance.material_overlay
+    mesh_instance.material_overlay = overlay_material
+    selected_mesh = mesh_instance
+    selected_actor = actors_by_name.get(name, {})
+
+
+func _remove_selection_mesh(mesh_instance: MeshInstance3D) -> void:
+    if not is_instance_valid(mesh_instance):
+        return
+    var name := str(mesh_instance.name)
+    if not selected_meshes.has(name):
+        return
+    mesh_instance.material_overlay = selection_original_overlays.get(name, null)
+    selected_meshes.erase(name)
+    selection_original_overlays.erase(name)
+    var survivors := _selection_nodes()
+    selected_mesh = survivors.back() if not survivors.is_empty() else null
+    selected_actor = actors_by_name.get(str(selected_mesh.name), {}) if is_instance_valid(selected_mesh) else {}
+
+
+func _refresh_selection_inspector() -> void:
+    var nodes := _selection_nodes()
+    if nodes.is_empty():
+        selected_diagnostic = ""
+        inspector.text = "No rendered objects selected."
+        status_label.text = "No objects selected."
+        return
+    if nodes.size() == 1:
+        var node := nodes[0]
+        var name := str(node.name)
+        if actors_by_name.has(name):
+            selected_actor = actors_by_name[name]
+            selected_diagnostic = _format_actor_diagnostic(selected_actor)
+            inspector.text = selected_diagnostic + "\n\n--- ORIGINAL ACTOR PROPERTIES ---\n" + JSON.stringify(selected_actor, "  ")
+        else:
+            selected_actor = {}
+            selected_diagnostic = _format_mesh_diagnostic(node)
+            inspector.text = selected_diagnostic
+        status_label.text = "Selected " + name
+        return
+    var lines := ["DX2Ed multi-selection (preview only)",
+        "Selected objects: " + str(nodes.size()),
+        "Group pivot (Godot world): " + str(_selection_pivot()),
+        "Move, Rotate and Scale use the group pivot.",
+        "Original GMP/IBD files remain unchanged.", ""]
+    for node in nodes:
+        lines.append(str(node.name) + " | " + str(node.global_position))
+    selected_diagnostic = "\n".join(lines)
+    inspector.text = selected_diagnostic
+    status_label.text = str(nodes.size()) + " objects selected. Group gizmo active."
+
+
 func _select_mesh_only(mesh_instance: MeshInstance3D) -> void:
     _clear_selection()
-    selected_mesh = mesh_instance
-    selected_overlay_original = mesh_instance.material_overlay
-    selected_mesh.material_overlay = overlay_material
-    selected_diagnostic = _format_mesh_diagnostic(mesh_instance)
-    inspector.text = selected_diagnostic
-    status_label.text = "Selected scene geometry: " + str(mesh_instance.name) + " (not an actor)"
+    _add_selection_mesh(mesh_instance)
+    _refresh_selection_inspector()
+    _sync_actor_list_selection()
+
+
+func _toggle_selection_mesh(mesh_instance: MeshInstance3D) -> void:
+    var name := str(mesh_instance.name)
+    # Only editable placed meshes and draft clones can join a group selection.
+    if not (actors_by_name.has(name) and meshes_by_actor.has(name)) and not draft_prop_copies.has(name):
+        status_label.text = "Ctrl-click supports static mesh actors and draft copies, not BSP geometry."
+        return
+    if selected_meshes.has(name):
+        _remove_selection_mesh(mesh_instance)
+    else:
+        _add_selection_mesh(mesh_instance)
+    _refresh_selection_inspector()
+    _sync_actor_list_selection()
+
 
 func select_actor(actor: Dictionary) -> void:
     _clear_selection()
     selected_actor = actor
     var name := str(actor.get("name", ""))
     if meshes_by_actor.has(name):
-        selected_mesh = meshes_by_actor[name]
-        selected_overlay_original = selected_mesh.material_overlay
-        selected_mesh.material_overlay = overlay_material
-    selected_diagnostic = _format_actor_diagnostic(actor)
-    inspector.text = selected_diagnostic + "\n\n--- ORIGINAL ACTOR PROPERTIES ---\n" + JSON.stringify(actor, "  ")
-    status_label.text = "Selected " + name + " | " + str(actor.get("class", "Unknown"))
+        _add_selection_mesh(meshes_by_actor[name])
+        _refresh_selection_inspector()
+    else:
+        selected_diagnostic = _format_actor_diagnostic(actor)
+        inspector.text = selected_diagnostic + "\n\n--- ORIGINAL ACTOR PROPERTIES ---\n" + JSON.stringify(actor, "  ")
+        status_label.text = "Selected " + name + " | " + str(actor.get("class", "Unknown"))
+    _sync_actor_list_selection()
+
 
 func _clear_selection() -> void:
-    if is_instance_valid(selected_mesh):
-        selected_mesh.material_overlay = selected_overlay_original
+    for name in selected_meshes:
+        var node: MeshInstance3D = selected_meshes[name]
+        if is_instance_valid(node):
+            node.material_overlay = selection_original_overlays.get(name, null)
+    selected_meshes.clear()
+    selection_original_overlays.clear()
     selected_mesh = null
     selected_overlay_original = null
     selected_diagnostic = ""
     selected_actor = {}
+
+
 
 ## Editable *preview* operations. Native GMP/IBD save remains intentionally disabled.
 ## Drafts live in user:// and are never written next to retail files.
