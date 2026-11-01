@@ -41,6 +41,10 @@ var all_mesh_instances: Array[MeshInstance3D] = []
 var pick_faces_by_mesh: Dictionary = {}
 var selected_diagnostic: String = ""
 var selected_mesh: MeshInstance3D
+# Multi-selection preserves each original material overlay independently.
+var selected_meshes: Dictionary = {}   # name -> MeshInstance3D
+var selection_original_overlays: Dictionary = {} # name -> Material or null
+var gizmo_start_transforms: Dictionary = {} # name -> Transform3D
 var selected_actor: Dictionary = {}
 var selected_overlay_original: Material
 var overlay_material: StandardMaterial3D
@@ -120,7 +124,7 @@ func _make_ui() -> void:
     copy_btn.pressed.connect(_copy_selection_details)
     toolbar.add_child(copy_btn)
     var hint := Label.new()
-    hint.text = "  RMB+WASD/QE fly  |  Shift faster  |  Alt+LMB orbit  |  MMB pan  |  F focus"
+    hint.text = "  Ctrl+click multi-select  |  RMB+WASD fly  |  Alt+LMB orbit  |  F focus"
     toolbar.add_child(hint)
 
     var zip_bar := HBoxContainer.new()
@@ -231,7 +235,8 @@ func _make_ui() -> void:
     sidebar.add_child(category_filter)
     actor_list = ItemList.new()
     actor_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    actor_list.item_selected.connect(_actor_list_selected)
+    actor_list.select_mode = ItemList.SELECT_MULTI
+    actor_list.multi_selected.connect(_actor_list_multi_selected)
     actor_list.item_activated.connect(func(_index): focus_selected())
     sidebar.add_child(actor_list)
 
@@ -645,12 +650,62 @@ func _refresh_actor_list() -> void:
             continue
         visible_actors.append(actor)
         actor_list.add_item(name + "  [" + kind + " | " + group + "]")
+    _sync_actor_list_selection()
     if visible_actors.is_empty() and not actors.is_empty():
         status_label.text = "No actors match search."
 
 func _actor_list_selected(index: int) -> void:
+    # Backward compatibility with the single-selection signal.
     if index >= 0 and index < visible_actors.size():
         select_actor(visible_actors[index])
+
+
+func _actor_list_multi_selected(_index: int, _is_selected: bool) -> void:
+    # The list emits an event per changed row (including Shift range selection).
+    # Defer rebuilding until the control finishes applying the complete gesture.
+    call_deferred("_apply_list_multi_selection")
+
+
+func _apply_list_multi_selection() -> void:
+    var rows := actor_list.get_selected_items()
+    if rows.is_empty():
+        _clear_selection()
+        inspector.text = "No actors selected."
+        return
+    var choices: Array[MeshInstance3D] = []
+    var last_actor: Dictionary = {}
+    for row in rows:
+        if row < 0 or row >= visible_actors.size():
+            continue
+        var actor: Dictionary = visible_actors[row]
+        last_actor = actor
+        var name := str(actor.get("name", ""))
+        if meshes_by_actor.has(name):
+            var node: MeshInstance3D = meshes_by_actor[name]
+            if is_instance_valid(node) and not choices.has(node):
+                choices.append(node)
+    _clear_selection()
+    for node in choices:
+        _add_selection_mesh(node)
+    if choices.is_empty() and not last_actor.is_empty():
+        # Logical-only actors remain inspectable, but not transformable.
+        selected_actor = last_actor
+        selected_diagnostic = _format_actor_diagnostic(last_actor)
+        inspector.text = selected_diagnostic + "\n\n--- ORIGINAL ACTOR PROPERTIES ---\n" + JSON.stringify(last_actor, "  ")
+        status_label.text = "Selected logical actor: " + str(last_actor.get("name", "?"))
+    else:
+        _refresh_selection_inspector()
+
+
+func _sync_actor_list_selection() -> void:
+    if actor_list == null:
+        return
+    actor_list.deselect_all()
+    for index in range(visible_actors.size()):
+        if selected_meshes.has(str(visible_actors[index].get("name", ""))):
+            actor_list.select(index, false)
+
+
 
 func _format_actor_diagnostic(actor: Dictionary) -> String:
     var name := str(actor.get("name", "Unknown"))
