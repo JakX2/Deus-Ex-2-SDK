@@ -63,8 +63,18 @@ class DirectGMPTests(unittest.TestCase):
                       'type_id':4,'resource_index':0,'bytes':123}] }):
             first = backend.build(self.game_map, self.output)
             second = backend.build(self.game_map, self.output)
+            # Emulate an older private cache without the new class catalog.
+            Path(first['archetypes_json']).unlink()
+            third = backend.build(self.game_map, self.output)
         self.assertFalse(first['cached'])
         self.assertTrue(second['cached'])
+        self.assertTrue(third['cached'])
+        self.assertTrue(Path(third['archetypes_json']).is_file())
+        class_doc = json.loads(Path(third['archetypes_json']).read_text())
+        self.assertEqual(class_doc['schema'], 'DX2Ed-archetype-catalog-v1')
+        self.assertEqual(class_doc['classes'][0]['class'], 'StaticMeshActor')
+        self.assertEqual(class_doc['classes'][0]['observed_actors'], 1)
+        self.assertFalse(class_doc['native_spawn_supported'])
         self.assertTrue(Path(first['assets_json']).is_file())
         self.assertEqual(json.loads(Path(first['assets_json']).read_text())['assets'][0]['name'],
                          'SyntheticStair')
