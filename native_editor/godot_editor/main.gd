@@ -1136,6 +1136,7 @@ func _duplicate_selected_prop() -> void:
     if not _draft_selected_is_prop():
         status_label.text = "Select a rendered static mesh actor first (BSP cannot be duplicated)."
         return
+    var history_before := _capture_edit_state()
     var originals := _selection_nodes()
     var copies: Array[MeshInstance3D] = []
     for node in originals:
@@ -1154,6 +1155,7 @@ func _duplicate_selected_prop() -> void:
         _add_selection_mesh(node)
     _refresh_selection_inspector()
     _sync_actor_list_selection()
+    _record_edit("Duplicate " + str(copies.size()) + " prop(s)", history_before)
     status_label.text = "Duplicated " + str(copies.size()) + " prop(s). Move the copies, then Save draft."
 
 
@@ -1168,16 +1170,19 @@ func _move_selected_prop(axis: Vector3) -> void:
     if not _draft_selected_is_prop():
         status_label.text = "Select one or more rendered props (not BSP)."
         return
+    var history_before := _capture_edit_state()
     var delta := axis * float(prop_edit_step.value)
     for node in _selection_nodes():
         node.global_position += delta
     _refresh_prop_inspection()
+    _record_edit("Move " + str(_selection_nodes().size()) + " prop(s)", history_before)
 
 
 func _rotate_selected_prop(angle: float) -> void:
     if not _draft_selected_is_prop():
         status_label.text = "Select one or more rendered props to rotate."
         return
+    var history_before := _capture_edit_state()
     var pivot := _selection_pivot()
     var turn := Basis(Vector3.UP, deg_to_rad(angle))
     for node in _selection_nodes():
@@ -1186,11 +1191,13 @@ func _rotate_selected_prop(angle: float) -> void:
         pose.basis = turn * pose.basis
         node.global_transform = pose
     _refresh_prop_inspection()
+    _record_edit("Rotate " + str(_selection_nodes().size()) + " prop(s)", history_before)
 
 
 func _reset_selected_prop() -> void:
     if not _draft_selected_is_prop():
         return
+    var history_before := _capture_edit_state()
     var nodes := _selection_nodes()
     _clear_selection()
     var restored: Array[MeshInstance3D] = []
@@ -1201,7 +1208,7 @@ func _reset_selected_prop() -> void:
             draft_prop_copies.erase(name)
             draft_prop_sources.erase(name)
             all_mesh_instances.erase(node)
-            node.queue_free()
+            node.free()
             removed += 1
         elif original_mesh_transforms.has(name):
             node.global_transform = original_mesh_transforms[name]
@@ -1210,6 +1217,7 @@ func _reset_selected_prop() -> void:
         _add_selection_mesh(node)
     _refresh_selection_inspector()
     _sync_actor_list_selection()
+    _record_edit("Reset " + str(restored.size()) + " / delete " + str(removed), history_before)
     status_label.text = "Restored " + str(restored.size()) + " original(s), deleted " + str(removed) + " copy/copies. Save draft to persist."
 
 
@@ -1307,6 +1315,7 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
         if typeof(entry) != TYPE_DICTIONARY or _array_to_transform(entry.get("transform")) == null:
             status_label.text = "Prop draft contains an invalid transform."
             return
+    var history_before := _capture_edit_state()
     _clear_selection()
     for name in original_mesh_transforms:
         if meshes_by_actor.has(name) and is_instance_valid(meshes_by_actor[name]):
@@ -1314,7 +1323,7 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
     for node in draft_prop_copies.values():
         if is_instance_valid(node):
             all_mesh_instances.erase(node)
-            node.queue_free()
+            node.free()
     draft_prop_copies.clear()
     draft_prop_sources.clear()
     next_prop_copy_id = 1
@@ -1332,6 +1341,8 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
             var suffix := name.trim_prefix("DraftProp_")
             if suffix.is_valid_int():
                 next_prop_copy_id = max(next_prop_copy_id, int(suffix) + 1)
+    if not silent_if_absent:
+        _record_edit("Load draft", history_before)
     status_label.text = "Loaded private prop draft. Original GMP unchanged."
 
 func focus_selected() -> void:
@@ -1469,6 +1480,7 @@ func _begin_gizmo_drag() -> bool:
     gizmo_drag_start_screen = view_container.get_local_mouse_position()
     var scalar: Variant = _gizmo_axis_scalar(gizmo_drag_start_screen, gizmo_drag_pivot, best_axis)
     gizmo_drag_start_scalar = float(scalar) if scalar != null else 0.0
+    gizmo_undo_before = _capture_edit_state()
     gizmo_drag_active = true
     return true
 
@@ -1555,8 +1567,8 @@ func _mouse_ray(view_mouse_position: Vector2) -> Dictionary:
 func _set_editor_tool(tool: String) -> void:
     if tool not in ["move", "rotate", "scale"]:
         return
+    _finish_gizmo_drag()
     editor_tool = tool
-    gizmo_drag_active = false
     _refresh_gizmo_shape()
     status_label.text = "Transform tool: " + tool.capitalize() + " (W/E/R). Preview edits only."
 
@@ -1625,8 +1637,9 @@ func _input(event: InputEvent) -> void:
             else:
                 if drag_mode == "select" and mouse_inside and drag_distance < 3.0:
                     _pick_actor(button.ctrl_pressed or button.shift_pressed)
+                if drag_mode == "gizmo":
+                    _finish_gizmo_drag()
                 dragging = false
-                gizmo_drag_active = false
                 drag_mode = ""
         return
     if event is InputEventMouseMotion:
