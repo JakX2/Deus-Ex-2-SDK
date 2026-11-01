@@ -23,8 +23,8 @@ sys.path.insert(0, str(MAP_EXPORTER))
 from dx2inspect import Package, TAG
 from dx2level import SCALE, actor_matrix
 from dx2_native_save_as import (
-    apply_location_plan, export_translation_copy, location_float_offsets,
-    plan_translation_changes
+    apply_location_plan, audit_native_locations, export_translation_copy,
+    location_float_offsets, plan_translation_changes
 )
 
 
@@ -145,6 +145,46 @@ class NativeGmpSaveAsTests(unittest.TestCase):
         }
         self.draft_path.write_text(json.dumps(self.draft))
         self.output = self.base / "IsolatedOutput" / self.source.name
+
+    def test_audit_source_locations_reads_real_tagged_fields(self):
+        result = audit_native_locations(self.source, self.actors_file)
+        self.assertEqual(result["schema"], "DX2Ed-native-location-audit-v1")
+        self.assertTrue(result["read_only"])
+        self.assertFalse(result["game_verified"])
+        self.assertEqual(result["native_location_candidates"], 1)
+        self.assertEqual(result["unsupported_candidates"], 0)
+        self.assertEqual(result["reasons"], {})
+        self.assertFalse(self.output.exists())
+
+    def test_audit_identifies_mismatch_without_touching_gmp(self):
+        source_before = self.source.read_bytes()
+        self.actor["location"][0] = 999.0
+        self.actors_file.write_text(json.dumps(self.actors))
+        result = audit_native_locations(self.source, self.actors_file)
+        self.assertEqual(result["native_location_candidates"], 0)
+        self.assertEqual(result["reasons"]["decoded_location_mismatch"], 1)
+        self.assertEqual(source_before, self.source.read_bytes())
+
+    def test_audit_rejects_wrong_map_source_hash(self):
+        self.actors["meta"]["source_sha256"] = "f" * 64
+        self.actors_file.write_text(json.dumps(self.actors))
+        with self.assertRaisesRegex(ValueError, "SHA"):
+            audit_native_locations(self.source, self.actors_file)
+
+    def test_rejects_noop_translation_draft(self):
+        self.draft["moved"] = []
+        self.draft_path.write_text(json.dumps(self.draft))
+        with self.assertRaisesRegex(ValueError, "No existing static"):
+            export_translation_copy(self.source, self.actors_file, self.draft_path, self.output)
+        self.assertFalse(self.output.exists())
+
+    def test_rejects_identical_position_and_basis(self):
+        # Exact unmodified source coordinates are not a meaningful export.
+        self.transform[9:12] = [100 * SCALE, 300 * SCALE, 200 * SCALE]
+        self.draft_path.write_text(json.dumps(self.draft))
+        with self.assertRaisesRegex(ValueError, "no meaningful"):
+            export_translation_copy(self.source, self.actors_file, self.draft_path, self.output)
+        self.assertFalse(self.output.exists())
 
     def test_true_unreal_package_fixture_roundtrip(self):
         original = Package(self.source)
