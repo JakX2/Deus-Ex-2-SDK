@@ -31,6 +31,7 @@ var property_editor_rows: VBoxContainer
 var property_editor_note: Label
 var property_overrides: Dictionary = {} # Actor name -> decimal property ID -> scalar
 var property_editor_syncing := false
+var property_editor_last_key := ""
 var rotation_lab_panel: VBoxContainer
 var rotation_lab_modes: OptionButton
 var rotation_lab_hint: Label
@@ -757,6 +758,7 @@ func _clear_current_scene() -> void:
     current_source_map_name = ""
     original_mesh_transforms.clear()
     property_overrides.clear()
+    property_editor_last_key = ""
     draft_prop_copies.clear()
     draft_prop_sources.clear()
     next_prop_copy_id = 1
@@ -1489,6 +1491,7 @@ func _refresh_inspector_panel() -> void:
     var nodes := _selection_nodes()
     var eligible := _draft_selected_is_prop()
     inspector_transform_section.visible = eligible
+    _refresh_actor_property_editor()
     if nodes.is_empty():
         if selected_actor.is_empty():
             inspector_title.text = "Nothing selected"
@@ -1524,6 +1527,210 @@ func _refresh_inspector_panel() -> void:
             spin.editable = nodes.size() == 1 or mode == "Position"
             spin.set_value_no_signal(vector[axis])
     inspector_syncing = false
+
+
+## Only unambiguous decoded scalar values may enter the draft editor.
+## Never edit native actor records or unresolved references/scripts.
+func _find_editable_property(actor: Dictionary, id: int) -> Dictionary:
+    if id < 0 or id == 43 or id == 92:
+        return {}
+    var matches := []
+    for entry in actor.get("game_properties", []):
+        if typeof(entry) != TYPE_DICTIONARY:
+            continue
+        if int(entry.get("id", -1)) == id:
+            matches.append(entry)
+    if matches.size() != 1:
+        return {}
+    var item: Dictionary = matches[0]
+    var kind := str(item.get("type", "")).to_lower()
+    var value: Variant = item.get("value", null)
+    if kind == "bool" and typeof(value) == TYPE_BOOL:
+        return item
+    if kind in ["byte", "int"] and typeof(value) in [TYPE_INT, TYPE_FLOAT]:
+        var number: float = float(value)
+        if is_finite(number) and floorf(number) == number:
+            return item
+    if kind == "float" and typeof(value) in [TYPE_INT, TYPE_FLOAT]:
+        if is_finite(float(value)):
+            return item
+    if kind == "string" and typeof(value) == TYPE_STRING:
+        return item
+    return {}
+
+
+func _validated_scalar(kind: String, value: Variant) -> Variant:
+    if kind == "bool":
+        return value if typeof(value) == TYPE_BOOL else null
+    if kind in ["byte", "int"]:
+        if typeof(value) not in [TYPE_INT, TYPE_FLOAT]:
+            return null
+        var numeric := float(value)
+        if not is_finite(numeric) or floorf(numeric) != numeric:
+            return null
+        if kind == "byte" and (numeric < 0 or numeric > 255):
+            return null
+        if kind == "int" and absf(numeric) > 1000000.0:
+            return null
+        return int(numeric)
+    if kind == "float":
+        if typeof(value) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(value)):
+            return null
+        return float(value) if absf(float(value)) <= 1000000.0 else null
+    if kind == "string":
+        return value if typeof(value) == TYPE_STRING and value.length() <= 512 else null
+    return null
+
+
+func _refresh_actor_property_editor() -> void:
+    if property_editor_panel == null or property_editor_rows == null:
+        return
+    var actor: Dictionary = {}
+    var nodes := _selection_nodes()
+    if nodes.size() == 1 and actors_by_name.has(str(nodes[0].name)):
+        actor = actors_by_name[str(nodes[0].name)]
+    elif nodes.is_empty() and not selected_actor.is_empty():
+        actor = selected_actor
+    var name := str(actor.get("name", ""))
+    property_editor_panel.visible = not name.is_empty()
+    var key := name + "|" + JSON.stringify(property_overrides.get(name, {}))
+    if not property_editor_panel.visible:
+        property_editor_last_key = ""
+        return
+    if key == property_editor_last_key:
+        return
+    property_editor_last_key = key
+    property_editor_syncing = true
+    for node in property_editor_rows.get_children():
+        property_editor_rows.remove_child(node)
+        node.queue_free()
+
+    var supported := 0
+    var locked := 0
+    for item in actor.get("game_properties", []):
+        if typeof(item) != TYPE_DICTIONARY:
+            continue
+        var id := int(item.get("id", -1))
+        var safe: Dictionary = _find_editable_property(actor, id)
+        if safe.is_empty():
+            locked += 1
+            continue
+        supported += 1
+        if supported > 48:
+            continue
+        var kind := str(safe.get("type", "")).to_lower()
+        var current: Variant = property_overrides.get(name, {}).get(str(id), safe.get("value"))
+        var row := HBoxContainer.new()
+        property_editor_rows.add_child(row)
+        var label := Label.new()
+        label.text = str(safe.get("name", "Property_" + str(id)))
+        label.tooltip_text = "DX2 property ID " + str(id) + " | " + kind + " | original: " + str(safe.get("value"))
+        label.custom_minimum_size.x = 125
+        row.add_child(label)
+        if kind == "bool":
+            var check := CheckBox.new()
+            check.button_pressed = bool(current)
+            check.toggled.connect(_actor_property_changed.bind(name, id))
+            row.add_child(check)
+        elif kind in ["byte", "int", "float"]:
+            var spin := SpinBox.new()
+            spin.min_value = 0.0 if kind == "byte" else -1000000.0
+            spin.max_value = 255.0 if kind == "byte" else 1000000.0
+            spin.step = 0.01 if kind == "float" else 1.0
+            spin.custom_minimum_size.x = 125
+            spin.set_value_no_signal(float(current))
+            spin.value_changed.connect(_actor_property_changed.bind(name, id))
+            row.add_child(spin)
+        elif kind == "string":
+            var input := LineEdit.new()
+            input.text = str(current)
+            input.max_length = 512
+            input.custom_minimum_size.x = 125
+            input.text_submitted.connect(_actor_property_changed.bind(name, id))
+            row.add_child(input)
+    property_editor_note.text = (str(supported) + " decoded scalar properties; " + str(locked) +
+        " complex/unknown properties locked. " +
+        ("Only first 48 shown. " if supported > 48 else "") +
+        "Values are draft metadata, not live gameplay or GMP writes.")
+    property_editor_syncing = false
+
+
+func _actor_property_changed(value: Variant, name: String, id: int) -> void:
+    if property_editor_syncing or not actors_by_name.has(name):
+        return
+    var actor: Dictionary = actors_by_name[name]
+    var source := _find_editable_property(actor, id)
+    if source.is_empty():
+        return
+    var kind := str(source.get("type", "")).to_lower()
+    var clean: Variant = _validated_scalar(kind, value)
+    if clean == null:
+        status_label.text = "Invalid actor property value; original and draft unchanged."
+        return
+    var before := _capture_edit_state()
+    var overrides: Dictionary = property_overrides.get(name, {}).duplicate(true)
+    if clean == source.get("value"):
+        overrides.erase(str(id))
+    else:
+        overrides[str(id)] = clean
+    if overrides.is_empty():
+        property_overrides.erase(name)
+    else:
+        property_overrides[name] = overrides
+    property_editor_last_key = ""
+    _refresh_actor_property_editor()
+    _record_edit("Property " + str(id) + " on " + name, before)
+    status_label.text = "Saved actor property " + str(id) + " as preview metadata. Ctrl+Z to undo."
+
+
+func _serialize_property_edits() -> Array:
+    var rows := []
+    for name in property_overrides:
+        if not actors_by_name.has(name):
+            continue
+        var actor: Dictionary = actors_by_name[name]
+        for key in property_overrides[name]:
+            var id := int(key)
+            var source: Dictionary = _find_editable_property(actor, id)
+            if source.is_empty():
+                continue
+            var value: Variant = _validated_scalar(str(source.get("type", "")).to_lower(), property_overrides[name][key])
+            if value != null and value != source.get("value"):
+                rows.append({"actor": name, "export": int(actor.get("export", -1)), "id": id,
+                    "type": str(source.get("type")), "value": value})
+    return rows
+
+
+func _validate_property_edits(rows: Variant) -> Variant:
+    if typeof(rows) != TYPE_ARRAY or rows.size() > 10000:
+        return null
+    var result := {}
+    var seen := {}
+    for row in rows:
+        if typeof(row) != TYPE_DICTIONARY:
+            return null
+        var name := str(row.get("actor", ""))
+        if not actors_by_name.has(name):
+            return null
+        var actor: Dictionary = actors_by_name[name]
+        if int(row.get("export", -1)) != int(actor.get("export", -2)):
+            return null
+        var id := int(row.get("id", -1))
+        var key := name + "#" + str(id)
+        if seen.has(key):
+            return null
+        seen[key] = true
+        var source := _find_editable_property(actor, id)
+        if source.is_empty() or str(row.get("type", "")) != str(source.get("type", "")):
+            return null
+        var value: Variant = _validated_scalar(str(source["type"]).to_lower(), row.get("value", null))
+        if value == null:
+            return null
+        if value != source.get("value"):
+            if not result.has(name):
+                result[name] = {}
+            result[name][str(id)] = value
+    return result
 
 
 func _inspector_transform_changed(value: float, mode: String, axis: int) -> void:
