@@ -1,0 +1,200 @@
+{
+  "schema": "DX2Ed-T3Ed-parity-v1",
+  "updated": "2026-11-01",
+  "reference_archives": [
+    "thief3editorrelease_jan2005(1).zip",
+    "T3SDK-Launcher_0.3.1_portable(1).zip"
+  ],
+  "notes": "States describe DX2Ed, not T3Ed. T3Ed icon/resource presence is evidence of an authoring workflow, not proof of DX2 binary compatibility. No retail assets included.",
+  "allowed_statuses": [
+    "partial",
+    "missing",
+    "verified"
+  ],
+  "capabilities": [
+    {
+      "id": "workspace",
+      "title": "Workspace, hierarchy and inspector",
+      "status": "partial",
+      "phase": 1,
+      "evidence": "DX2Ed 0.3.1 hierarchy/inspector",
+      "next_step": "Independent tree, editable properties, docking presets"
+    },
+    {
+      "id": "scene_navigation",
+      "title": "3D viewport/camera and selection",
+      "status": "partial",
+      "phase": 1,
+      "evidence": "DX2Ed Godot fly camera and triangle picking",
+      "next_step": "Orthographic viewports, snapping overlays, visibility/isolate controls"
+    },
+    {
+      "id": "transforms",
+      "title": "Move/rotate/scale, groups, undo",
+      "status": "partial",
+      "phase": 1,
+      "evidence": "DX2Ed 0.3.0 through 0.3.2",
+      "next_step": "Parent transforms, grid/pivot configuration, native persistence"
+    },
+    {
+      "id": "asset_browser",
+      "title": "Static mesh and texture browser",
+      "status": "missing",
+      "phase": 1,
+      "evidence": "T3Ed System/EditorRes/ModeAddStaticMesh.bmp; Content/T3/StaticMeshes",
+      "next_step": "Build DX2 IBD resource catalog, filters, preview/placement"
+    },
+    {
+      "id": "actor_classes",
+      "title": "Actor class palette and property browser",
+      "status": "partial",
+      "phase": 1,
+      "evidence": "DX2Ed actors.json + conservative class hints; T3Ed ModeAdd, ModeAddVolume icons",
+      "next_step": "Decoded DX2 Gamesys class inheritance and typed editing"
+    },
+    {
+      "id": "source_project",
+      "title": "Editable level project/source format",
+      "status": "missing",
+      "phase": 1,
+      "evidence": "Original T3Ed content/T3/Maps/*.unr; DX2 retail maps are .gmp",
+      "next_step": "SDK-owned editable project format; GMP/IBD must remain authoritative for runtime"
+    },
+    {
+      "id": "brush_primitives",
+      "title": "Brush primitive builders and CSG add/subtract",
+      "status": "missing",
+      "phase": 2,
+      "evidence": "T3Ed BBCube/BBLinearStair/BBSpiralStair/ModeAdd/ModeSubtract icons",
+      "next_step": "Preview CSG in SDK-owned source; verify compiled DX2 BSP representation"
+    },
+    {
+      "id": "brush_boolean",
+      "title": "Intersect/deintersect, brush clip, terrain",
+      "status": "missing",
+      "phase": 2,
+      "evidence": "T3Ed ModeIntersect/ModeDeintersect/BrushClip/ModeTerrainEdit icons",
+      "next_step": "Rebuild geometry and collision, guarded native output"
+    },
+    {
+      "id": "vertex_face",
+      "title": "Vertex, face, polygon edit",
+      "status": "missing",
+      "phase": 2,
+      "evidence": "T3Ed ModeVertex/ModeFaceDrag/ModePolygon icons",
+      "next_step": "Reliable original face ownership/UVs, geometry representation"
+    },
+    {
+      "id": "materials_uv",
+      "title": "Material inspector and UV operations",
+      "status": "partial",
+      "phase": 2,
+      "evidence": "DX2Ed textured IBD rendering; T3Ed TexturePan/TextureRotate icons",
+      "next_step": "Editable UV/material bindings, shader variants, lightmap metadata"
+    },
+    {
+      "id": "lighting",
+      "title": "Static/dynamic lights and attached lighting",
+      "status": "missing",
+      "phase": 2,
+      "evidence": "T3Ed ModeEditAttachedLight; original System/Shaders light variants",
+      "next_step": "Decode DX2 light actors, ranges, colors, attenuation and runtime bake rules"
+    },
+    {
+      "id": "collision_physics",
+      "title": "Collision/hulls and physical props",
+      "status": "missing",
+      "phase": 3,
+      "evidence": "T3Ed Utility/Max/Scripts/CollisionMaker.ms and ragdollexp.dle",
+      "next_step": "Decode DX2 physics hulls, actor physics properties and render/collision association"
+    },
+    {
+      "id": "links_paths",
+      "title": "Actor links, waypoints, navigation paths",
+      "status": "missing",
+      "phase": 3,
+      "evidence": "T3Ed ModeAddLinks/ModeConnectPaths icons",
+      "next_step": "DX2-specific links and AI navigation graph decoding"
+    },
+    {
+      "id": "triggers_scripts",
+      "title": "TriggerScript logic and gameplay events",
+      "status": "partial",
+      "phase": 3,
+      "evidence": "User TriggerScript TSD bundle and actor script IDs; T3Ed .tsd assets",
+      "next_step": "Typed trigger graph editor, safe reserialization and round-trip tests"
+    },
+    {
+      "id": "ai_npcs",
+      "title": "NPCs, behaviors, patrols and animation",
+      "status": "missing",
+      "phase": 3,
+      "evidence": "T3Ed skeletal mesh/animation assets and T3Editor AI paths",
+      "next_step": "DX2 actor archetypes, skeletal rigs, animation and AI metadata"
+    },
+    {
+      "id": "audio_schema",
+      "title": "Sounds and sound schema editing",
+      "status": "missing",
+      "phase": 3,
+      "evidence": "T3Ed .sch/.scc/.wav/.ogg and schema tools",
+      "next_step": "DX2-specific audio resources, emitters and sound schema formats"
+    },
+    {
+      "id": "conversations",
+      "title": "Conversation and cinematic authoring",
+      "status": "missing",
+      "phase": 3,
+      "evidence": "T3Ed Conversations/ and ModeMatinee icon",
+      "next_step": "DX2 conversation links/timeline, speech, subtitles, localization"
+    },
+    {
+      "id": "ui_books",
+      "title": "Books, text, HUD, mission UI",
+      "status": "partial",
+      "phase": 3,
+      "evidence": "T3Ed Content/T3/Books/; DX2 HUD research and exported textures",
+      "next_step": "Editable DX2 text assets, HUD resource binding and conversation UI"
+    },
+    {
+      "id": "mission_objectives",
+      "title": "Mission objectives, inventory and difficulty",
+      "status": "missing",
+      "phase": 4,
+      "evidence": "T3Ed mission-authoring workflow (external fan-mission docs)",
+      "next_step": "DX2-specific objective state, inventory and mission travel logic"
+    },
+    {
+      "id": "packaging_build",
+      "title": "Compile/cook/install and playtest missions",
+      "status": "missing",
+      "phase": 4,
+      "evidence": "T3Ed source .unr and compiled .gmp; newer T3SDK uses package writer",
+      "next_step": "DX2 GMP/IBD writer, collision/BSP rebuild and reversibility"
+    },
+    {
+      "id": "mod_sdk",
+      "title": "Scripting API and runtime mods",
+      "status": "missing",
+      "phase": 4,
+      "evidence": "Newer T3SDK runtime mod API; not bundled original T3Ed functionality",
+      "next_step": "Separate DX2 engine/runtime investigation and safe mod loader"
+    },
+    {
+      "id": "import_export",
+      "title": "Asset interchange and 3D modeling pipeline",
+      "status": "partial",
+      "phase": 4,
+      "evidence": "T3Ed Utility/Max/ Plugins and BatchExportStaticMeshTimFiles.ms",
+      "next_step": "DX2 mesh/hull writers and validated Blender/FBX/GLTF import"
+    },
+    {
+      "id": "validation",
+      "title": "Round-trip format tests and preview vs runtime",
+      "status": "partial",
+      "phase": 1,
+      "evidence": "DX2Ed synthetic Godot/CI tests; preserved retail source hashes",
+      "next_step": "Golden fixture audits, export/import idempotence, engine playtesting"
+    }
+  ]
+}
