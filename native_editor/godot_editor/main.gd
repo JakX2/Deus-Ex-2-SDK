@@ -1288,7 +1288,10 @@ func _begin_gizmo_drag() -> bool:
     if best_axis == Vector3.ZERO:
         return false
     gizmo_drag_axis = best_axis
-    gizmo_drag_pivot = selected_mesh.global_position
+    gizmo_drag_pivot = _selection_pivot()
+    gizmo_start_transforms.clear()
+    for node in _selection_nodes():
+        gizmo_start_transforms[str(node.name)] = node.global_transform
     gizmo_start_transform = selected_mesh.global_transform
     gizmo_drag_start_screen = view_container.get_local_mouse_position()
     var scalar: Variant = _gizmo_axis_scalar(gizmo_drag_start_screen, gizmo_drag_pivot, best_axis)
@@ -1302,13 +1305,14 @@ func _apply_gizmo_drag() -> void:
         return
     var distance := camera.global_position.distance_to(gizmo_drag_pivot)
     var mouse := view_container.get_local_mouse_position()
+    var rotate := Basis.IDENTITY
+    var scale_factor := 1.0
+    var movement := Vector3.ZERO
     if editor_tool == "rotate":
         var angle := (mouse.x - gizmo_drag_start_screen.x) * 0.012
         if Input.is_key_pressed(KEY_CTRL):
             angle = snapped(angle, deg_to_rad(15.0))
-        var rotated := gizmo_start_transform
-        rotated.basis = Basis(gizmo_drag_axis, angle) * gizmo_start_transform.basis
-        selected_mesh.global_transform = rotated
+        rotate = Basis(gizmo_drag_axis, angle)
     else:
         var scalar: Variant = _gizmo_axis_scalar(mouse, gizmo_drag_pivot, gizmo_drag_axis)
         if scalar == null:
@@ -1317,17 +1321,29 @@ func _apply_gizmo_drag() -> void:
         if editor_tool == "move":
             if Input.is_key_pressed(KEY_CTRL):
                 change = snapped(change, float(prop_edit_step.value))
-            var translated := gizmo_start_transform
-            translated.origin += gizmo_drag_axis * change
-            selected_mesh.global_transform = translated
+            movement = gizmo_drag_axis * change
         elif editor_tool == "scale":
-            var factor: float = clampf(1.0 + change / maxf(0.5, distance * 0.18), 0.05, 100.0)
+            scale_factor = clampf(1.0 + change / maxf(0.5, distance * 0.18), 0.05, 100.0)
             if Input.is_key_pressed(KEY_CTRL):
-                factor = max(0.05, snapped(factor, 0.1))
-            var transformed := gizmo_start_transform
-            var axis_index := 0 if gizmo_drag_axis.x > 0.5 else (1 if gizmo_drag_axis.y > 0.5 else 2)
-            transformed.basis[axis_index] = gizmo_start_transform.basis[axis_index] * factor
-            selected_mesh.global_transform = transformed
+                scale_factor = maxf(0.05, snapped(scale_factor, 0.1))
+    for node in _selection_nodes():
+        var name := str(node.name)
+        if not gizmo_start_transforms.has(name):
+            continue
+        var pose: Transform3D = gizmo_start_transforms[name]
+        if editor_tool == "move":
+            pose.origin += movement
+        elif editor_tool == "rotate":
+            pose.origin = gizmo_drag_pivot + rotate * (pose.origin - gizmo_drag_pivot)
+            pose.basis = rotate * pose.basis
+        elif editor_tool == "scale":
+            var offset := pose.origin - gizmo_drag_pivot
+            pose.origin = gizmo_drag_pivot + offset + gizmo_drag_axis * offset.dot(gizmo_drag_axis) * (scale_factor - 1.0)
+            # Apply scale along the *world* gizmo axis to all three basis columns.
+            for axis_index in range(3):
+                var vector: Vector3 = pose.basis[axis_index]
+                pose.basis[axis_index] = vector + gizmo_drag_axis * vector.dot(gizmo_drag_axis) * (scale_factor - 1.0)
+        node.global_transform = pose
     _update_gizmo_pose()
     _refresh_prop_inspection()
 
@@ -1435,7 +1451,7 @@ func _input(event: InputEvent) -> void:
                     drag_mode = "select"
             else:
                 if drag_mode == "select" and mouse_inside and drag_distance < 3.0:
-                    _pick_actor()
+                    _pick_actor(button.ctrl_pressed or button.shift_pressed)
                 dragging = false
                 gizmo_drag_active = false
                 drag_mode = ""
@@ -1465,7 +1481,7 @@ func _input(event: InputEvent) -> void:
             get_viewport().set_input_as_handled()
 
 
-func _pick_actor() -> void:
+func _pick_actor(additive: bool = false) -> void:
     # AABB is a broad-phase filter only. Actual visible triangles decide the pick:
     # a huge BSP box must not swallow a smaller prop, nor select an empty area.
     if all_mesh_instances.is_empty() or view_container.size.x <= 0.0 or view_container.size.y <= 0.0:
@@ -1506,19 +1522,17 @@ func _pick_actor() -> void:
         status_label.text = "No rendered triangle under cursor (bounding boxes alone are not selectable)."
         return
     var chosen_name := str(closest_mesh.name)
-    if actors_by_name.has(chosen_name):
+    if additive:
+        _toggle_selection_mesh(closest_mesh)
+    elif actors_by_name.has(chosen_name):
         select_actor(actors_by_name[chosen_name])
-        for index in range(visible_actors.size()):
-            if str(visible_actors[index].get("name", "")) == chosen_name:
-                actor_list.select(index)
-                actor_list.ensure_current_is_visible()
-                break
     else:
-        # Report the original render node for BSP or otherwise unlinked geometry.
+        # Imported BSP geometry remains inspectable but cannot join prop groups.
         _select_mesh_only(closest_mesh)
-    var hit_note := "Pick method: rendered triangle (not AABB)\nGodot hit (world): " + str(closest_position) + "\nRay distance (Godot units): " + str(closest_distance)
-    selected_diagnostic += "\n" + hit_note
-    inspector.text += "\n\n--- PICK DETAILS ---\n" + hit_note
+    if selected_meshes.has(chosen_name) and not selected_diagnostic.is_empty():
+        var hit_note := "Pick method: rendered triangle (not AABB)\nGodot hit (world): " + str(closest_position) + "\nRay distance (Godot units): " + str(closest_distance)
+        selected_diagnostic += "\n" + hit_note
+        inspector.text += "\n\n--- PICK DETAILS ---\n" + hit_note
 
 
 func _ray_mesh_triangles(instance: MeshInstance3D, origin: Vector3, direction: Vector3) -> Dictionary:
