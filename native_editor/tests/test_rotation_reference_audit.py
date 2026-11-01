@@ -24,6 +24,22 @@ class RotationReferenceTests(unittest.TestCase):
         actual = ue2_reference_basis((0, 32768, 16384))
         self.assertLess(max_difference(actual, expected), 1e-10)
 
+    def test_nonsymmetric_source_sdk_matrix_guard(self):
+        # Independent reference values calculated directly with the user's
+        # T3SDK 0.3.1 t3common.godot_basis(100, 900, 8192).
+        # t3common returns Godot Basis COLUMNS; rows below are transposed.
+        original_sdk_rows = (
+            (0.996233848471, -0.067692005457, -0.054184052616),
+            (0.009587233050, 0.707074283567, -0.707074283567),
+            (0.086175426446, 0.703891859532, 0.705060313704),
+        )
+        self.assertLess(
+            max_difference(ue2_reference_basis((100, 900, 8192)),
+                           original_sdk_rows), 2e-12)
+        self.assertLess(
+            max_difference(dx2_preview_basis((100, 900, 8192), True),
+                           original_sdk_rows), 2e-12)
+
     def test_inverted_roll_matches_ue2_reference(self):
         for rot in ((0,0,0), (0,32768,16384), (256,16384,32768),
                     (100,900,8192), (8192,8192,8192),
