@@ -102,3 +102,41 @@ spot on the retail map.
 Windows/Seattle Club checks. Meshes without readable triangle faces cannot be
 picked by bounding box as a substitute; transparent visual effects and gameplay
 visibility are not yet modeled. This does not modify any original GMP/IBD.
+
+
+## Experimental 0.2.3: open original Seattle Club ZIPs directly
+
+The development branch now includes a read-only staging workflow for the three
+user-owned ZIPs: club, shared map resources, and optional System packages.
+Only GMP/IBD files from the first two ZIPs and D2U/INI/INT files from System
+are copied into a private, content-hashed cache under Godot's user data folder.
+EXE, DLL, shader bytecode, and other unrelated files are **not** extracted.
+The game ZIPs and installed game remain untouched.
+
+In the Godot viewer, use the second toolbar row in this order:
+
+1. **Shared ZIP...**: select the archive containing Kernel_GFXALL.ibd and MainMenu_GFXALL.ibd
+2. **System ZIP... (optional)**: select the retail System archive for richer actor metadata
+3. **Open Seattle Club ZIP...**: select the archive containing M1_Seattle_Club.gmp and m1_club.ibd
+
+The viewer stages these resources with Python, then invokes its existing
+direct-GMP importer. It does not upload game assets or write to the source ZIPs.
+System metadata is passed to the backend with --system when supplied.
+
+To run the ZIP staging utility independently from the repository root:
+
+~~~powershell
+python native_editor/godot_editor/backend/dx2_zip_stage.py --club "C:\path\to\club(1).zip" --maps "C:\path\to\maps(1).zip" --system "C:\path\to\System(2).zip" --output-root "$env:LOCALAPPDATA\DX2EdStaging"
+~~~
+
+The output is JSON with the staged map and System paths; pass them to
+dx2_native_backend.py using --map, --system, and --output-root. Without the
+optional System ZIP, omit --system.
+
+**Validation:** source/backend unit tests run on GitHub Actions with synthetic
+fixtures. Source ZIP path traversal, symlinks, duplicate paths, missing required
+shared bundles, oversized entries and cache tampering are rejected. Initial
+archive layout checks used the user's actual Seattle Club/Maps/System ZIPs,
+but the full native Godot GUI workflow still requires Windows runtime testing.
+The imported actor rotations, original shaders and gameplay behaviors remain
+provisional, not corrected by ZIP staging.
