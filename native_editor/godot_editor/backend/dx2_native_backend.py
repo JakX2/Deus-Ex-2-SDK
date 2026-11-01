@@ -97,7 +97,8 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
         decisions = {int(item['export']): {
             'requested': item['requested'],
             'selected': item['selected'],
-            'status': item['status']}
+            'status': item['status'],
+            'materials': item.get('material_status', [])}
             for item in report.get('actor_skin_selections', [])}
         for actor in actors:
             choice = decisions.get(int(actor.get('export', -1)))
