@@ -23,7 +23,7 @@ from dx2_actor_explorer import actor_records
 from dx2_asset_catalog import catalog_from_paths
 from dx2_archetype_catalog import catalog_for_map
 from dx2placement import analyze_mesh_placement, summarize_placement, add_world_transform_evidence
-from dx2level import load_resource_index
+from dx2level import actor_matrix, load_resource_index
 from dx2bundles import parse_mesh
 
 CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.6-actor-skins-v1'
