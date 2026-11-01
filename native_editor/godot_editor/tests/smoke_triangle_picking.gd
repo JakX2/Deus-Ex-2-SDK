@@ -125,6 +125,25 @@ func _run() -> void:
         _fail("Hierarchy selection did not choose the rendered actor")
         return
     viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    # Catalog UI includes resources not already placed in the scene.
+    viewer.asset_catalog = {"schema":"DX2Ed-asset-catalog-v1", "assets":[
+        {"name":"SyntheticStair","kind":"staticmesh","bundle":"fictional.ibd","resource_index":1,"bytes":128},
+        {"name":"UnusedMesh","kind":"staticmesh","bundle":"fictional.ibd","resource_index":2,"bytes":64}]}
+    viewer._refresh_asset_list()
+    if viewer.asset_list.item_count != 2:
+        _fail("T3Ed-like asset browser should list both placed and unplaced resources")
+        return
+    viewer._asset_selected(1)
+    if not viewer.asset_details.text.contains("UnusedMesh"):
+        _fail("Asset Browser should show source provenance and resource metadata")
+        return
+    if viewer._placed_instances_for_asset("UnusedMesh").size() != 0:
+        _fail("An unplaced resource must not be confused with an actor")
+        return
+    viewer._asset_selected(0)
+    if viewer._placed_instances_for_asset("SyntheticStair").size() != 0:
+        _fail("Fixture uses only TestMesh name; unexpected match")
+        return
     var original: MeshInstance3D = viewer.selected_mesh
     if not is_instance_valid(original):
         _fail("demo actor has no mesh")
