@@ -350,3 +350,35 @@ editing Inspector position values, undoing those changes and the existing
 multi-selection / geometry-picking workflows. Interactive Windows testing is
 still needed for UI layout, tree range selection and typing/dragging in the
 Inspector fields.
+
+## Experimental 0.3.2: Rotation Lab evidence (no automatic rotation fixes)
+
+For an original **placed static-mesh actor**, the Inspector now includes a
+**Rotation Lab** that can preview the source orientation, Yaw +/-90 degrees,
+Yaw 180 degrees, inverted Pitch and inverted Roll. All hypotheses are computed
+from the original imported pose, not cumulatively from the last experiment.
+Choose **Preview orientation** to apply a *reversible* JSON-draft transform,
+with Ctrl+Z support. The original GMP and IBD are untouched.
+
+**Copy evidence** places a diagnostic on the clipboard with original
+GMP Pitch/Yaw/Roll rotator values, degrees, mesh identity and transform,
+the original/current Godot bases, and for each hypothesis:
+
+- Transformed mesh-local bounding box in Godot world space.
+- Nearest BSP render-block **axis-aligned bounding-box** (AABB) gap in metres.
+- Count of intersecting BSP AABBs.
+
+This is a troubleshooting aid, **not an automatic correct-rotation detector**.
+AABB overlap can be caused by enclosing walls or large BSP sections and says
+nothing about whether two *surfaces* actually touch. The original map
+rotation might be right while the source mesh pivot, local axis conventions,
+or runtime physics transform are different. Visual comparison with the game
+and reliable engine-format reconstruction remain necessary before applying
+any correction globally.
+
+The lab currently works for **one original linked static mesh** at a time.
+Copies, BSP geometry, and logical-only actors do not have corresponding
+native source rotations and are excluded from the lab. GitHub's headless
+Godot test checks the Unreal-to-Godot 90-degree yaw convention, alternate
+orientation previews and Ctrl+Z restoration; actual game-map use still needs
+interactive comparison.
