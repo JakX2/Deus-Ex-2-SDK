@@ -165,7 +165,11 @@ def prepare(club: Path, maps: Path, output_root: Path,
             raise FileNotFoundError(source)
     selection = select_files(club, maps, system, map_name, mission_name)
 
-    source_hashes = {source.name: sha256(source) for source in archives}
+    # Role-based keys avoid collisions if different directories both contain
+    # a generic filename such as resources.zip.
+    source_hashes = {"club": sha256(club), "maps": sha256(maps)}
+    if system is not None:
+        source_hashes["system"] = sha256(system)
     key_input = json.dumps({"version": VERSION, "sources": sorted(source_hashes.items()),
                             "map": map_name, "mission": mission_name}, sort_keys=True)
     key = hashlib.sha256(key_input.encode("utf-8")).hexdigest()[:20]
