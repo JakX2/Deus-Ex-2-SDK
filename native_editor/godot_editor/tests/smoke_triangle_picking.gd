@@ -125,6 +125,38 @@ func _run() -> void:
     if original.global_position.distance_to(before) > 0.001:
         _fail("reset prop did not restore original transform")
         return
+    # Multi-select both synthetic actors, use the shared pivot and move together.
+    var second: MeshInstance3D = viewer.meshes_by_actor["StaticMeshActor__2"]
+    var initial_second := second.global_position
+    viewer._toggle_selection_mesh(second)
+    if viewer._selection_nodes().size() != 2:
+        _fail("Ctrl-toggle should make a two-object selection")
+        return
+    var original_spacing := second.global_position.distance_to(original.global_position)
+    viewer._move_selected_prop(Vector3.UP)
+    if abs(original.global_position.y - before.y - 0.25) > 0.001 or abs(second.global_position.y - initial_second.y - 0.25) > 0.001:
+        _fail("group move did not translate both props")
+        return
+    viewer._rotate_selected_prop(90.0)
+    if abs(original.global_position.distance_to(second.global_position) - original_spacing) > 0.001:
+        _fail("group rotation should preserve spacing")
+        return
+    viewer._save_prop_draft()
+    viewer._reset_selected_prop()
+    if original.global_position.distance_to(before) > 0.001 or second.global_position.distance_to(initial_second) > 0.001:
+        _fail("group reset did not restore both originals")
+        return
+    viewer._load_prop_draft()
+    if abs(second.global_position.y - initial_second.y - 0.25) > 0.001:
+        _fail("group draft did not restore transforms")
+        return
+    viewer._reset_selected_prop()
+    # Ctrl-click again removes only the chosen member, leaving the first.
+    viewer._toggle_selection_mesh(second)
+    if viewer._selection_nodes().size() != 1 or viewer.selected_mesh != original:
+        _fail("Ctrl-toggle should deselect only the second prop")
+        return
+
     viewer._duplicate_selected_prop()
     if viewer.draft_prop_copies.size() != 1:
         _fail("duplicate did not produce a preview prop")
