@@ -124,8 +124,8 @@ func _make_ui() -> void:
     system_zip_btn.pressed.connect(func(): system_zip_dialog.popup_centered_ratio(0.73))
     zip_bar.add_child(system_zip_btn)
     var club_zip_btn := Button.new()
-    club_zip_btn.text = "Open Seattle Club ZIP..."
-    club_zip_btn.tooltip_text = "Safely stage the Club ZIP with the selected shared resources and open the GMP"
+    club_zip_btn.text = "Open DX2 map ZIP..."
+    club_zip_btn.tooltip_text = "Safely stage any ZIP with exactly one GMP and one mission IBD (Seattle Hub/Club), then import the map"
     club_zip_btn.pressed.connect(func(): club_zip_dialog.popup_centered_ratio(0.73))
     zip_bar.add_child(club_zip_btn)
     var stairs_toggle := CheckBox.new()
@@ -135,7 +135,7 @@ func _make_ui() -> void:
     stairs_toggle.toggled.connect(_set_stair_preview)
     zip_bar.add_child(stairs_toggle)
     var zip_hint := Label.new()
-    zip_hint.text = "  Select shared resources, optional System, then Club ZIP"
+    zip_hint.text = "  Select shared resources, optional System, then a mission ZIP"
     zip_bar.add_child(zip_hint)
 
     var prop_bar := HBoxContainer.new()
@@ -311,14 +311,14 @@ func _open_club_zip(path: String) -> void:
         return
     var cache_root := OS.get_user_data_dir().path_join("zip_staging")
     build_thread = Thread.new()
-    status_label.text = "Preparing Seattle Club source archives in a private, read-only cache..."
+    status_label.text = "Preparing DX2 mission archives in a private cache..."
     var result := build_thread.start(_run_zip_stage.bind(backend, path, chosen_shared_zip, chosen_system_zip, cache_root))
     if result != OK:
         build_thread = null
         status_label.text = "Could not start ZIP worker: " + error_string(result)
 
 func _run_zip_stage(script: String, club: String, shared: String, system_zip: String, cache_root: String) -> void:
-    var args := PackedStringArray([script, "--club", club, "--maps", shared, "--output-root", cache_root])
+    var args := PackedStringArray([script, "--club", club, "--maps", shared, "--map-name", "auto", "--mission-name", "auto", "--output-root", cache_root])
     if system_zip != "":
         args.append_array(PackedStringArray(["--system", system_zip]))
     var output: Array = []
