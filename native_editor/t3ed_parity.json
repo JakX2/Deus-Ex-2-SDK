@@ -167,10 +167,10 @@
     {
       "id": "packaging_build",
       "title": "Compile/cook/install and playtest missions",
-      "status": "missing",
+      "status": "partial",
       "phase": 4,
-      "evidence": "T3Ed source .unr and compiled .gmp; newer T3SDK uses package writer",
-      "next_step": "DX2 GMP/IBD writer, collision/BSP rebuild and reversibility"
+      "evidence": "DX2Ed 0.5.0 translation-only GMP save-as proof of concept: same-size patch of original Location.X/Y/Z tagged float fields; synthetic v95 package reparse and hash validations. No retail in-game test.",
+      "next_step": "Confirm translated actor GMP patch loads in original DX2 using a copied install, investigate collision/physics; later add rotation, object creation, GMP/IBD serialization and BSP rebuild."
     },
     {
       "id": "mod_sdk",
@@ -193,7 +193,7 @@
       "title": "Round-trip format tests and preview vs runtime",
       "status": "partial",
       "phase": 1,
-      "evidence": "DX2Ed synthetic Godot/CI tests; preserved retail source hashes",
+      "evidence": "DX2Ed 0.5.0 synthetic parseable GMP v95 binary writer tests, read-back verification, safe refusal/round-trip protections; prior Godot/CI fixture tests; no retail game validation.",
       "next_step": "Golden fixture audits, export/import idempotence, engine playtesting"
     }
   ]
