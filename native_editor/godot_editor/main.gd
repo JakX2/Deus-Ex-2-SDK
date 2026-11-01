@@ -2012,12 +2012,27 @@ func _refresh_placement_panel() -> void:
         return
     var data: Dictionary = evidence
     var flags: Variant = data.get("warnings", [])
+    var world_evidence := ""
+    if data.has("preview_major_axis_endpoints_godot_m"):
+        var pts: Variant = data["preview_major_axis_endpoints_godot_m"]
+        world_evidence = (
+            "\nWorld mesh endpoints: " + str(pts) +
+            "\nWorld AABB min/max: " +
+                str(data.get("preview_world_aabb_min_m", "?")) + " to " +
+                str(data.get("preview_world_aabb_max_m", "?"))
+        )
+    if bool(data.get("roll_direction_aabb_ambiguous", false)):
+        world_evidence += (
+            "\nRoll warning: nearly square cross-section. " +
+            "AABB cannot distinguish positive/negative roll; compare textured faces in game."
+        )
     placement_inspector.text = (
         "Mesh origin ↔ center: " + str(data.get("mesh_pivot_to_center_m", "?")) + " m" +
         "\nIBD ↔ vertices max difference: " + str(data.get("ibd_vertex_bounds_max_delta_ue", "?")) + " UE" +
         "\nGMP ↔ vertices max difference: " + str(data.get("gmp_vertex_bounds_max_delta_ue", "?")) + " UE" +
         "\nSource checks: " + (", ".join(flags) if not flags.is_empty() else "No local bounds disagreements detected") +
-        "\nThese comparisons do not determine the correct world rotation."
+        "\nThese comparisons do not determine the correct world rotation." +
+        world_evidence
     )
 
 
