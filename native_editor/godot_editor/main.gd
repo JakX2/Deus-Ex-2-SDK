@@ -12,6 +12,13 @@ var actor_list: ItemList
 var search_box: LineEdit
 var category_filter: OptionButton
 var hierarchy_tree: Tree
+var asset_filter: LineEdit
+var asset_kind_filter: OptionButton
+var asset_list: ItemList
+var asset_details: Label
+var asset_catalog: Dictionary = {}
+var assets_visible: Array = []
+var selected_asset: Dictionary = {}
 var hierarchy_items: Dictionary = {}
 var hierarchy_syncing := false
 var inspector_title: Label
@@ -276,7 +283,41 @@ func _make_ui() -> void:
     hierarchy_tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
     hierarchy_tree.multi_selected.connect(_hierarchy_multi_selected)
     hierarchy_tree.item_activated.connect(func(): focus_selected())
-    sidebar.add_child(hierarchy_tree)
+    var left_tabs := TabContainer.new()
+    left_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    sidebar.add_child(left_tabs)
+    var hierarchy_tab := VBoxContainer.new()
+    hierarchy_tab.name = "Hierarchy"
+    left_tabs.add_child(hierarchy_tab)
+    hierarchy_tab.add_child(hierarchy_tree)
+    var assets_tab := VBoxContainer.new()
+    assets_tab.name = "Assets"
+    left_tabs.add_child(assets_tab)
+    asset_filter = LineEdit.new()
+    asset_filter.placeholder_text = "Search IBD resources..."
+    asset_filter.text_changed.connect(func(_text): _refresh_asset_list())
+    assets_tab.add_child(asset_filter)
+    asset_kind_filter = OptionButton.new()
+    for kind in ["All resources", "Static meshes", "Textures", "Materials", "Physics hulls", "TriggerScript", "Other"]:
+        asset_kind_filter.add_item(kind)
+    asset_kind_filter.item_selected.connect(func(_index): _refresh_asset_list())
+    assets_tab.add_child(asset_kind_filter)
+    asset_list = ItemList.new()
+    asset_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    asset_list.item_selected.connect(_asset_selected)
+    assets_tab.add_child(asset_list)
+    asset_details = Label.new()
+    asset_details.text = "Import a DX2 mission to browse its IBD resources."
+    asset_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    assets_tab.add_child(asset_details)
+    var focus_resource := Button.new()
+    focus_resource.text = "Find placed instance"
+    focus_resource.pressed.connect(_focus_asset_instance)
+    assets_tab.add_child(focus_resource)
+    var copy_resource := Button.new()
+    copy_resource.text = "Copy resource name"
+    copy_resource.pressed.connect(_copy_asset_name)
+    assets_tab.add_child(copy_resource)
     # Retain the old list as a hidden compatibility model for existing picker
     # diagnostics; the new Hierarchy is the visible selection surface.
     actor_list = ItemList.new()
@@ -654,6 +695,7 @@ func load_glb(path: String) -> void:
     _index_meshes(scene_root)
     frame_whole_scene()
     current_folder = path.get_base_dir()
+    _load_asset_catalog(current_folder.path_join("assets.json"))
     var actor_path := current_folder.path_join("actors.json")
     if FileAccess.file_exists(actor_path):
         load_actors(actor_path)
@@ -685,6 +727,9 @@ func load_actors(path: String) -> void:
 
 func _clear_current_scene() -> void:
     _clear_selection()
+    asset_catalog.clear()
+    selected_asset.clear()
+    _refresh_asset_list()
     actors.clear()
     actors_by_name.clear()
     meshes_by_actor.clear()
@@ -790,6 +835,114 @@ func _refresh_actor_list() -> void:
     _refresh_hierarchy()
     if visible_actors.is_empty() and not actors.is_empty():
         status_label.text = "No actors match search."
+
+func _load_asset_catalog(path: String) -> void:
+    asset_catalog.clear()
+    selected_asset.clear()
+    if not FileAccess.file_exists(path):
+        _refresh_asset_list()
+        return
+    var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+    if typeof(parsed) != TYPE_DICTIONARY or parsed.get("schema") != "DX2Ed-asset-catalog-v1":
+        _refresh_asset_list()
+        status_label.text = "Unrecognized IBD asset catalog: " + path
+        return
+    var resources: Variant = parsed.get("assets", [])
+    if typeof(resources) != TYPE_ARRAY or resources.size() > 100000:
+        status_label.text = "Asset catalog has invalid resource entries."
+        return
+    asset_catalog = parsed
+    _refresh_asset_list()
+
+
+func _asset_kind_matches(kind: String) -> bool:
+    if asset_kind_filter == null:
+        return true
+    match asset_kind_filter.selected:
+        0: return true
+        1: return kind == "staticmesh"
+        2: return kind == "texture"
+        3: return kind == "matlib"
+        4: return kind == "physicshull"
+        5: return kind == "triggerscriptdef"
+        _: return kind not in ["staticmesh", "texture", "matlib", "physicshull", "triggerscriptdef"]
+
+
+func _refresh_asset_list() -> void:
+    if asset_list == null:
+        return
+    asset_list.clear()
+    assets_visible.clear()
+    var query := asset_filter.text.strip_edges().to_lower() if asset_filter != null else ""
+    var resources: Variant = asset_catalog.get("assets", [])
+    if typeof(resources) != TYPE_ARRAY:
+        return
+    for resource in resources:
+        if typeof(resource) != TYPE_DICTIONARY:
+            continue
+        var name := str(resource.get("name", ""))
+        var kind := str(resource.get("kind", "unknown"))
+        var bundle := str(resource.get("bundle", ""))
+        if not _asset_kind_matches(kind):
+            continue
+        if query != "" and query not in (name + " " + kind + " " + bundle).to_lower():
+            continue
+        assets_visible.append(resource)
+        asset_list.add_item(name + "  [" + kind + "]")
+    if asset_details != null and selected_asset.is_empty():
+        asset_details.text = str(assets_visible.size()) + " resources in current filter.\n" + (
+            "Source: original IBD header records; no asset data extracted." if not asset_catalog.is_empty() else
+            "No asset catalog for this GLB. Import a GMP with its IBD bundles."
+        )
+
+
+func _asset_selected(index: int) -> void:
+    if index < 0 or index >= assets_visible.size():
+        return
+    selected_asset = assets_visible[index]
+    var name := str(selected_asset.get("name", ""))
+    var placed := _placed_instances_for_asset(name) if str(selected_asset.get("kind", "")) == "staticmesh" else []
+    asset_details.text = (
+        "Name: " + name +
+        "\nKind: " + str(selected_asset.get("kind", "")) +
+        "\nSource: " + str(selected_asset.get("bundle", "")) +
+        "\nResource index: " + str(selected_asset.get("resource_index", "?")) +
+        "\nBytes: " + str(selected_asset.get("bytes", "?")) +
+        "\nPlaced actors: " + str(placed.size()) +
+        "\nBrowse-only: new native actor placement is not yet supported."
+    )
+
+
+func _placed_instances_for_asset(resource_name: String) -> Array:
+    var matches := []
+    for actor in actors:
+        if typeof(actor) != TYPE_DICTIONARY:
+            continue
+        var mesh: Variant = actor.get("mesh", null)
+        var name := str(mesh.get("name", "")) if typeof(mesh) == TYPE_DICTIONARY else str(mesh)
+        if name.casefold() == resource_name.casefold():
+            matches.append(actor)
+    return matches
+
+
+func _focus_asset_instance() -> void:
+    if selected_asset.is_empty():
+        return
+    var matches := _placed_instances_for_asset(str(selected_asset.get("name", "")))
+    if matches.is_empty():
+        status_label.text = "This resource is not placed in the loaded mission."
+        return
+    select_actor(matches[0])
+    focus_selected()
+    status_label.text = "Located first placed instance of " + str(selected_asset.get("name", ""))
+
+
+func _copy_asset_name() -> void:
+    if selected_asset.is_empty():
+        return
+    DisplayServer.clipboard_set(str(selected_asset.get("name", "")))
+    status_label.text = "Copied IBD resource name."
+
 
 func _refresh_hierarchy() -> void:
     if hierarchy_tree == null:
