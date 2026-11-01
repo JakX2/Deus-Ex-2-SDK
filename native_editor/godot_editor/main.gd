@@ -56,6 +56,7 @@ var gmp_dialog: FileDialog
 var gmp_save_as_dialog: FileDialog
 var native_export_thread: Thread = null
 var native_export_target := ""
+var native_audit_dialog: AcceptDialog
 var bundle_dialog: FileDialog
 var club_zip_dialog: FileDialog
 var shared_zip_dialog: FileDialog
@@ -173,6 +174,11 @@ func _make_ui() -> void:
     demo_btn.text = "Load demo cubes"
     demo_btn.pressed.connect(func(): load_glb(ProjectSettings.globalize_path("res://demo/scene.glb")))
     toolbar.add_child(demo_btn)
+    var audit_gmp_btn := Button.new()
+    audit_gmp_btn.text = "Audit native GMP"
+    audit_gmp_btn.tooltip_text = "Check original map actors for writable Location fields, without changing game files"
+    audit_gmp_btn.pressed.connect(_audit_current_native_map)
+    toolbar.add_child(audit_gmp_btn)
     var save_gmp_btn := Button.new()
     save_gmp_btn.text = "Experimental GMP Save As..."
     save_gmp_btn.tooltip_text = "Translation-only existing static mesh actors; separate folder; not game-tested"
@@ -614,6 +620,10 @@ func _make_ui() -> void:
     gmp_save_as_dialog.filters = PackedStringArray(["*.gmp ; Experimental location-only DX2 GMP"])
     gmp_save_as_dialog.file_selected.connect(_export_native_gmp_copy)
     add_child(gmp_save_as_dialog)
+    native_audit_dialog = AcceptDialog.new()
+    native_audit_dialog.title = "DX2Ed native Location audit (read-only)"
+    native_audit_dialog.dialog_text = "Import a retail GMP before running the source audit."
+    add_child(native_audit_dialog)
     bundle_dialog = FileDialog.new()
     bundle_dialog.access = FileDialog.ACCESS_FILESYSTEM
     bundle_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -2730,6 +2740,63 @@ func _array_to_transform(values: Variant) -> Variant:
         Vector3(safe[6], safe[7], safe[8]),
         Vector3(safe[9], safe[10], safe[11])
     )
+
+func _audit_current_native_map() -> void:
+    if native_export_thread != null or build_thread != null:
+        status_label.text = "A map operation is already active."
+        return
+    var script := ProjectSettings.globalize_path("res://backend/dx2_native_save_as.py")
+    var actors_path := current_folder.path_join("actors.json")
+    if (last_gmp_path.is_empty() or not FileAccess.file_exists(last_gmp_path)
+        or current_source_map_name.to_lower() != last_gmp_path.get_file().to_lower()
+        or not FileAccess.file_exists(actors_path) or not FileAccess.file_exists(script)):
+        status_label.text = "Audit requires the original GMP and its matching imported actors.json."
+        return
+    native_export_thread = Thread.new()
+    var err := native_export_thread.start(_run_native_audit.bind(script, last_gmp_path, actors_path))
+    if err != OK:
+        native_export_thread = null
+        status_label.text = "Could not start native map audit."
+        return
+    status_label.text = "Inspecting DX2 GMP actor Location encodings (read-only)..."
+
+
+func _run_native_audit(script: String, source: String, actors_path: String) -> void:
+    var args := PackedStringArray([script, "--source", source, "--actors", actors_path, "--audit"])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        var py_args := PackedStringArray(["-3"])
+        py_args.append_array(args)
+        output.clear()
+        code = OS.execute("py", py_args, output, true)
+    call_deferred("_native_audit_finished", code, "\n".join(output))
+
+
+func _native_audit_finished(code: int, output: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    var result: Variant = JSON.parse_string(output.strip_edges())
+    if code == 0 and typeof(result) == TYPE_DICTIONARY and result.get("schema") == "DX2Ed-native-location-audit-v1":
+        var eligible := int(result.get("native_location_candidates", 0))
+        var candidates := int(result.get("rendered_static_mesh_candidates", 0))
+        status_label.text = "Native Location audit: " + str(eligible) + " / " + str(candidates) + " static-mesh actors have writable Location tags. Game load unverified."
+        var audit_text := (
+            "Map: " + str(result.get("source", "")) +
+            "\nLocation candidates: " + str(eligible) + " / " + str(candidates) +
+            "\nUnsupported: " + str(result.get("unsupported_candidates", 0)) +
+            "\nReasons: " + JSON.stringify(result.get("reasons", {})) +
+            "\n\nThis checks existing serialized source fields only." +
+            "\nNative gameplay loading and collision are NOT verified."
+        )
+        if native_audit_dialog != null:
+            native_audit_dialog.dialog_text = audit_text
+            native_audit_dialog.popup_centered(Vector2i(680, 350))
+        return
+    var message := str(result.get("message", "Check original GMP and matching actor metadata.")) if typeof(result) == TYPE_DICTIONARY else output.strip_edges().substr(0, 240)
+    status_label.text = "Native location audit failed: " + message
+
 
 func _open_native_save_as_dialog() -> void:
     if scene_root == null or current_folder.is_empty():
