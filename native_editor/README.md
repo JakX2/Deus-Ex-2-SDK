@@ -174,3 +174,29 @@ These changes are covered by the synthetic Godot headless smoke test on CI,
 including moving a prop, cloning it, rotating it, saving a draft and restoring
 the clone. The Seattle Club GPU/Windows visual result still requires manual
 comparison with the original game.
+
+## 0.2.6: per-actor material skins and missing-texture diagnostics
+
+Static mesh actors may request a named **Skin** in original Gamesys property
+56 (Property_0038). Previously, DX2Ed always used the mesh resource's first
+skin for every placed instance, so actors sharing one mesh could render with
+the wrong material. The exporter now matches the actor's requested skin against
+the IBD resource's named variants, case-insensitively, and caches separate glTF
+mesh definitions **per selected skin**. Original map transforms are unchanged.
+
+If a requested skin is not present in the supplied mesh resource, the exporter
+uses the first available skin and explicitly records requested_skin_missing.
+The JSON scene report includes actor_skin_selections and
+actor_skin_variant_missing, with per-material statuses such as textured_diffuse,
+missing_material_record, and missing_diffuse_texture. The Godot **Copy mesh info**
+inspector shows the source map filename, requested and exported skin, and each
+material's resolution status.
+
+The native conversion cache version has changed, so opening the map again
+regenerates the GLB. An unavailable skin variant or diffuse texture cannot be
+reconstructed from missing resources, but its absence can now be diagnosed.
+
+The screenshot of StaticMeshActor__130 (export 1526, 1Hub_city_stair1,
+requested skin Tan Stones) does not match the uploaded M1_Seattle_Club.gmp,
+where StaticMeshActor__130 is export 421 (M1PENT_dframe-roof). Confirm the map
+filename before treating them as the same actor. No game assets are distributed.
