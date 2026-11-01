@@ -274,6 +274,16 @@ func _run() -> void:
     if not viewer.placement_inspector.visible or not viewer.placement_inspector.text.contains("gmp_vertex_bounds_disagree"):
         _fail("Placement Inspector should display original GMP/IBD bounds evidence")
         return
+    audit_actor["placement_diagnostic"]["preview_major_axis_endpoints_godot_m"] = [
+        [-27.737, 7.773, 14.170], [-22.860, 7.773, 14.170]]
+    audit_actor["placement_diagnostic"]["preview_world_aabb_min_m"] = [-27.737, 7.620, 14.018]
+    audit_actor["placement_diagnostic"]["preview_world_aabb_max_m"] = [-22.860, 7.925, 14.323]
+    audit_actor["placement_diagnostic"]["roll_direction_aabb_ambiguous"] = true
+    viewer._refresh_inspector_panel()
+    if (not viewer.placement_inspector.text.contains("World mesh endpoints:")
+        or not viewer.placement_inspector.text.contains("Roll warning:")):
+        _fail("Trim actor placement panel must explain transformed endpoints and roll ambiguity")
+        return
     viewer.category_filter.select(8)
     viewer._refresh_actor_list()
     if viewer.visible_actors.size() != 1 or str(viewer.visible_actors[0].get("name", "")) != "StaticMeshActor__1":
