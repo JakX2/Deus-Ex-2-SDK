@@ -183,8 +183,7 @@ class NativeGmpSaveAsTests(unittest.TestCase):
         self.assertAlmostEqual(struct.unpack_from("<f", patched.data, offsets["X"])[0], 120, places=4)
         self.assertAlmostEqual(struct.unpack_from("<f", patched.data, offsets["Y"])[0], 240, places=4)
         self.assertAlmostEqual(struct.unpack_from("<f", patched.data, offsets["Z"])[0], 320, places=4)
-        self.assertEqual(patched.props_after_ignore if hasattr(patched, "props_after_ignore") else
-                         patched.decode_object(patched.exports[0])["FixtureFlag"], 98765)
+        self.assertEqual(patched.decode_object(patched.exports[0])["FixtureFlag"], 98765)
         self.assertTrue(self.output.with_suffix(".dx2ed-manifest.json").is_file())
         with self.assertRaisesRegex(FileExistsError, "overwrite"):
             export_translation_copy(
