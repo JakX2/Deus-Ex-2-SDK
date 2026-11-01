@@ -52,6 +52,17 @@ var orbit_distance := 25.0
 var dragging := false
 var drag_mode := ""
 var drag_distance := 0.0
+var fly_looking := false
+var fly_speed := 8.0
+var editor_tool := "move"  # W/E/R
+var gizmo_root: Node3D
+var gizmo_handles: Array[MeshInstance3D] = []
+var gizmo_drag_axis := Vector3.ZERO
+var gizmo_drag_pivot := Vector3.ZERO
+var gizmo_start_transform := Transform3D.IDENTITY
+var gizmo_drag_start_scalar := 0.0
+var gizmo_drag_start_screen := Vector2.ZERO
+var gizmo_drag_active := false
 var scene_bounds := AABB()
 var scene_bounds_valid := false
 var mesh_count := 0
@@ -108,7 +119,7 @@ func _make_ui() -> void:
     copy_btn.pressed.connect(_copy_selection_details)
     toolbar.add_child(copy_btn)
     var hint := Label.new()
-    hint.text = "  Left drag orbit  |  Right drag pan  |  Wheel zoom  |  Click select"
+    hint.text = "  RMB+WASD/QE fly  |  Shift faster  |  Alt+LMB orbit  |  MMB pan  |  F focus"
     toolbar.add_child(hint)
 
     var zip_bar := HBoxContainer.new()
@@ -143,6 +154,15 @@ func _make_ui() -> void:
     var draft_label := Label.new()
     draft_label.text = "Prop drafts:"
     prop_bar.add_child(draft_label)
+    var transform_heading := Label.new()
+    transform_heading.text = "  Tools:"
+    prop_bar.add_child(transform_heading)
+    for definition in [["Move W", "move"], ["Rotate E", "rotate"], ["Scale R", "scale"]]:
+        var tool_button := Button.new()
+        tool_button.text = definition[0]
+        tool_button.tooltip_text = "Choose 3D axis gizmo; keyboard shortcut " + definition[0].right(1)
+        tool_button.pressed.connect(_set_editor_tool.bind(definition[1]))
+        prop_bar.add_child(tool_button)
     var duplicate_button := Button.new()
     duplicate_button.text = "Duplicate"
     duplicate_button.tooltip_text = "Clone selected rendered prop in the viewer. Does not write the GMP."
@@ -440,6 +460,10 @@ func _make_world() -> void:
     camera.near = 0.05
     camera.far = 100000.0
     world_root.add_child(camera)
+    gizmo_root = Node3D.new()
+    gizmo_root.name = "EditorGizmo"
+    world_root.add_child(gizmo_root)
+    _create_transform_gizmo()
     var light := DirectionalLight3D.new()
     light.rotation_degrees = Vector3(-45, 25, 0)
     light.light_energy = 1.6
@@ -933,43 +957,138 @@ func _update_camera() -> void:
     camera.global_position = camera_target + offset
     camera.look_at(camera_target, Vector3.UP)
 
+func _camera_offset() -> Vector3:
+    return Vector3(
+        sin(orbit_yaw) * cos(orbit_pitch), sin(orbit_pitch),
+        cos(orbit_yaw) * cos(orbit_pitch)) * orbit_distance
+
+
+func _process(delta: float) -> void:
+    if fly_looking and is_instance_valid(camera):
+        var local := Vector3.ZERO
+        if Input.is_key_pressed(KEY_W): local.z -= 1.0
+        if Input.is_key_pressed(KEY_S): local.z += 1.0
+        if Input.is_key_pressed(KEY_A): local.x -= 1.0
+        if Input.is_key_pressed(KEY_D): local.x += 1.0
+        if Input.is_key_pressed(KEY_Q): local.y -= 1.0
+        if Input.is_key_pressed(KEY_E): local.y += 1.0
+        if local != Vector3.ZERO:
+            var multiplier := 4.0 if Input.is_key_pressed(KEY_SHIFT) else 1.0
+            var step := camera.global_basis * local.normalized() * fly_speed * multiplier * delta
+            camera_target += step
+            _update_camera()
+    _update_gizmo_pose()
+
+
+func _mouse_ray(view_mouse_position: Vector2) -> Dictionary:
+    if view_container.size.x <= 0 or view_container.size.y <= 0:
+        return {}
+    var screen := view_mouse_position * Vector2(world_view.size) / view_container.size
+    return {"origin": camera.project_ray_origin(screen),
+            "direction": camera.project_ray_normal(screen).normalized()}
+
+
+func _set_editor_tool(tool: String) -> void:
+    if tool not in ["move", "rotate", "scale"]:
+        return
+    editor_tool = tool
+    gizmo_drag_active = false
+    _refresh_gizmo_shape()
+    status_label.text = "Transform tool: " + tool.capitalize() + " (W/E/R). Preview edits only."
+
+
+func _set_fly_mode(enabled: bool) -> void:
+    fly_looking = enabled
+    if enabled:
+        # Preserve camera position while turning the view.
+        drag_mode = "fly"
+    else:
+        drag_mode = ""
+
+
 func _input(event: InputEvent) -> void:
     if view_container == null or not view_container.visible:
         return
     var mouse_inside := view_container.get_global_rect().has_point(get_global_mouse_position())
+    if event is InputEventKey:
+        var ke := event as InputEventKey
+        if ke.pressed and not ke.echo and not fly_looking and mouse_inside:
+            if ke.keycode == KEY_W: _set_editor_tool("move")
+            elif ke.keycode == KEY_E: _set_editor_tool("rotate")
+            elif ke.keycode == KEY_R: _set_editor_tool("scale")
+            elif ke.keycode == KEY_F: focus_selected()
+            else: return
+            get_viewport().set_input_as_handled()
+        return
     if event is InputEventMouseButton:
         var button := event as InputEventMouseButton
+        # Always handle release, including outside the embedded viewport.
         if button.pressed and not mouse_inside:
             return
+        if button.button_index == MOUSE_BUTTON_RIGHT:
+            _set_fly_mode(button.pressed)
+            get_viewport().set_input_as_handled()
+            return
         if button.button_index == MOUSE_BUTTON_WHEEL_UP and button.pressed:
-            orbit_distance *= 0.88
-            _update_camera()
+            if fly_looking:
+                fly_speed = min(250.0, fly_speed * 1.2)
+            else:
+                orbit_distance *= 0.88
+                _update_camera()
             get_viewport().set_input_as_handled()
         elif button.button_index == MOUSE_BUTTON_WHEEL_DOWN and button.pressed:
-            orbit_distance *= 1.13
-            _update_camera()
+            if fly_looking:
+                fly_speed = max(0.1, fly_speed / 1.2)
+            else:
+                orbit_distance *= 1.13
+                _update_camera()
             get_viewport().set_input_as_handled()
-        elif button.button_index == MOUSE_BUTTON_LEFT:
+        elif button.button_index == MOUSE_BUTTON_MIDDLE:
             dragging = button.pressed
-            drag_mode = "orbit"
+            drag_mode = "pan" if button.pressed else ""
+        elif button.button_index == MOUSE_BUTTON_LEFT:
             if button.pressed:
                 drag_distance = 0.0
-            elif mouse_inside and drag_distance < 3.0:
-                _pick_actor()
-        elif button.button_index == MOUSE_BUTTON_RIGHT:
-            dragging = button.pressed
-            drag_mode = "pan"
-    if event is InputEventMouseMotion and dragging:
+                if button.alt_pressed:
+                    dragging = true
+                    drag_mode = "orbit"
+                elif _begin_gizmo_drag():
+                    dragging = true
+                    drag_mode = "gizmo"
+                else:
+                    dragging = true
+                    drag_mode = "select"
+            else:
+                if drag_mode == "select" and mouse_inside and drag_distance < 3.0:
+                    _pick_actor()
+                dragging = false
+                gizmo_drag_active = false
+                drag_mode = ""
+        return
+    if event is InputEventMouseMotion:
         var motion := event as InputEventMouseMotion
-        drag_distance += motion.relative.length()
-        if drag_mode == "orbit":
+        if fly_looking:
+            var previous := camera.global_position
             orbit_yaw -= motion.relative.x * 0.006
             orbit_pitch += motion.relative.y * 0.006
-        elif drag_mode == "pan":
-            var pan := (camera.global_basis.x * -motion.relative.x + camera.global_basis.y * motion.relative.y) * (orbit_distance * 0.0015)
-            camera_target += pan
-        _update_camera()
-        get_viewport().set_input_as_handled()
+            orbit_pitch = clamp(orbit_pitch, -1.50, 1.50)
+            camera_target = previous - _camera_offset()
+            _update_camera()
+            get_viewport().set_input_as_handled()
+        elif dragging:
+            drag_distance += motion.relative.length()
+            if drag_mode == "orbit":
+                orbit_yaw -= motion.relative.x * 0.006
+                orbit_pitch += motion.relative.y * 0.006
+                _update_camera()
+            elif drag_mode == "pan":
+                var pan := (camera.global_basis.x * -motion.relative.x + camera.global_basis.y * motion.relative.y) * (orbit_distance * 0.0015)
+                camera_target += pan
+                _update_camera()
+            elif drag_mode == "gizmo":
+                _apply_gizmo_drag()
+            get_viewport().set_input_as_handled()
+
 
 func _pick_actor() -> void:
     # AABB is a broad-phase filter only. Actual visible triangles decide the pick:
