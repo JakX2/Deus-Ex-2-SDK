@@ -25,6 +25,11 @@ var chosen_system_zip: String = ""
 var chosen_system_path: String = ""
 var preview_club_stairs := false
 var last_gmp_path: String = ""
+var prop_edit_step: SpinBox
+var original_mesh_transforms: Dictionary = {}
+var draft_prop_copies: Dictionary = {}
+var draft_prop_sources: Dictionary = {}
+var next_prop_copy_id := 1
 var build_thread: Thread = null
 var actors: Array = []
 var visible_actors: Array = []
@@ -131,6 +136,53 @@ func _make_ui() -> void:
     var zip_hint := Label.new()
     zip_hint.text = "  Select shared resources, optional System, then Club ZIP"
     zip_bar.add_child(zip_hint)
+
+    var prop_bar := HBoxContainer.new()
+    base.add_child(prop_bar)
+    var draft_label := Label.new()
+    draft_label.text = "Prop drafts:"
+    prop_bar.add_child(draft_label)
+    var duplicate_button := Button.new()
+    duplicate_button.text = "Duplicate"
+    duplicate_button.tooltip_text = "Clone selected rendered prop in the viewer. Does not write the GMP."
+    duplicate_button.pressed.connect(_duplicate_selected_prop)
+    prop_bar.add_child(duplicate_button)
+    prop_edit_step = SpinBox.new()
+    prop_edit_step.min_value = 0.05
+    prop_edit_step.max_value = 10.0
+    prop_edit_step.step = 0.05
+    prop_edit_step.value = 0.25
+    prop_edit_step.custom_minimum_size.x = 83
+    prop_edit_step.tooltip_text = "Distance for X/Y/Z buttons, in Godot metres"
+    prop_bar.add_child(prop_edit_step)
+    for entry in [
+        ["X-", Vector3(-1, 0, 0)], ["X+", Vector3(1, 0, 0)],
+        ["Y-", Vector3(0, -1, 0)], ["Y+", Vector3(0, 1, 0)],
+        ["Z-", Vector3(0, 0, -1)], ["Z+", Vector3(0, 0, 1)]
+    ]:
+        var move_button := Button.new()
+        move_button.text = str(entry[0])
+        move_button.tooltip_text = "Move selected prop along Godot world axis"
+        move_button.pressed.connect(_move_selected_prop.bind(entry[1]))
+        prop_bar.add_child(move_button)
+    for angle in [-15.0, 15.0]:
+        var rotate_button := Button.new()
+        rotate_button.text = "Turn " + str(int(angle)) + "°"
+        rotate_button.pressed.connect(_rotate_selected_prop.bind(angle))
+        prop_bar.add_child(rotate_button)
+    var reset_button := Button.new()
+    reset_button.text = "Reset / Delete copy"
+    reset_button.pressed.connect(_reset_selected_prop)
+    prop_bar.add_child(reset_button)
+    var save_button := Button.new()
+    save_button.text = "Save draft"
+    save_button.tooltip_text = "Save only the preview changes as JSON in user://. Never write the game files."
+    save_button.pressed.connect(_save_prop_draft)
+    prop_bar.add_child(save_button)
+    var reload_button := Button.new()
+    reload_button.text = "Load draft"
+    reload_button.pressed.connect(_load_prop_draft)
+    prop_bar.add_child(reload_button)
 
     var horizontal := HSplitContainer.new()
     horizontal.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -438,7 +490,8 @@ func load_glb(path: String) -> void:
     var actor_path := current_folder.path_join("actors.json")
     if FileAccess.file_exists(actor_path):
         load_actors(actor_path)
-    else:
+    _load_prop_draft(true)
+    if not FileAccess.file_exists(actor_path):
         status_label.text = "3D loaded (%d meshes). Open its actors.json to inspect entities." % mesh_count
     print("DX2Ed native: GLB loaded with ", mesh_count, " mesh instances")
 
@@ -464,6 +517,10 @@ func _clear_current_scene() -> void:
     actors.clear()
     actors_by_name.clear()
     meshes_by_actor.clear()
+    original_mesh_transforms.clear()
+    draft_prop_copies.clear()
+    draft_prop_sources.clear()
+    next_prop_copy_id = 1
     all_mesh_instances.clear()
     pick_faces_by_mesh.clear()
     visible_actors.clear()
@@ -487,6 +544,8 @@ func _index_meshes(node: Node) -> void:
             else:
                 scene_bounds = scene_bounds.merge(box)
             var actor_name := str(mesh_node.name)
+            if not original_mesh_transforms.has(actor_name):
+                original_mesh_transforms[actor_name] = mesh_node.global_transform
             if not meshes_by_actor.has(actor_name):
                 meshes_by_actor[actor_name] = mesh_node
     for child in node.get_children():
@@ -618,6 +677,219 @@ func _clear_selection() -> void:
     selected_overlay_original = null
     selected_diagnostic = ""
     selected_actor = {}
+
+## Editable *preview* operations. Native GMP/IBD save remains intentionally disabled.
+## Drafts live in user:// and are never written next to retail files.
+
+func _draft_selected_is_prop() -> bool:
+    if not is_instance_valid(selected_mesh) or selected_mesh.mesh == null:
+        return false
+    var name := str(selected_mesh.name)
+    return draft_prop_copies.has(name) or (meshes_by_actor.has(name) and actors_by_name.has(name))
+
+func _draft_source_name(instance: MeshInstance3D) -> String:
+    var name := str(instance.name)
+    if draft_prop_sources.has(name):
+        return str(draft_prop_sources[name])
+    if meshes_by_actor.has(name) and actors_by_name.has(name):
+        return name
+    return ""
+
+func _new_draft_copy(source_name: String, copy_name: String, world_transform: Transform3D) -> MeshInstance3D:
+    if not meshes_by_actor.has(source_name) or draft_prop_copies.has(copy_name):
+        return null
+    var source: MeshInstance3D = meshes_by_actor[source_name]
+    if not is_instance_valid(source) or source.mesh == null:
+        return null
+    var duplicate := MeshInstance3D.new()
+    duplicate.name = copy_name
+    duplicate.mesh = source.mesh
+    duplicate.material_override = source.material_override
+    duplicate.cast_shadow = source.cast_shadow
+    world_root.add_child(duplicate)
+    duplicate.global_transform = world_transform
+    draft_prop_copies[copy_name] = duplicate
+    draft_prop_sources[copy_name] = source_name
+    all_mesh_instances.append(duplicate)
+    return duplicate
+
+func _duplicate_selected_prop() -> void:
+    if not _draft_selected_is_prop():
+        status_label.text = "Select a rendered prop first (not BSP or a logical-only actor)."
+        return
+    var source := _draft_source_name(selected_mesh)
+    if source.is_empty():
+        return
+    var transform := selected_mesh.global_transform
+    var name := "DraftProp_" + str(next_prop_copy_id)
+    next_prop_copy_id += 1
+    var duplicate := _new_draft_copy(source, name, transform)
+    if is_instance_valid(duplicate):
+        _select_mesh_only(duplicate)
+        status_label.text = "Created preview copy " + name + ". Move it, then Save draft."
+
+func _refresh_prop_inspection() -> void:
+    if not is_instance_valid(selected_mesh):
+        return
+    if not selected_actor.is_empty():
+        selected_diagnostic = _format_actor_diagnostic(selected_actor)
+        inspector.text = selected_diagnostic + "\n\n--- ORIGINAL ACTOR PROPERTIES ---\n" + JSON.stringify(selected_actor, "  ")
+    else:
+        selected_diagnostic = _format_mesh_diagnostic(selected_mesh)
+        inspector.text = selected_diagnostic
+    inspector.text += "\n\n--- PREVIEW EDIT ---\nGodot transform: " + str(selected_mesh.global_transform)
+    status_label.text = "Preview modified: " + str(selected_mesh.name) + ". Save draft to keep changes (not GMP)."
+
+func _move_selected_prop(axis: Vector3) -> void:
+    if not _draft_selected_is_prop():
+        status_label.text = "Select a rendered prop first. BSP and gameplay-only actors are not editable here."
+        return
+    selected_mesh.global_position += axis * float(prop_edit_step.value)
+    _refresh_prop_inspection()
+
+func _rotate_selected_prop(angle: float) -> void:
+    if not _draft_selected_is_prop():
+        status_label.text = "Select a rendered prop to rotate."
+        return
+    selected_mesh.rotate_y(deg_to_rad(angle))
+    _refresh_prop_inspection()
+
+func _reset_selected_prop() -> void:
+    if not _draft_selected_is_prop():
+        return
+    var name := str(selected_mesh.name)
+    if draft_prop_copies.has(name):
+        var copy := selected_mesh
+        _clear_selection()
+        draft_prop_copies.erase(name)
+        draft_prop_sources.erase(name)
+        all_mesh_instances.erase(copy)
+        copy.queue_free()
+        inspector.text = "Draft prop copy removed from preview."
+        status_label.text = "Draft copy removed. Save draft to keep this change."
+    elif original_mesh_transforms.has(name):
+        selected_mesh.global_transform = original_mesh_transforms[name]
+        _refresh_prop_inspection()
+
+func _draft_file_path() -> String:
+    if current_folder.is_empty():
+        return ""
+    var folder := ProjectSettings.globalize_path("user://prop_drafts")
+    var result := DirAccess.make_dir_recursive_absolute(folder)
+    if result != OK:
+        return ""
+    return folder.path_join(current_folder.sha256_text() + ".json")
+
+func _transform_to_array(xform: Transform3D) -> Array:
+    return [
+        xform.basis.x.x, xform.basis.x.y, xform.basis.x.z,
+        xform.basis.y.x, xform.basis.y.y, xform.basis.y.z,
+        xform.basis.z.x, xform.basis.z.y, xform.basis.z.z,
+        xform.origin.x, xform.origin.y, xform.origin.z
+    ]
+
+func _array_to_transform(values: Variant) -> Variant:
+    if typeof(values) != TYPE_ARRAY or values.size() != 12:
+        return null
+    var safe: Array = []
+    for value in values:
+        if typeof(value) not in [TYPE_FLOAT, TYPE_INT]:
+            return null
+        var number := float(value)
+        if not is_finite(number) or abs(number) > 1000000.0:
+            return null
+        safe.append(number)
+    return Transform3D(
+        Vector3(safe[0], safe[1], safe[2]),
+        Vector3(safe[3], safe[4], safe[5]),
+        Vector3(safe[6], safe[7], safe[8]),
+        Vector3(safe[9], safe[10], safe[11])
+    )
+
+func _save_prop_draft() -> void:
+    var path := _draft_file_path()
+    if path.is_empty() or scene_root == null:
+        status_label.text = "Load a GLB map before saving a prop draft."
+        return
+    var moved := []
+    for name in original_mesh_transforms:
+        if not meshes_by_actor.has(name) or not actors_by_name.has(name):
+            continue
+        var mesh: MeshInstance3D = meshes_by_actor[name]
+        if is_instance_valid(mesh) and mesh.global_transform != original_mesh_transforms[name]:
+            moved.append({"actor": name, "transform": _transform_to_array(mesh.global_transform)})
+    var copies := []
+    for name in draft_prop_copies:
+        var duplicate: MeshInstance3D = draft_prop_copies[name]
+        if is_instance_valid(duplicate):
+            copies.append({"name": name, "from_actor": draft_prop_sources[name],
+                           "transform": _transform_to_array(duplicate.global_transform)})
+    var document := {
+        "schema": "DX2Ed-prop-draft-v1",
+        "map_cache": current_folder,
+        "coordinate_space": "Godot world metres (X=UE X, Y=UE Z, Z=UE Y)",
+        "read_only_source": true,
+        "moved": moved,
+        "copies": copies
+    }
+    var output := FileAccess.open(path, FileAccess.WRITE)
+    if output == null:
+        status_label.text = "Unable to write private draft: " + path
+        return
+    output.store_string(JSON.stringify(document, "  "))
+    output.close()
+    status_label.text = "Saved " + str(moved.size()) + " moved props and " + str(copies.size()) + " copies in private draft JSON (not GMP)."
+
+func _load_prop_draft(silent_if_absent: bool = false) -> void:
+    var path := _draft_file_path()
+    if path.is_empty() or not FileAccess.file_exists(path):
+        if not silent_if_absent:
+            status_label.text = "No saved prop draft for this map cache."
+        return
+    var file := FileAccess.open(path, FileAccess.READ)
+    if file == null:
+        status_label.text = "Unable to read prop draft."
+        return
+    var doc: Variant = JSON.parse_string(file.get_as_text())
+    if typeof(doc) != TYPE_DICTIONARY or doc.get("schema") != "DX2Ed-prop-draft-v1" or doc.get("map_cache") != current_folder:
+        status_label.text = "Prop draft did not match the current map."
+        return
+    var moved: Variant = doc.get("moved", [])
+    var copies: Variant = doc.get("copies", [])
+    if typeof(moved) != TYPE_ARRAY or typeof(copies) != TYPE_ARRAY or moved.size() > 10000 or copies.size() > 10000:
+        status_label.text = "Prop draft contains invalid record arrays."
+        return
+    # Validate every transform before applying any of the saved changes.
+    for entry in moved + copies:
+        if typeof(entry) != TYPE_DICTIONARY or _array_to_transform(entry.get("transform")) == null:
+            status_label.text = "Prop draft contains an invalid transform."
+            return
+    _clear_selection()
+    for name in original_mesh_transforms:
+        if meshes_by_actor.has(name) and is_instance_valid(meshes_by_actor[name]):
+            meshes_by_actor[name].global_transform = original_mesh_transforms[name]
+    for node in draft_prop_copies.values():
+        if is_instance_valid(node):
+            all_mesh_instances.erase(node)
+            node.queue_free()
+    draft_prop_copies.clear()
+    draft_prop_sources.clear()
+    next_prop_copy_id = 1
+    for entry in moved:
+        var name := str(entry.get("actor", ""))
+        if meshes_by_actor.has(name) and actors_by_name.has(name):
+            meshes_by_actor[name].global_transform = _array_to_transform(entry["transform"])
+    for entry in copies:
+        var from_actor := str(entry.get("from_actor", ""))
+        var name := str(entry.get("name", ""))
+        if not name.begins_with("DraftProp_") or not actors_by_name.has(from_actor):
+            continue
+        var instance := _new_draft_copy(from_actor, name, _array_to_transform(entry["transform"]))
+        if is_instance_valid(instance):
+            var suffix := name.trim_prefix("DraftProp_")
+            if suffix.is_valid_int():
+                next_prop_copy_id = max(next_prop_copy_id, int(suffix) + 1)
+    status_label.text = "Loaded private prop draft. Original GMP unchanged."
 
 func focus_selected() -> void:
     if is_instance_valid(selected_mesh):
