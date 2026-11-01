@@ -1565,11 +1565,14 @@ func _find_editable_property(actor: Dictionary, id: int) -> Dictionary:
     if kind in ["byte", "int"] and typeof(value) in [TYPE_INT, TYPE_FLOAT]:
         var number: float = float(value)
         if not is_nan(number) and not is_inf(number) and floorf(number) == number:
-            return item
+            if kind == "byte" and number >= 0 and number <= 255:
+                return item
+            if kind == "int" and absf(number) <= 1000000.0:
+                return item
     if kind == "float" and typeof(value) in [TYPE_INT, TYPE_FLOAT]:
-        if is_finite(float(value)):
+        if not is_nan(float(value)) and not is_inf(float(value)) and absf(float(value)) <= 1000000.0:
             return item
-    if kind == "string" and typeof(value) == TYPE_STRING:
+    if kind == "string" and typeof(value) == TYPE_STRING and str(value).length() <= 512:
         return item
     return {}
 
@@ -1642,7 +1645,7 @@ func _refresh_actor_property_editor() -> void:
         var row := HBoxContainer.new()
         property_editor_rows.add_child(row)
         var label := Label.new()
-        label.text = str(safe.get("name", "Property_" + str(id)))
+        label.text = prop_label + (" *" if property_overrides.get(name, {}).has(str(id)) else "")
         label.tooltip_text = "DX2 property ID " + str(id) + " | " + kind + " | original: " + str(safe.get("value"))
         label.custom_minimum_size.x = 125
         row.add_child(label)
@@ -1669,6 +1672,7 @@ func _refresh_actor_property_editor() -> void:
             row.add_child(input)
     property_editor_note.text = (str(supported) + " decoded scalar properties; " + str(locked) +
         " complex/unknown properties locked. " +
+        str(property_overrides.get(name, {}).size()) + " draft overrides (marked *). " +
         ("Only first 48 shown. " if supported > 48 else "") +
         "Values are draft metadata, not live gameplay or GMP writes.")
     property_editor_syncing = false
@@ -2193,7 +2197,7 @@ func _save_prop_draft() -> void:
         return
     output.store_string(JSON.stringify(document, "  "))
     output.close()
-    status_label.text = "Saved " + str(moved.size()) + " moved props and " + str(copies.size()) + " copies in private draft JSON (not GMP)."
+    status_label.text = "Saved " + str(moved.size()) + " moved props, " + str(copies.size()) + " copies and " + str(document["property_edits"].size()) + " actor property overrides (not GMP)."
 
 func _load_prop_draft(silent_if_absent: bool = false) -> void:
     var path := _draft_file_path()
