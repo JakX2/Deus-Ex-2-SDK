@@ -19,6 +19,10 @@ var asset_details: Label
 var asset_catalog: Dictionary = {}
 var assets_visible: Array = []
 var selected_asset: Dictionary = {}
+var asset_mesh_resources: Dictionary = {}
+var asset_thread: Thread = null
+var asset_pending_name := ""
+var asset_pending_folder := ""
 var hierarchy_items: Dictionary = {}
 var hierarchy_syncing := false
 var inspector_title: Label
@@ -317,6 +321,11 @@ func _make_ui() -> void:
     asset_details.text = "Import a DX2 mission to browse its IBD resources."
     asset_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     assets_tab.add_child(asset_details)
+    var place_resource := Button.new()
+    place_resource.text = "Place preview mesh"
+    place_resource.tooltip_text = "Place a cataloged static mesh as an editable draft; does not create native DX2 actors"
+    place_resource.pressed.connect(_place_selected_asset)
+    assets_tab.add_child(place_resource)
     var focus_resource := Button.new()
     focus_resource.text = "Find placed instance"
     focus_resource.pressed.connect(_focus_asset_instance)
@@ -766,6 +775,9 @@ func _clear_current_scene() -> void:
     _clear_selection()
     asset_catalog.clear()
     selected_asset.clear()
+    asset_mesh_resources.clear()
+    asset_pending_name = ""
+    asset_pending_folder = ""
     _refresh_asset_list()
     actors.clear()
     actors_by_name.clear()
@@ -948,7 +960,7 @@ func _asset_selected(index: int) -> void:
         "\nResource index: " + str(selected_asset.get("resource_index", "?")) +
         "\nBytes: " + str(selected_asset.get("bytes", "?")) +
         "\nPlaced actors: " + str(placed.size()) +
-        "\nBrowse-only: new native actor placement is not yet supported."
+        "\nPlace preview creates editor-only geometry, not a native game actor."
     )
 
 
@@ -962,6 +974,144 @@ func _placed_instances_for_asset(resource_name: String) -> Array:
         if name.to_lower() == resource_name.to_lower():
             matches.append(actor)
     return matches
+
+
+## Catalog meshes are visual previews only. No fake DX2 actor fields.
+func _asset_source_key(name: String) -> String:
+    return "AssetMesh::" + name
+
+
+func _asset_record(name: String) -> Dictionary:
+    var resources: Variant = asset_catalog.get("assets", [])
+    if typeof(resources) != TYPE_ARRAY:
+        return {}
+    for item in resources:
+        if typeof(item) == TYPE_DICTIONARY and str(item.get("kind", "")) == "staticmesh" and str(item.get("name", "")) == name:
+            return item
+    return {}
+
+
+func _draft_source_is_valid(source: String) -> bool:
+    if actors_by_name.has(source) and meshes_by_actor.has(source):
+        return true
+    if source.begins_with("AssetMesh::"):
+        return not _asset_record(source.trim_prefix("AssetMesh::")).is_empty()
+    return false
+
+
+func _asset_preview_path(name: String) -> String:
+    return current_folder.path_join("asset_previews").path_join("mesh_" + name.sha256_text().substr(0, 20) + ".glb")
+
+
+func _first_preview_mesh(root: Node) -> MeshInstance3D:
+    if root is MeshInstance3D and (root as MeshInstance3D).mesh != null:
+        return root as MeshInstance3D
+    for child in root.get_children():
+        var found := _first_preview_mesh(child)
+        if is_instance_valid(found):
+            return found
+    return null
+
+
+func _load_asset_mesh(name: String) -> bool:
+    if asset_mesh_resources.has(name):
+        return true
+    if _asset_record(name).is_empty():
+        return false
+    var path := _asset_preview_path(name)
+    if not FileAccess.file_exists(path):
+        return false
+    var gltf := GLTFDocument.new()
+    var state := GLTFState.new()
+    if gltf.append_from_file(path, state) != OK:
+        return false
+    var root := gltf.generate_scene(state)
+    if root == null:
+        return false
+    var found := _first_preview_mesh(root)
+    if is_instance_valid(found) and found.mesh != null:
+        asset_mesh_resources[name] = found.mesh
+    root.free()
+    return asset_mesh_resources.has(name)
+
+
+func _place_selected_asset() -> void:
+    var name := str(selected_asset.get("name", ""))
+    if str(selected_asset.get("kind", "")) != "staticmesh" or _asset_record(name).is_empty() or scene_root == null:
+        status_label.text = "Load a map and select a cataloged static mesh first."
+        return
+    if asset_thread != null:
+        status_label.text = "An asset preview is being generated."
+        return
+    if _load_asset_mesh(name):
+        _place_loaded_asset(name)
+        return
+    var script := ProjectSettings.globalize_path("res://backend/dx2_asset_preview.py")
+    var catalog := current_folder.path_join("assets.json")
+    if not FileAccess.file_exists(script) or not FileAccess.file_exists(catalog):
+        status_label.text = "Original IBD catalog or asset preview backend missing."
+        return
+    asset_pending_name = name
+    asset_pending_folder = current_folder
+    asset_thread = Thread.new()
+    var err := asset_thread.start(_run_asset_preview.bind(script, catalog, name))
+    if err != OK:
+        asset_thread = null
+        asset_pending_name = ""
+        status_label.text = "Unable to start mesh preview worker."
+    else:
+        status_label.text = "Decoding IBD resource " + name + " into private textured GLB..."
+
+
+func _run_asset_preview(script: String, catalog: String, name: String) -> void:
+    var args := PackedStringArray([script, "--catalog", catalog, "--name", name])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        var launcher := PackedStringArray(["-3"])
+        launcher.append_array(args)
+        output.clear()
+        code = OS.execute("py", launcher, output, true)
+    call_deferred("_asset_preview_finished", code, "\n".join(output))
+
+
+func _asset_preview_finished(code: int, output: String) -> void:
+    if asset_thread != null:
+        asset_thread.wait_to_finish()
+        asset_thread = null
+    var name := asset_pending_name
+    var folder := asset_pending_folder
+    asset_pending_name = ""
+    asset_pending_folder = ""
+    if name.is_empty() or folder != current_folder or scene_root == null or _asset_record(name).is_empty():
+        return
+    if code == 0 and _load_asset_mesh(name):
+        _place_loaded_asset(name)
+        return
+    var reason := "Python, bundle, or mesh decoder failure."
+    for line in output.strip_edges().split("\n"):
+        var item: Variant = JSON.parse_string(line.strip_edges())
+        if typeof(item) == TYPE_DICTIONARY and item.get("status") == "error":
+            reason = str(item.get("message", reason))
+    status_label.text = "Cannot preview " + name + ": " + reason
+
+
+func _place_loaded_asset(name: String) -> void:
+    if scene_root == null or not asset_mesh_resources.has(name) or _asset_record(name).is_empty():
+        return
+    var before := _capture_edit_state()
+    var copy_name := "DraftProp_" + str(next_prop_copy_id)
+    next_prop_copy_id += 1
+    var draft := _new_draft_copy(_asset_source_key(name), copy_name, Transform3D(Basis.IDENTITY, camera_target))
+    if not is_instance_valid(draft):
+        status_label.text = "Preview placement failed for " + name
+        return
+    _clear_selection()
+    _add_selection_mesh(draft)
+    _refresh_selection_inspector()
+    _sync_actor_list_selection()
+    _record_edit("Place IBD asset " + name, before)
+    status_label.text = "Placed preview mesh " + name + ". Save draft; GMP remains untouched."
 
 
 func _focus_asset_instance() -> void:
