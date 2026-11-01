@@ -386,21 +386,127 @@ def export_translation_copy(source: Path, actors_file: Path, draft_file: Path,
     return summary
 
 
+def verify_translation_copy(source: Path, output: Path, manifest: Path | None = None) -> dict:
+    """Independently verify a previously exported translation-only GMP.
+
+    Verification is byte-level and uses the same original source file,
+    rather than relying only on the export-time success flag. Not a game test.
+    """
+    source = source.expanduser().resolve(strict=True)
+    output = output.expanduser().resolve(strict=True)
+    manifest = (
+        manifest.expanduser().resolve(strict=True) if manifest is not None
+        else output.with_suffix(".dx2ed-manifest.json")
+    )
+    if source == output:
+        raise ValueError("Cannot verify a GMP against itself")
+    report = json.loads(manifest.read_text(encoding="utf8"))
+    if report.get("schema") != "DX2Ed-native-save-as-experiment-v1" or report.get("status") != "written-unverified":
+        raise ValueError("Unrecognized or non-written DX2Ed GMP export manifest")
+    if report.get("game_verified") is not False:
+        raise ValueError("Manifest must not claim that retail game testing passed")
+    if str(report.get("source")) != str(source) or str(report.get("output")) != str(output):
+        raise ValueError("Manifest is for different source/output paths")
+    original = Package(source)
+    edited = Package(output)
+    if original.version != 95 or edited.version != original.version:
+        raise ValueError("Unexpected GMP package version")
+    if original.table_counts != edited.table_counts or original.guid != edited.guid:
+        raise ValueError("Native package identity or tables changed")
+    if len(original.data) != len(edited.data) or report.get("same_package_length") is not True:
+        raise ValueError("GMP package length has changed")
+    if _sha(original.data) != report.get("source_sha256"):
+        raise ValueError("Original GMP SHA does not match export manifest")
+    if _sha(edited.data) != report.get("output_sha256"):
+        raise ValueError("Edited GMP SHA does not match export manifest")
+    rows = report.get("translated_existing_actors")
+    if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_MOVES:
+        raise ValueError("Invalid translation record count")
+    accepted_offsets = set()
+    exports_seen = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("Invalid translation record")
+        export_id = row.get("export")
+        if type(export_id) is not int or not 1 <= export_id <= len(original.exports):
+            raise ValueError("Invalid translated export index")
+        if export_id in exports_seen:
+            raise ValueError("Duplicate translated export")
+        exports_seen.add(export_id)
+        exp = original.exports[export_id - 1]
+        edited_exp = edited.exports[export_id - 1]
+        if (exp["name"] != row.get("actor") or original.class_name(exp) != "StaticMeshActor"
+                or exp != edited_exp):
+            raise ValueError("Actor export layout or class changed")
+        offsets = location_float_offsets(original, exp)
+        new_offsets = location_float_offsets(edited, edited_exp)
+        if offsets != new_offsets:
+            raise ValueError("Serialized Location field layout changed")
+        for label, before, after in zip(("X", "Y", "Z"), row.get("before", []), row.get("after", [])):
+            _check_float(before, label="manifest before")
+            _check_float(after, label="manifest after")
+            offset = offsets[label]
+            for index in range(offset, offset + 4):
+                if index in accepted_offsets:
+                    raise ValueError("Location payload byte ranges overlap")
+                accepted_offsets.add(index)
+            if not math.isclose(struct.unpack_from("<f", original.data, offset)[0], before, abs_tol=SOURCE_TOLERANCE, rel_tol=0):
+                raise ValueError("Original Location differs from manifest")
+            if not math.isclose(struct.unpack_from("<f", edited.data, offset)[0], after, abs_tol=0.01, rel_tol=0):
+                raise ValueError("Exported Location differs from manifest")
+        if len(row.get("before", [])) != 3 or len(row.get("after", [])) != 3:
+            raise ValueError("Manifest requires exactly three coordinates")
+    changed_bytes = 0
+    for position, (a, b) in enumerate(zip(original.data, edited.data)):
+        if a != b:
+            changed_bytes += 1
+            if position not in accepted_offsets:
+                raise ValueError("Unexpected byte modification outside audited Location floats")
+    if changed_bytes == 0:
+        raise ValueError("Exported GMP has no changed bytes")
+    return {
+        "schema": "DX2Ed-native-verify-report-v1",
+        "verified_binary_structure": True,
+        "game_verified": False,
+        "source": str(source),
+        "output": str(output),
+        "translated_existing_actors": len(rows),
+        "changed_bytes": changed_bytes,
+        "changed_field_bytes_allowed": len(accepted_offsets),
+        "source_sha256": _sha(original.data),
+        "output_sha256": _sha(edited.data),
+        "warnings": [
+            "This checks serialized binary integrity, not game runtime loadability.",
+            "Test modified maps only in a copied installation with disposable saves."
+        ],
+    }
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--source", type=Path, required=True, help="Original v95 GMP")
-    p.add_argument("--actors", type=Path, required=True, help="DX2Ed actors.json for this GMP")
+    p.add_argument("--actors", type=Path, help="DX2Ed actors.json for this GMP")
     p.add_argument("--draft", type=Path, help="Saved DX2Ed draft JSON")
     p.add_argument("--output", type=Path, help="Copy in an isolated folder")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--audit", action="store_true", help="Read-only audit of source Location fields")
+    p.add_argument("--verify", action="store_true", help="Verify an existing GMP copy against manifest")
+    p.add_argument("--manifest", type=Path, help="Optional manifest for --verify")
     args = p.parse_args(argv)
     try:
+        if args.audit and args.verify:
+            p.error("--audit and --verify cannot be used together")
         if args.audit:
+            if args.actors is None:
+                p.error("--audit requires --actors")
             result = audit_native_locations(args.source, args.actors)
+        elif args.verify:
+            if args.output is None:
+                p.error("--verify requires --output")
+            result = verify_translation_copy(args.source, args.output, args.manifest)
         else:
-            if args.draft is None or args.output is None:
-                p.error("Save As requires both --draft and --output; use --audit to inspect sources")
+            if args.actors is None or args.draft is None or args.output is None:
+                p.error("Save As requires --actors, --draft and --output; use --audit to inspect sources")
             result = export_translation_copy(
                 args.source, args.actors, args.draft, args.output, dry_run=args.dry_run
             )
