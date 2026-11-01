@@ -44,6 +44,7 @@ var selected_actor: Dictionary = {}
 var selected_overlay_original: Material
 var overlay_material: StandardMaterial3D
 var current_folder: String = ""
+var current_source_map_name: String = ""
 var camera_target := Vector3.ZERO
 var orbit_yaw := 0.8
 var orbit_pitch := 0.37
@@ -505,6 +506,8 @@ func load_actors(path: String) -> void:
         status_label.text = "Invalid actor JSON: " + path
         return
     actors = result["actors"]
+    var metadata: Variant = result.get("meta", {})
+    current_source_map_name = str(metadata.get("source_map", "")) if typeof(metadata) == TYPE_DICTIONARY else ""
     actors_by_name.clear()
     for actor in actors:
         if typeof(actor) == TYPE_DICTIONARY and actor.has("name"):
@@ -517,6 +520,7 @@ func _clear_current_scene() -> void:
     actors.clear()
     actors_by_name.clear()
     meshes_by_actor.clear()
+    current_source_map_name = ""
     original_mesh_transforms.clear()
     draft_prop_copies.clear()
     draft_prop_sources.clear()
@@ -614,6 +618,7 @@ func _format_actor_diagnostic(actor: Dictionary) -> String:
     var lines := [
         "DX2Ed map geometry diagnostic (read-only)",
         "Actor: " + name,
+        "Source map: " + (current_source_map_name if not current_source_map_name.is_empty() else "(not recorded)"),
         "Class: " + str(actor.get("class", "Unknown")),
         "GMP export index: " + str(actor.get("export", "?")),
         "Mesh resource: " + mesh_name,
@@ -622,6 +627,18 @@ func _format_actor_diagnostic(actor: Dictionary) -> String:
         "Rotation degrees [Pitch, Yaw, Roll]: " + degrees_text,
         "Mesh local bounds (UE units): " + bounds_text,
     ]
+    var render_skin: Variant = actor.get("render_skin", null)
+    if typeof(render_skin) == TYPE_DICTIONARY:
+        lines.append("Requested skin: " + str(render_skin.get("requested", "(none)")))
+        lines.append("Exported skin: " + str(render_skin.get("selected", "(none)")))
+        lines.append("Skin resolution: " + str(render_skin.get("status", "unknown")))
+    else:
+        for prop in actor.get("game_properties", []):
+            if typeof(prop) == TYPE_DICTIONARY and int(prop.get("id", -1)) == 56:
+                var details: Variant = prop.get("value", null)
+                if typeof(details) == TYPE_DICTIONARY and details.has("Skin"):
+                    lines.append("Requested skin: " + str(details["Skin"]) + " (export selection not recorded)")
+                    break
     if meshes_by_actor.has(name) and is_instance_valid(meshes_by_actor[name]):
         var instance: MeshInstance3D = meshes_by_actor[name]
         var box := _mesh_world_aabb(instance)
