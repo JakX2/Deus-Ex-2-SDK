@@ -160,7 +160,10 @@ func _make_ui() -> void:
     var base := VBoxContainer.new()
     base.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     add_child(base)
-    var toolbar := HBoxContainer.new()
+    # Flow instead of an unbounded horizontal row: the old toolbars forced
+    # the entire workspace wider than a 1440px viewport, clipping Inspector.
+    var toolbar := HFlowContainer.new()
+    toolbar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     base.add_child(toolbar)
     var gmp_btn := Button.new()
     gmp_btn.text = "Open DX2 map (.gmp)"
@@ -216,7 +219,8 @@ func _make_ui() -> void:
     hint.text = "  Ctrl+click multi-select  |  RMB+WASD fly  |  Alt+LMB orbit  |  F focus"
     toolbar.add_child(hint)
 
-    var zip_bar := HBoxContainer.new()
+    var zip_bar := HFlowContainer.new()
+    zip_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     base.add_child(zip_bar)
     var shared_zip_btn := Button.new()
     shared_zip_btn.text = "Shared ZIP..."
@@ -243,7 +247,8 @@ func _make_ui() -> void:
     zip_hint.text = "  Select shared resources, optional System, then a mission ZIP"
     zip_bar.add_child(zip_hint)
 
-    var prop_bar := HBoxContainer.new()
+    var prop_bar := HFlowContainer.new()
+    prop_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     base.add_child(prop_bar)
     var draft_label := Label.new()
     draft_label.text = "Prop drafts:"
@@ -316,6 +321,7 @@ func _make_ui() -> void:
     prop_bar.add_child(reload_button)
 
     var horizontal := HSplitContainer.new()
+    horizontal.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     horizontal.size_flags_vertical = Control.SIZE_EXPAND_FILL
     base.add_child(horizontal)
     var sidebar := VBoxContainer.new()
@@ -466,12 +472,13 @@ func _make_ui() -> void:
     # Godot SplitContainer supports exactly two content children.
     # The prior three-child version dropped the Inspector offscreen.
     var content_split := HSplitContainer.new()
+    content_split.split_offset = -315
     content_split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     content_split.size_flags_vertical = Control.SIZE_EXPAND_FILL
     horizontal.add_child(content_split)
     var scene_pane := VBoxContainer.new()
     scene_pane.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    scene_pane.custom_minimum_size.x = 440
+    scene_pane.custom_minimum_size.x = 360
     content_split.add_child(scene_pane)
     var scene_label := Label.new()
     scene_label.text = "Scene  |  Godot preview, read-only source assets"
@@ -483,7 +490,8 @@ func _make_ui() -> void:
     scene_pane.add_child(view_container)
 
     var inspector_pane := VBoxContainer.new()
-    inspector_pane.custom_minimum_size.x = 285
+    inspector_pane.custom_minimum_size.x = 315
+    inspector_pane.size_flags_horizontal = Control.SIZE_FILL
     inspector_pane.size_flags_vertical = Control.SIZE_EXPAND_FILL
     content_split.add_child(inspector_pane)
     var heading := Label.new()
