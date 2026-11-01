@@ -23,6 +23,8 @@ var visible_actors: Array = []
 var actors_by_name: Dictionary = {}
 var meshes_by_actor: Dictionary = {}
 var all_mesh_instances: Array[MeshInstance3D] = []
+# Faces are shared by instances of the same imported mesh; cache per mesh resource.
+var pick_faces_by_mesh: Dictionary = {}
 var selected_diagnostic: String = ""
 var selected_mesh: MeshInstance3D
 var selected_actor: Dictionary = {}
@@ -320,6 +322,7 @@ func _clear_current_scene() -> void:
     actors_by_name.clear()
     meshes_by_actor.clear()
     all_mesh_instances.clear()
+    pick_faces_by_mesh.clear()
     visible_actors.clear()
     actor_list.clear()
     scene_bounds_valid = false
@@ -532,41 +535,101 @@ func _input(event: InputEvent) -> void:
         get_viewport().set_input_as_handled()
 
 func _pick_actor() -> void:
-    # Prefer actual DX2 actors; BSP bounding boxes can cover large areas.
-    if all_mesh_instances.is_empty():
+    # AABB is a broad-phase filter only. Actual visible triangles decide the pick:
+    # a huge BSP box must not swallow a smaller prop, nor select an empty area.
+    if all_mesh_instances.is_empty() or view_container.size.x <= 0.0 or view_container.size.y <= 0.0:
         return
     var local := view_container.get_local_mouse_position()
     var screen := local * Vector2(world_view.size) / view_container.size
     var origin := camera.project_ray_origin(screen)
     var direction := camera.project_ray_normal(screen).normalized()
-    var best := INF
-    var best_name := ""
-    for name in meshes_by_actor:
-        if not actors_by_name.has(name):
+    var candidates: Array = []
+    for instance in all_mesh_instances:
+        if not is_instance_valid(instance) or instance.mesh == null or not instance.is_visible_in_tree():
             continue
-        var instance: MeshInstance3D = meshes_by_actor[name]
-        var distance := _ray_aabb(origin, direction, _mesh_world_aabb(instance))
-        if distance >= 0.0 and distance < best:
-            best = distance
-            best_name = str(name)
-    if best_name != "":
-        select_actor(actors_by_name[best_name])
+        var entry := _ray_aabb(origin, direction, _mesh_world_aabb(instance))
+        if entry >= 0.0:
+            candidates.append({"entry": entry, "instance": instance})
+    candidates.sort_custom(func(a, b): return a["entry"] < b["entry"])
+
+    var closest_mesh: MeshInstance3D = null
+    var closest_distance := INF
+    var closest_position := Vector3.ZERO
+    for candidate in candidates:
+        # If the closest face is in front of the box, no farther box can win.
+        if float(candidate["entry"]) > closest_distance:
+            break
+        var instance: MeshInstance3D = candidate["instance"]
+        var hit := _ray_mesh_triangles(instance, origin, direction)
+        if hit.is_empty():
+            continue
+        var distance := float(hit["distance"])
+        var this_is_actor := actors_by_name.has(str(instance.name))
+        var previous_is_actor := is_instance_valid(closest_mesh) and actors_by_name.has(str(closest_mesh.name))
+        if distance < closest_distance - 0.00001 or (abs(distance - closest_distance) <= 0.00001 and this_is_actor and not previous_is_actor):
+            closest_distance = distance
+            closest_position = hit["point"]
+            closest_mesh = instance
+
+    if not is_instance_valid(closest_mesh):
+        status_label.text = "No rendered triangle under cursor (bounding boxes alone are not selectable)."
+        return
+    var chosen_name := str(closest_mesh.name)
+    if actors_by_name.has(chosen_name):
+        select_actor(actors_by_name[chosen_name])
         for index in range(visible_actors.size()):
-            if str(visible_actors[index].get("name", "")) == best_name:
+            if str(visible_actors[index].get("name", "")) == chosen_name:
                 actor_list.select(index)
                 actor_list.ensure_current_is_visible()
                 break
-        return
-    # Fall back to describing unlinked render/BSP geometry.
-    var fallback_mesh: MeshInstance3D = null
-    var fallback_distance := INF
-    for instance in all_mesh_instances:
-        var distance := _ray_aabb(origin, direction, _mesh_world_aabb(instance))
-        if distance >= 0.0 and distance < fallback_distance:
-            fallback_distance = distance
-            fallback_mesh = instance
-    if is_instance_valid(fallback_mesh):
-        _select_mesh_only(fallback_mesh)
+    else:
+        # Report the original render node for BSP or otherwise unlinked geometry.
+        _select_mesh_only(closest_mesh)
+    var hit_note := "Pick method: rendered triangle (not AABB)\\nGodot hit (world): " + str(closest_position) + "\\nRay distance (Godot units): " + str(closest_distance)
+    selected_diagnostic += "\\n" + hit_note
+    inspector.text += "\\n\\n--- PICK DETAILS ---\\n" + hit_note
+
+
+func _ray_mesh_triangles(instance: MeshInstance3D, origin: Vector3, direction: Vector3) -> Dictionary:
+    # Transform the ray into mesh space, avoiding recalculating vertices for
+    # every rotated/scaled actor instance. World distance remains comparable.
+    var mesh: Mesh = instance.mesh
+    if mesh == null or abs(instance.global_transform.basis.determinant()) < 0.00000001:
+        return {}
+    var mesh_id := mesh.get_instance_id()
+    var faces: PackedVector3Array
+    if pick_faces_by_mesh.has(mesh_id):
+        faces = pick_faces_by_mesh[mesh_id]
+    else:
+        faces = mesh.get_faces()
+        pick_faces_by_mesh[mesh_id] = faces
+    if faces.is_empty():
+        return {}
+    var inverse := instance.global_transform.affine_inverse()
+    var local_origin := inverse * origin
+    var local_direction := inverse.basis * direction
+    if local_direction.length_squared() < 0.000000000001:
+        return {}
+
+    var closest := INF
+    var best_point := Vector3.ZERO
+    for i in range(0, faces.size() - 2, 3):
+        var hit: Variant = Geometry3D.ray_intersects_triangle(
+            local_origin, local_direction, faces[i], faces[i + 1], faces[i + 2])
+        # The original exporter uses double-sided materials. Pick backfaces too.
+        if hit == null:
+            hit = Geometry3D.ray_intersects_triangle(
+                local_origin, local_direction, faces[i + 2], faces[i + 1], faces[i])
+        if hit is Vector3:
+            var world_hit: Vector3 = instance.global_transform * hit
+            var distance := (world_hit - origin).dot(direction)
+            if distance >= 0.0 and distance < closest:
+                closest = distance
+                best_point = world_hit
+    if closest == INF:
+        return {}
+    return {"distance": closest, "point": best_point}
+
 
 func _ray_aabb(origin: Vector3, direction: Vector3, box: AABB) -> float:
     var entry := -INF
