@@ -626,6 +626,8 @@ func load_glb(path: String) -> void:
     if FileAccess.file_exists(actor_path):
         load_actors(actor_path)
     _load_prop_draft(true)
+    _refresh_hierarchy()
+    _refresh_inspector_panel()
     if not FileAccess.file_exists(actor_path):
         status_label.text = "3D loaded (%d meshes). Open its actors.json to inspect entities." % mesh_count
     print("DX2Ed native: GLB loaded with ", mesh_count, " mesh instances")
@@ -924,6 +926,7 @@ func _apply_list_multi_selection() -> void:
         selected_diagnostic = _format_actor_diagnostic(last_actor)
         inspector.text = selected_diagnostic + "\n\n--- ORIGINAL ACTOR PROPERTIES ---\n" + JSON.stringify(last_actor, "  ")
         status_label.text = "Selected logical actor: " + str(last_actor.get("name", "?"))
+        _refresh_inspector_panel()
     else:
         _refresh_selection_inspector()
 
@@ -1076,6 +1079,7 @@ func _refresh_selection_inspector() -> void:
         selected_diagnostic = ""
         inspector.text = "No rendered objects selected."
         status_label.text = "No objects selected."
+        _refresh_inspector_panel()
         return
     if nodes.size() == 1:
         var node := nodes[0]
@@ -1089,6 +1093,7 @@ func _refresh_selection_inspector() -> void:
             selected_diagnostic = _format_mesh_diagnostic(node)
             inspector.text = selected_diagnostic
         status_label.text = "Selected " + name
+        _refresh_inspector_panel()
         return
     var lines := ["DX2Ed multi-selection (preview only)",
         "Selected objects: " + str(nodes.size()),
@@ -1100,6 +1105,73 @@ func _refresh_selection_inspector() -> void:
     selected_diagnostic = "\n".join(lines)
     inspector.text = selected_diagnostic
     status_label.text = str(nodes.size()) + " objects selected. Group gizmo active."
+    _refresh_inspector_panel()
+
+
+func _refresh_inspector_panel() -> void:
+    if inspector_title == null or inspector_transform_section == null:
+        return
+    var nodes := _selection_nodes()
+    var eligible := _draft_selected_is_prop()
+    inspector_transform_section.visible = eligible
+    if nodes.is_empty():
+        if selected_actor.is_empty():
+            inspector_title.text = "Nothing selected"
+            inspector_details.text = "Choose an actor from the Hierarchy or click a scene object."
+        else:
+            inspector_title.text = str(selected_actor.get("name", "Actor"))
+            inspector_details.text = str(selected_actor.get("class", "Unknown")) + " | " + _actor_category(selected_actor) + "\nNo editable rendered mesh."
+        return
+    var name := str(nodes[0].name)
+    inspector_title.text = name if nodes.size() == 1 else str(nodes.size()) + " selected objects"
+    if nodes.size() > 1:
+        inspector_details.text = "Group selection | Position = shared pivot\nTransforms are drafts; source map unchanged."
+    elif draft_prop_copies.has(name):
+        inspector_details.text = "Draft copy of " + str(draft_prop_sources.get(name, "?")) + "\nPreview-only transform"
+    elif actors_by_name.has(name):
+        var actor: Dictionary = actors_by_name[name]
+        inspector_details.text = str(actor.get("class", "?")) + " | " + _actor_category(actor) + "\nExport " + str(actor.get("export", "?"))
+    else:
+        inspector_details.text = "Unlinked geometry\nRead-only"
+    if not eligible:
+        return
+    var position := _selection_pivot() if nodes.size() > 1 else nodes[0].global_position
+    var rotation := nodes[0].global_rotation_degrees
+    var scale := nodes[0].scale
+    var values := {"Position": position, "Rotation": rotation, "Scale": scale}
+    inspector_syncing = true
+    for mode in ["Position", "Rotation", "Scale"]:
+        var vector: Vector3 = values[mode]
+        for axis in range(3):
+            var spin: SpinBox = inspector_spins[mode + str(axis)]
+            spin.editable = nodes.size() == 1 or mode == "Position"
+            spin.set_value_no_signal(vector[axis])
+    inspector_syncing = false
+
+
+func _inspector_transform_changed(value: float, mode: String, axis: int) -> void:
+    if inspector_syncing or not _draft_selected_is_prop():
+        return
+    var nodes := _selection_nodes()
+    if nodes.size() > 1 and mode != "Position":
+        return
+    var before := _capture_edit_state()
+    if mode == "Position":
+        var pivot := _selection_pivot()
+        var offset := Vector3.ZERO
+        offset[axis] = value - pivot[axis]
+        for node in nodes:
+            node.global_position += offset
+    elif mode == "Rotation":
+        var angles := nodes[0].global_rotation_degrees
+        angles[axis] = value
+        nodes[0].global_rotation_degrees = angles
+    elif mode == "Scale":
+        var new_scale := nodes[0].scale
+        new_scale[axis] = maxf(0.001, value)
+        nodes[0].scale = new_scale
+    _refresh_prop_inspection()
+    _record_edit("Inspector " + mode + " " + ["X", "Y", "Z"][axis], before)
 
 
 func _select_mesh_only(mesh_instance: MeshInstance3D) -> void:
@@ -1134,6 +1206,7 @@ func select_actor(actor: Dictionary) -> void:
         selected_diagnostic = _format_actor_diagnostic(actor)
         inspector.text = selected_diagnostic + "\n\n--- ORIGINAL ACTOR PROPERTIES ---\n" + JSON.stringify(actor, "  ")
         status_label.text = "Selected " + name + " | " + str(actor.get("class", "Unknown"))
+        _refresh_inspector_panel()
     _sync_actor_list_selection()
 
 
@@ -1234,6 +1307,7 @@ func _apply_edit_state(state: Dictionary) -> void:
             _add_selection_mesh(node)
     _refresh_selection_inspector()
     _sync_actor_list_selection()
+    _refresh_hierarchy()
     _update_gizmo_pose()
 
 
@@ -1256,6 +1330,8 @@ func _record_edit(label: String, before: Dictionary) -> void:
         undo_stack.pop_front()
     redo_stack.clear()
     _refresh_history_buttons()
+    if before.get("copies") != after.get("copies"):
+        _refresh_hierarchy()
 
 
 func _undo_edit() -> void:
@@ -1540,6 +1616,8 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
                 next_prop_copy_id = max(next_prop_copy_id, int(suffix) + 1)
     if not silent_if_absent:
         _record_edit("Load draft", history_before)
+    _refresh_hierarchy()
+    _refresh_inspector_panel()
     status_label.text = "Loaded private prop draft. Original GMP unchanged."
 
 func focus_selected() -> void:
