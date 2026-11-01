@@ -37,7 +37,10 @@ class T3EdParityAndCatalogTests(unittest.TestCase):
             self.assertIn(item["phase"], (1, 2, 3, 4))
             self.assertTrue(item["evidence"])
             self.assertTrue(item["next_step"])
-        self.assertEqual(next(c for c in capabilities if c["id"] == "packaging_build")["status"], "missing")
+        writer = next(c for c in capabilities if c["id"] == "packaging_build")
+        self.assertEqual(writer["status"], "partial")
+        self.assertIn("translation-only", writer["evidence"])
+        self.assertIn("BSP", writer["next_step"])
 
     def test_catalog_lists_all_types_including_unplaced_resources(self):
         result = catalog_from_bundles([fixture_bundle("mission.ibd",
