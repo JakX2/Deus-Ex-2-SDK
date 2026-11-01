@@ -2433,7 +2433,7 @@ func _place_preview_brush() -> void:
     if scene_root == null:
         status_label.text = "Load a map before constructing a preview brush."
         return
-    var kind := BrushGeometry.TYPES[brush_kind_control.selected]
+    var kind: String = str(BrushGeometry.TYPES[brush_kind_control.selected])
     var size := []
     for field in brush_size_controls:
         size.append(float(field.value))
