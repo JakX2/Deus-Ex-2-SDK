@@ -24,7 +24,7 @@ class ViewportDiagnosticsTests(unittest.TestCase):
         self.assertIn('actor.get("location", null)', SOURCE)
 
     def test_picking_uses_faces_not_just_aabb(self):
-        picker = SOURCE.split("func _pick_actor() -> void:", 1)[1].split(
+        picker = SOURCE.split("func _pick_actor(additive: bool = false) -> void:", 1)[1].split(
             "func _ray_mesh_triangles(", 1
         )[0]
         self.assertIn("_ray_aabb(origin, direction", picker)
