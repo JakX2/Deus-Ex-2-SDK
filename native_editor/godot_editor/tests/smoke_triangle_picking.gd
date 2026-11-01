@@ -20,7 +20,9 @@ func _run() -> void:
     # A normal triangle mesh should be selectable by its real surface.
     var solid := MeshInstance3D.new()
     solid.name = "TestSolid"
-    solid.mesh = BoxMesh.new()
+    var cube := BoxMesh.new()
+    cube.size = Vector3(2.0, 2.0, 2.0)
+    solid.mesh = cube
     root.add_child(solid)
     var ray_origin := Vector3(0.0, 0.0, 5.0)
     var ray_dir := Vector3(0.0, 0.0, -1.0)
