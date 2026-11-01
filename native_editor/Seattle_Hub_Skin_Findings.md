@@ -7,7 +7,7 @@ are included in the public repository.**
 
 ## Verified input hashes
 
-- GMP SHA-256: `57c8502db646db3f98448863fd8f0b4bd3a89dc6bb6738b2a89dc6bb6738b2f8f5ad69ed9f58bd`.
+- GMP SHA-256: `57c8502db646db3f98448863fd8f0b4bd3a89dc6bb6738b2f8f5ad69ed9f58bd`.
 - IBD SHA-256: `b7f044c2c6ff7260a848005fe26fc2dcf5c3dfb072e3990e1b90a38aa7c78d87`.
 
 ## Actor in the user's screenshot
