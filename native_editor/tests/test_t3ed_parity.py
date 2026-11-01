@@ -124,7 +124,7 @@ class T3EdParityAndCatalogTests(unittest.TestCase):
                 skins=[{"name":"Default","materials":["FictionalMaterial"]}])
             mapping = {4: {"unuseddoor": (bundle, record)}, 8: {}, 10: {}}
             with patch("dx2_asset_preview.load_resource_index",
-                       return_value=([bundle], mapping, {})), \\
+                       return_value=([bundle], mapping, {})), \
                  patch("dx2_asset_preview.parse_mesh", return_value=mesh):
                 result = export_asset_preview(catalog_path, "UnusedDoor")
             self.assertFalse(result["cached"])
