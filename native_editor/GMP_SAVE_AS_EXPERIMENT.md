@@ -72,6 +72,12 @@ misrepresented as an edited map.
 
 ## 0.5.1: Independent exported GMP binary verification
 
+Inside DX2Ed you can also click **Verify GMP copy...** and select an exported
+GMP. The editor calls the same independent verifier using the currently
+imported original map, locates the adjacent manifest and reports the result.
+Binary verification success is **not** a claim of working retail gameplay.
+
+
 After generating a test GMP copy, verify it again without trusting the writer's
 previous return value:
 
