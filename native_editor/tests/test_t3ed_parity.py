@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "native_editor" / "godot_editor" / "backend"
 sys.path.insert(0, str(BACKEND))
 from dx2_asset_catalog import SCHEMA, catalog_from_bundles, catalog_from_paths
+from dx2_asset_preview import preview_path, load_selected_asset, source_bundle_paths
 
 
 def fixture_resource(name, kind, type_id, index, size=64):
@@ -70,6 +71,31 @@ class T3EdParityAndCatalogTests(unittest.TestCase):
     def test_catalog_requires_explicit_source_files(self):
         with self.assertRaisesRegex(ValueError, "At least one IBD"):
             catalog_from_paths([])
+
+    def test_asset_preview_filename_is_safe_for_unicode_and_slashes(self):
+        name = "Ásset/A\\\\\\:Stair"
+        path = preview_path(Path("/tmp/dx2ed/asset_catalog.json"), name)
+        self.assertEqual(path.parent.name, "asset_previews")
+        self.assertTrue(path.name.startswith("mesh_"))
+        self.assertTrue(path.name.endswith(".glb"))
+        self.assertNotIn("/", path.name)
+
+    def test_asset_preview_requires_exact_static_mesh_identity(self):
+        catalog = {"schema":SCHEMA, "asset_payloads_included":False, "assets":[
+            {"name":"Stair", "kind":"staticmesh","bundle":"main.ibd","resource_index":1},
+            {"name":"Wall", "kind":"texture","bundle":"main.ibd","resource_index":2}]}
+        self.assertEqual(load_selected_asset(catalog,"Stair")["bundle"],"main.ibd")
+        with self.assertRaisesRegex(ValueError, "Expected one staticmesh"):
+            load_selected_asset(catalog,"Wall")
+        with self.assertRaisesRegex(ValueError, "Expected one staticmesh"):
+            load_selected_asset(catalog,"stair")
+        catalog["asset_payloads_included"] = True
+        with self.assertRaisesRegex(ValueError, "unsafe"):
+            load_selected_asset(catalog,"Stair")
+
+    def test_asset_preview_rejects_unlisted_sources(self):
+        with self.assertRaisesRegex(ValueError,"missing source paths"):
+            source_bundle_paths(Path("/tmp/catalog.json"), {"source_paths":[]})
 
     def test_tracker_calls_out_source_format_boundary(self):
         text = (ROOT / "native_editor" / "T3ED_PARITY_PLAN.md").read_text(encoding="utf8")
