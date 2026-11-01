@@ -985,6 +985,27 @@ func _archetype_selected(index: int) -> void:
     )
 
 
+func _valid_template_provenance(prov: Dictionary, source_name: String) -> bool:
+    if prov.is_empty():
+        return true  # Older drafts and ordinary asset copies have no class.
+    if not actors_by_name.has(source_name):
+        return false
+    if str(prov.get("source_actor", "")) != source_name:
+        return false
+    var original: Dictionary = actors_by_name[source_name]
+    if int(prov.get("source_export", -1)) != int(original.get("export", -2)):
+        return false
+    var qualified := str(prov.get("qualified", ""))
+    for rec in archetype_catalog.get("classes", []):
+        if typeof(rec) != TYPE_DICTIONARY:
+            continue
+        if (str(rec.get("qualified", "")) == qualified
+            and str(rec.get("template_actor", "")) == source_name
+            and int(rec.get("template_export", -1)) == int(original.get("export", -2))):
+            return true
+    return false
+
+
 func _inspect_archetype_template() -> void:
     var name := str(selected_archetype.get("template_actor", ""))
     if not actors_by_name.has(name):
@@ -1806,7 +1827,11 @@ func _refresh_inspector_panel() -> void:
     if nodes.size() > 1:
         inspector_details.text = "Group selection | Position = shared pivot\nTransforms are drafts; source map unchanged."
     elif draft_prop_copies.has(name):
-        inspector_details.text = "Preview-only mesh: " + str(draft_prop_sources.get(name, "?")) + "\nNo native DX2 actor, physics or scripts"
+        var template: Dictionary = draft_template_provenance.get(name, {})
+        inspector_details.text = (
+            "Preview-only mesh: " + str(draft_prop_sources.get(name, "?")) +
+            ("\nTemplate class: " + str(template.get("qualified", "")) if not template.is_empty() else "") +
+            "\nNo native DX2 actor, physics or scripts")
     elif actors_by_name.has(name):
         var actor: Dictionary = actors_by_name[name]
         inspector_details.text = str(actor.get("class", "?")) + " | " + _actor_category(actor) + "\nExport " + str(actor.get("export", "?"))
@@ -2167,7 +2192,8 @@ func _capture_edit_state() -> Dictionary:
         if is_instance_valid(copy):
             copies[name] = {
                 "source": str(draft_prop_sources.get(name, "")),
-                "transform": copy.global_transform
+                "transform": copy.global_transform,
+                "class_template": draft_template_provenance.get(name, {}).duplicate(true)
             }
     return {
         "moved": moved,
@@ -2196,6 +2222,7 @@ func _apply_edit_state(state: Dictionary) -> void:
             copy.free()
     draft_prop_copies.clear()
     draft_prop_sources.clear()
+    draft_template_provenance.clear()
     next_prop_copy_id = 1
     var moved: Dictionary = state.get("moved", {})
     for name in moved:
@@ -2210,7 +2237,12 @@ func _apply_edit_state(state: Dictionary) -> void:
             continue
         var source := str(info.get("source", ""))
         if _draft_source_is_valid(source):
-            _new_draft_copy(source, str(name), info["transform"])
+            var rebuilt := _new_draft_copy(source, str(name), info["transform"])
+            if is_instance_valid(rebuilt):
+                var prov: Variant = info.get("class_template", {})
+                if typeof(prov) == TYPE_DICTIONARY and _valid_template_provenance(prov, source):
+                    if not prov.is_empty():
+                        draft_template_provenance[str(name)] = prov.duplicate(true)
     next_prop_copy_id = max(1, int(state.get("next_id", 1)))
     property_overrides = state.get("property_edits", {}).duplicate(true)
     for name in state.get("selected", []):
@@ -2354,6 +2386,8 @@ func _duplicate_selected_prop() -> void:
         next_prop_copy_id += 1
         var new_copy := _new_draft_copy(source, name, node.global_transform)
         if is_instance_valid(new_copy):
+            if draft_template_provenance.has(str(node.name)):
+                draft_template_provenance[name] = draft_template_provenance[str(node.name)].duplicate(true)
             copies.append(new_copy)
     if copies.is_empty():
         return
@@ -2414,6 +2448,7 @@ func _reset_selected_prop() -> void:
         if draft_prop_copies.has(name):
             draft_prop_copies.erase(name)
             draft_prop_sources.erase(name)
+            draft_template_provenance.erase(name)
             all_mesh_instances.erase(node)
             node.free()
             removed += 1
@@ -2481,7 +2516,8 @@ func _save_prop_draft() -> void:
         var duplicate: MeshInstance3D = draft_prop_copies[name]
         if is_instance_valid(duplicate):
             copies.append({"name": name, "from_actor": draft_prop_sources[name],
-                           "transform": _transform_to_array(duplicate.global_transform)})
+                           "transform": _transform_to_array(duplicate.global_transform),
+                           "class_template": draft_template_provenance.get(name, {}).duplicate(true)})
     var document := {
         "schema": "DX2Ed-prop-draft-v1",
         "map_cache": current_folder,
@@ -2524,6 +2560,12 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
         if typeof(entry) != TYPE_DICTIONARY or _array_to_transform(entry.get("transform")) == null:
             status_label.text = "Prop draft contains an invalid transform."
             return
+    # Validate class-template attribution before modifying anything.
+    for entry in copies:
+        var prov: Variant = entry.get("class_template", {})
+        if typeof(prov) != TYPE_DICTIONARY or not _valid_template_provenance(prov, str(entry.get("from_actor", ""))):
+            status_label.text = "Draft has an untrusted class template attribution; nothing loaded."
+            return
     var loaded_properties: Variant = _validate_property_edits(property_rows)
     if loaded_properties == null:
         status_label.text = "Prop draft has invalid or unmatched actor properties; nothing loaded."
@@ -2540,6 +2582,7 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
             node.free()
     draft_prop_copies.clear()
     draft_prop_sources.clear()
+    draft_template_provenance.clear()
     next_prop_copy_id = 1
     for entry in moved:
         var name := str(entry.get("actor", ""))
@@ -2552,6 +2595,9 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
             continue
         var instance := _new_draft_copy(from_actor, name, _array_to_transform(entry["transform"]))
         if is_instance_valid(instance):
+            var prov: Dictionary = entry.get("class_template", {})
+            if not prov.is_empty():
+                draft_template_provenance[name] = prov.duplicate(true)
             var suffix := name.trim_prefix("DraftProp_")
             if suffix.is_valid_int():
                 next_prop_copy_id = max(next_prop_copy_id, int(suffix) + 1)
