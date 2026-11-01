@@ -43,7 +43,7 @@ class DirectGMPTests(unittest.TestCase):
 
     def test_generation_and_reuse(self):
         calls = []
-        def exporter(level, output, manual=None):
+        def exporter(level, output, manual=None, preview_club_stairs=False):
             calls.append(1)
             output.write_bytes(b'glTF' + b' ' * 96)
             return {'placed_real_mesh_actors': 1, 'missing_mesh_actors': []}
