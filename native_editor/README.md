@@ -117,7 +117,7 @@ In the Godot viewer, use the second toolbar row in this order:
 
 1. **Shared ZIP...**: select the archive containing Kernel_GFXALL.ibd and MainMenu_GFXALL.ibd
 2. **System ZIP... (optional)**: select the retail System archive for richer actor metadata
-3. **Open Seattle Club ZIP...**: select the archive containing M1_Seattle_Club.gmp and m1_club.ibd
+3. **Open DX2 map ZIP...**: select a mission archive containing exactly one .gmp and one .ibd, such as club(1).zip or shub.zip
 
 The viewer stages these resources with Python, then invokes its existing
 direct-GMP importer. It does not upload game assets or write to the source ZIPs.
@@ -200,3 +200,24 @@ The screenshot of StaticMeshActor__130 (export 1526, 1Hub_city_stair1,
 requested skin Tan Stones) does not match the uploaded M1_Seattle_Club.gmp,
 where StaticMeshActor__130 is export 421 (M1PENT_dframe-roof). Confirm the map
 filename before treating them as the same actor. No game assets are distributed.
+
+## 0.2.7: Seattle Hub original materials verified
+
+We examined the privately supplied shub.zip. Seattle Hub actor
+StaticMeshActor__130 (export 1526) requests the **Tan Stones** variant of
+1Hub_city_stair1. This mesh has four skins. Its requested Tan Stones skin uses
+M1HUB_wall and M1HUB-needleconc1dark, resolving to the original wall and
+m1hub-needleconc1 DXT1 diffuse images (both present in m1_hub.ibd).
+
+Previously the exporter selected the default variant for every placed
+instance, which could produce a pale/untextured-looking stair. The per-actor
+skin fix corrects that selection. A new experiment with the real source files
+is still needed to confirm the visual result in Godot.
+
+The ZIP import button is now **Open DX2 map ZIP...** and automatically
+recognizes a single GMP/mission IBD pair. Choose maps(1).zip as Shared ZIP,
+optionally System(2).zip, then shub.zip. Ambiguous mission ZIPs are rejected
+instead of silently picking the wrong map.
+
+See Seattle_Hub_Skin_Findings.md for the original actor identifier, resource
+chain and limits. All publicly committed tests use synthetic fixtures.
