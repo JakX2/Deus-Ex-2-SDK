@@ -698,3 +698,49 @@ Godot 4.3 CI now exercises a **1280×720 window layout** and fails if the
 toolbar exceeds the editor width or if the Inspector ends outside it. It
 also tests that the geometry/material summary and read-only detail pane
 are available. As always, real Windows layout verification is still useful.
+
+## 0.5.4-preview: precise Seattle WTO terminal trim placement diagnostics
+
+The retail diagnostic for `StaticMeshActor__280` in
+`M1_Seattle_Hub_WTOterminal.gmp` exposed an important limitation of the
+existing bounds audit: matching **local** GMP, IBD and vertex bounds is not
+evidence that an actor's **world rotation** matches the game renderer.
+
+The original `GEN_TRIM5-16ft` mesh measures about **256 × 16 × 16 UE
+units** (approximately **4.8768 × 0.3048 × 0.3048 metres** with DX2Ed's
+current scale). Its *local origin is near one end*, so a pivot-to-center
+distance near **2.4479 m** is expected, not evidence of incorrect
+placement. The selected retail rotator is **Pitch 0, Yaw 32768 (180°),
+Roll 16384 (90°)**.
+
+DX2Ed now emits further **read-only** diagnostics for each placed mesh:
+
+- World AABB min/max corners using the exporter's current glTF coordinate
+  conversion and original actor transform.
+- World coordinates of the longest mesh axis's two endpoints, and world
+  coordinates of the transformed mesh center and actor pivot.
+- An explicit `roll_direction_aabb_ambiguous` indicator for elongated
+  meshes with nearly square Y/Z cross-sections. Changing +90° to -90° roll
+  in such a mesh can preserve its AABB even while changing textured faces.
+- A `preview_orientation_game_verified: false` field so report
+  consumers don't mistake a mathematically consistent transform for a
+  confirmed in-game orientation.
+
+The **Inspector** exposes world endpoints and the roll warning. Its
+**Copy placement evidence** action includes the full metadata. The
+source and fixture-free tests include the literal source position,
+rotation and bounds from `StaticMeshActor__280` to prevent numerical
+regressions. Older cached scenes gain this information without changing
+existing GLB scene transforms or discarding draft edits.
+
+**No blanket global rotation change is applied.** Unreal's
+Yaw/Pitch/Roll composition is order-dependent, and DX2Ed still requires
+a ground-truth retail-game comparison to establish whether Invisible War
+uses the exact same handedness, mesh orientation, component scale and
+attachment semantics as its provisional exporter.
+
+For an interactive comparison, select the trim actor, open **Rotation Lab**,
+try **Invert Roll sign**, and compare its textured faces and endpoints
+with the original game. This is a **reversible preview** only. The native
+GMP remains unchanged. A matching world AABB alone cannot decide
+between the two roll hypotheses for this mesh.
