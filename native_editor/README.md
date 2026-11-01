@@ -45,3 +45,16 @@ The previous Godot v0.1 viewer was confirmed rendering a real Trier GLB on Windo
 - No game assets, proprietary binaries or copyrighted editor executables are distributed.
 
 See [Architecture](ARCHITECTURE.md) for the native file-loading pipeline.
+
+
+## Seattle Club geometry diagnosis (0.2.1)
+
+A new **Copy mesh info** button records the original DX2 actor/mesh identity,
+UE location and Pitch/Yaw/Roll, plus Godot world bounds. Click the geometry
+that appears misplaced, then copy and share this report. When a click hits BSP
+or otherwise unlinked render geometry, the inspector still reports the mesh
+node. Selection now prioritizes real actor meshes over broad BSP bounding boxes.
+
+See [Seattle Club findings](Seattle_Club_Transform_Findings.md).
+The editor remains read-only; there is **no global geometry rotation fix** in
+this release. Godot visual runtime tests remain to be done on Windows.
