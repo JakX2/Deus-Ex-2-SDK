@@ -69,6 +69,7 @@ var chosen_shared_zip: String = ""
 var chosen_system_zip: String = ""
 var chosen_system_path: String = ""
 var preview_club_stairs := false
+var preview_auto_roll := true # GLB visualization hypothesis; never retail GMP
 var last_gmp_path: String = ""
 var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
@@ -244,6 +245,12 @@ func _make_ui() -> void:
     stairs_toggle.button_pressed = false
     stairs_toggle.toggled.connect(_set_stair_preview)
     zip_bar.add_child(stairs_toggle)
+    var auto_roll_toggle := CheckBox.new()
+    auto_roll_toggle.text = "Auto Roll preview"
+    auto_roll_toggle.tooltip_text = "Experimental: invert source roll where it really changes the basis. Applies across maps, not a proven misalignment detector. Reimports to a separate cache. Original GMP untouched."
+    auto_roll_toggle.button_pressed = preview_auto_roll
+    auto_roll_toggle.toggled.connect(_set_auto_roll_preview)
+    zip_bar.add_child(auto_roll_toggle)
     var zip_hint := Label.new()
     zip_hint.text = "  Select shared resources, optional System, then a mission ZIP"
     zip_bar.add_child(zip_hint)
@@ -721,6 +728,20 @@ func _open_gmp_file(path: String) -> void:
     chosen_system_path = ""
     open_gmp(path)
 
+func _set_auto_roll_preview(enabled: bool) -> void:
+    if preview_auto_roll == enabled:
+        return
+    preview_auto_roll = enabled
+    if build_thread != null:
+        status_label.text = "Auto Roll preference changed. Reopen the map after import completes."
+    elif last_gmp_path != "" and FileAccess.file_exists(last_gmp_path):
+        # Each mode has an isolated cache; saved drafts in either cache
+        # remain available on switching back.
+        open_gmp(last_gmp_path)
+    else:
+        status_label.text = "Auto Roll preview " + ("ON" if enabled else "OFF") + ". Original GMP is unchanged."
+
+
 func _set_stair_preview(enabled: bool) -> void:
     preview_club_stairs = enabled
     if build_thread != null:
@@ -814,12 +835,12 @@ func open_gmp(path: String) -> void:
     var cache_root := OS.get_user_data_dir().path_join("map_cache")
     status_label.text = "Processing " + path.get_file() + " ... First load creates a cached 3D scene and actor metadata."
     build_thread = Thread.new()
-    var result := build_thread.start(_run_backend.bind(backend, path, cache_root, chosen_ibd, chosen_system_path, preview_club_stairs))
+    var result := build_thread.start(_run_backend.bind(backend, path, cache_root, chosen_ibd, chosen_system_path, preview_club_stairs, preview_auto_roll))
     if result != OK:
         build_thread = null
         status_label.text = "Could not start map worker: " + error_string(result)
 
-func _run_backend(script: String, gmp_path: String, cache_root: String, ibd_path: String, system_path: String, stair_preview: bool) -> void:
+func _run_backend(script: String, gmp_path: String, cache_root: String, ibd_path: String, system_path: String, stair_preview: bool, auto_roll: bool) -> void:
     var args := PackedStringArray([script, "--map", gmp_path, "--output-root", cache_root])
     if ibd_path != "":
         args.append_array(PackedStringArray(["--bundle", ibd_path]))
@@ -827,6 +848,8 @@ func _run_backend(script: String, gmp_path: String, cache_root: String, ibd_path
         args.append_array(PackedStringArray(["--system", system_path]))
     if stair_preview:
         args.append("--preview-club-stairs")
+    if auto_roll:
+        args.append("--preview-auto-roll")
     var output: Array = []
     var code := OS.execute("python", args, output, true)
     if code == -1:
@@ -859,7 +882,10 @@ func _backend_finished(code: int, output: String) -> void:
         if scene_root == null:
             return # Keep the descriptive GLB error instead of reporting success.
         # load_glb automatically loads the adjacent actors.json.
-        status_label.text = "%s: %d actors, %d meshes (%s). Read-only." % [str(parsed.get("map", "DX2 map")), int(parsed.get("actors", 0)), mesh_count, "cached" if parsed.get("cached", false) else "new export"]
+        var roll_info := ""
+        if bool(parsed.get("auto_roll", false)):
+            roll_info = " | Auto Roll preview: " + str(int(parsed.get("auto_roll_count", 0))) + " rotated actors (unverified)"
+        status_label.text = "%s: %d actors, %d meshes (%s)%s. Read-only." % [str(parsed.get("map", "DX2 map")), int(parsed.get("actors", 0)), mesh_count, "cached" if parsed.get("cached", false) else "new export", roll_info]
         return
     if typeof(parsed) == TYPE_DICTIONARY and parsed.has("message"):
         message = str(parsed.get("message", ""))
