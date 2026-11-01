@@ -169,7 +169,7 @@
       "title": "Compile/cook/install and playtest missions",
       "status": "partial",
       "phase": 4,
-      "evidence": "DX2Ed 0.5.1 guarded native GMP Location writer, read-only source audit and independent per-byte output verification against original, synthetic parser tests. Runtime game-load still unverified.",
+      "evidence": "DX2Ed 0.5.1 guarded translation-only native GMP Location writer, read-only source audit and independent per-byte output verification against original, synthetic parser tests. Runtime game-load still unverified.",
       "next_step": "Real v95 retail GMP audit and test in a copied installation; verify map load and actor physics, then research rotation/other native fields and BSP/IBD writing."
     },
     {
