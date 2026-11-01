@@ -584,3 +584,24 @@ Headless Godot 4.3 tests verify each primitive, invalid input rejection,
 stair mesh regeneration, undo/redo, duplicate parameter inheritance, saved
 draft recovery and Restore All. Interactive editor tests on Windows and
 actual asset/render comparisons are still recommended.
+
+## 0.5.0 experimental: native GMP Save As, location-only
+
+The main toolbar now has **Experimental GMP Save As...**, our first limited
+native binary output. Move an existing placed StaticMeshActor (position only)
+and choose an isolated output folder, preserving the source GMP filename.
+The output uses **the original GMP bytes**, changing only the three verified
+serialized Location float coordinates. It does not rebuild packages,
+install maps or change original game files.
+
+This is **not yet game-tested**. The writer refuses changed basis/rotation,
+scaling, added visual drafts, brushes, actor property edits, unknown actors,
+source hash mismatches, and overwriting original or existing GMP files.
+It reparses output, verifies package identity, size, byte diffs and actor
+positions, and emits a JSON manifest marked **game_verified: false**.
+
+See [GMP_SAVE_AS_EXPERIMENT.md](GMP_SAVE_AS_EXPERIMENT.md) for instructions,
+CLI dry-run, backup/test-install precautions and the exact feature limits.
+Both Python fixture tests and Godot UI compilation are checked in CI; actual
+retail engine acceptance and physics behavior require a separate Windows
+game test. New playable missions and real BSP compilation remain future work.
