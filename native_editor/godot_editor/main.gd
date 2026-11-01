@@ -1171,7 +1171,7 @@ func _refresh_hierarchy() -> void:
                 continue
             var leaf := hierarchy_tree.create_item(drafts)
             leaf.set_text(0, str(name) + "  [draft]")
-            leaf.set_tooltip_text(0, "Preview copy of " + str(draft_prop_sources.get(name, "")))
+            leaf.set_tooltip_text(0, "Draft visual mesh from " + str(draft_prop_sources.get(name, "")) + " (not a DX2 actor)")
             leaf.set_metadata(0, str(name))
             hierarchy_items[str(name)] = leaf
 
@@ -1670,7 +1670,7 @@ func _refresh_inspector_panel() -> void:
     if nodes.size() > 1:
         inspector_details.text = "Group selection | Position = shared pivot\nTransforms are drafts; source map unchanged."
     elif draft_prop_copies.has(name):
-        inspector_details.text = "Draft copy of " + str(draft_prop_sources.get(name, "?")) + "\nPreview-only transform"
+        inspector_details.text = "Preview-only mesh: " + str(draft_prop_sources.get(name, "?")) + "\nNo native DX2 actor, physics or scripts"
     elif actors_by_name.has(name):
         var actor: Dictionary = actors_by_name[name]
         inspector_details.text = str(actor.get("class", "?")) + " | " + _actor_category(actor) + "\nExport " + str(actor.get("export", "?"))
@@ -2073,7 +2073,7 @@ func _apply_edit_state(state: Dictionary) -> void:
         if not str(name).begins_with("DraftProp_"):
             continue
         var source := str(info.get("source", ""))
-        if actors_by_name.has(source):
+        if _draft_source_is_valid(source):
             _new_draft_copy(source, str(name), info["transform"])
     next_prop_copy_id = max(1, int(state.get("next_id", 1)))
     property_overrides = state.get("property_edits", {}).duplicate(true)
@@ -2174,16 +2174,28 @@ func _draft_source_name(instance: MeshInstance3D) -> String:
     return ""
 
 func _new_draft_copy(source_name: String, copy_name: String, world_transform: Transform3D) -> MeshInstance3D:
-    if not meshes_by_actor.has(source_name) or draft_prop_copies.has(copy_name):
+    if draft_prop_copies.has(copy_name) or not _draft_source_is_valid(source_name):
         return null
-    var source: MeshInstance3D = meshes_by_actor[source_name]
-    if not is_instance_valid(source) or source.mesh == null:
+    var mesh: Mesh = null
+    var source: MeshInstance3D = null
+    if source_name.begins_with("AssetMesh::"):
+        var resource_name := source_name.trim_prefix("AssetMesh::")
+        if not _load_asset_mesh(resource_name):
+            return null
+        mesh = asset_mesh_resources[resource_name]
+    else:
+        source = meshes_by_actor[source_name]
+        if not is_instance_valid(source):
+            return null
+        mesh = source.mesh
+    if mesh == null:
         return null
     var duplicate := MeshInstance3D.new()
     duplicate.name = copy_name
-    duplicate.mesh = source.mesh
-    duplicate.material_override = source.material_override
-    duplicate.cast_shadow = source.cast_shadow
+    duplicate.mesh = mesh
+    if is_instance_valid(source):
+        duplicate.material_override = source.material_override
+        duplicate.cast_shadow = source.cast_shadow
     world_root.add_child(duplicate)
     duplicate.global_transform = world_transform
     draft_prop_copies[copy_name] = duplicate
@@ -2400,7 +2412,7 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
     for entry in copies:
         var from_actor := str(entry.get("from_actor", ""))
         var name := str(entry.get("name", ""))
-        if not name.begins_with("DraftProp_") or not actors_by_name.has(from_actor):
+        if not name.begins_with("DraftProp_") or not _draft_source_is_valid(from_actor):
             continue
         var instance := _new_draft_copy(from_actor, name, _array_to_transform(entry["transform"]))
         if is_instance_valid(instance):
