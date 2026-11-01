@@ -22,7 +22,7 @@ from dx2_map_exporter import list_levels, choose_bundles, run_export
 from dx2_actor_explorer import actor_records
 from dx2_asset_catalog import catalog_from_paths
 from dx2_archetype_catalog import catalog_for_map
-from dx2placement import analyze_mesh_placement, summarize_placement
+from dx2placement import analyze_mesh_placement, summarize_placement, add_world_transform_evidence
 from dx2level import load_resource_index
 from dx2bundles import parse_mesh
 
@@ -109,9 +109,29 @@ def enrich_placement_report(actors: list[dict], bundles: list[Path], report: dic
                      'rotation': actor.get('rotation'), 'mesh': {
                          'name': mesh_name, 'bounds': actor.get('mesh_bounds'),
                      }}
-            details.append(analyze_mesh_placement(entry, mesh, bundle_name))
+            details.append(add_world_transform_evidence(
+                analyze_mesh_placement(entry, mesh, bundle_name), actor_matrix(entry)))
         report['placement_actor_details'] = details
         report['placement_audit'] = summarize_placement(details)
+    # Refresh older cached placement reports with projected world evidence,
+    # while preserving draft filenames and original actor metadata.
+    if isinstance(details, list):
+        for item in details:
+            if (isinstance(item, dict) and item.get('status') == 'observed'
+                    and 'preview_world_aabb_min_m' not in item):
+                source_actor = next((a for a in actors
+                    if a.get('export') == item.get('export')), None)
+                if source_actor and isinstance(source_actor.get('location'), list):
+                    try:
+                        raw_actor = {
+                            'x': source_actor['location'][0],
+                            'y': source_actor['location'][1],
+                            'z': source_actor['location'][2],
+                            'rotation': source_actor.get('rotation', [0,0,0])
+                        }
+                        add_world_transform_evidence(item, actor_matrix(raw_actor))
+                    except (ValueError, KeyError, IndexError, TypeError):
+                        pass
     by_export = {item.get('export'): item for item in details
                  if isinstance(item, dict) and type(item.get('export')) is int}
     changed = False
