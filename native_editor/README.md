@@ -549,3 +549,38 @@ unmatched classes, ambiguous short names and synthetic catalog files.
 Godot 4.3 smoke tests exercise the new tab, visual template placement,
 Undo/Redo, sidecar persistence and rejection of invalid template provenance.
 In-game round trips and native class creation remain future work.
+
+## 0.4.4-preview: T3Ed-inspired primitive Brush authoring
+
+Open the **Brushes** tab in the left workspace. Create parameterized
+**Box, Wall, Floor or Stairs** from dimensions entered in **Godot metres**.
+Stairs have an editable count from 1 to 64. Preview brushes are positioned
+at the camera target, added to a dedicated **Brushes** folder in the
+Hierarchy and selectable with the same 3D triangle picker as ordinary props.
+
+The selected brush's Inspector exposes **size X/Y/Z** and stair count.
+Changing dimensions regenerates its mesh, while ordinary transform gizmos
+still move, rotate and scale the group. Create, resize, duplicate, edit,
+Undo/Redo and Restore All all use the same bounded history as prop drafts.
+
+The original `DX2Ed-prop-draft-v1` sidecar stores an optional `brush`
+definition alongside each draft's transform and `Brush::<type>` source.
+The loader validates brush type, dimensions, stair count and source
+consistency **before changing the current scene**. Existing sidecars
+without brush metadata remain supported. Individual dimension values
+must be finite and between 0.05 and 256 metres. This intentionally prevents
+runaway geometry or corrupted restores. Stair geometry currently combines
+closed step boxes for previewing, not a manifold optimized CSG solid.
+
+**Crucial boundary:** these are **Godot visual meshes only**, not native
+Unreal brush actors, not additive/subtractive CSG operations, and not
+compiled DX2 BSP, collision, portalization or navmesh resources. They
+will **not appear in retail Invisible War**. Native level build requires
+reconstructing the original BSP and game collision compilation pipeline.
+No source GMP/IBD was changed, and this preview must not be described
+as native mission geometry authoring yet.
+
+Headless Godot 4.3 tests verify each primitive, invalid input rejection,
+stair mesh regeneration, undo/redo, duplicate parameter inheritance, saved
+draft recovery and Restore All. Interactive editor tests on Windows and
+actual asset/render comparisons are still recommended.
