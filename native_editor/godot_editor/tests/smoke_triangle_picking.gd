@@ -14,8 +14,42 @@ func _fail(message: String) -> void:
 
 func _run() -> void:
     var script = load("res://main.gd")
+    if script == null:
+        _fail("main.gd failed to parse or load")
+        return
     var viewer = script.new()
+    if viewer == null:
+        _fail("main.gd failed to instantiate")
+        return
     root.add_child(viewer)
+
+    # Editor categories are class hints, not a substitute for decoded physics.
+    if viewer._actor_category({"class":"StaticMeshActor"}) != "Static mesh":
+        _fail("static-mesh category classification")
+        return
+    if viewer._actor_category({"class":"DefaultPhysicsVolume"}) != "Volume / trigger":
+        _fail("volumes should not be called physics props")
+        return
+    if viewer._actor_category({"class":"D_Character"}) != "Gameplay / other":
+        _fail("unverified gameplay actors should remain unclassified")
+        return
+    viewer._set_editor_tool("rotate")
+    if viewer.editor_tool != "rotate" or viewer.gizmo_handles.size() != 3:
+        _fail("rotation gizmo should have three axis handles")
+        return
+    viewer._set_editor_tool("scale")
+    if viewer.editor_tool != "scale":
+        _fail("scale gizmo mode")
+        return
+    viewer._set_editor_tool("move")
+    viewer._set_fly_mode(true)
+    if not viewer.fly_looking:
+        _fail("RMB fly mode failed to engage")
+        return
+    viewer._set_fly_mode(false)
+    if viewer.fly_looking:
+        _fail("RMB fly mode failed to disengage")
+        return
 
     # A normal triangle mesh should be selectable by its real surface.
     var solid := MeshInstance3D.new()
