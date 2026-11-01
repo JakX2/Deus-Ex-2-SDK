@@ -30,9 +30,15 @@ func _run() -> void:
     if layout_base.get_combined_minimum_size().x > viewer.size.x + 1.0:
         _fail("Toolbar minimum width should not overflow the 1280px window")
         return
-    var inspector_panel: Control = viewer.inspector_title.get_parent()
+    var inspector_panel: Control = viewer.inspector_title.get_parent().get_parent()
+    if not inspector_panel is ScrollContainer:
+        _fail("Inspector must have a vertical scroll container for long metadata")
+        return
     if inspector_panel.size.x < 280.0 or inspector_panel.get_global_rect().end.x > viewer.get_global_rect().end.x + 1.0:
         _fail("Inspector panel is clipped offscreen in a 1280px window")
+        return
+    if viewer.inspector.custom_minimum_size.y < 180.0:
+        _fail("Original source/material diagnostics need a readable minimum height")
         return
 
     # Editor categories are class hints, not a substitute for decoded physics.
@@ -238,7 +244,7 @@ func _run() -> void:
         return
     # HSplitContainer has only two content panes. A previous third direct
     # child caused the Inspector to vanish at common screen resolutions.
-    var inner_split: Node = viewer.inspector_title.get_parent().get_parent()
+    var inner_split: Node = inspector_panel.get_parent()
     if not inner_split is HSplitContainer or inner_split.get_child_count() != 2:
         _fail("Inspector and Scene must share a nested two-child HSplitContainer")
         return
