@@ -127,7 +127,7 @@ def load_transform_overrides(path: Path, map_name: str) -> dict[str, tuple[float
         corrected[name]=tuple(float(v) for v in values)
     return corrected
 
-def run_export(level: LevelChoice, output: Path, manual: list[Path] | None=None, strict: bool=False, transform_overrides: Path | None=None, alternate_skin_fallback: bool=True, preview_club_stairs: bool=False) -> dict:
+def run_export(level: LevelChoice, output: Path, manual: list[Path] | None=None, strict: bool=False, transform_overrides: Path | None=None, alternate_skin_fallback: bool=True, preview_club_stairs: bool=False, preview_auto_roll: bool=False) -> dict:
     output = output.expanduser().resolve()
     if output.suffix.casefold() != '.glb':
         raise ValueError('Output must end in .glb')
@@ -141,7 +141,7 @@ def run_export(level: LevelChoice, output: Path, manual: list[Path] | None=None,
     report_path = output.with_suffix('.report.json')
     # The original exporter runs read-only and embeds PNGs in the GLB.
     overrides=load_transform_overrides(transform_overrides,level.path.name) if transform_overrides else {}
-    report = export_level(level.path,bundles,output,report_path,overrides,alternate_skin_fallback=alternate_skin_fallback,preview_club_stairs=preview_club_stairs)
+    report = export_level(level.path,bundles,output,report_path,overrides,alternate_skin_fallback=alternate_skin_fallback,preview_club_stairs=preview_club_stairs,preview_auto_roll=preview_auto_roll)
     if report['missing_mesh_actors']:
         msg=f"WARNING: {len(report['missing_mesh_actors'])} placed static meshes were missing. Inspect {report_path}."
         print(msg,file=sys.stderr)
