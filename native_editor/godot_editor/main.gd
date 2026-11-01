@@ -668,6 +668,9 @@ func _clear_current_scene() -> void:
     pick_faces_by_mesh.clear()
     visible_actors.clear()
     actor_list.clear()
+    if hierarchy_tree != null:
+        hierarchy_tree.clear()
+        hierarchy_items.clear()
     scene_bounds_valid = false
     mesh_count = 0
     if scene_root != null:
@@ -750,8 +753,137 @@ func _refresh_actor_list() -> void:
         visible_actors.append(actor)
         actor_list.add_item(name + "  [" + kind + " | " + group + "]")
     _sync_actor_list_selection()
+    _refresh_hierarchy()
     if visible_actors.is_empty() and not actors.is_empty():
         status_label.text = "No actors match search."
+
+func _refresh_hierarchy() -> void:
+    if hierarchy_tree == null:
+        return
+    hierarchy_syncing = true
+    hierarchy_tree.clear()
+    hierarchy_items.clear()
+    var scene_item := hierarchy_tree.create_item()
+    scene_item.set_text(0, "DX2 Scene  (" + str(actors.size()) + " actors)")
+    scene_item.set_selectable(0, false)
+    var categories: Dictionary = {}
+    # These are editor folders by decoded class, NOT invented Unreal ownership.
+    for actor in visible_actors:
+        if typeof(actor) != TYPE_DICTIONARY:
+            continue
+        var group := _actor_category(actor)
+        if not categories.has(group):
+            var folder := hierarchy_tree.create_item(scene_item)
+            folder.set_text(0, group)
+            folder.set_selectable(0, false)
+            folder.collapsed = group == "Brush" or group == "Gameplay / other"
+            categories[group] = folder
+        var name := str(actor.get("name", ""))
+        var leaf := hierarchy_tree.create_item(categories[group])
+        leaf.set_text(0, name)
+        leaf.set_tooltip_text(0, str(actor.get("class", "?")))
+        leaf.set_metadata(0, name)
+        hierarchy_items[name] = leaf
+
+    var query := search_box.text.strip_edges().to_lower()
+    if category_filter.selected <= 1:
+        var drafts := hierarchy_tree.create_item(scene_item)
+        drafts.set_text(0, "Draft copies (" + str(draft_prop_copies.size()) + ")")
+        drafts.set_selectable(0, false)
+        for name in draft_prop_copies:
+            if query != "" and query not in str(name).to_lower() and query not in str(draft_prop_sources.get(name, "")).to_lower():
+                continue
+            var leaf := hierarchy_tree.create_item(drafts)
+            leaf.set_text(0, str(name) + "  [draft]")
+            leaf.set_tooltip_text(0, "Preview copy of " + str(draft_prop_sources.get(name, "")))
+            leaf.set_metadata(0, str(name))
+            hierarchy_items[str(name)] = leaf
+
+    if category_filter.selected == 0:
+        var unlinked := hierarchy_tree.create_item(scene_item)
+        unlinked.set_text(0, "Unlinked geometry (BSP / render nodes)")
+        unlinked.set_selectable(0, false)
+        unlinked.collapsed = true
+        for node in all_mesh_instances:
+            if not is_instance_valid(node):
+                continue
+            var name := str(node.name)
+            if actors_by_name.has(name) or draft_prop_copies.has(name):
+                continue
+            if query != "" and query not in name.to_lower():
+                continue
+            var leaf := hierarchy_tree.create_item(unlinked)
+            leaf.set_text(0, name)
+            leaf.set_metadata(0, name)
+            hierarchy_items[name] = leaf
+
+    _sync_hierarchy_selection()
+    hierarchy_syncing = false
+
+
+func _sync_hierarchy_selection() -> void:
+    if hierarchy_tree == null or hierarchy_syncing:
+        return
+    hierarchy_syncing = true
+    hierarchy_tree.deselect_all()
+    for name in selected_meshes:
+        if hierarchy_items.has(name):
+            var item: TreeItem = hierarchy_items[name]
+            item.get_parent().collapsed = false
+            item.select(0)
+    if selected_meshes.is_empty() and not selected_actor.is_empty():
+        var name := str(selected_actor.get("name", ""))
+        if hierarchy_items.has(name):
+            var item: TreeItem = hierarchy_items[name]
+            item.get_parent().collapsed = false
+            item.select(0)
+    hierarchy_syncing = false
+
+
+func _hierarchy_multi_selected(_item: TreeItem, _column: int, _selected: bool) -> void:
+    if not hierarchy_syncing:
+        call_deferred("_apply_hierarchy_selection")
+
+
+func _apply_hierarchy_selection() -> void:
+    if hierarchy_tree == null or hierarchy_syncing:
+        return
+    var chosen_names: Array[String] = []
+    var cursor: TreeItem = hierarchy_tree.get_next_selected(null)
+    while cursor != null:
+        var meta: Variant = cursor.get_metadata(0)
+        if typeof(meta) == TYPE_STRING and not str(meta).is_empty():
+            chosen_names.append(str(meta))
+        cursor = hierarchy_tree.get_next_selected(cursor)
+    if chosen_names.is_empty():
+        return
+    _clear_selection()
+    var logical_actor: Dictionary = {}
+    for name in chosen_names:
+        var node: MeshInstance3D = null
+        if draft_prop_copies.has(name):
+            node = draft_prop_copies[name]
+        elif meshes_by_actor.has(name):
+            node = meshes_by_actor[name]
+        else:
+            for mesh_node in all_mesh_instances:
+                if is_instance_valid(mesh_node) and str(mesh_node.name) == name:
+                    node = mesh_node
+                    break
+        if is_instance_valid(node):
+            _add_selection_mesh(node)
+        elif actors_by_name.has(name):
+            logical_actor = actors_by_name[name]
+    if selected_meshes.is_empty() and not logical_actor.is_empty():
+        selected_actor = logical_actor
+        selected_diagnostic = _format_actor_diagnostic(logical_actor)
+        inspector.text = selected_diagnostic + "\n\n--- ORIGINAL ACTOR PROPERTIES ---\n" + JSON.stringify(logical_actor, "  ")
+        status_label.text = "Selected logical actor: " + str(logical_actor.get("name", ""))
+        _refresh_inspector_panel()
+    else:
+        _refresh_selection_inspector()
+    _sync_actor_list_selection()
+
 
 func _actor_list_selected(index: int) -> void:
     # Backward compatibility with the single-selection signal.
@@ -803,6 +935,7 @@ func _sync_actor_list_selection() -> void:
     for index in range(visible_actors.size()):
         if selected_meshes.has(str(visible_actors[index].get("name", ""))):
             actor_list.select(index, false)
+    _sync_hierarchy_selection()
 
 
 
