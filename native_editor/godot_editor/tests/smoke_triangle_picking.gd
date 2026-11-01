@@ -510,6 +510,75 @@ func _run() -> void:
         _fail("A declared class without a rendered example cannot be invented")
         return
 
+    # T3Ed-style parameterized brushes: independent SDK source geometry.
+    var builder = load("res://brush_geometry.gd")
+    if builder == null:
+        _fail("Brush geometry script could not load")
+        return
+    for kind in ["Box", "Wall", "Floor", "Stairs"]:
+        var params: Dictionary = builder.default_spec(kind)
+        if builder.validate(params).is_empty() or builder.build_mesh(params) == null:
+            _fail("Brush construction failed for " + kind)
+            return
+    if not builder.validate({"kind":"Box","size":[2.0,0.0,2.0],"steps":1}).is_empty():
+        _fail("Zero-size brushes must not be accepted")
+        return
+    if not builder.validate({"kind":"Stairs","size":[2.0,2.0,4.0],"steps":1000}).is_empty():
+        _fail("Unbounded stair geometry must be rejected")
+        return
+    if not builder.validate({"kind":"Box","size":[2.0,"oops",2.0],"steps":1}).is_empty():
+        _fail("Malformed dimensions must be rejected")
+        return
+
+    viewer.brush_kind_control.select(3)
+    viewer._update_brush_form(3)
+    viewer._place_preview_brush()
+    if viewer.draft_prop_copies.size() != 1 or viewer.selected_mesh == null:
+        _fail("Brush tab failed to create a preview stair")
+        return
+    var brush_name := str(viewer.selected_mesh.name)
+    if viewer.draft_brush_specs.get(brush_name, {}).get("kind") != "Stairs":
+        _fail("Stair brush lacks its original parameters")
+        return
+    var first_bounds: AABB = viewer.selected_mesh.get_aabb()
+    viewer._change_brush_dimension(8.0, 2)
+    if abs(float(viewer.draft_brush_specs[brush_name]["size"][2]) - 8.0) > 0.001:
+        _fail("Brush dimensions did not change through the Inspector")
+        return
+    if abs(viewer.selected_mesh.get_aabb().size.z - first_bounds.size.z) < 0.001:
+        _fail("Resize did not regenerate stair geometry")
+        return
+    viewer._change_brush_steps(12)
+    if int(viewer.draft_brush_specs[brush_name]["steps"]) != 12:
+        _fail("Inspector step count was not applied")
+        return
+    viewer._undo_edit()
+    if int(viewer.draft_brush_specs[brush_name]["steps"]) != 8:
+        _fail("Undo should restore the previous stair count")
+        return
+    viewer._redo_edit()
+    if int(viewer.draft_brush_specs[brush_name]["steps"]) != 12:
+        _fail("Redo should restore the updated stair geometry")
+        return
+    viewer._save_prop_draft()
+    var brush_saved: Variant = JSON.parse_string(FileAccess.get_file_as_string(viewer._draft_file_path()))
+    if brush_saved.get("copies", []).size() != 1 or int(brush_saved["copies"][0]["brush"]["steps"]) != 12:
+        _fail("Saved draft must preserve brush parameters")
+        return
+    viewer._reset_selected_prop()
+    viewer._load_prop_draft()
+    if not viewer.draft_brush_specs.has(brush_name) or int(viewer.draft_brush_specs[brush_name]["steps"]) != 12:
+        _fail("Load draft must rebuild the original parametric stair")
+        return
+    viewer._duplicate_selected_prop()
+    if viewer.draft_brush_specs.size() != 2:
+        _fail("Duplicating a brush must preserve its parametric definition")
+        return
+    viewer._restore_all_edits()
+    if not viewer.draft_brush_specs.is_empty() or not viewer.draft_prop_copies.is_empty():
+        _fail("Restore All must discard every preview brush")
+        return
+
     if not diagnosis.contains("Exported skin: Tan Stones") or not diagnosis.contains("Skin material: SyntheticTan | missing_diffuse_texture"):
         _fail("skin diagnostics should show exact missing texture status")
         return
