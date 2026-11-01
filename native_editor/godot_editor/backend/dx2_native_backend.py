@@ -22,6 +22,9 @@ from dx2_map_exporter import list_levels, choose_bundles, run_export
 from dx2_actor_explorer import actor_records
 from dx2_asset_catalog import catalog_from_paths
 from dx2_archetype_catalog import catalog_for_map
+from dx2placement import analyze_mesh_placement, summarize_placement
+from dx2level import load_resource_index
+from dx2bundles import parse_mesh
 
 CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.6-actor-skins-v1'
 
@@ -58,6 +61,55 @@ def get_cache_key(map_path: Path, bundles: list[Path], system_path: Path | None 
             sources['system'] = {'name': system_path.name, 'sha256': sha256(system_path)}
     payload = json.dumps({'version': CACHE_VERSION, 'inputs': sources, 'preview_club_stairs': bool(preview_club_stairs)}, sort_keys=True)
     return hashlib.sha256(payload.encode('utf8')).hexdigest()[:20], sources
+
+def enrich_placement_report(actors: list[dict], bundles: list[Path], report: dict) -> bool:
+    """Attach source bounds evidence by original export index, never by display name.
+
+    Existing caches are upgraded without changing their key or visual drafts.
+    Failures remain explicit diagnostic gaps rather than guessed transforms.
+    """
+    details = report.get('placement_actor_details')
+    if not isinstance(details, list):
+        _, indexes, _ = load_resource_index(bundles)
+        cache = {}
+        details = []
+        for actor in actors:
+            mesh_name = actor.get('mesh')
+            if not isinstance(mesh_name, str) or not mesh_name:
+                continue
+            resource_key = mesh_name.casefold()
+            if resource_key not in cache:
+                source = indexes[4].get(resource_key)
+                if source is None:
+                    cache[resource_key] = None
+                else:
+                    try:
+                        cache[resource_key] = (parse_mesh(*source), source[0].name)
+                    except (ValueError, IndexError, OSError, TypeError):
+                        cache[resource_key] = None
+            mesh_pair = cache[resource_key]
+            if mesh_pair is None:
+                continue
+            mesh, bundle_name = mesh_pair
+            entry = {'name': actor['name'], 'export': actor.get('export'),
+                     'x': actor['location'][0], 'y': actor['location'][1],
+                     'z': actor['location'][2],
+                     'rotation': actor.get('rotation'), 'mesh': {
+                         'name': mesh_name, 'bounds': actor.get('mesh_bounds'),
+                     }}
+            details.append(analyze_mesh_placement(entry, mesh, bundle_name))
+        report['placement_actor_details'] = details
+        report['placement_audit'] = summarize_placement(details)
+    by_export = {item.get('export'): item for item in details
+                 if isinstance(item, dict) and type(item.get('export')) is int}
+    changed = False
+    for actor in actors:
+        diagnostic = by_export.get(actor.get('export'))
+        if diagnostic is not None and actor.get('placement_diagnostic') != diagnostic:
+            actor['placement_diagnostic'] = diagnostic
+            changed = True
+    return changed
+
 
 def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | None = None,
           system_path: Path | None = None, force: bool = False,
@@ -97,6 +149,12 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
                     archetypes_json.write_text(
                         json.dumps(catalog_for_map(actors_doc['actors'], system_path), ensure_ascii=True),
                         encoding='utf8')
+                cached_report = json.loads(report_json.read_text(encoding='utf8'))
+                had_audit = isinstance(cached_report.get('placement_actor_details'), list)
+                if enrich_placement_report(actors_doc['actors'], bundles, cached_report):
+                    actor_json.write_text(json.dumps(actors_doc, ensure_ascii=True), encoding='utf8')
+                if not had_audit:
+                    report_json.write_text(json.dumps(cached_report, indent=2), encoding='utf8')
                 return {'status': 'ok', 'cached': True, 'folder': str(folder),
                         'glb': str(glb), 'actors_json': str(actor_json),
                         'assets_json': str(assets_json),
@@ -121,6 +179,7 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
             choice = decisions.get(int(actor.get('export', -1)))
             if choice:
                 actor['render_skin'] = choice
+        enrich_placement_report(actors, bundles, report)
         meta.update({'cache_version': CACHE_VERSION,
                      'source_sha256': source_hashes['map']['sha256'],
                      'source_map': map_path.name, 'glb': 'scene.glb'})
