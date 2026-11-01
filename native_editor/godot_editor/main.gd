@@ -26,6 +26,11 @@ var inspector_details: Label
 var inspector_transform_section: VBoxContainer
 var inspector_spins: Dictionary = {}
 var inspector_syncing := false
+var property_editor_panel: VBoxContainer
+var property_editor_rows: VBoxContainer
+var property_editor_note: Label
+var property_overrides: Dictionary = {} # Actor name -> decimal property ID -> scalar
+var property_editor_syncing := false
 var rotation_lab_panel: VBoxContainer
 var rotation_lab_modes: OptionButton
 var rotation_lab_hint: Label
@@ -407,6 +412,22 @@ func _make_ui() -> void:
     rotation_lab_panel.add_child(rotation_lab_hint)
     rotation_lab_panel.visible = false
     rotation_lab_modes.item_selected.connect(func(_index): _update_rotation_lab_hint())
+    property_editor_panel = VBoxContainer.new()
+    inspector_pane.add_child(property_editor_panel)
+    var property_heading_edit := Label.new()
+    property_heading_edit.text = "Actor properties  |  Draft edits only"
+    property_editor_panel.add_child(property_heading_edit)
+    property_editor_note = Label.new()
+    property_editor_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    property_editor_panel.add_child(property_editor_note)
+    var property_scroll := ScrollContainer.new()
+    property_scroll.custom_minimum_size.y = 140
+    property_editor_panel.add_child(property_scroll)
+    property_editor_rows = VBoxContainer.new()
+    property_editor_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    property_scroll.add_child(property_editor_rows)
+    property_editor_panel.visible = false
+
     var property_heading := Label.new()
     property_heading.text = "Source actor details (read-only)"
     inspector_pane.add_child(property_heading)
@@ -735,6 +756,7 @@ func _clear_current_scene() -> void:
     meshes_by_actor.clear()
     current_source_map_name = ""
     original_mesh_transforms.clear()
+    property_overrides.clear()
     draft_prop_copies.clear()
     draft_prop_sources.clear()
     next_prop_copy_id = 1
@@ -1614,6 +1636,7 @@ func _capture_edit_state() -> Dictionary:
     return {
         "moved": moved,
         "copies": copies,
+        "property_edits": property_overrides.duplicate(true),
         "selected": selected_meshes.keys().duplicate(),
         "next_id": next_prop_copy_id
     }
@@ -1652,6 +1675,7 @@ func _apply_edit_state(state: Dictionary) -> void:
         if actors_by_name.has(source):
             _new_draft_copy(source, str(name), info["transform"])
     next_prop_copy_id = max(1, int(state.get("next_id", 1)))
+    property_overrides = state.get("property_edits", {}).duplicate(true)
     for name in state.get("selected", []):
         var node: MeshInstance3D = null
         if draft_prop_copies.has(name):
@@ -1678,7 +1702,7 @@ func _refresh_history_buttons() -> void:
 func _record_edit(label: String, before: Dictionary) -> void:
     var after := _capture_edit_state()
     # Selection changes alone do not count as edits.
-    if before.get("moved") == after.get("moved") and before.get("copies") == after.get("copies"):
+    if before.get("moved") == after.get("moved") and before.get("copies") == after.get("copies") and before.get("property_edits", {}) == after.get("property_edits", {}):
         return
     undo_stack.append({"label": label, "before": before, "after": after})
     if undo_stack.size() > HISTORY_LIMIT:
@@ -1718,7 +1742,7 @@ func _restore_all_edits() -> void:
         status_label.text = "Load a map before restoring edits."
         return
     var before := _capture_edit_state()
-    _apply_edit_state({"moved": {}, "copies": {}, "selected": [], "next_id": 1})
+    _apply_edit_state({"moved": {}, "copies": {}, "property_edits": {}, "selected": [], "next_id": 1})
     _record_edit("Restore All", before)
     # Overwrite the sidecar with an empty draft. Undo restores the session's
     # preview state, but the user must Save draft to persist the undo.
@@ -1909,7 +1933,8 @@ func _save_prop_draft() -> void:
         "coordinate_space": "Godot world metres (X=UE X, Y=UE Z, Z=UE Y)",
         "read_only_source": true,
         "moved": moved,
-        "copies": copies
+        "copies": copies,
+        "property_edits": _serialize_property_edits()
     }
     var output := FileAccess.open(path, FileAccess.WRITE)
     if output == null:
@@ -1935,6 +1960,7 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
         return
     var moved: Variant = doc.get("moved", [])
     var copies: Variant = doc.get("copies", [])
+    var property_rows: Variant = doc.get("property_edits", [])
     if typeof(moved) != TYPE_ARRAY or typeof(copies) != TYPE_ARRAY or moved.size() > 10000 or copies.size() > 10000:
         status_label.text = "Prop draft contains invalid record arrays."
         return
@@ -1943,8 +1969,13 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
         if typeof(entry) != TYPE_DICTIONARY or _array_to_transform(entry.get("transform")) == null:
             status_label.text = "Prop draft contains an invalid transform."
             return
+    var loaded_properties: Variant = _validate_property_edits(property_rows)
+    if loaded_properties == null:
+        status_label.text = "Prop draft has invalid or unmatched actor properties; nothing loaded."
+        return
     var history_before := _capture_edit_state()
     _clear_selection()
+    property_overrides = loaded_properties
     for name in original_mesh_transforms:
         if meshes_by_actor.has(name) and is_instance_valid(meshes_by_actor[name]):
             meshes_by_actor[name].global_transform = original_mesh_transforms[name]
@@ -1973,7 +2004,7 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
         _record_edit("Load draft", history_before)
     _refresh_hierarchy()
     _refresh_inspector_panel()
-    status_label.text = "Loaded private prop draft. Original GMP unchanged."
+    status_label.text = "Loaded private prop/property draft. Original GMP unchanged."
 
 func focus_selected() -> void:
     if is_instance_valid(selected_mesh):
