@@ -1064,7 +1064,7 @@ func _update_gizmo_pose() -> void:
     gizmo_root.global_position = selected_mesh.global_position
     # Keep the handles about the same apparent size while zooming.
     var distance := camera.global_position.distance_to(gizmo_root.global_position)
-    var scale_size := clamp(distance * 0.11, 0.14, 12.0)
+    var scale_size: float = clampf(distance * 0.11, 0.14, 12.0)
     gizmo_root.scale = Vector3.ONE * scale_size
 
 
@@ -1137,7 +1137,7 @@ func _apply_gizmo_drag() -> void:
             translated.origin += gizmo_drag_axis * change
             selected_mesh.global_transform = translated
         elif editor_tool == "scale":
-            var factor := clamp(1.0 + change / max(0.5, distance * 0.18), 0.05, 100.0)
+            var factor: float = clampf(1.0 + change / maxf(0.5, distance * 0.18), 0.05, 100.0)
             if Input.is_key_pressed(KEY_CTRL):
                 factor = max(0.05, snapped(factor, 0.1))
             var transformed := gizmo_start_transform
