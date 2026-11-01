@@ -150,6 +150,8 @@ func _run() -> void:
     if abs(second.global_position.y - initial_second.y - 0.25) > 0.001:
         _fail("group draft did not restore transforms")
         return
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    viewer._toggle_selection_mesh(second)
     viewer._reset_selected_prop()
     # Ctrl-click again removes only the chosen member, leaving the first.
     viewer._toggle_selection_mesh(second)
