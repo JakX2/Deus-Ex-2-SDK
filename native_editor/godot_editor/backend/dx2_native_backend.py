@@ -70,7 +70,19 @@ def enrich_placement_report(actors: list[dict], bundles: list[Path], report: dic
     """
     details = report.get('placement_actor_details')
     if not isinstance(details, list):
-        _, indexes, _ = load_resource_index(bundles)
+        try:
+            _, indexes, _ = load_resource_index(bundles)
+        except (OSError, ValueError, IndexError, TypeError) as error:
+            # The scene exporter may be fixture-mocked or the source files
+            # may have become unavailable since the original cache import.
+            # An unavailable audit must not corrupt or abort usable map data.
+            report['placement_actor_details'] = []
+            report['placement_audit'] = {
+                'schema': 'DX2Ed-placement-audit-v1', 'status': 'unavailable',
+                'read_only': True, 'reason': str(error)[:220],
+                'game_verified': False,
+            }
+            return False
         cache = {}
         details = []
         for actor in actors:
