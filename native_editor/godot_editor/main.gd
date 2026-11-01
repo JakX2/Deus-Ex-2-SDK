@@ -2069,6 +2069,8 @@ func _mesh_geometry_material_summary(actor: Dictionary, node: MeshInstance3D = n
     if not actor.is_empty():
         lines.append("Actor: " + str(actor.get("class", "Unknown")) +
             "  |  " + _actor_category(actor))
+        if typeof(actor.get("auto_roll_preview", null)) == TYPE_DICTIONARY:
+            lines.append("Auto Roll: inverted source roll (preview hypothesis, not game-verified)")
         var resource: Variant = actor.get("mesh", null)
         var mesh_name := ""
         if typeof(resource) == TYPE_STRING:
