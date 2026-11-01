@@ -19,6 +19,9 @@ var inspector_details: Label
 var inspector_transform_section: VBoxContainer
 var inspector_spins: Dictionary = {}
 var inspector_syncing := false
+var rotation_lab_panel: VBoxContainer
+var rotation_lab_modes: OptionButton
+var rotation_lab_hint: Label
 var inspector: TextEdit
 var status_label: Label
 var glb_dialog: FileDialog
@@ -334,6 +337,34 @@ func _make_ui() -> void:
             spin.value_changed.connect(_inspector_transform_changed.bind(mode, axis))
             transform_grid.add_child(spin)
             inspector_spins[mode + str(axis)] = spin
+    rotation_lab_panel = VBoxContainer.new()
+    inspector_pane.add_child(rotation_lab_panel)
+    var rotation_lab_heading := Label.new()
+    rotation_lab_heading.text = "Rotation Lab  |  Source evidence"
+    rotation_lab_panel.add_child(rotation_lab_heading)
+    rotation_lab_modes = OptionButton.new()
+    for hypothesis in [
+        "Original export", "Yaw -90 degrees", "Yaw +90 degrees",
+        "Yaw 180 degrees", "Invert Pitch sign", "Invert Roll sign"
+    ]:
+        rotation_lab_modes.add_item(hypothesis)
+    rotation_lab_panel.add_child(rotation_lab_modes)
+    var rotation_lab_row := HBoxContainer.new()
+    rotation_lab_panel.add_child(rotation_lab_row)
+    var apply_candidate := Button.new()
+    apply_candidate.text = "Preview orientation"
+    apply_candidate.tooltip_text = "Apply selected hypothesis as undoable GLB preview, not native map edit"
+    apply_candidate.pressed.connect(_preview_rotation_hypothesis)
+    rotation_lab_row.add_child(apply_candidate)
+    var copy_rotation := Button.new()
+    copy_rotation.text = "Copy evidence"
+    copy_rotation.tooltip_text = "Copy actor source rotator and candidate spatial relationships"
+    copy_rotation.pressed.connect(_copy_rotation_research)
+    rotation_lab_row.add_child(copy_rotation)
+    rotation_lab_hint = Label.new()
+    rotation_lab_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    rotation_lab_panel.add_child(rotation_lab_hint)
+    rotation_lab_panel.visible = false
     var property_heading := Label.new()
     property_heading.text = "Source actor details (read-only)"
     inspector_pane.add_child(property_heading)
