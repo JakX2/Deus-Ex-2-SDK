@@ -24,7 +24,7 @@ from dx2inspect import Package, TAG
 from dx2level import SCALE, actor_matrix
 from dx2_native_save_as import (
     apply_location_plan, audit_native_locations, export_translation_copy,
-    location_float_offsets, plan_translation_changes
+    location_float_offsets, plan_translation_changes, verify_translation_copy
 )
 
 
@@ -228,6 +228,47 @@ class NativeGmpSaveAsTests(unittest.TestCase):
         with self.assertRaisesRegex(FileExistsError, "overwrite"):
             export_translation_copy(
                 self.source, self.actors_file, self.draft_path, self.output)
+
+    def test_verify_independent_gmp_export_and_byte_ranges(self):
+        export_translation_copy(self.source, self.actors_file, self.draft_path, self.output)
+        verified = verify_translation_copy(self.source, self.output)
+        self.assertTrue(verified["verified_binary_structure"])
+        self.assertFalse(verified["game_verified"])
+        self.assertEqual(verified["translated_existing_actors"], 1)
+        self.assertGreater(verified["changed_bytes"], 0)
+        self.assertLessEqual(verified["changed_bytes"], 12)
+
+    def test_verify_rejects_unrelated_edits_even_if_hash_is_updated(self):
+        export_translation_copy(self.source, self.actors_file, self.draft_path, self.output)
+        changed = bytearray(self.output.read_bytes())
+        pos = changed.index(struct.pack("<i", 98765))
+        changed[pos] ^= 1
+        self.output.write_bytes(changed)
+        manifest = self.output.with_suffix(".dx2ed-manifest.json")
+        doc = json.loads(manifest.read_text())
+        doc["output_sha256"] = hashlib.sha256(changed).hexdigest()
+        manifest.write_text(json.dumps(doc))
+        with self.assertRaisesRegex(ValueError, "Unexpected byte modification"):
+            verify_translation_copy(self.source, self.output)
+
+    def test_verify_rejects_broken_manifest(self):
+        export_translation_copy(self.source, self.actors_file, self.draft_path, self.output)
+        manifest = self.output.with_suffix(".dx2ed-manifest.json")
+        doc = json.loads(manifest.read_text())
+        doc["game_verified"] = True
+        manifest.write_text(json.dumps(doc))
+        with self.assertRaisesRegex(ValueError, "must not claim"):
+            verify_translation_copy(self.source, self.output)
+
+    def test_verify_rejects_unmodified_output(self):
+        export_translation_copy(self.source, self.actors_file, self.draft_path, self.output)
+        self.output.write_bytes(self.source.read_bytes())
+        manifest = self.output.with_suffix(".dx2ed-manifest.json")
+        doc = json.loads(manifest.read_text())
+        doc["output_sha256"] = hashlib.sha256(self.output.read_bytes()).hexdigest()
+        manifest.write_text(json.dumps(doc))
+        with self.assertRaisesRegex(ValueError, "Exported Location differs|no changed bytes"):
+            verify_translation_copy(self.source, self.output)
 
     def test_edited_rotation_is_rejected(self):
         self.draft["moved"][0]["transform"][0] = 0.5
