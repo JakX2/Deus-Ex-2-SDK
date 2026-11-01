@@ -56,11 +56,18 @@ class DirectGMPTests(unittest.TestCase):
             return ({'schema':'test'}, [{'name':'StaticMeshActor__1', 'class':'StaticMeshActor', 'export':7}])
         with patch.object(backend, 'list_levels', return_value=[self.level]), \
              patch.object(backend, 'run_export', side_effect=exporter), \
-             patch.object(backend, 'actor_records', side_effect=actors):
+             patch.object(backend, 'actor_records', side_effect=actors), \
+             patch.object(backend, 'catalog_from_paths', return_value={
+                 'schema':'DX2Ed-asset-catalog-v1', 'assets':[
+                     {'name':'SyntheticStair','kind':'staticmesh','bundle':'fixture.ibd',
+                      'type_id':4,'resource_index':0,'bytes':123}] }):
             first = backend.build(self.game_map, self.output)
             second = backend.build(self.game_map, self.output)
         self.assertFalse(first['cached'])
         self.assertTrue(second['cached'])
+        self.assertTrue(Path(first['assets_json']).is_file())
+        self.assertEqual(json.loads(Path(first['assets_json']).read_text())['assets'][0]['name'],
+                         'SyntheticStair')
         self.assertEqual(len(calls), 1)
         data = json.loads(Path(first['actors_json']).read_text())
         self.assertEqual(data['meta']['source_sha256'], hashlib.sha256(self.game_map.read_bytes()).hexdigest())
