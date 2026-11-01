@@ -365,6 +365,7 @@ func _make_ui() -> void:
     rotation_lab_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     rotation_lab_panel.add_child(rotation_lab_hint)
     rotation_lab_panel.visible = false
+    rotation_lab_modes.item_selected.connect(func(_index): _update_rotation_lab_hint())
     var property_heading := Label.new()
     property_heading.text = "Source actor details (read-only)"
     inspector_pane.add_child(property_heading)
@@ -1139,6 +1140,174 @@ func _refresh_selection_inspector() -> void:
     _refresh_inspector_panel()
 
 
+## These are *hypotheses* for render orientation, not engine transform fixes.
+## The authoritative source rotator and position are never modified.
+func _source_ue_rotator(name: String) -> Array:
+    if not actors_by_name.has(name):
+        return []
+    var values: Variant = actors_by_name[name].get("rotation", [])
+    if typeof(values) != TYPE_ARRAY or values.size() < 3:
+        return []
+    for value in values:
+        if typeof(value) not in [TYPE_FLOAT, TYPE_INT]:
+            return []
+    return values
+
+
+func _ue_rotator_basis(values: Array) -> Basis:
+    # glTF/Godot basis conversion of Unreal Rz(Yaw)*Ry(-Pitch)*Rx(Roll).
+    # Swapping UE Y and Z reverses handedness, hence negative yaw/roll.
+    var pitch: float = float(values[0]) * TAU / 65536.0
+    var yaw: float = float(values[1]) * TAU / 65536.0
+    var roll: float = float(values[2]) * TAU / 65536.0
+    return Basis(Vector3.UP, -yaw) * Basis(Vector3.BACK, pitch) * Basis(Vector3.RIGHT, -roll)
+
+
+func _rotation_hypothesis_pose(name: String, mode: int) -> Transform3D:
+    var original: Transform3D = original_mesh_transforms.get(name, Transform3D.IDENTITY)
+    if mode == 0 or mode < 0 or mode > 5:
+        return original
+    var pose := original
+    if mode <= 3:
+        var angle := [-90.0, 90.0, 180.0][mode - 1]
+        pose.basis = Basis(Vector3.UP, deg_to_rad(angle)) * original.basis
+    else:
+        var values := _source_ue_rotator(name)
+        if values.is_empty():
+            return original
+        var corrected := values.duplicate()
+        if mode == 4:
+            corrected[0] = -float(corrected[0])
+        if mode == 5:
+            corrected[2] = -float(corrected[2])
+        var matrix := _ue_rotator_basis(corrected)
+        var scale := original.basis.get_scale()
+        pose.basis = Basis(matrix.x * scale.x, matrix.y * scale.y, matrix.z * scale.z)
+    return pose
+
+
+func _aabb_for_pose(mesh: MeshInstance3D, pose: Transform3D) -> AABB:
+    var local_box := mesh.get_aabb()
+    var world_box := AABB(pose * local_box.get_endpoint(0), Vector3.ZERO)
+    for i in range(1, 8):
+        world_box = world_box.expand(pose * local_box.get_endpoint(i))
+    return world_box
+
+
+func _bbox_gap(a: AABB, b: AABB) -> float:
+    var delta := Vector3.ZERO
+    for i in range(3):
+        delta[i] = maxf(0.0, maxf(b.position[i] - a.end[i], a.position[i] - b.end[i]))
+    return delta.length()
+
+
+func _rotation_spatial_evidence(mesh: MeshInstance3D, pose: Transform3D) -> Dictionary:
+    var box := _aabb_for_pose(mesh, pose)
+    var nearest := INF
+    var overlap_count := 0
+    var closest := ""
+    for node in all_mesh_instances:
+        if not is_instance_valid(node) or node.mesh == null:
+            continue
+        if not str(node.name).begins_with("BSP_"):
+            continue
+        var distance: float = _bbox_gap(box, _mesh_world_aabb(node))
+        if distance < nearest:
+            nearest = distance
+            closest = str(node.name)
+        if distance < 0.00001:
+            overlap_count += 1
+    return {
+        "bounds": box,
+        "nearest_bsp": closest if nearest < INF else "(BSP geometry unavailable)",
+        "gap_m": nearest if nearest < INF else null,
+        "bsp_aabb_overlaps": overlap_count
+    }
+
+
+func _rotation_evidence_text() -> String:
+    if not _draft_selected_is_prop() or _selection_nodes().size() != 1:
+        return "Choose one placed static mesh actor."
+    var node: MeshInstance3D = _selection_nodes()[0]
+    var name := str(node.name)
+    if not actors_by_name.has(name) or not original_mesh_transforms.has(name):
+        return "Original actor rotations are unavailable for draft copies."
+    var actor: Dictionary = actors_by_name[name]
+    var original: Transform3D = original_mesh_transforms[name]
+    var raw := _source_ue_rotator(name)
+    var lines := [
+        "DX2Ed Rotation Lab (unverified orientation hypotheses)",
+        "Actor: " + name + " | export: " + str(actor.get("export", "?")),
+        "Map: " + current_source_map_name,
+        "Mesh: " + str(actor.get("mesh", "")),
+        "GMP rotator [Pitch, Yaw, Roll]: " + str(raw),
+        "UE degrees [Pitch, Yaw, Roll]: " + str([
+            float(raw[0])*360.0/65536.0,
+            float(raw[1])*360.0/65536.0,
+            float(raw[2])*360.0/65536.0
+        ]) if raw.size() == 3 else "GMP rotator unavailable",
+        "Original Godot basis: " + str(original.basis),
+        "Current preview basis: " + str(node.global_transform.basis),
+        "These tests keep the original position and source mesh unchanged.",
+        "AABB proximity is NOT proof of correct orientation or collision.",
+        ""
+    ]
+    for mode in range(rotation_lab_modes.item_count):
+        var pose := _rotation_hypothesis_pose(name, mode)
+        var info := _rotation_spatial_evidence(node, pose)
+        var gap: Variant = info["gap_m"]
+        lines.append(rotation_lab_modes.get_item_text(mode) +
+            " | bounds: " + str(info["bounds"]) +
+            " | nearby BSP: " + str(info["nearest_bsp"]) +
+            " | AABB gap (m): " + (str(snappedf(float(gap), 0.001)) if gap != null else "unknown") +
+            " | AABB overlaps: " + str(info["bsp_aabb_overlaps"]))
+    lines.append("")
+    lines.append("Original map transforms alone cannot establish correct in-game placement.")
+    lines.append("Compare with retail game / original authoring data before applying changes globally.")
+    return "\n".join(lines)
+
+
+func _update_rotation_lab_hint() -> void:
+    if rotation_lab_hint == null or rotation_lab_panel == null:
+        return
+    var nodes := _selection_nodes()
+    var eligible := nodes.size() == 1 and actors_by_name.has(str(nodes[0].name)) and original_mesh_transforms.has(str(nodes[0].name)) if nodes.size() == 1 else false
+    rotation_lab_panel.visible = eligible
+    if not eligible:
+        return
+    var node: MeshInstance3D = nodes[0]
+    var pose := _rotation_hypothesis_pose(str(node.name), rotation_lab_modes.selected)
+    var info := _rotation_spatial_evidence(node, pose)
+    var gap: Variant = info["gap_m"]
+    rotation_lab_hint.text = (
+        "Original UE rotator: " + str(_source_ue_rotator(str(node.name))) +
+        "\nCandidate BSP-box gap: " + (str(snappedf(float(gap), 0.001)) + " m" if gap != null else "unknown") +
+        " | overlaps: " + str(info["bsp_aabb_overlaps"]) +
+        "\nAABB proximity is suggestive, never proof. Preview is undoable."
+    )
+
+
+func _preview_rotation_hypothesis() -> void:
+    if rotation_lab_panel == null or not rotation_lab_panel.visible:
+        return
+    var nodes := _selection_nodes()
+    if nodes.size() != 1:
+        return
+    var node: MeshInstance3D = nodes[0]
+    var name := str(node.name)
+    var before := _capture_edit_state()
+    node.global_transform = _rotation_hypothesis_pose(name, rotation_lab_modes.selected)
+    _refresh_prop_inspection()
+    _record_edit("Rotation Lab: " + rotation_lab_modes.get_item_text(rotation_lab_modes.selected), before)
+    status_label.text = "Rotation Lab: reversible preview orientation applied, retail GMP unchanged."
+
+
+func _copy_rotation_research() -> void:
+    var report := _rotation_evidence_text()
+    DisplayServer.clipboard_set(report)
+    status_label.text = "Copied rotation hypotheses and BSP bounding-box evidence to clipboard."
+
+
 func _refresh_inspector_panel() -> void:
     if inspector_title == null or inspector_transform_section == null:
         return
@@ -1165,7 +1334,9 @@ func _refresh_inspector_panel() -> void:
     else:
         inspector_details.text = "Unlinked geometry\nRead-only"
     if not eligible:
+        _update_rotation_lab_hint()
         return
+    _update_rotation_lab_hint()
     var position := _selection_pivot() if nodes.size() > 1 else nodes[0].global_position
     var rotation := nodes[0].global_rotation_degrees
     var scale := nodes[0].scale
