@@ -54,6 +54,7 @@ var glb_dialog: FileDialog
 var json_dialog: FileDialog
 var gmp_dialog: FileDialog
 var gmp_save_as_dialog: FileDialog
+var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
 var native_export_target := ""
 var native_audit_dialog: AcceptDialog
@@ -179,6 +180,11 @@ func _make_ui() -> void:
     audit_gmp_btn.tooltip_text = "Check original map actors for writable Location fields, without changing game files"
     audit_gmp_btn.pressed.connect(_audit_current_native_map)
     toolbar.add_child(audit_gmp_btn)
+    var verify_gmp_btn := Button.new()
+    verify_gmp_btn.text = "Verify GMP copy..."
+    verify_gmp_btn.tooltip_text = "Independently compare a saved GMP against its original and manifest"
+    verify_gmp_btn.pressed.connect(_open_native_verify_dialog)
+    toolbar.add_child(verify_gmp_btn)
     var save_gmp_btn := Button.new()
     save_gmp_btn.text = "Experimental GMP Save As..."
     save_gmp_btn.tooltip_text = "Translation-only existing static mesh actors; separate folder; not game-tested"
@@ -620,6 +626,12 @@ func _make_ui() -> void:
     gmp_save_as_dialog.filters = PackedStringArray(["*.gmp ; Experimental location-only DX2 GMP"])
     gmp_save_as_dialog.file_selected.connect(_export_native_gmp_copy)
     add_child(gmp_save_as_dialog)
+    gmp_verify_dialog = FileDialog.new()
+    gmp_verify_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    gmp_verify_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    gmp_verify_dialog.filters = PackedStringArray(["*.gmp ; Experimental DX2 GMP copy"])
+    gmp_verify_dialog.file_selected.connect(_verify_native_gmp_file)
+    add_child(gmp_verify_dialog)
     native_audit_dialog = AcceptDialog.new()
     native_audit_dialog.title = "DX2Ed native Location audit (read-only)"
     native_audit_dialog.dialog_text = "Import a retail GMP before running the source audit."
@@ -2740,6 +2752,72 @@ func _array_to_transform(values: Variant) -> Variant:
         Vector3(safe[6], safe[7], safe[8]),
         Vector3(safe[9], safe[10], safe[11])
     )
+
+func _open_native_verify_dialog() -> void:
+    if (last_gmp_path.is_empty() or not FileAccess.file_exists(last_gmp_path)
+        or current_source_map_name.to_lower() != last_gmp_path.get_file().to_lower()):
+        status_label.text = "Open the original GMP map before verifying an exported copy."
+        return
+    if native_export_thread != null or build_thread != null:
+        status_label.text = "Another native map operation is still active."
+        return
+    gmp_verify_dialog.popup_centered_ratio(0.75)
+
+
+func _verify_native_gmp_file(output_path: String) -> void:
+    if native_export_thread != null:
+        return
+    var backend := ProjectSettings.globalize_path("res://backend/dx2_native_save_as.py")
+    if not FileAccess.file_exists(backend) or not FileAccess.file_exists(output_path):
+        status_label.text = "Cannot verify: GMP copy or writer backend not found."
+        return
+    native_export_thread = Thread.new()
+    var err := native_export_thread.start(
+        _run_native_verify.bind(backend, last_gmp_path, output_path))
+    if err != OK:
+        native_export_thread = null
+        status_label.text = "Failed to start native GMP verification."
+        return
+    status_label.text = "Verifying exported GMP byte-for-byte against its source and manifest..."
+
+
+func _run_native_verify(script: String, source: String, output_path: String) -> void:
+    var args := PackedStringArray([
+        script, "--source", source, "--output", output_path, "--verify"
+    ])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        var launcher := PackedStringArray(["-3"])
+        launcher.append_array(args)
+        output.clear()
+        code = OS.execute("py", launcher, output, true)
+    call_deferred("_native_verify_finished", code, "\n".join(output))
+
+
+func _native_verify_finished(code: int, output: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    var result: Variant = JSON.parse_string(output.strip_edges())
+    if code == 0 and typeof(result) == TYPE_DICTIONARY and result.get("schema") == "DX2Ed-native-verify-report-v1":
+        var count := int(result.get("translated_existing_actors", 0))
+        var changed := int(result.get("changed_bytes", 0))
+        status_label.text = "GMP binary verification PASSED: " + str(count) + " moved actors, " + str(changed) + " changed bytes. Game load NOT tested."
+        if native_audit_dialog != null:
+            native_audit_dialog.dialog_text = (
+                "GMP binary verification PASSED" +
+                "\nEdited actors: " + str(count) +
+                "\nChanged bytes: " + str(changed) +
+                "\nOutput: " + str(result.get("output", "")) +
+                "\n\nThe GMP is structurally consistent with the original." +
+                "\nActual retail game loading and collision are NOT verified."
+            )
+            native_audit_dialog.popup_centered(Vector2i(680, 360))
+        return
+    var message := str(result.get("message", "Unrecognized manifest or GMP binary mismatch.")) if typeof(result) == TYPE_DICTIONARY else output.strip_edges().substr(0, 240)
+    status_label.text = "GMP binary verification FAILED: " + message
+
 
 func _audit_current_native_map() -> void:
     if native_export_thread != null or build_thread != null:
