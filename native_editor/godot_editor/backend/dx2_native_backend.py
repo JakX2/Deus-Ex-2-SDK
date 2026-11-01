@@ -21,7 +21,7 @@ for relative in ('map_exporter', 'actor_explorer'):
 from dx2_map_exporter import list_levels, choose_bundles, run_export
 from dx2_actor_explorer import actor_records
 
-CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.4-club-stair-preview-v1'
+CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.6-actor-skins-v1'
 
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
@@ -92,6 +92,17 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
         report = run_export(level, glb, manual=bundles,
                             preview_club_stairs=preview_club_stairs)
         meta, actors = actor_records(map_path, system_path)
+        # Match exporter decisions by the original package export index, not
+        # by the display name. Keep original game properties intact.
+        decisions = {int(item['export']): {
+            'requested': item['requested'],
+            'selected': item['selected'],
+            'status': item['status']}
+            for item in report.get('actor_skin_selections', [])}
+        for actor in actors:
+            choice = decisions.get(int(actor.get('export', -1)))
+            if choice:
+                actor['render_skin'] = choice
         meta.update({'cache_version': CACHE_VERSION,
                      'source_sha256': source_hashes['map']['sha256'],
                      'source_map': map_path.name, 'glb': 'scene.glb'})
