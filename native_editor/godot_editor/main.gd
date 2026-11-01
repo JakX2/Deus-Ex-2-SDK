@@ -920,7 +920,7 @@ func _placed_instances_for_asset(resource_name: String) -> Array:
             continue
         var mesh: Variant = actor.get("mesh", null)
         var name := str(mesh.get("name", "")) if typeof(mesh) == TYPE_DICTIONARY else str(mesh)
-        if name.casefold() == resource_name.casefold():
+        if name.to_lower() == resource_name.to_lower():
             matches.append(actor)
     return matches
 
