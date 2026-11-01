@@ -1169,7 +1169,7 @@ func _rotation_hypothesis_pose(name: String, mode: int) -> Transform3D:
         return original
     var pose := original
     if mode <= 3:
-        var angle := [-90.0, 90.0, 180.0][mode - 1]
+        var angle: float = float([-90.0, 90.0, 180.0][mode - 1])
         pose.basis = Basis(Vector3.UP, deg_to_rad(angle)) * original.basis
     else:
         var values := _source_ue_rotator(name)
