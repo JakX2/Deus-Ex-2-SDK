@@ -313,9 +313,9 @@ func _make_ui() -> void:
     inspector_pane.add_child(inspector_details)
     inspector_transform_section = VBoxContainer.new()
     inspector_pane.add_child(inspector_transform_section)
-    var transform_heading := Label.new()
-    transform_heading.text = "Transform  |  Preview only"
-    inspector_transform_section.add_child(transform_heading)
+    var inspector_transform_heading := Label.new()
+    inspector_transform_heading.text = "Transform  |  Preview only"
+    inspector_transform_section.add_child(inspector_transform_heading)
     var transform_grid := GridContainer.new()
     transform_grid.columns = 4
     inspector_transform_section.add_child(transform_grid)
