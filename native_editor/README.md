@@ -744,3 +744,48 @@ try **Invert Roll sign**, and compare its textured faces and endpoints
 with the original game. This is a **reversible preview** only. The native
 GMP remains unchanged. A matching world AABB alone cannot decide
 between the two roll hypotheses for this mesh.
+
+## 0.5.5-preview: automatic roll-inversion hypothesis on import
+
+New GMP imports have **Auto Roll preview** enabled by default in the
+resource toolbar. This uses the **same Invert Roll Sign** hypothesis as
+Rotation Lab, applied to all original rendered static-mesh actors whose
+source Roll is a genuine orientation-changing value (not 0° or ±180°).
+It is intended to improve previews of misoriented trims, pipes, roofs and
+signs without having to select every instance manually.
+
+- **Auto Roll preview** can be switched off or on; the editor reimports the
+  last original GMP to a **different private cache** for each mode. It does
+  not patch, reserialize or overwrite game files. Old mode caches, and their
+  associated JSON drafts, remain untouched and become accessible again
+  when you return to that mode. Switching modes while an import is active
+  records the preference for the next import instead.
+- The status bar reports the number of actual nontrivial roll inversions.
+  Affected actors are tagged as `auto_roll_preview` in their cached
+  `actors.json`; the Inspector labels them **Auto Roll: inverted source
+  roll (preview hypothesis)**. GLB extras and `scene.report.json` likewise
+  record original source Roll values and the preview-only sign decision.
+- This is a **broad heuristic**, not an algorithm capable of detecting which
+  actors are actually misaligned. Actors already correct may look worse.
+  Use the checkbox to compare, and report exact actor IDs to distinguish
+  mesh-specific problems from general transform conventions.
+- **Trier case study:** the source rotator
+  `[256, 16384, 32768]` has Roll = **180°**, and inverting its sign is a
+  mathematical no-op. The screenshot of that pipe alone cannot establish
+  that the inversion repaired its placement. In contrast, the Seattle
+  `GEN_TRIM5-16ft` rotator `[0, 32768, 16384]` has a 90° Roll and does
+  undergo a genuine matrix change, matching the manual Rotation Lab
+  hypothesis.
+- If the old **Experimental stair Roll** option is also enabled, each
+  eligible actor is inverted **at most once**, not inverted twice. The
+  original unmodified source rotator remains in original actor metadata.
+- Auto Roll is **not** an in-game fix and does not alter DX2's native GMP.
+  The experimental native GMP Save As exporter still refuses unsupportable
+  rotation and scale changes, as it should.
+
+The command-line importer supports `--preview-auto-roll`. Off remains its
+default for programmatic callers, to preserve existing non-UI exports.
+Python fixture tests cover 0°/90°/180° and malformed values, Seattle trim
+and Trier pipe matrix results, preserving original location, off/on cache
+isolation and source audit metadata. Godot smoke tests cover the checkbox
+state and actor preview labeling. Retail game rendering is still unverified.
