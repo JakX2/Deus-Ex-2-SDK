@@ -63,10 +63,10 @@
     {
       "id": "brush_primitives",
       "title": "Brush primitive builders and CSG add/subtract",
-      "status": "missing",
+      "status": "partial",
       "phase": 2,
-      "evidence": "T3Ed BBCube/BBLinearStair/BBSpiralStair/ModeAdd/ModeSubtract icons",
-      "next_step": "Preview CSG in SDK-owned source; verify compiled DX2 BSP representation"
+      "evidence": "DX2Ed 0.4.4 Godot parameterized Box/Wall/Floor/Stairs preview meshes, inspector sizing, saved draft, undo/redo, Hierarchy brush folder; original T3Ed BB* icons and additive brush tooling.",
+      "next_step": "Validate native Unreal brush data, implement additive/subtractive CSG, DX2 BSP/collision build and runtime-tested map output."
     },
     {
       "id": "brush_boolean",
