@@ -382,3 +382,42 @@ native source rotations and are excluded from the lab. GitHub's headless
 Godot test checks the Unreal-to-Godot 90-degree yaw convention, alternate
 orientation previews and Ctrl+Z restoration; actual game-map use still needs
 interactive comparison.
+
+## 0.4.0-preview: T3Ed parity roadmap and IBD Asset Browser
+
+See [T3ED_PARITY_PLAN.md](T3ED_PARITY_PLAN.md) and its 23-system
+[t3ed_parity.json](t3ed_parity.json). They are grounded in the user's
+original 2005 Thief 3 editor and newer T3SDK reference archives; no proprietary
+editor binaries or game assets are included in this repository.
+
+**First implemented step**: native DX2 mission imports now generate
+`assets.json` from the supplied IBD headers, adjacent to `scene.glb` and
+`actors.json`. The source index covers placed **and unplaced** static meshes,
+textures, material libraries, physics hulls and TriggerScript definitions.
+Each resource entry records its original name, type, bundle, index and byte
+length. Duplicate resource identities across bundles are reported, with
+the first selected bundle taking precedence as in the map exporter. This
+index contains **no texture pixels, mesh triangles, scripts or sound payloads**.
+
+In DX2Ed's left panel, switch from **Hierarchy** to **Assets**. You can filter
+by resource type, search by name or source bundle, inspect provenance, copy a
+resource name and locate the first actor referencing a placed static mesh.
+
+This is intentionally a **browse/search milestone**. Placing a mesh that has
+no existing actor instance requires a DX2-specific actor archetype, Gamesys
+fields and a safe map writer. The editor does not invent those just because
+a source mesh exists. Workflows from T3Ed, especially native .unr editing,
+BSP/CSG, actor links and cooking .gmp/.ibt files, are not binary compatible
+by assumption. Next targets are native actor class/property catalogs and
+SDK-owned editable level project data.
+
+You can also generate only the resource inventory from source-owned bundles,
+without converting the map:
+
+```powershell
+python native_editor/godot_editor/backend/dx2_asset_catalog.py --bundle "C:\DX2\Maps\m1_hub.ibd" --bundle "C:\DX2\Maps\Kernel_GFXALL.ibd" --output "C:\DX2Ed-cache\hub-assets.json"
+```
+
+The catalog is read-only and has fixture-only regression tests. Original game
+archives are never published or changed. Godot screenshots and in-game tests
+are still required before marking new content-authoring features complete.
