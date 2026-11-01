@@ -285,3 +285,33 @@ Synthetic Godot headless regression checks cover two-object group movement,
 rotation, reset, serializing/restoring the draft and Ctrl-toggle selection.
 Manual Windows testing is still recommended for mouse picking and Shift
 range selection in a real mission.
+
+## Experimental 0.3.0: editor edit history
+
+DX2Ed now has undoable **preview prop edits**. This is part of the planned
+Unity-inspired workflow, not yet a full Unity-feature equivalent.
+
+- **Ctrl+Z** / Undo toolbar button: revert the last preview edit.
+- **Ctrl+Y** or **Ctrl+Shift+Z** / Redo toolbar button: redo it.
+- Operations covered: X/Y/Z button moves, Turn +/-15 degrees, multi-selection
+  moves and rotations, duplication, Reset/Delete copy, manually loading a
+  saved draft, and moving/rotating/scaling with the axis gizmo.
+- One complete **gizmo drag is one history step**, not one entry per mouse
+  movement. History is capped at 100 steps and clears when a different GLB
+  or GMP is opened. A new edit after Undo clears the redo stack.
+- Undo/redo shortcuts are not intercepted while a text input or numeric
+  editor has focus, so you can still undo typing in the search field.
+- **Restore All** requests confirmation before restoring every original
+  static mesh pose and deleting every draft copy. It also **overwrites the
+  current map's saved sidecar with an empty draft**, so edits do not return
+  on reopening the map. You may Ctrl+Z to undo Restore All during the same
+  session, and must then click **Save draft** to persist that restored state.
+- Save draft persists to user:// and never writes proprietary GMP/IBD files.
+  Undo history itself is not persisted across app restarts.
+- Camera movements, viewport selections, and gameplay object properties are
+  not recorded in edit history yet. BSP geometry authoring and native map
+  write-back remain future SDK work.
+
+Headless Godot smoke tests exercise the command history on a synthetic
+two-cube scene. Actual Unity-style mouse/keyboard handling should still be
+tested interactively in Windows Godot.
