@@ -23,3 +23,13 @@ jobs:
         run: python native_editor/tests/make_demo_scene.py
       - name: Test GLB structure, actor links, and safety
         run: python -m unittest discover -s native_editor/tests -v
+      - name: Install Godot 4.3 for headless GDScript tests
+        shell: bash
+        run: |
+          curl -fL --retry 3 --retry-delay 2 \
+            -o /tmp/godot-4.3.zip \
+            "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip"
+          unzip -q /tmp/godot-4.3.zip -d /tmp
+          chmod +x /tmp/Godot_v4.3-stable_linux.x86_64
+      - name: Run native triangle picker smoke test
+        run: /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_triangle_picking.gd
