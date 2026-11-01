@@ -84,6 +84,13 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
             if (doc.get('key') == key and doc.get('version') == CACHE_VERSION and
                 glb.stat().st_size > 20 and
                 actors_doc.get('meta', {}).get('source_sha256') == source_hashes['map']['sha256']):
+                # Upgrade older private caches in place without changing the
+                # cache key (and thus without abandoning saved prop drafts).
+                asset_doc = json.loads(assets_json.read_text(encoding='utf8'))
+                expected_sources = [str(p.resolve()) for p in bundles]
+                if asset_doc.get('source_paths') != expected_sources:
+                    asset_doc['source_paths'] = expected_sources
+                    assets_json.write_text(json.dumps(asset_doc, indent=2), encoding='utf8')
                 return {'status': 'ok', 'cached': True, 'folder': str(folder),
                         'glb': str(glb), 'actors_json': str(actor_json),
                         'assets_json': str(assets_json),
@@ -111,7 +118,11 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
                      'source_sha256': source_hashes['map']['sha256'],
                      'source_map': map_path.name, 'glb': 'scene.glb'})
         actor_json.write_text(json.dumps({'meta': meta, 'actors': actors}, ensure_ascii=True), encoding='utf8')
-        assets_json.write_text(json.dumps(catalog_from_paths(bundles), ensure_ascii=True), encoding='utf8')
+        asset_doc = catalog_from_paths(bundles)
+        # Local-only paths are required for later on-demand GLB previews.
+        # They are never part of GitHub, glTF, or the game's retail files.
+        asset_doc['source_paths'] = [str(p.resolve()) for p in bundles]
+        assets_json.write_text(json.dumps(asset_doc, ensure_ascii=True), encoding='utf8')
         report_json.write_text(json.dumps(report, indent=2), encoding='utf8')
         manifest_path.write_text(json.dumps({'version': CACHE_VERSION, 'key': key,
                                              'sources': source_hashes,
