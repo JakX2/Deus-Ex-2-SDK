@@ -21,7 +21,19 @@ func _run() -> void:
     if viewer == null:
         _fail("main.gd failed to instantiate")
         return
+    # Explicitly constrain the editor to a narrower-than-default viewport.
+    # A long, nonwrapping toolbar previously shoved Inspector outside it.
+    viewer.size = Vector2(1280, 720)
     root.add_child(viewer)
+    await process_frame
+    var layout_base: Control = viewer.get_child(0)
+    if layout_base.get_combined_minimum_size().x > viewer.size.x + 1.0:
+        _fail("Toolbar minimum width should not overflow the 1280px window")
+        return
+    var inspector_panel: Control = viewer.inspector_title.get_parent()
+    if inspector_panel.size.x < 280.0 or inspector_panel.get_global_rect().end.x > viewer.get_global_rect().end.x + 1.0:
+        _fail("Inspector panel is clipped offscreen in a 1280px window")
+        return
 
     # Editor categories are class hints, not a substitute for decoded physics.
     if viewer._actor_category({"class":"StaticMeshActor"}) != "Static mesh":
@@ -104,6 +116,21 @@ func _run() -> void:
     })
     if not diagnosis.contains("Mesh resource: FixtureMesh") or not diagnosis.contains("10, 20, 30"):
         _fail("Actor Explorer schema did not reach diagnostic")
+        return
+    var material_summary: String = viewer._mesh_geometry_material_summary({
+        "name": "TestActor", "class": "StaticMeshActor", "mesh": "FixtureMesh",
+        "render_skin": {
+            "selected": "Tan Stones", "status": "matched",
+            "materials": [{"name": "SyntheticTan", "resolution": "missing_diffuse_texture"}]
+        }
+    })
+    if (not material_summary.contains("Geometry: static mesh") or
+        not material_summary.contains("Source materials: SyntheticTan") or
+        not material_summary.contains("Skin: Tan Stones")):
+        _fail("Inspector must show actor geometry and source material/skin at top")
+        return
+    if viewer._mesh_geometry_material_summary({}).find("none selected") < 0:
+        _fail("Inspector should have a clear unselected state")
         return
 
     # Exercise preview prop editing against the original synthetic two-cube GLB.
