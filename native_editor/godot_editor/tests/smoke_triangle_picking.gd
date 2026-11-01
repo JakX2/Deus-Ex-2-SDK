@@ -69,5 +69,47 @@ func _run() -> void:
         _fail("Actor Explorer schema did not reach diagnostic")
         return
 
+    # Exercise preview prop editing against the original synthetic two-cube GLB.
+    viewer.load_glb(ProjectSettings.globalize_path("res://demo/scene.glb"))
+    if not viewer.actors_by_name.has("StaticMeshActor__1"):
+        _fail("demo actor metadata not linked")
+        return
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    var original: MeshInstance3D = viewer.selected_mesh
+    if not is_instance_valid(original):
+        _fail("demo actor has no mesh")
+        return
+    var before := original.global_position
+    viewer._move_selected_prop(Vector3.RIGHT)
+    if abs(original.global_position.x - before.x - 0.25) > 0.001:
+        _fail("preview move must use default 0.25-metre step")
+        return
+    viewer._reset_selected_prop()
+    if original.global_position.distance_to(before) > 0.001:
+        _fail("reset prop did not restore original transform")
+        return
+    viewer._duplicate_selected_prop()
+    if viewer.draft_prop_copies.size() != 1:
+        _fail("duplicate did not produce a preview prop")
+        return
+    var preview: MeshInstance3D = viewer.selected_mesh
+    viewer._move_selected_prop(Vector3.UP)
+    viewer._rotate_selected_prop(15.0)
+    viewer._save_prop_draft()
+    if not FileAccess.file_exists(viewer._draft_file_path()):
+        _fail("draft sidecar was not saved")
+        return
+    viewer._reset_selected_prop()
+    if viewer.draft_prop_copies.size() != 0:
+        _fail("delete copy left a preview prop behind")
+        return
+    viewer._load_prop_draft()
+    if viewer.draft_prop_copies.size() != 1:
+        _fail("draft sidecar did not restore duplicate")
+        return
+    if viewer.draft_prop_copies.values()[0].global_position.y < 0.1:
+        _fail("draft sidecar did not restore edited transform")
+        return
+
     print("DX2Ed triangle picking smoke: PASS (faces, transforms, sparse AABB, actor schema)")
     quit(0)
