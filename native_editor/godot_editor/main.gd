@@ -1402,15 +1402,21 @@ func _refresh_hierarchy() -> void:
 
     var query := search_box.text.strip_edges().to_lower()
     if category_filter.selected <= 1:
+        var authored_brushes := hierarchy_tree.create_item(scene_item)
+        authored_brushes.set_text(0, "Brushes (" + str(draft_brush_specs.size()) + ")")
+        authored_brushes.set_selectable(0, false)
         var drafts := hierarchy_tree.create_item(scene_item)
-        drafts.set_text(0, "Draft copies (" + str(draft_prop_copies.size()) + ")")
+        drafts.set_text(0, "Draft props (" + str(draft_prop_copies.size() - draft_brush_specs.size()) + ")")
         drafts.set_selectable(0, false)
         for name in draft_prop_copies:
-            if query != "" and query not in str(name).to_lower() and query not in str(draft_prop_sources.get(name, "")).to_lower():
+            var source_name := str(draft_prop_sources.get(name, ""))
+            var is_brush := draft_brush_specs.has(name)
+            if query != "" and query not in str(name).to_lower() and query not in source_name.to_lower():
                 continue
-            var leaf := hierarchy_tree.create_item(drafts)
-            leaf.set_text(0, str(name) + "  [draft]")
-            leaf.set_tooltip_text(0, "Draft visual mesh from " + str(draft_prop_sources.get(name, "")) + " (not a DX2 actor)")
+            var parent_item: TreeItem = authored_brushes if is_brush else drafts
+            var leaf := hierarchy_tree.create_item(parent_item)
+            leaf.set_text(0, str(name) + ("  [" + str(draft_brush_specs[name]["kind"]) + "]" if is_brush else "  [draft]"))
+            leaf.set_tooltip_text(0, "Preview geometry " + source_name + " (not a compiled DX2 actor or BSP)")
             leaf.set_metadata(0, str(name))
             hierarchy_items[str(name)] = leaf
 
