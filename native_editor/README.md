@@ -625,3 +625,43 @@ See [GMP_SAVE_AS_EXPERIMENT.md](GMP_SAVE_AS_EXPERIMENT.md) for the audit and
 verify commands, and for the critical fact that **no actual Invisible War game
 load has been demonstrated yet**. The goal remains a safe test loop in a
 separate backed-up game installation before enabling further native writes.
+
+## 0.5.2-preview: Source mesh placement diagnostics and visible Inspector
+
+After importing a GMP plus IBD bundles, DX2Ed now compares **three separate
+sources of geometry evidence** for each placed mesh: the local bounds in the
+GMP StaticMesh resource, the IBD mesh's declared bounds and its actual decoded
+vertex bounds. It records their maximum differences, the local mesh center
+and the distance between that center and its local origin/pivot.
+
+These measurements help distinguish a possible **mesh pivot problem** from a
+rotation/scale issue. They **do not prove correct world placement** and do not
+change the original map transform. A large local pivot offset can be
+intentional. Reversible Rotation Lab experiments remain independent.
+
+- The actor filter now includes **Review mesh placement**, listing actors
+  whose source mesh bounds disagree or whose pivot is unusually far from
+  the decoded geometry. The Hierarchy marks these with **[bounds?]**.
+- Selecting a linked actor shows the placement evidence in the **Inspector**
+  and **Copy placement evidence** copies the original actor diagnostics,
+  source position/rotation, per-mesh bounds and pivot data for comparison.
+- The Scene and Inspector now use a **nested two-child splitter**, correcting
+  the previous three-child HSplitContainer layout that could hide the entire
+  Inspector at 1440x900.
+- The source report contains `placement_audit` (counts, capped examples)
+  and `placement_actor_details`. Actor records contain a corresponding
+  `placement_diagnostic`. Older private scene caches are enriched in place
+  without changing their cache key or discarding existing draft edits.
+- If an IBD source is unavailable or cannot be decoded for the audit, the
+  importer preserves the otherwise valid scene and explicitly marks the
+  audit **unavailable** instead of guessing.
+
+The audit runs solely on user-owned map/resource files and produces ordinary
+metadata JSON. It does **not** export a modified GMP, correct meshes
+automatically, reconstruct hidden actor attachments, or reconstruct the
+retail engine's shader/physics runtime. Review issues against the actual
+game before adopting any new coordinate convention.
+
+Python fixture tests check matching and mismatching GMP/IBD/vertex bounds,
+large mesh-local pivots, missing evidence and cache upgrades; the Godot 4.3
+smoke test checks the nested Inspector, warning filter and evidence panel.
