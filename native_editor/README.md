@@ -315,3 +315,38 @@ Unity-inspired workflow, not yet a full Unity-feature equivalent.
 Headless Godot smoke tests exercise the command history on a synthetic
 two-cube scene. Actual Unity-style mouse/keyboard handling should still be
 tested interactively in Windows Godot.
+
+## Experimental 0.3.1: Unity-style Hierarchy / Scene / Inspector workspace
+
+The main editor has been reorganized into **three resizable columns**:
+
+- **Hierarchy (left)**: searchable Tree showing original actors grouped into
+  class-based editor folders (Static mesh, Brush, Light, Volume / trigger,
+  gameplay classes). It also shows draft prop copies and separate unlinked
+  rendered geometry / BSP. These folders are **not claims about native Unreal
+  actor parent-child relationships**; the original actor metadata remains the
+  authoritative representation. Browse and expand folders like Unity's
+  Hierarchy; Ctrl- and Shift-select multiple actor entries.
+- **Scene (center)**: the existing interactive 3D map, Unity-style camera,
+  move/rotate/scale gizmos and Ctrl-click selection. This remains a preview of
+  the imported original DX2 map, not an engine swap.
+- **Inspector (right)**: selected object name, DX2 actor class/category/export
+  ID, editable **Position X/Y/Z** for rendered static meshes and draft copies,
+  plus **Rotation** (degrees) and **Scale** for an individual editable prop.
+  Multi-selection Position edits move all chosen props together by their
+  common pivot; group rotation and scaling remain available with the gizmos.
+  Underneath, the original decoded actor properties are preserved **read-only**
+  for source investigation, with source position/rotation/skin diagnostics.
+
+All transform field changes use the same **Ctrl+Z / Ctrl+Y** history as gizmo
+operations. A map reload recreates the Hierarchy from original actor records;
+draft copies appear as an explicit separate folder. **Save draft** persists
+the edits in a JSON sidecar, not a retail GMP/IBD. Collision, actor physics,
+live component scripting, native save-back and BSP vertex editing are not
+implemented in this milestone.
+
+The asset-free Godot headless test covers Hierarchy population and selection,
+editing Inspector position values, undoing those changes and the existing
+multi-selection / geometry-picking workflows. Interactive Windows testing is
+still needed for UI layout, tree range selection and typing/dragging in the
+Inspector fields.
