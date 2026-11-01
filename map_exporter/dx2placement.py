@@ -111,6 +111,65 @@ def analyze_mesh_placement(actor, mesh, source_bundle):
     return candidate
 
 
+def add_world_transform_evidence(diagnostic, actor_matrix):
+    """Project observed local mesh bounds into the *current export convention*.
+
+    The output is useful for comparing real world coordinates, but does NOT
+    prove the Unreal rotator convention matches Invisible War's runtime.
+    Matrices are column-major glTF float arrays, with the UE Y/Z swap already
+    applied to each vertex by the existing mesh exporter.
+    """
+    if diagnostic.get("status") != "observed":
+        return diagnostic
+    if not isinstance(actor_matrix, (list, tuple)) or len(actor_matrix) != 16:
+        raise ValueError("Expected one 4x4 glTF column-major actor matrix")
+    if any(type(n) not in (float, int) or not math.isfinite(n) for n in actor_matrix):
+        raise ValueError("Actor matrix has nonfinite values")
+    raw = diagnostic["observed_vertex_bounds_ue"]
+    bounds = _bounds([*raw[0], *raw[1]])
+    if bounds is None:
+        raise ValueError("Observed source bounds are invalid")
+    low, high = bounds
+    def world(point):
+        # UE (X,Y,Z) -> glTF (X,Z,Y) scaled to metres.
+        x, y, z = point[0] * SCALE, point[2] * SCALE, point[1] * SCALE
+        return [
+            actor_matrix[0]*x + actor_matrix[4]*y + actor_matrix[8]*z + actor_matrix[12],
+            actor_matrix[1]*x + actor_matrix[5]*y + actor_matrix[9]*z + actor_matrix[13],
+            actor_matrix[2]*x + actor_matrix[6]*y + actor_matrix[10]*z + actor_matrix[14],
+        ]
+    corners = [world((x, y, z)) for x in (low[0], high[0])
+               for y in (low[1], high[1]) for z in (low[2], high[2])]
+    lower = [min(p[axis] for p in corners) for axis in range(3)]
+    upper = [max(p[axis] for p in corners) for axis in range(3)]
+    center = world(_center(bounds))
+    extents = _extent(bounds)
+    ordered = sorted(range(3), key=lambda axis: extents[axis], reverse=True)
+    long_axis = ordered[0]
+    end_lo = list(_center(bounds))
+    end_hi = list(end_lo)
+    end_lo[long_axis] = low[long_axis]
+    end_hi[long_axis] = high[long_axis]
+    symmetric_sides = (
+        extents[long_axis] > 2.0 * max(extents[ordered[1]], 0.00001)
+        and abs(extents[ordered[1]] - extents[ordered[2]])
+            <= 0.01 * max(extents[ordered[1]], extents[ordered[2]], 1.0)
+    )
+    diagnostic.update({
+        "preview_transform_basis_convention": "P * Rz(Yaw) * Ry(-Pitch) * Rx(Roll) * P",
+        "preview_actor_origin_godot_m": list(actor_matrix[12:15]),
+        "preview_mesh_center_godot_m": center,
+        "preview_world_aabb_min_m": lower,
+        "preview_world_aabb_max_m": upper,
+        "mesh_major_local_axis_ue": "XYZ"[long_axis],
+        "preview_major_axis_endpoints_godot_m": [world(end_lo), world(end_hi)],
+        "major_axis_cross_section_nearly_square": symmetric_sides,
+        "roll_direction_aabb_ambiguous": symmetric_sides and long_axis == 0,
+        "preview_orientation_game_verified": False,
+    })
+    return diagnostic
+
+
 def summarize_placement(entries):
     valid = [item for item in entries if item.get("status") == "observed"]
     counts = {}
