@@ -146,6 +146,23 @@ func _run() -> void:
         return
     viewer._actor_property_changed(false, "StaticMeshActor__1", 1301)
     viewer._actor_property_changed("Edited", "StaticMeshActor__1", 1304)
+    viewer.property_filter.text = "Caption"
+    viewer.property_editor_last_key = ""
+    viewer._refresh_actor_property_editor()
+    if viewer.property_editor_rows.get_child_count() != 1:
+        _fail("Inspector property filter should display only matching scalar rows")
+        return
+    viewer._reset_actor_property_edits()
+    if not viewer.property_overrides.is_empty():
+        _fail("Reset values should remove only edited actor scalar overrides")
+        return
+    viewer._undo_edit()
+    if viewer.property_overrides.get("StaticMeshActor__1", {}).get("1304") != "Edited":
+        _fail("Reset values should be undoable")
+        return
+    viewer.property_filter.text = ""
+    viewer.property_editor_last_key = ""
+    viewer._refresh_actor_property_editor()
     viewer._save_prop_draft()
     var typed_draft: Variant = JSON.parse_string(FileAccess.get_file_as_string(viewer._draft_file_path()))
     if typeof(typed_draft) != TYPE_DICTIONARY or typed_draft.get("property_edits", []).size() != 3:
@@ -167,6 +184,24 @@ func _run() -> void:
     # Restore All is one undo step; its pre-reset scalar state is restored.
     if viewer.property_overrides.get("StaticMeshActor__1", {}).get("1304") != "Edited":
         _fail("Restore All property changes must be undoable")
+        return
+    viewer._restore_all_edits()
+
+    # Logical actors lack a rendered mesh, but typed fields must remain
+    # editable and their inspector selection must survive an undo.
+    var logic: Dictionary = {"name": "LogicOnly__100", "class": "Trigger",
+        "export": 42, "game_properties": [
+            {"id": 1601, "name": "Threshold", "type": "float", "value": 2.0}]}
+    viewer.actors_by_name["LogicOnly__100"] = logic
+    viewer.select_actor(logic)
+    viewer._actor_property_changed(3.5, "LogicOnly__100", 1601)
+    viewer._undo_edit()
+    if str(viewer.selected_actor.get("name", "")) != "LogicOnly__100":
+        _fail("Undo should preserve selected non-rendered actor")
+        return
+    viewer._redo_edit()
+    if viewer.property_overrides.get("LogicOnly__100", {}).get("1601") != 3.5:
+        _fail("Logical-only actor fields should participate in undo/redo")
         return
     viewer._restore_all_edits()
 
