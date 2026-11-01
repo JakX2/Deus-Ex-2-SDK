@@ -605,3 +605,23 @@ CLI dry-run, backup/test-install precautions and the exact feature limits.
 Both Python fixture tests and Godot UI compilation are checked in CI; actual
 retail engine acceptance and physics behavior require a separate Windows
 game test. New playable missions and real BSP compilation remain future work.
+
+## 0.5.1: read-only native location audit and independent output verifier
+
+The top toolbar now includes **Audit native GMP**. This checks the imported
+original GMP's existing StaticMeshActor Location property payloads and source
+actor identities. It shows how many actors are structurally eligible for the
+current position-only writer and why other actor records are rejected.
+No output is written by the audit.
+
+Experimental GMP Save As now refuses drafts with **no meaningful position
+changes**. The new command-line \`--verify\` mode independently reopens a
+previously exported GMP and compares its full byte stream to the original,
+using the Save As manifest. It rejects edits outside the original serialized
+Location float fields, header/table changes, mismatched SHA-256 hashes and
+manifest claims that retail gameplay has been verified.
+
+See [GMP_SAVE_AS_EXPERIMENT.md](GMP_SAVE_AS_EXPERIMENT.md) for the audit and
+verify commands, and for the critical fact that **no actual Invisible War game
+load has been demonstrated yet**. The goal remains a safe test loop in a
+separate backed-up game installation before enabling further native writes.
