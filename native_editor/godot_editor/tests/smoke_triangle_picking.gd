@@ -111,12 +111,36 @@ func _run() -> void:
     if not viewer.actors_by_name.has("StaticMeshActor__1"):
         _fail("demo actor metadata not linked")
         return
+    # Unity-like workspace: actor Hierarchy links to the Inspector.
+    if viewer.hierarchy_tree == null or viewer.inspector_title == null:
+        _fail("Hierarchy / Inspector panes were not constructed")
+        return
+    if not viewer.hierarchy_items.has("StaticMeshActor__1") or not viewer.hierarchy_items.has("StaticMeshActor__2"):
+        _fail("Hierarchy missing the two synthetic scene actors")
+        return
+    viewer.hierarchy_tree.deselect_all()
+    viewer.hierarchy_items["StaticMeshActor__2"].select(0)
+    viewer._apply_hierarchy_selection()
+    if viewer.selected_mesh == null or str(viewer.selected_mesh.name) != "StaticMeshActor__2":
+        _fail("Hierarchy selection did not choose the rendered actor")
+        return
     viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
     var original: MeshInstance3D = viewer.selected_mesh
     if not is_instance_valid(original):
         _fail("demo actor has no mesh")
         return
     var before := original.global_position
+    if not viewer.inspector_transform_section.visible:
+        _fail("Editable static mesh must expose Inspector transforms")
+        return
+    viewer._inspector_transform_changed(before.x + 1.0, "Position", 0)
+    if abs(original.global_position.x - before.x - 1.0) > 0.001:
+        _fail("Inspector X field failed to edit world position")
+        return
+    viewer._undo_edit()
+    if original.global_position.distance_to(before) > 0.001:
+        _fail("Inspector edits must support Ctrl+Z")
+        return
     viewer._move_selected_prop(Vector3.RIGHT)
     if abs(original.global_position.x - before.x - 0.25) > 0.001:
         _fail("preview move must use default 0.25-metre step")
