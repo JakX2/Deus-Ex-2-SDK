@@ -43,7 +43,7 @@ class DirectGMPTests(unittest.TestCase):
 
     def test_generation_and_reuse(self):
         calls = []
-        def exporter(level, output, manual=None, preview_club_stairs=False):
+        def exporter(level, output, manual=None, preview_club_stairs=False, preview_auto_roll=False):
             calls.append(1)
             output.write_bytes(b'glTF' + b' ' * 96)
             return {'placed_real_mesh_actors': 1, 'missing_mesh_actors': [],
@@ -63,11 +63,18 @@ class DirectGMPTests(unittest.TestCase):
                       'type_id':4,'resource_index':0,'bytes':123}] }):
             first = backend.build(self.game_map, self.output)
             second = backend.build(self.game_map, self.output)
+            auto_first = backend.build(self.game_map, self.output, preview_auto_roll=True)
+            auto_second = backend.build(self.game_map, self.output, preview_auto_roll=True)
             # Emulate an older private cache without the new class catalog.
             Path(first['archetypes_json']).unlink()
             third = backend.build(self.game_map, self.output)
         self.assertFalse(first['cached'])
         self.assertTrue(second['cached'])
+        self.assertFalse(auto_first['cached'])
+        self.assertTrue(auto_second['cached'])
+        self.assertTrue(auto_first['auto_roll'])
+        self.assertNotEqual(first['folder'], auto_first['folder'])
+        self.assertNotEqual(first['glb'], auto_first['glb'])
         self.assertTrue(third['cached'])
         self.assertTrue(Path(third['archetypes_json']).is_file())
         class_doc = json.loads(Path(third['archetypes_json']).read_text())
@@ -78,7 +85,7 @@ class DirectGMPTests(unittest.TestCase):
         self.assertTrue(Path(first['assets_json']).is_file())
         self.assertEqual(json.loads(Path(first['assets_json']).read_text())['assets'][0]['name'],
                          'SyntheticStair')
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
         data = json.loads(Path(first['actors_json']).read_text())
         self.assertEqual(data['meta']['source_sha256'], hashlib.sha256(self.game_map.read_bytes()).hexdigest())
         self.assertEqual(self.ibd.read_bytes(), b'owned bundle fixture')
