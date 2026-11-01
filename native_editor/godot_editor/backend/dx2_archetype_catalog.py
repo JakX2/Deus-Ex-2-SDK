@@ -113,8 +113,14 @@ def catalog_for_map(actors: list[dict], system_path: Path | None = None) -> dict
     if system_path is None:
         return archetype_catalog(actors)
     # This existing SDK parser decodes the user's own .d2u TextBuffers.
-    from dx2catalog import build_catalog
-    catalog = build_catalog(system_path)
+    system_path = Path(system_path)
+    if system_path.suffix.casefold() == ".json":
+        catalog = json.loads(system_path.read_text(encoding="utf8"))
+        if catalog.get("schema") != "dx2-catalog-0.1":
+            raise ValueError("Unsupported System class catalog schema")
+    else:
+        from dx2catalog import build_catalog
+        catalog = build_catalog(system_path)
     return archetype_catalog(actors, system_classes=catalog.get("classes", {}),
                              system_properties=catalog.get("properties", {}))
 
