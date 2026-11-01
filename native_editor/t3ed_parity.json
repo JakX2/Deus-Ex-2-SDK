@@ -49,15 +49,15 @@
       "title": "Actor class palette and property browser",
       "status": "partial",
       "phase": 1,
-      "evidence": "DX2Ed Actor Explorer numeric IDs and class hints; 0.4.1 Inspector supports scalar bool/byte/int/float/string drafts with validation and undo. Original T3Ed actor-property workflows.",
-      "next_step": "Recover reliable DX2 Gamesys class inheritance and named field types; support object links and validated write-back only after native serializers."
+      "evidence": "DX2Ed 0.4.3 parses GameSys .d2u class declarations and observed GMP actor templates to archetypes.json. Searchable Classes tab lists declared base classes, template examples and previews. Typed scalar actor edits from 0.4.1.",
+      "next_step": "Complete typed inheritance and default property value resolution; assign validated native archetypes to new actors; build guarded GMP/IBD package writer with in-game roundtrip."
     },
     {
       "id": "source_project",
       "title": "Editable level project/source format",
       "status": "missing",
       "phase": 1,
-      "evidence": "Original T3Ed content/T3/Maps/*.unr; DX2 retail maps are .gmp",
+      "evidence": "DX2Ed 0.4.3 persists transform, property, IBD mesh placements and source-attributed class templates as private editor-only sidecar JSON; original T3Ed has editable .unr sources.",
       "next_step": "SDK-owned editable project format; GMP/IBD must remain authoritative for runtime"
     },
     {
