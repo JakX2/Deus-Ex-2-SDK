@@ -110,6 +110,17 @@ var scene_bounds := AABB()
 var scene_bounds_valid := false
 var mesh_count := 0
 
+func _exit_tree() -> void:
+    # Never destroy a worker Thread handle while Python still owns it.
+    # Exported previews and game files remain in the private cache.
+    if asset_thread != null:
+        asset_thread.wait_to_finish()
+        asset_thread = null
+    if build_thread != null:
+        build_thread.wait_to_finish()
+        build_thread = null
+
+
 func _ready() -> void:
     _make_ui()
     _make_world()
