@@ -41,8 +41,8 @@
       "title": "Static mesh and texture browser",
       "status": "partial",
       "phase": 1,
-      "evidence": "DX2Ed 0.4.0 native IBD asset catalog + searchable Assets tab; original T3Ed ModeAddStaticMesh and content resources",
-      "next_step": "Asset previews, placement of uninstantiated DX2 mesh actors with validated archetypes, resource import and thumbnails"
+      "evidence": "0.4.2 DX2Ed asset catalog, searchable Assets tab, async textured GLB preview exporter, placing unused IBD meshes as undoable virtual drafts, local cache and source identity checking",
+      "next_step": "Native DX2 actor/archetype creation and runtime-safe package writer; thumbnails, multi-asset placement and source material variants"
     },
     {
       "id": "actor_classes",
