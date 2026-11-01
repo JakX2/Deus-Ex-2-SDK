@@ -31,6 +31,15 @@ var original_mesh_transforms: Dictionary = {}
 var draft_prop_copies: Dictionary = {}
 var draft_prop_sources: Dictionary = {}
 var next_prop_copy_id := 1
+# In-memory session history. Each operation stores only edited actor transforms
+# and draft clones, never the large imported GLB or retail resources.
+const HISTORY_LIMIT := 100
+var undo_stack: Array[Dictionary] = []
+var redo_stack: Array[Dictionary] = []
+var gizmo_undo_before: Dictionary = {}
+var undo_button: Button
+var redo_button: Button
+var restore_all_dialog: ConfirmationDialog
 var build_thread: Thread = null
 var actors: Array = []
 var visible_actors: Array = []
@@ -200,6 +209,22 @@ func _make_ui() -> void:
     reset_button.text = "Reset / Delete copy"
     reset_button.pressed.connect(_reset_selected_prop)
     prop_bar.add_child(reset_button)
+    undo_button = Button.new()
+    undo_button.text = "Undo"
+    undo_button.tooltip_text = "Undo the last prop edit (Ctrl+Z)"
+    undo_button.pressed.connect(_undo_edit)
+    prop_bar.add_child(undo_button)
+    redo_button = Button.new()
+    redo_button.text = "Redo"
+    redo_button.tooltip_text = "Redo the last undone edit (Ctrl+Y or Ctrl+Shift+Z)"
+    redo_button.pressed.connect(_redo_edit)
+    prop_bar.add_child(redo_button)
+    var restore_all_button := Button.new()
+    restore_all_button.text = "Restore All"
+    restore_all_button.tooltip_text = "Restore every original prop transform and delete draft copies. Also clears saved draft edits."
+    restore_all_button.pressed.connect(func(): restore_all_dialog.popup_centered())
+    prop_bar.add_child(restore_all_button)
+    _refresh_history_buttons()
     var save_button := Button.new()
     save_button.text = "Save draft"
     save_button.tooltip_text = "Save only the preview changes as JSON in user://. Never write the game files."
@@ -254,6 +279,11 @@ func _make_ui() -> void:
     inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
     inspector.text = "Select an actor to inspect its original DX2 properties."
     right.add_child(inspector)
+    restore_all_dialog = ConfirmationDialog.new()
+    restore_all_dialog.title = "Restore all prop edits?"
+    restore_all_dialog.dialog_text = "Restore all original prop transforms and remove every draft copy?\nThis also clears the saved draft for this map.\nYou can undo during this session."
+    restore_all_dialog.confirmed.connect(_restore_all_edits)
+    add_child(restore_all_dialog)
     var bottom := PanelContainer.new()
     base.add_child(bottom)
     status_label = Label.new()
@@ -565,6 +595,11 @@ func _clear_current_scene() -> void:
     draft_prop_copies.clear()
     draft_prop_sources.clear()
     next_prop_copy_id = 1
+    undo_stack.clear()
+    redo_stack.clear()
+    gizmo_undo_before.clear()
+    gizmo_drag_active = false
+    _refresh_history_buttons()
     all_mesh_instances.clear()
     pick_faces_by_mesh.clear()
     visible_actors.clear()
@@ -931,6 +966,144 @@ func _draft_selected_is_prop() -> bool:
         if not draft_prop_copies.has(name) and not (meshes_by_actor.has(name) and actors_by_name.has(name)):
             return false
     return true
+
+
+## History snapshots contain only preview edits and selected names.
+## Native DX2 objects remain represented by the original imported GLB.
+func _capture_edit_state() -> Dictionary:
+    var moved: Dictionary = {}
+    for name in original_mesh_transforms:
+        if not meshes_by_actor.has(name) or not actors_by_name.has(name):
+            continue
+        var node: MeshInstance3D = meshes_by_actor[name]
+        if is_instance_valid(node) and node.global_transform != original_mesh_transforms[name]:
+            moved[name] = node.global_transform
+    var copies: Dictionary = {}
+    for name in draft_prop_copies:
+        var copy: MeshInstance3D = draft_prop_copies[name]
+        if is_instance_valid(copy):
+            copies[name] = {
+                "source": str(draft_prop_sources.get(name, "")),
+                "transform": copy.global_transform
+            }
+    return {
+        "moved": moved,
+        "copies": copies,
+        "selected": selected_meshes.keys().duplicate(),
+        "next_id": next_prop_copy_id
+    }
+
+
+func _apply_edit_state(state: Dictionary) -> void:
+    _clear_selection()
+    # Restore baseline first. A reverted move must not linger if absent
+    # from the snapshot.
+    for name in original_mesh_transforms:
+        if meshes_by_actor.has(name):
+            var node: MeshInstance3D = meshes_by_actor[name]
+            if is_instance_valid(node):
+                node.global_transform = original_mesh_transforms[name]
+    # Free synchronously so undoing and immediately redoing a duplicate never
+    # hits Godot's auto-renamed Node3D names from queued deletions.
+    for copy in draft_prop_copies.values():
+        if is_instance_valid(copy):
+            all_mesh_instances.erase(copy)
+            copy.free()
+    draft_prop_copies.clear()
+    draft_prop_sources.clear()
+    next_prop_copy_id = 1
+    var moved: Dictionary = state.get("moved", {})
+    for name in moved:
+        if meshes_by_actor.has(name) and actors_by_name.has(name):
+            var node: MeshInstance3D = meshes_by_actor[name]
+            if is_instance_valid(node):
+                node.global_transform = moved[name]
+    var copies: Dictionary = state.get("copies", {})
+    for name in copies:
+        var info: Dictionary = copies[name]
+        if not str(name).begins_with("DraftProp_"):
+            continue
+        var source := str(info.get("source", ""))
+        if actors_by_name.has(source):
+            _new_draft_copy(source, str(name), info["transform"])
+    next_prop_copy_id = max(1, int(state.get("next_id", 1)))
+    for name in state.get("selected", []):
+        var node: MeshInstance3D = null
+        if draft_prop_copies.has(name):
+            node = draft_prop_copies[name]
+        elif meshes_by_actor.has(name) and actors_by_name.has(name):
+            node = meshes_by_actor[name]
+        if is_instance_valid(node):
+            _add_selection_mesh(node)
+    _refresh_selection_inspector()
+    _sync_actor_list_selection()
+    _update_gizmo_pose()
+
+
+func _refresh_history_buttons() -> void:
+    if undo_button != null:
+        undo_button.disabled = undo_stack.is_empty()
+        undo_button.tooltip_text = "Ctrl+Z" if undo_stack.is_empty() else "Ctrl+Z: " + str(undo_stack.back()["label"])
+    if redo_button != null:
+        redo_button.disabled = redo_stack.is_empty()
+        redo_button.tooltip_text = "Ctrl+Y / Ctrl+Shift+Z" if redo_stack.is_empty() else "Ctrl+Y: " + str(redo_stack.back()["label"])
+
+
+func _record_edit(label: String, before: Dictionary) -> void:
+    var after := _capture_edit_state()
+    # Selection changes alone do not count as edits.
+    if before.get("moved") == after.get("moved") and before.get("copies") == after.get("copies"):
+        return
+    undo_stack.append({"label": label, "before": before, "after": after})
+    if undo_stack.size() > HISTORY_LIMIT:
+        undo_stack.pop_front()
+    redo_stack.clear()
+    _refresh_history_buttons()
+
+
+func _undo_edit() -> void:
+    if gizmo_drag_active:
+        _finish_gizmo_drag()
+    if undo_stack.is_empty():
+        return
+    var item: Dictionary = undo_stack.pop_back()
+    _apply_edit_state(item["before"])
+    redo_stack.append(item)
+    _refresh_history_buttons()
+    status_label.text = "Undo: " + str(item["label"]) + " (preview draft only)."
+
+
+func _redo_edit() -> void:
+    if gizmo_drag_active:
+        _finish_gizmo_drag()
+    if redo_stack.is_empty():
+        return
+    var item: Dictionary = redo_stack.pop_back()
+    _apply_edit_state(item["after"])
+    undo_stack.append(item)
+    _refresh_history_buttons()
+    status_label.text = "Redo: " + str(item["label"]) + " (preview draft only)."
+
+
+func _restore_all_edits() -> void:
+    if scene_root == null:
+        status_label.text = "Load a map before restoring edits."
+        return
+    var before := _capture_edit_state()
+    _apply_edit_state({"moved": {}, "copies": {}, "selected": [], "next_id": 1})
+    _record_edit("Restore All", before)
+    # Overwrite the sidecar with an empty draft. Undo restores the session's
+    # preview state, but the user must Save draft to persist the undo.
+    _save_prop_draft()
+    status_label.text = "All prop edits restored to the imported map. Saved draft cleared. Ctrl+Z can undo this session."
+
+
+func _finish_gizmo_drag() -> void:
+    if not gizmo_drag_active:
+        return
+    gizmo_drag_active = false
+    _record_edit("Drag " + editor_tool, gizmo_undo_before)
+    gizmo_undo_before.clear()
 
 
 func _draft_source_name(instance: MeshInstance3D) -> String:
