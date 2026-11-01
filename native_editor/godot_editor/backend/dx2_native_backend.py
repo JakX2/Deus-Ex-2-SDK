@@ -43,7 +43,7 @@ def map_inputs(map_path: Path, manual_bundles: list[Path]):
     bundles = choose_bundles(level, manual_bundles)
     return level, bundles
 
-def get_cache_key(map_path: Path, bundles: list[Path], system_path: Path | None = None):
+def get_cache_key(map_path: Path, bundles: list[Path], system_path: Path | None = None, preview_club_stairs: bool = False):
     sources = {'map': {'name': map_path.name, 'sha256': sha256(map_path)},
                'bundles': [{'name': p.name, 'sha256': sha256(p)} for p in bundles]}
     if system_path is not None:
@@ -54,11 +54,12 @@ def get_cache_key(map_path: Path, bundles: list[Path], system_path: Path | None 
                                   p.stat().st_size, p.stat().st_mtime_ns) for p in system_files]
         else:
             sources['system'] = {'name': system_path.name, 'sha256': sha256(system_path)}
-    payload = json.dumps({'version': CACHE_VERSION, 'inputs': sources}, sort_keys=True)
+    payload = json.dumps({'version': CACHE_VERSION, 'inputs': sources, 'preview_club_stairs': bool(preview_club_stairs)}, sort_keys=True)
     return hashlib.sha256(payload.encode('utf8')).hexdigest()[:20], sources
 
 def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | None = None,
-          system_path: Path | None = None, force: bool = False) -> dict:
+          system_path: Path | None = None, force: bool = False,
+          preview_club_stairs: bool = False) -> dict:
     level, bundles = map_inputs(map_path, manual_bundles or [])
     map_path = level.path.resolve()
     output_root = Path(output_root).expanduser().resolve()
@@ -68,7 +69,7 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
         system_path = Path(system_path).expanduser().resolve()
         if not system_path.exists():
             raise FileNotFoundError(f'System source not found: {system_path}')
-    key, source_hashes = get_cache_key(map_path, bundles, system_path)
+    key, source_hashes = get_cache_key(map_path, bundles, system_path, preview_club_stairs)
     folder = output_root / (map_path.stem + '_' + key)
     glb = folder / 'scene.glb'
     actor_json = folder / 'actors.json'
@@ -88,7 +89,8 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
             pass
     folder.mkdir(parents=True, exist_ok=True)
     try:
-        report = run_export(level, glb, manual=bundles)
+        report = run_export(level, glb, manual=bundles,
+                            preview_club_stairs=preview_club_stairs)
         meta, actors = actor_records(map_path, system_path)
         meta.update({'cache_version': CACHE_VERSION,
                      'source_sha256': source_hashes['map']['sha256'],
@@ -118,6 +120,8 @@ def main(argv=None):
     parser.add_argument('--bundle', type=Path, action='append', default=[])
     parser.add_argument('--system', type=Path)
     parser.add_argument('--force', action='store_true')
+    parser.add_argument('--preview-club-stairs', action='store_true',
+                        help='Experimental Seattle Club stair Roll preview; changes GLB only')
     parser.add_argument('--inspect', action='store_true',
                         help='Only locate required resource bundles; do not export')
     args = parser.parse_args(argv)
@@ -130,7 +134,8 @@ def main(argv=None):
         else:
             result = build(args.map, args.output_root,
                            manual_bundles=args.bundle,
-                           system_path=args.system, force=args.force)
+                           system_path=args.system, force=args.force,
+                           preview_club_stairs=args.preview_club_stairs)
         print(json.dumps(result, ensure_ascii=True))
         return 0
     except Exception as error:
