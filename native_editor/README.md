@@ -253,3 +253,35 @@ All of the controls are experimental and need interactive Windows/Godot
 testing. The asset-free headless smoke test covers mode switching, axis
 handle creation, and class-category labels but cannot simulate complete
 mouse gestures or game-world physics.
+
+## Experimental 0.2.9: enlarged move gizmo and group selection
+
+The **Move (W)** gizmo is noticeably larger, with thicker handles for more
+comfortable clicking in a busy map. Its size still adapts to camera distance.
+
+### Multi-selection
+
+- **Ctrl + left-click** another rendered static-mesh actor in the 3D viewport
+  to add it; Ctrl-click it again to remove only that actor from the selection.
+  Shift-click also toggles another mesh in the viewport.
+- In the **DX2 Actors** list, use Ctrl-click for individual items and
+  Shift-click for a contiguous range. Only actors with an exported mesh can
+  join a transformable 3D group; logical actors remain inspectable.
+- Regular left-click replaces the current selection. Each selected mesh has
+  its own orange highlight.
+- The gizmo appears at the **average world position** of the selected meshes.
+  Move translates all selected props together. Rotate and Scale operate
+  around the shared pivot. World-axis X/Y/Z buttons and Turn +/-15 degrees
+  also affect the entire group.
+- **Duplicate** clones every selected static mesh preview. **Reset / Delete
+  copy** restores originals and removes draft copies in the selected group.
+- **Save draft / Load draft** retain per-actor transforms and created copies
+  through the existing JSON sidecar format. Group membership itself is
+  transient; saved transforms persist, and selections do not.
+- BSP render blocks cannot be multi-selected as editable props, and native
+  GMP/IBD saving is still disabled. This is a preview authoring workflow.
+
+Synthetic Godot headless regression checks cover two-object group movement,
+rotation, reset, serializing/restoring the draft and Ctrl-toggle selection.
+Manual Windows testing is still recommended for mouse picking and Shift
+range selection in a real mission.
