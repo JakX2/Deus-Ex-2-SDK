@@ -41,6 +41,26 @@ func _run() -> void:
         _fail("Original source/material diagnostics need a readable minimum height")
         return
 
+    # Automatic roll correction is reversible at import and never a GMP edit.
+    if not viewer.preview_auto_roll:
+        _fail("Auto Roll preview should be enabled for new imports")
+        return
+    viewer._set_auto_roll_preview(false)
+    if viewer.preview_auto_roll:
+        _fail("Auto Roll preview OFF must be selectable")
+        return
+    viewer._set_auto_roll_preview(true)
+    if not viewer.preview_auto_roll:
+        _fail("Auto Roll preview ON must be selectable again")
+        return
+    var shown: String = viewer._mesh_geometry_material_summary({
+        "class": "StaticMeshActor", "mesh": "GEN_TRIM5-16ft",
+        "auto_roll_preview": {"applied": true, "mode": "invert_roll_sign", "heuristic_only": true}
+    })
+    if not shown.contains("Auto Roll: inverted source roll"):
+        _fail("Auto Roll candidate must be identifiable in the Inspector")
+        return
+
     # Editor categories are class hints, not a substitute for decoded physics.
     if viewer._actor_category({"class":"StaticMeshActor"}) != "Static mesh":
         _fail("static-mesh category classification")
