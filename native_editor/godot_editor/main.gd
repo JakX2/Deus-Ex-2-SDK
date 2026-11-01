@@ -632,6 +632,11 @@ func _format_actor_diagnostic(actor: Dictionary) -> String:
         lines.append("Requested skin: " + str(render_skin.get("requested", "(none)")))
         lines.append("Exported skin: " + str(render_skin.get("selected", "(none)")))
         lines.append("Skin resolution: " + str(render_skin.get("status", "unknown")))
+        var material_rows: Variant = render_skin.get("materials", [])
+        if typeof(material_rows) == TYPE_ARRAY:
+            for material_row in material_rows:
+                if typeof(material_row) == TYPE_DICTIONARY:
+                    lines.append("Skin material: " + str(material_row.get("name", "?")) + " | " + str(material_row.get("resolution", "unknown")))
     else:
         for prop in actor.get("game_properties", []):
             if typeof(prop) == TYPE_DICTIONARY and int(prop.get("id", -1)) == 56:
