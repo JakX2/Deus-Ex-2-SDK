@@ -20,6 +20,7 @@ for relative in ('map_exporter', 'actor_explorer'):
         sys.path.insert(0, str(folder))
 from dx2_map_exporter import list_levels, choose_bundles, run_export
 from dx2_actor_explorer import actor_records
+from dx2_asset_catalog import catalog_from_paths
 
 CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.6-actor-skins-v1'
 
@@ -74,8 +75,9 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
     glb = folder / 'scene.glb'
     actor_json = folder / 'actors.json'
     report_json = folder / 'scene.report.json'
+    assets_json = folder / 'assets.json'
     manifest_path = folder / 'source_manifest.json'
-    if not force and all(p.is_file() for p in (glb, actor_json, report_json, manifest_path)):
+    if not force and all(p.is_file() for p in (glb, actor_json, assets_json, report_json, manifest_path)):
         try:
             doc = json.loads(manifest_path.read_text(encoding='utf8'))
             actors_doc = json.loads(actor_json.read_text(encoding='utf8'))
@@ -84,6 +86,7 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
                 actors_doc.get('meta', {}).get('source_sha256') == source_hashes['map']['sha256']):
                 return {'status': 'ok', 'cached': True, 'folder': str(folder),
                         'glb': str(glb), 'actors_json': str(actor_json),
+                        'assets_json': str(assets_json),
                         'map': map_path.name, 'actors': len(actors_doc['actors'])}
         except (OSError, ValueError, KeyError, TypeError):
             pass
@@ -108,12 +111,13 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
                      'source_sha256': source_hashes['map']['sha256'],
                      'source_map': map_path.name, 'glb': 'scene.glb'})
         actor_json.write_text(json.dumps({'meta': meta, 'actors': actors}, ensure_ascii=True), encoding='utf8')
+        assets_json.write_text(json.dumps(catalog_from_paths(bundles), ensure_ascii=True), encoding='utf8')
         report_json.write_text(json.dumps(report, indent=2), encoding='utf8')
         manifest_path.write_text(json.dumps({'version': CACHE_VERSION, 'key': key,
                                              'sources': source_hashes,
                                              'actors': len(actors)}, indent=2), encoding='utf8')
     except Exception:
-        for path in (glb, actor_json, report_json, manifest_path):
+        for path in (glb, actor_json, assets_json, report_json, manifest_path):
             try:
                 path.unlink(missing_ok=True)
             except OSError:
@@ -121,6 +125,7 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
         raise
     return {'status': 'ok', 'cached': False, 'folder': str(folder),
             'glb': str(glb), 'actors_json': str(actor_json),
+            'assets_json': str(assets_json),
             'map': map_path.name, 'actors': len(actors),
             'mesh_actors': report.get('placed_real_mesh_actors'),
             'missing_mesh_actors': len(report.get('missing_mesh_actors', []))}
