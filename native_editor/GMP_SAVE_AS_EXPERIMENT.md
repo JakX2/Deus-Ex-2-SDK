@@ -45,3 +45,54 @@ CI uses a tiny synthetic but genuinely parseable Ion Storm v95 package, patches 
 Native rotations, scale/skin changes, property changes, actor placement/deletion, scripts, AI, physics, collision, lighting, BSP/CSG brush geometry and IBD writing. All need additional reverse engineering, binary round-trip tests and in-game validation.
 
 The first sensible runtime experiment is moving a single small decorative static mesh in Seattle Hub a short distance and comparing a copied game installation against the original. Successful synthetic parsing is not the same as confirming in-game compatibility.
+
+
+## 0.5.1: Native Location audit before export
+
+Select **Audit native GMP** from DX2Ed's top toolbar after importing an original
+retail map. The read-only audit scans the original v95 GMP and its matching
+actors.json. It reports how many placed static-mesh actors have independently
+identifiable tagged Location.X/Y/Z float fields, and how many cannot be patched
+because of incompatible tags, duplicate names, invalid export IDs, or decoded
+source-coordinate mismatches.
+
+The audit does **not** export, patch, create, or install any GMP. Eligible
+means *serialized native position is known*, not that the object has an
+in-game-working collision hull or verified correct pivot/rotation.
+
+Command-line equivalent:
+
+~~~powershell
+python native_editor/godot_editor/backend/dx2_native_save_as.py --source "C:\DX2\Maps\M1_Seattle_hub.gmp" --actors "C:\DX2EdCache\mission\actors.json" --audit
+~~~
+
+The writer now also rejects **no-op Save As** operations with zero moved actors
+or no meaningful changed coordinates, so an identical output cannot be
+misrepresented as an edited map.
+
+## 0.5.1: Independent exported GMP binary verification
+
+After generating a test GMP copy, verify it again without trusting the writer's
+previous return value:
+
+~~~powershell
+python native_editor/godot_editor/backend/dx2_native_save_as.py --source "C:\DX2\Maps\M1_Seattle_hub.gmp" --output "C:\DX2EdTests\M1_Seattle_hub.gmp" --verify
+~~~
+
+The verifier reads the adjacent DX2Ed save manifest by default. It validates:
+original/output SHA-256, package version, GUID, export/import/name table
+counts, original source actor classes and export identity, unmodified offsets,
+original and edited Location values, and **every changed byte**. Any changed
+byte outside those approved original Location float fields causes failure.
+It also rejects a manifest falsely claiming that the map has been tested
+inside the retail game.
+
+The verifier returns \`verified_binary_structure: true\` and
+\`game_verified: false\` on a clean binary comparison. This means the source
+and exported bytes obey our known-safe constraints, **not** that the game
+will accept the modified map. Actual game testing is still needed. For
+a nonstandard manifest path, pass \`--manifest "path\to\manifest.json"\`.
+
+All three CLI modes (audit, write, verify) operate on user-owned source
+files and synthetic CI fixtures. No copyrighted GMP contents are checked
+into the repository.
