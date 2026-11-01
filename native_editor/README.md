@@ -463,3 +463,44 @@ decoded scalar types are exposed intentionally.
 CI uses synthetic actors to validate editing, search, undo/redo, sidecar
 round trips, rejecting restricted references, logical-actor selection and
 Restore All, plus the existing Godot 4.3 scene tests.
+
+## 0.4.2-preview: place unused IBD meshes as reversible drafts
+
+DX2Ed's **Assets** tab now includes **Place preview mesh** for source
+`staticmesh` resources, including meshes not already used by the map.
+
+- Choose any cataloged static mesh and click **Place preview mesh**. DX2Ed
+  starts a background Python worker to decode the original IBD resource and
+  build **one textured GLB preview** using the existing map exporter/material
+  pipeline. The output lives under the **private map cache** directory at
+  `asset_previews/mesh_<SHA256 prefix>.glb`; the retail source remains
+  read-only. Subsequent placements reuse the cached preview.
+- The new object appears in Hierarchy as `DraftProp_N`, with source
+  `AssetMesh::<resource name>`. It starts at the editor camera's target
+  position and supports existing move/rotate/scale gizmos, multi-select,
+  Ctrl+Z/Ctrl+Y, Duplicate, Reset, Save/Load draft and Restore All.
+- The existing `DX2Ed-prop-draft-v1` sidecar schema persists asset-origin
+  copies with `from_actor: "AssetMesh::<resource name>"`; this is a **virtual
+  editor source**, not a Gamesys object reference or a native actor. Old
+  actor-copy drafts remain compatible. On reopening, the editor reconstructs
+  asset-origin drafts from locally cached previews and validates the catalog.
+- New imports save user-local IBD `source_paths` in `assets.json` so
+  individual resource previews can be generated on demand; older cached
+  imports are upgraded **in place** without changing their map cache key or
+  abandoning existing prop drafts.
+
+**This is not yet native DX2 object creation.** No actor archetype, export
+index, script, collision hull, physics or inventory behavior is invented.
+Placed preview assets are not playable in retail Invisible War and cannot be
+saved into a GMP/IBD package. Native actor creation requires verified Gamesys
+class templates, relationships and a round-trip-safe package writer.
+
+Asset previews inherit the map exporter's incomplete shader/lighting
+approximations. Some exotic IBD meshes may be unsupported by the decoder.
+The generation worker reports failures and does not modify the source file.
+If an old `assets.json` has no IBD source paths, reopen the source GMP with
+DX2Ed to refresh the local catalog before trying unplaced assets.
+
+The CI tests use fixture-only meshes and a synthetic two-cube Godot scene to
+check resource identity, GLB output, duplication, undo/redo, draft recovery
+and Restore All. Real-map interactive placement still needs Windows testing.
