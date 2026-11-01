@@ -38,11 +38,14 @@ class SeattleClubStairPreviewTests(unittest.TestCase):
     TREAD_BOUNDS = ([-48.0015, 0.0, -192.0], [0.0, 32.014, 0.0])
 
     def test_correction_is_only_for_two_club_stair_meshes(self):
-        self.assertEqual(preview_roll_sign("M1_Seattle_Club.gmp", "1Hub_club-stair-12ft"), -1)
-        self.assertEqual(preview_roll_sign("M1_Seattle_Club.gmp", "1Hub_penthouseB1_stair1"), -1)
-        self.assertEqual(preview_roll_sign("M1_Seattle_Club.gmp", "M1PENT_stair-rail"), 1)
-        self.assertEqual(preview_roll_sign("M3_Germany_Trier.gmp", "1Hub_club-stair-12ft"), 1)
-        self.assertEqual(preview_roll_sign("M1_Seattle_Club.gmp", "GO_coffeecup"), 1)
+        self.assertEqual(preview_roll_sign("M1_Seattle_Club.gmp", "1Hub_club-stair-12ft", enabled=True), -1)
+        self.assertEqual(preview_roll_sign("M1_Seattle_Club.gmp", "1Hub_penthouseB1_stair1", enabled=True), -1)
+        self.assertEqual(preview_roll_sign("M1_Seattle_Club.gmp", "M1PENT_stair-rail", enabled=True), 1)
+        self.assertEqual(preview_roll_sign("M3_Germany_Trier.gmp", "1Hub_club-stair-12ft", enabled=True), 1)
+        self.assertEqual(preview_roll_sign("M1_Seattle_Club.gmp", "GO_coffeecup", enabled=True), 1)
+
+    def test_default_preview_preserves_raw_actor_rotation(self):
+        self.assertEqual(preview_roll_sign("M1_Seattle_Club.gmp", "1Hub_club-stair-12ft"), 1)
 
     def test_west_stair_moves_inside_bsp_side(self):
         a = dict(x=-935.998, y=-835.999, z=-448, rotation=[0, 16384, 16384])
