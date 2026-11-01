@@ -490,11 +490,18 @@ func _make_ui() -> void:
     view_container.custom_minimum_size = Vector2(400, 360)
     scene_pane.add_child(view_container)
 
+    # The Inspector content can be taller than the window, especially when
+    # editing actor properties. Scroll vertically instead of cutting off the
+    # material details and the original read-only property dump.
+    var inspector_scroll := ScrollContainer.new()
+    inspector_scroll.custom_minimum_size.x = 315
+    inspector_scroll.size_flags_horizontal = Control.SIZE_FILL
+    inspector_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    inspector_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    content_split.add_child(inspector_scroll)
     var inspector_pane := VBoxContainer.new()
-    inspector_pane.custom_minimum_size.x = 315
-    inspector_pane.size_flags_horizontal = Control.SIZE_FILL
-    inspector_pane.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    content_split.add_child(inspector_pane)
+    inspector_pane.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    inspector_scroll.add_child(inspector_pane)
     var heading := Label.new()
     heading.text = "Inspector"
     inspector_pane.add_child(heading)
@@ -628,7 +635,8 @@ func _make_ui() -> void:
     inspector_pane.add_child(property_heading)
     inspector = TextEdit.new()
     inspector.editable = false
-    inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    inspector.custom_minimum_size.y = 210
+    inspector.size_flags_vertical = Control.SIZE_FILL
     inspector.text = "Select an actor to inspect original DX2 properties."
     inspector_pane.add_child(inspector)
     inspector_transform_section.visible = false
