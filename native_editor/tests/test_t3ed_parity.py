@@ -2,6 +2,9 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+import struct
 import sys
 import unittest
 
@@ -9,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "native_editor" / "godot_editor" / "backend"
 sys.path.insert(0, str(BACKEND))
 from dx2_asset_catalog import SCHEMA, catalog_from_bundles, catalog_from_paths
-from dx2_asset_preview import preview_path, load_selected_asset, source_bundle_paths
+from dx2_asset_preview import preview_path, load_selected_asset, source_bundle_paths, export_asset_preview
 
 
 def fixture_resource(name, kind, type_id, index, size=64):
@@ -96,6 +99,64 @@ class T3EdParityAndCatalogTests(unittest.TestCase):
     def test_asset_preview_rejects_unlisted_sources(self):
         with self.assertRaisesRegex(ValueError,"missing source paths"):
             source_bundle_paths(Path("/tmp/catalog.json"), {"source_paths":[]})
+
+    def test_generate_unplaced_mesh_preview_glb_uses_original_bundle_identity(self):
+        with TemporaryDirectory() as root:
+            folder = Path(root)
+            source = folder / "mission.ibd"
+            source.write_bytes(b"owned test fixture data")
+            catalog_path = folder / "assets.json"
+            catalog_path.write_text(json.dumps({
+                "schema": SCHEMA, "asset_payloads_included": False,
+                "source_paths": [str(source)],
+                "assets": [{"name": "UnusedDoor", "kind": "staticmesh", "type_id": 4,
+                            "bundle": "mission.ibd", "resource_index": 9, "bytes": 16}]
+            }))
+            bundle = SimpleNamespace(name="mission.ibd")
+            record = SimpleNamespace(index=9)
+            mesh = SimpleNamespace(
+                name="UnusedDoor",
+                positions=[(0.,0.,0.),(1.,0.,0.),(0.,1.,0.)],
+                normals=[(0.,0.,1.)]*3,
+                uv=[(0.,0.),(1.,0.),(0.,1.)],
+                indices=[0,1,2],
+                sections=[{"name":"FictionalMaterial", "first_index":0, "index_count":3}],
+                skins=[{"name":"Default","materials":["FictionalMaterial"]}])
+            mapping = {4: {"unuseddoor": (bundle, record)}, 8: {}, 10: {}}
+            with patch("dx2_asset_preview.load_resource_index",
+                       return_value=([bundle], mapping, {})), \\
+                 patch("dx2_asset_preview.parse_mesh", return_value=mesh):
+                result = export_asset_preview(catalog_path, "UnusedDoor")
+            self.assertFalse(result["cached"])
+            binary = Path(result["glb"]).read_bytes()
+            self.assertEqual(binary[:4], b"glTF")
+            self.assertEqual(struct.unpack_from("<I", binary, 4)[0], 2)
+            json_length = struct.unpack_from("<I", binary, 12)[0]
+            doc = json.loads(binary[20:20+json_length])
+            self.assertEqual(doc["meshes"][0]["name"], "UnusedDoor")
+            self.assertTrue(doc["nodes"][0]["extras"]["DX2PreviewOnly"])
+            cached = export_asset_preview(catalog_path, "UnusedDoor")
+            self.assertTrue(cached["cached"])
+            self.assertEqual(source.read_bytes(), b"owned test fixture data")
+
+    def test_reject_asset_preview_when_index_changes(self):
+        with TemporaryDirectory() as root:
+            folder = Path(root)
+            source = folder / "mission.ibd"
+            source.write_bytes(b"fixture")
+            catalog_path = folder / "assets.json"
+            catalog_path.write_text(json.dumps({
+                "schema": SCHEMA, "asset_payloads_included": False,
+                "source_paths": [str(source)],
+                "assets": [{"name": "Door", "kind": "staticmesh", "type_id": 4,
+                            "bundle": "mission.ibd", "resource_index": 9, "bytes": 16}]
+            }))
+            mapping = {4: {"door": (SimpleNamespace(name="mission.ibd"),
+                                    SimpleNamespace(index=10))}, 8: {}, 10: {}}
+            with patch("dx2_asset_preview.load_resource_index",
+                       return_value=([], mapping, {})):
+                with self.assertRaisesRegex(ValueError, "identity differs"):
+                    export_asset_preview(catalog_path, "Door")
 
     def test_tracker_calls_out_source_format_boundary(self):
         text = (ROOT / "native_editor" / "T3ED_PARITY_PLAN.md").read_text(encoding="utf8")
