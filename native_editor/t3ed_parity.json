@@ -169,8 +169,8 @@
       "title": "Compile/cook/install and playtest missions",
       "status": "partial",
       "phase": 4,
-      "evidence": "DX2Ed 0.5.0 translation-only GMP save-as proof of concept: same-size patch of original Location.X/Y/Z tagged float fields; synthetic v95 package reparse and hash validations. No retail in-game test.",
-      "next_step": "Confirm translated actor GMP patch loads in original DX2 using a copied install, investigate collision/physics; later add rotation, object creation, GMP/IBD serialization and BSP rebuild."
+      "evidence": "DX2Ed 0.5.1 guarded native GMP Location writer, read-only source audit and independent per-byte output verification against original, synthetic parser tests. Runtime game-load still unverified.",
+      "next_step": "Real v95 retail GMP audit and test in a copied installation; verify map load and actor physics, then research rotation/other native fields and BSP/IBD writing."
     },
     {
       "id": "mod_sdk",
@@ -193,7 +193,7 @@
       "title": "Round-trip format tests and preview vs runtime",
       "status": "partial",
       "phase": 1,
-      "evidence": "DX2Ed 0.5.0 synthetic parseable GMP v95 binary writer tests, read-back verification, safe refusal/round-trip protections; prior Godot/CI fixture tests; no retail game validation.",
+      "evidence": "DX2Ed 0.5.1 read-only Location audit, output-manifest and full byte-diff verification; synthetic v95 roundtrip, no-op/tamper/identity refusal tests; game load still unverified.",
       "next_step": "Golden fixture audits, export/import idempotence, engine playtesting"
     }
   ]
