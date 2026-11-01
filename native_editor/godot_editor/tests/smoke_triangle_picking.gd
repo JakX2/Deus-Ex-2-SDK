@@ -447,6 +447,69 @@ func _run() -> void:
         _fail("Restore All should delete asset previews")
         return
 
+    # T3Ed-like Gamesys class palette: class declaration is not a native
+    # spawner. A placed template must retain its original actor provenance.
+    var original_template: Dictionary = viewer.actors_by_name["StaticMeshActor__1"]
+    var source_export := int(original_template.get("export", -1))
+    viewer.archetype_catalog = {"schema":"DX2Ed-archetype-catalog-v1",
+        "classes":[
+            {"qualified":"DX2Game.StaticMeshActor","class":"StaticMeshActor",
+             "base":"Actor","source":"system_declaration",
+             "observed_actors":2,"template_actor":"StaticMeshActor__1",
+             "template_export":source_export,"template_mesh":"TestMesh",
+             "property_signatures":[]},
+            {"qualified":"DX2Game.Unspawnable","class":"Unspawnable",
+             "base":"Actor","source":"system_declaration",
+             "observed_actors":0,"template_actor":null,
+             "template_export":null,"template_mesh":null,
+             "property_signatures":[]}
+        ]}
+    viewer._refresh_archetype_list()
+    if viewer.archetype_list.item_count != 2:
+        _fail("Class palette should include both observed and declared-only Gamesys classes")
+        return
+    viewer._archetype_selected(0)
+    if not viewer.archetype_details.text.contains("Parent: Actor"):
+        _fail("Class palette must show declared parent")
+        return
+    viewer._place_archetype_template()
+    if viewer.draft_prop_copies.size() != 1:
+        _fail("Placed class template must create one draft visual")
+        return
+    var template_name := str(viewer.selected_mesh.name)
+    var provenance: Dictionary = viewer.draft_template_provenance.get(template_name, {})
+    if provenance.get("qualified") != "DX2Game.StaticMeshActor" or provenance.get("source_export") != source_export:
+        _fail("Template placement lost source class or export identity")
+        return
+    viewer._undo_edit()
+    if not viewer.draft_prop_copies.is_empty() or not viewer.draft_template_provenance.is_empty():
+        _fail("Undo must remove template mesh and its metadata")
+        return
+    viewer._redo_edit()
+    if viewer.draft_template_provenance.get(template_name, {}).get("qualified") != "DX2Game.StaticMeshActor":
+        _fail("Redo must restore template metadata")
+        return
+    viewer._save_prop_draft()
+    var class_draft: Variant = JSON.parse_string(FileAccess.get_file_as_string(viewer._draft_file_path()))
+    if class_draft.get("copies", []).size() != 1 or class_draft["copies"][0]["class_template"]["source_export"] != source_export:
+        _fail("Template provenance did not survive JSON sidecar")
+        return
+    viewer._reset_selected_prop()
+    viewer._load_prop_draft()
+    if viewer.draft_prop_copies.size() != 1 or viewer.draft_template_provenance.get(template_name, {}).get("qualified") != "DX2Game.StaticMeshActor":
+        _fail("Loading class template draft did not restore original class metadata")
+        return
+    if viewer._valid_template_provenance({"qualified":"DX2Game.Unspawnable",
+        "source_actor":"StaticMeshActor__1","source_export":source_export}, "StaticMeshActor__1"):
+        _fail("Invalid class-prototype pairing must be rejected")
+        return
+    viewer._restore_all_edits()
+    viewer._archetype_selected(1)
+    viewer._place_archetype_template()
+    if not viewer.draft_prop_copies.is_empty():
+        _fail("A declared class without a rendered example cannot be invented")
+        return
+
     if not diagnosis.contains("Exported skin: Tan Stones") or not diagnosis.contains("Skin material: SyntheticTan | missing_diffuse_texture"):
         _fail("skin diagnostics should show exact missing texture status")
         return
