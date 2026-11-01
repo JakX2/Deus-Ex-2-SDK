@@ -116,6 +116,102 @@ def _check_float(value: object, *, label: str, limit=1_000_000.0) -> float:
     return number
 
 
+def audit_native_locations(source: Path, actors_file: Path) -> dict:
+    """Source-only read audit: report exactly which actor exports can be patched.
+
+    No preview transforms are assumed. This does NOT establish in-game load
+    behavior; it inventories the currently decoded native Location format.
+    """
+    source = source.expanduser().resolve(strict=True)
+    actors_file = actors_file.expanduser().resolve(strict=True)
+    if source.suffix.casefold() != ".gmp":
+        raise ValueError("Audit needs an original .gmp source")
+    if actors_file.stat().st_size > 64_000_000:
+        raise ValueError("Actor metadata exceeds safety limit")
+    pkg = Package(source)
+    actors_doc = json.loads(actors_file.read_text(encoding="utf8"))
+    meta = actors_doc.get("meta", {})
+    if pkg.version != 95 or meta.get("source_sha256") != _sha(pkg.data):
+        raise ValueError("Actor catalog SHA/version does not match original DX2 GMP")
+    if str(meta.get("source_map", "")).casefold() != source.name.casefold():
+        raise ValueError("Actor catalog filename differs from original GMP")
+    raw = actors_doc.get("actors", [])
+    if not isinstance(raw, list) or len(raw) > 500000:
+        raise ValueError("Invalid source actor list")
+    duplicates = set()
+    seen = set()
+    reasons: dict[str, int] = {}
+    examples: list[dict] = []
+    supported = 0
+    mesh_candidates = 0
+    for actor in raw:
+        if not isinstance(actor, dict):
+            continue
+        name = actor.get("name")
+        if not isinstance(name, str):
+            continue
+        if name in seen:
+            duplicates.add(name)
+        seen.add(name)
+    for actor in raw:
+        if not isinstance(actor, dict) or not isinstance(actor.get("name"), str):
+            continue
+        name = actor["name"]
+        if actor.get("class") != "StaticMeshActor" or not actor.get("mesh"):
+            continue
+        mesh_candidates += 1
+        reason = None
+        export_id = actor.get("export")
+        if name in duplicates:
+            reason = "duplicate_actor_name"
+        elif type(export_id) is not int or not 1 <= export_id <= len(pkg.exports):
+            reason = "invalid_export_index"
+        else:
+            exp = pkg.exports[export_id - 1]
+            if pkg.class_name(exp) != "StaticMeshActor" or exp["name"] != name:
+                reason = "export_class_or_name_mismatch"
+            else:
+                try:
+                    offsets = location_float_offsets(pkg, exp)
+                    loc = actor.get("location")
+                    if not isinstance(loc, list) or len(loc) != 3:
+                        reason = "no_decoded_actor_location"
+                    else:
+                        for axis, expected in zip(("X", "Y", "Z"), loc):
+                            number = _check_float(expected, label="source Location")
+                            native = struct.unpack_from("<f", pkg.data, offsets[axis])[0]
+                            if not math.isclose(native, number, abs_tol=SOURCE_TOLERANCE, rel_tol=0):
+                                reason = "decoded_location_mismatch"
+                                break
+                except (ValueError, IndexError, struct.error):
+                    reason = "unsupported_or_ambiguous_location_tags"
+        if reason is None:
+            supported += 1
+        else:
+            reasons[reason] = reasons.get(reason, 0) + 1
+            if len(examples) < 30:
+                examples.append({"actor": name, "export": export_id, "reason": reason})
+    return {
+        "schema": "DX2Ed-native-location-audit-v1",
+        "source": str(source),
+        "source_sha256": _sha(pkg.data),
+        "package_version": pkg.version,
+        "total_actor_records": len(raw),
+        "rendered_static_mesh_candidates": mesh_candidates,
+        "native_location_candidates": supported,
+        "unsupported_candidates": mesh_candidates - supported,
+        "reasons": dict(sorted(reasons.items())),
+        "unsupported_examples": examples,
+        "read_only": True,
+        "game_verified": False,
+        "notes": [
+            "Supported means the original serialized Location is identifiable and matches metadata.",
+            "Exporting still requires a pure translation-only editor draft with unchanged basis.",
+            "This audit does NOT prove GMP in-game loadability or collision behavior."
+        ],
+    }
+
+
 def plan_translation_changes(pkg: Package, actors_doc: dict, draft: dict) -> list[dict]:
     meta = actors_doc.get("meta", {})
     if pkg.version != 95:
@@ -194,6 +290,10 @@ def plan_translation_changes(pkg: Package, actors_doc: dict, draft: dict) -> lis
             "actor": name, "export": export_id, "offsets": offsets,
             "before": list(original_xyz), "after": list(xyz),
         })
+    if not edits:
+        raise ValueError("No existing static mesh actor translations to export")
+    if not any(any(abs(float(a) - float(b)) > 0.00001 for a, b in zip(entry["before"], entry["after"])) for entry in edits):
+        raise ValueError("Draft contains no meaningful native Location changes")
     return edits
 
 
@@ -290,14 +390,21 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--source", type=Path, required=True, help="Original v95 GMP")
     p.add_argument("--actors", type=Path, required=True, help="DX2Ed actors.json for this GMP")
-    p.add_argument("--draft", type=Path, required=True, help="Saved DX2Ed draft JSON")
-    p.add_argument("--output", type=Path, required=True, help="Copy in an isolated folder")
+    p.add_argument("--draft", type=Path, help="Saved DX2Ed draft JSON")
+    p.add_argument("--output", type=Path, help="Copy in an isolated folder")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--audit", action="store_true", help="Read-only audit of source Location fields")
     args = p.parse_args(argv)
     try:
-        print(json.dumps(export_translation_copy(
-            args.source, args.actors, args.draft, args.output, dry_run=args.dry_run
-        ), indent=2))
+        if args.audit:
+            result = audit_native_locations(args.source, args.actors)
+        else:
+            if args.draft is None or args.output is None:
+                p.error("Save As requires both --draft and --output; use --audit to inspect sources")
+            result = export_translation_copy(
+                args.source, args.actors, args.draft, args.output, dry_run=args.dry_run
+            )
+        print(json.dumps(result, indent=2))
         return 0
     except (OSError, ValueError, KeyError, TypeError, IndexError, struct.error) as exc:
         print(json.dumps({"status": "error", "message": str(exc)}), file=sys.stderr)
