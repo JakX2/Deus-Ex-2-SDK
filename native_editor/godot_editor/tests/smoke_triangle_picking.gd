@@ -570,6 +570,7 @@ func _run() -> void:
     if not viewer.draft_brush_specs.has(brush_name) or int(viewer.draft_brush_specs[brush_name]["steps"]) != 12:
         _fail("Load draft must rebuild the original parametric stair")
         return
+    viewer._select_mesh_only(viewer.draft_prop_copies[brush_name])
     viewer._duplicate_selected_prop()
     if viewer.draft_brush_specs.size() != 2:
         _fail("Duplicating a brush must preserve its parametric definition")
