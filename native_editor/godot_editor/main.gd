@@ -35,6 +35,7 @@ var hierarchy_items: Dictionary = {}
 var hierarchy_syncing := false
 var inspector_title: Label
 var inspector_details: Label
+var placement_inspector: Label
 var inspector_transform_section: VBoxContainer
 var inspector_spins: Dictionary = {}
 var inspector_syncing := false
@@ -462,10 +463,16 @@ func _make_ui() -> void:
     actor_list.item_activated.connect(func(_index): focus_selected())
     sidebar.add_child(actor_list)
 
+    # Godot SplitContainer supports exactly two content children.
+    # The prior three-child version dropped the Inspector offscreen.
+    var content_split := HSplitContainer.new()
+    content_split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    content_split.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    horizontal.add_child(content_split)
     var scene_pane := VBoxContainer.new()
     scene_pane.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     scene_pane.custom_minimum_size.x = 440
-    horizontal.add_child(scene_pane)
+    content_split.add_child(scene_pane)
     var scene_label := Label.new()
     scene_label.text = "Scene  |  Godot preview, read-only source assets"
     scene_pane.add_child(scene_label)
@@ -478,7 +485,7 @@ func _make_ui() -> void:
     var inspector_pane := VBoxContainer.new()
     inspector_pane.custom_minimum_size.x = 285
     inspector_pane.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    horizontal.add_child(inspector_pane)
+    content_split.add_child(inspector_pane)
     var heading := Label.new()
     heading.text = "Inspector"
     inspector_pane.add_child(heading)
@@ -489,6 +496,15 @@ func _make_ui() -> void:
     inspector_details.text = "Select an actor or rendered mesh in the Scene or Hierarchy."
     inspector_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     inspector_pane.add_child(inspector_details)
+    placement_inspector = Label.new()
+    placement_inspector.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    placement_inspector.visible = false
+    inspector_pane.add_child(placement_inspector)
+    var copy_placement := Button.new()
+    copy_placement.text = "Copy placement evidence"
+    copy_placement.tooltip_text = "Copy GMP vs IBD vs mesh vertex bounds and original pivot information"
+    copy_placement.pressed.connect(_copy_placement_evidence)
+    inspector_pane.add_child(copy_placement)
     inspector_transform_section = VBoxContainer.new()
     inspector_pane.add_child(inspector_transform_section)
     var inspector_transform_heading := Label.new()
@@ -1934,10 +1950,55 @@ func _copy_rotation_research() -> void:
     status_label.text = "Copied rotation hypotheses and BSP bounding-box evidence to clipboard."
 
 
+func _copy_placement_evidence() -> void:
+    var actor: Dictionary = {}
+    var nodes := _selection_nodes()
+    if nodes.size() == 1 and actors_by_name.has(str(nodes[0].name)):
+        actor = actors_by_name[str(nodes[0].name)]
+    elif nodes.is_empty() and not selected_actor.is_empty():
+        actor = selected_actor
+    if actor.is_empty():
+        status_label.text = "Select one original actor to copy placement evidence."
+        return
+    var data: Variant = actor.get("placement_diagnostic", null)
+    var report := _format_actor_diagnostic(actor)
+    if typeof(data) == TYPE_DICTIONARY:
+        report += "\n\n--- SOURCE MESH PIVOT / BOUNDS AUDIT ---\n" + JSON.stringify(data, "  ")
+    else:
+        report += "\n\nSource mesh audit unavailable for this actor."
+    DisplayServer.clipboard_set(report)
+    status_label.text = "Copied original mesh bounds, pivot, rotation and source evidence."
+
+
+func _refresh_placement_panel() -> void:
+    if placement_inspector == null:
+        return
+    var actor: Dictionary = {}
+    var nodes := _selection_nodes()
+    if nodes.size() == 1 and actors_by_name.has(str(nodes[0].name)):
+        actor = actors_by_name[str(nodes[0].name)]
+    elif nodes.is_empty() and not selected_actor.is_empty():
+        actor = selected_actor
+    var evidence: Variant = actor.get("placement_diagnostic", null)
+    placement_inspector.visible = typeof(evidence) == TYPE_DICTIONARY
+    if not placement_inspector.visible:
+        return
+    var data: Dictionary = evidence
+    var flags: Variant = data.get("warnings", [])
+    placement_inspector.text = (
+        "Mesh origin ↔ center: " + str(data.get("mesh_pivot_to_center_m", "?")) + " m" +
+        "\nIBD ↔ vertices max difference: " + str(data.get("ibd_vertex_bounds_max_delta_ue", "?")) + " UE" +
+        "\nGMP ↔ vertices max difference: " + str(data.get("gmp_vertex_bounds_max_delta_ue", "?")) + " UE" +
+        "\nSource checks: " + (", ".join(flags) if not flags.is_empty() else "No local bounds disagreements detected") +
+        "\nThese comparisons do not determine the correct world rotation."
+    )
+
+
 func _refresh_inspector_panel() -> void:
     if inspector_title == null or inspector_transform_section == null:
         return
     _refresh_brush_inspector()
+    _refresh_placement_panel()
     var nodes := _selection_nodes()
     var eligible := _draft_selected_is_prop()
     inspector_transform_section.visible = eligible
