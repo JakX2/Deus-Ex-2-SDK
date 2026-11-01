@@ -53,6 +53,9 @@ var status_label: Label
 var glb_dialog: FileDialog
 var json_dialog: FileDialog
 var gmp_dialog: FileDialog
+var gmp_save_as_dialog: FileDialog
+var native_export_thread: Thread = null
+var native_export_target := ""
 var bundle_dialog: FileDialog
 var club_zip_dialog: FileDialog
 var shared_zip_dialog: FileDialog
@@ -135,6 +138,9 @@ func _exit_tree() -> void:
     if build_thread != null:
         build_thread.wait_to_finish()
         build_thread = null
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
 
 
 func _ready() -> void:
@@ -167,6 +173,11 @@ func _make_ui() -> void:
     demo_btn.text = "Load demo cubes"
     demo_btn.pressed.connect(func(): load_glb(ProjectSettings.globalize_path("res://demo/scene.glb")))
     toolbar.add_child(demo_btn)
+    var save_gmp_btn := Button.new()
+    save_gmp_btn.text = "Experimental GMP Save As..."
+    save_gmp_btn.tooltip_text = "Translation-only existing static mesh actors; separate folder; not game-tested"
+    save_gmp_btn.pressed.connect(_open_native_save_as_dialog)
+    toolbar.add_child(save_gmp_btn)
     var load_btn := Button.new()
     load_btn.text = "Open exported GLB"
     load_btn.pressed.connect(func(): glb_dialog.popup_centered_ratio(0.72))
@@ -597,6 +608,12 @@ func _make_ui() -> void:
     gmp_dialog.filters = PackedStringArray(["*.gmp ; Deus Ex Invisible War map"])
     gmp_dialog.file_selected.connect(_open_gmp_file)
     add_child(gmp_dialog)
+    gmp_save_as_dialog = FileDialog.new()
+    gmp_save_as_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    gmp_save_as_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    gmp_save_as_dialog.filters = PackedStringArray(["*.gmp ; Experimental location-only DX2 GMP"])
+    gmp_save_as_dialog.file_selected.connect(_export_native_gmp_copy)
+    add_child(gmp_save_as_dialog)
     bundle_dialog = FileDialog.new()
     bundle_dialog.access = FileDialog.ACCESS_FILESYSTEM
     bundle_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -2713,6 +2730,85 @@ func _array_to_transform(values: Variant) -> Variant:
         Vector3(safe[6], safe[7], safe[8]),
         Vector3(safe[9], safe[10], safe[11])
     )
+
+func _open_native_save_as_dialog() -> void:
+    if scene_root == null or current_folder.is_empty():
+        status_label.text = "Import a native GMP first."
+        return
+    if last_gmp_path.is_empty() or not FileAccess.file_exists(last_gmp_path):
+        status_label.text = "Cannot export: no original GMP source selected."
+        return
+    if current_source_map_name.to_lower() != last_gmp_path.get_file().to_lower():
+        status_label.text = "Current scene does not match the previously imported GMP."
+        return
+    if native_export_thread != null:
+        status_label.text = "A GMP export is already running."
+        return
+    gmp_save_as_dialog.current_file = last_gmp_path.get_file()
+    gmp_save_as_dialog.popup_centered_ratio(0.75)
+
+
+func _export_native_gmp_copy(destination: String) -> void:
+    if native_export_thread != null or scene_root == null:
+        return
+    if current_source_map_name.to_lower() != last_gmp_path.get_file().to_lower():
+        status_label.text = "Native save cancelled: source map changed."
+        return
+    var script := ProjectSettings.globalize_path("res://backend/dx2_native_save_as.py")
+    var actors_path := current_folder.path_join("actors.json")
+    if not FileAccess.file_exists(script) or not FileAccess.file_exists(actors_path):
+        status_label.text = "Native GMP writer or original actor metadata is unavailable."
+        return
+    _finish_gizmo_drag()
+    _save_prop_draft()
+    var draft_path := _draft_file_path()
+    if draft_path.is_empty() or not FileAccess.file_exists(draft_path):
+        status_label.text = "Cannot export: draft could not be saved."
+        return
+    native_export_target = destination
+    native_export_thread = Thread.new()
+    var started := native_export_thread.start(_run_native_export.bind(
+        script, last_gmp_path, actors_path, draft_path, destination
+    ))
+    if started != OK:
+        native_export_thread = null
+        native_export_target = ""
+        status_label.text = "Could not start GMP Save As worker."
+        return
+    status_label.text = "Validating edited actor locations and writing an isolated GMP copy..."
+
+
+func _run_native_export(script: String, source: String, actors_path: String, draft: String, output: String) -> void:
+    var args := PackedStringArray([
+        script, "--source", source, "--actors", actors_path,
+        "--draft", draft, "--output", output
+    ])
+    var stdout: Array = []
+    var status := OS.execute("python", args, stdout, true)
+    if status == -1:
+        var launcher := PackedStringArray(["-3"])
+        launcher.append_array(args)
+        stdout.clear()
+        status = OS.execute("py", launcher, stdout, true)
+    call_deferred("_native_export_finished", status, "\n".join(stdout))
+
+
+func _native_export_finished(code: int, output: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    native_export_target = ""
+    var result: Variant = null
+    for line in output.strip_edges().split("\n"):
+        var item: Variant = JSON.parse_string(line.strip_edges())
+        if typeof(item) == TYPE_DICTIONARY and item.has("status"):
+            result = item
+    if code == 0 and typeof(result) == TYPE_DICTIONARY and result.get("status") == "written-unverified":
+        status_label.text = "EXPERIMENTAL GMP copy saved: " + str(result.get("output", "")) + " | Existing actor translation ONLY. Not verified in game."
+        return
+    var reason := str(result.get("message", "Check Python, map file and editor draft.")) if typeof(result) == TYPE_DICTIONARY else output.strip_edges().substr(0, 250)
+    status_label.text = "Native GMP Save As refused: " + reason
+
 
 func _save_prop_draft() -> void:
     var path := _draft_file_path()
