@@ -367,6 +367,8 @@ func _refresh_actor_list() -> void:
         var mesh_metadata: Variant = actor.get("mesh")
         if typeof(mesh_metadata) == TYPE_DICTIONARY:
             meshname = str(mesh_metadata.get("name", ""))
+        elif typeof(mesh_metadata) == TYPE_STRING:
+            meshname = str(mesh_metadata)
         if query != "" and query not in (name + " " + kind + " " + meshname).to_lower():
             continue
         visible_actors.append(actor)
@@ -380,12 +382,26 @@ func _actor_list_selected(index: int) -> void:
 
 func _format_actor_diagnostic(actor: Dictionary) -> String:
     var name := str(actor.get("name", "Unknown"))
-    var mesh_data: Variant = actor.get("mesh", {})
+    # Actor Explorer emits a string mesh name plus separate mesh_bounds, whereas
+    # the authored demo fixture uses {"name": ..., "bounds": ...}.
+    # Support both without losing the original retail actor metadata.
+    var mesh_data: Variant = actor.get("mesh", null)
     var mesh_name := "(no static mesh)"
-    var bounds := "(no bounds metadata)"
+    var bounds: Variant = actor.get("mesh_bounds", null)
     if typeof(mesh_data) == TYPE_DICTIONARY:
         mesh_name = str(mesh_data.get("name", "(unknown)"))
-        bounds = str(mesh_data.get("bounds", "(unavailable)"))
+        if mesh_data.has("bounds"):
+            bounds = mesh_data["bounds"]
+    elif typeof(mesh_data) == TYPE_STRING and not str(mesh_data).is_empty():
+        mesh_name = str(mesh_data)
+    var bounds_text := str(bounds) if bounds != null else "(unavailable)"
+
+    # Both the retail actor explorer and demo fixture use location: [x,y,z].
+    # Keep a compatibility fallback for older exports containing x/y/z keys.
+    var source_location: Variant = actor.get("location", null)
+    if typeof(source_location) != TYPE_ARRAY or source_location.size() < 3:
+        source_location = [actor.get("x", null), actor.get("y", null), actor.get("z", null)]
+
     var rotation: Variant = actor.get("rotation", [0, 0, 0])
     var degrees_text := "(unavailable)"
     if typeof(rotation) == TYPE_ARRAY and rotation.size() >= 3:
@@ -396,19 +412,19 @@ func _format_actor_diagnostic(actor: Dictionary) -> String:
         "Class: " + str(actor.get("class", "Unknown")),
         "GMP export index: " + str(actor.get("export", "?")),
         "Mesh resource: " + mesh_name,
-        "GMP position (UE units): " + str([actor.get("x", null), actor.get("y", null), actor.get("z", null)]),
+        "GMP position (UE units): " + str(source_location),
         "GMP rotation [Pitch, Yaw, Roll] (UE rotator units): " + str(rotation),
         "Rotation degrees [Pitch, Yaw, Roll]: " + degrees_text,
-        "Mesh local bounds (UE units): " + bounds,
+        "Mesh local bounds (UE units): " + bounds_text,
     ]
-    if meshes_by_actor.has(name):
+    if meshes_by_actor.has(name) and is_instance_valid(meshes_by_actor[name]):
         var instance: MeshInstance3D = meshes_by_actor[name]
         var box := _mesh_world_aabb(instance)
         lines.append("Godot mesh node: " + str(instance.name))
         lines.append("Godot global transform: " + str(instance.global_transform))
         lines.append("Godot world AABB: " + str(box.position) + " size " + str(box.size))
     else:
-        lines.append("Matching rendered mesh node: not found (may be a logical-only actor)")
+        lines.append("Matching rendered mesh node: not found (may be logical-only or have an unresolved resource)")
     return "\n".join(lines)
 
 func _format_mesh_diagnostic(mesh_instance: MeshInstance3D) -> String:
