@@ -1582,7 +1582,31 @@ func _set_fly_mode(enabled: bool) -> void:
         drag_mode = ""
 
 
+func _text_input_focused() -> bool:
+    # Do not steal Ctrl+Z from a focused search/filter or numeric spinbox.
+    var focused := get_viewport().gui_get_focus_owner()
+    while focused != null:
+        if focused is LineEdit or focused is TextEdit or focused is SpinBox:
+            return true
+        focused = focused.get_parent() as Control
+    return false
+
+
 func _input(event: InputEvent) -> void:
+    if event is InputEventKey:
+        var shortcut := event as InputEventKey
+        if shortcut.pressed and not shortcut.echo and (shortcut.ctrl_pressed or shortcut.meta_pressed) and not shortcut.alt_pressed and not _text_input_focused():
+            if shortcut.keycode == KEY_Z:
+                if shortcut.shift_pressed:
+                    _redo_edit()
+                else:
+                    _undo_edit()
+                get_viewport().set_input_as_handled()
+                return
+            elif shortcut.keycode == KEY_Y:
+                _redo_edit()
+                get_viewport().set_input_as_handled()
+                return
     if view_container == null or not view_container.visible:
         return
     var mouse_inside := view_container.get_global_rect().has_point(get_global_mouse_position())
