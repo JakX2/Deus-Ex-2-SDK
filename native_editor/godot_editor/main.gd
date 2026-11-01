@@ -1625,6 +1625,7 @@ func _refresh_actor_property_editor() -> void:
         node.queue_free()
 
     var supported := 0
+    var shown := 0
     var locked := 0
     for item in actor.get("game_properties", []):
         if typeof(item) != TYPE_DICTIONARY:
@@ -1635,11 +1636,12 @@ func _refresh_actor_property_editor() -> void:
             locked += 1
             continue
         supported += 1
-        if supported > 48:
-            continue
         var kind := str(safe.get("type", "")).to_lower()
         var prop_label := str(safe.get("name", "Property_" + str(id)))
         if query != "" and query not in (prop_label + " " + str(id) + " " + kind).to_lower():
+            continue
+        shown += 1
+        if shown > 48:
             continue
         var current: Variant = property_overrides.get(name, {}).get(str(id), safe.get("value"))
         var row := HBoxContainer.new()
@@ -1673,7 +1675,7 @@ func _refresh_actor_property_editor() -> void:
     property_editor_note.text = (str(supported) + " decoded scalar properties; " + str(locked) +
         " complex/unknown properties locked. " +
         str(property_overrides.get(name, {}).size()) + " draft overrides (marked *). " +
-        ("Only first 48 shown. " if supported > 48 else "") +
+        ("Only first 48 matching properties shown. " if shown > 48 else "") +
         "Values are draft metadata, not live gameplay or GMP writes.")
     property_editor_syncing = false
 
