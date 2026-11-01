@@ -140,3 +140,37 @@ archive layout checks used the user's actual Seattle Club/Maps/System ZIPs,
 but the full native Godot GUI workflow still requires Windows runtime testing.
 The imported actor rotations, original shaders and gameplay behaviors remain
 provisional, not corrected by ZIP staging.
+
+
+## Experimental 0.2.5: reversible stair comparison and prop drafts
+
+The editor now defaults to the **uncorrected original map transform preview**.
+Enable **Experimental stair Roll** in the ZIP toolbar to rebuild Seattle Club
+using the evidence-based, map-specific stair rotation hypothesis. Disable it
+to compare against the baseline. The preview modes have distinct content cache
+keys; neither modifies any GMP/IBD files. This is NOT a confirmed engine fix.
+
+A third toolbar row introduces **Prop drafts**, a first step toward actual
+map editing. Select a rendered static-mesh actor in the list or viewport and
+use:
+
+- **Duplicate** to create another preview instance of that source prop.
+- **X± / Y± / Z±** to move the selected original prop or new copy. The
+  SpinBox controls the step size in **Godot world metres** (default 0.25).
+- **Turn ±15°** to rotate the selected prop around the viewer's Y axis.
+- **Reset / Delete copy** to restore an original prop to its exported pose,
+  or delete the selected preview copy.
+- **Save draft / Load draft** to store and restore the changes.
+
+Draft files are JSON in the Godot user directory under
+\`user://prop_drafts/<sha256-of-source-cache-path>.json\`. They store the
+original mesh actor names, preview copies, and Godot-space transforms.
+Saved drafts are reloaded when opening the same GLB cache and are private to
+that cache. The viewer does **not** write or patch a game-compatible GMP, and
+the duplicated prop has no gameplay script, physics or collision. BSP brush
+modelling is a separate, future milestone.
+
+These changes are covered by the synthetic Godot headless smoke test on CI,
+including moving a prop, cloning it, rotating it, saving a draft and restoring
+the clone. The Seattle Club GPU/Windows visual result still requires manual
+comparison with the original game.
