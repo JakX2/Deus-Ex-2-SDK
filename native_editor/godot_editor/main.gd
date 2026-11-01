@@ -585,9 +585,9 @@ func _pick_actor() -> void:
     else:
         # Report the original render node for BSP or otherwise unlinked geometry.
         _select_mesh_only(closest_mesh)
-    var hit_note := "Pick method: rendered triangle (not AABB)\\nGodot hit (world): " + str(closest_position) + "\\nRay distance (Godot units): " + str(closest_distance)
-    selected_diagnostic += "\\n" + hit_note
-    inspector.text += "\\n\\n--- PICK DETAILS ---\\n" + hit_note
+    var hit_note := "Pick method: rendered triangle (not AABB)\nGodot hit (world): " + str(closest_position) + "\nRay distance (Godot units): " + str(closest_distance)
+    selected_diagnostic += "\n" + hit_note
+    inspector.text += "\n\n--- PICK DETAILS ---\n" + hit_note
 
 
 func _ray_mesh_triangles(instance: MeshInstance3D, origin: Vector3, direction: Vector3) -> Dictionary:
