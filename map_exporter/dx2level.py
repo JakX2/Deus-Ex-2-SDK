@@ -20,6 +20,7 @@ from pathlib import Path
 import struct
 from dx2scene import Package,find_bsp,mesh_metadata,scene_data,SCALE,unreal_to_world
 from dx2bundles import load_bundles,parse_mesh
+from dx2placement import analyze_mesh_placement, summarize_placement
 from dx2textures import parse_material,parse_texture,to_png
 
 
@@ -351,6 +352,7 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
         raise ValueError("Transform overrides reference actors not in map: "+", ".join(unknown))
     applied_overrides=[]
     club_stair_preview_fixes=[]
+    placement_diagnostics=[]
     selected_actor_skins=[]
     missing_actor_skins=[]
     for actor in actors:
@@ -365,6 +367,7 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
             unique_meshes[key]={'mesh':m,'bundle':b.name,'gltf_by_skin':{}}
         resource=unique_meshes[key]
         m=resource['mesh'];triangles+=len(m.indices)//3
+        placement_diagnostics.append(analyze_mesh_placement(actor, m, resource['bundle']))
         requested_skin=actor_requested_skin(actor)
         skin_index,skin_name,skin_status=resolve_skin_variant(m,requested_skin)
         if skin_status=='requested_skin_missing':
@@ -424,6 +427,8 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
          'actor_skin_variant_missing':missing_actor_skins,
          'club_stair_preview_enabled':bool(preview_club_stairs),
          'club_stair_preview_roll_corrections':club_stair_preview_fixes,
+         'placement_audit':summarize_placement(placement_diagnostics),
+         'placement_actor_details':placement_diagnostics,
          'source_actor_positions':len(actors),
          'mesh_linked_actors':sum('mesh' in a for a in actors),
          'placed_real_mesh_actors':len(actors_real),'missing_mesh_actors':miss,
