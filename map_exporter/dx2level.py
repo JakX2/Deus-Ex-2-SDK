@@ -40,6 +40,32 @@ def preview_roll_sign(map_name, mesh_name, enabled=False):
     return 1
 
 
+def meaningful_roll_flip(rot):
+    """Detect a genuine matrix change on sign reversal, not 0/180-degree no-ops.
+
+    UE rotator units have period 65536. Roll 0 and 32768 (180 deg)
+    are mathematically unchanged by sign inversion.
+    """
+    if not isinstance(rot, (list, tuple)) or len(rot) != 3:
+        return False
+    try:
+        roll = float(rot[2])
+    except (TypeError, ValueError):
+        return False
+    if not math.isfinite(roll):
+        return False
+    return abs(math.sin(roll * math.pi / 32768.0)) > 0.0001
+
+
+def preview_auto_roll_sign(actor, enabled=False):
+    """Broad, unverified orientation hypothesis for the visual GLB ONLY.
+
+    We cannot know whether an actor is actually incorrect without game
+    ground truth. 180-degree flips are ignored as visual no-ops.
+    """
+    return -1 if enabled and meaningful_roll_flip(actor.get('rotation')) else 1
+
+
 def rotation_matrix(rot, roll_sign=1):
     """Rz(yaw) * Ry(-pitch) * Rx(roll_sign * roll), UE basis.
 
@@ -334,7 +360,7 @@ def load_resource_index(paths):
     return bundles,indexes,collisions
 
 
-def export_level(map_path,bundles,output,report,transform_overrides=None,alternate_skin_fallback=True,preview_club_stairs=False):
+def export_level(map_path,bundles,output,report,transform_overrides=None,alternate_skin_fallback=True,preview_club_stairs=False,preview_auto_roll=False):
     transform_overrides=transform_overrides or {}
     pkg=Package(map_path)
     if pkg.version!=95:raise ValueError('This exporter is tested only with Ion Storm package version 95')
@@ -352,6 +378,8 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
         raise ValueError("Transform overrides reference actors not in map: "+", ".join(unknown))
     applied_overrides=[]
     club_stair_preview_fixes=[]
+    auto_roll_preview_fixes=[]
+    auto_roll_noop_actors=0
     placement_diagnostics=[]
     selected_actor_skins=[]
     missing_actor_skins=[]
@@ -367,8 +395,6 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
             unique_meshes[key]={'mesh':m,'bundle':b.name,'gltf_by_skin':{}}
         resource=unique_meshes[key]
         m=resource['mesh'];triangles+=len(m.indices)//3
-        placement_diagnostics.append(add_world_transform_evidence(
-            analyze_mesh_placement(actor, m, resource['bundle']), actor_matrix(actor)))
         requested_skin=actor_requested_skin(actor)
         skin_index,skin_name,skin_status=resolve_skin_variant(m,requested_skin)
         if skin_status=='requested_skin_missing':
@@ -385,12 +411,25 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
             scale=transform_overrides.get(actor['name'],(1.0,1.0,1.0))
             if actor['name'] in transform_overrides:
                 applied_overrides.append({'actor':actor['name'],'local_scale':list(scale)})
-            roll_sign=preview_roll_sign(pkg.path.name,name,enabled=preview_club_stairs)
-            if roll_sign == -1:
+            auto_sign=preview_auto_roll_sign(actor, enabled=preview_auto_roll)
+            club_sign=preview_roll_sign(pkg.path.name,name,enabled=preview_club_stairs)
+            roll_sign=-1 if auto_sign == -1 or club_sign == -1 else 1
+            if preview_auto_roll and not meaningful_roll_flip(actor.get('rotation')):
+                auto_roll_noop_actors+=1
+            if auto_sign == -1:
+                auto_roll_preview_fixes.append({
+                    'actor': actor['name'], 'export': actor['export'],
+                    'mesh': name, 'source_roll': (actor.get('rotation') or [0,0,0])[2],
+                    'preview_roll_sign': -1, 'heuristic_only': True
+                })
+            if club_sign == -1:
                 club_stair_preview_fixes.append({'actor':actor['name'],
                     'export':actor['export'],'mesh':name,
                     'source_roll':(actor.get('rotation') or [0,0,0])[2],
                     'preview_roll_sign':roll_sign})
+            placement_diagnostics.append(add_world_transform_evidence(
+                analyze_mesh_placement(actor, m, resource['bundle']),
+                actor_matrix(actor, scale, roll_sign=roll_sign)))
             builder.node({'name':actor['name'],'mesh':mid,
               'matrix':actor_matrix(actor,scale,roll_sign=roll_sign),
               'extras':{'DX2ExportIndex':actor['export'],'DX2Class':actor['class'],
@@ -428,6 +467,9 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
          'actor_skin_variant_missing':missing_actor_skins,
          'club_stair_preview_enabled':bool(preview_club_stairs),
          'club_stair_preview_roll_corrections':club_stair_preview_fixes,
+         'auto_roll_preview_enabled':bool(preview_auto_roll),
+         'auto_roll_preview_corrections':auto_roll_preview_fixes,
+         'auto_roll_unchanged_zero_or_half_turn':auto_roll_noop_actors,
          'placement_audit':summarize_placement(placement_diagnostics),
          'placement_actor_details':placement_diagnostics,
          'source_actor_positions':len(actors),
@@ -452,6 +494,7 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
              for name,info in sorted(builder.material_diagnostics.items())],
          'output_glb_bytes':Path(output).stat().st_size,
          'warnings':['Actor rotation conventions and source mesh pivots have not been verified in-game.',
+                     'Auto Roll applies a broad candidate hypothesis, NOT a detector of misaligned objects. Only the GLB preview is changed; the retail GMP is original.',
                      'Diffuse textures and preview approximations only; no normal/specular pipeline, animation, collision, lightmaps, or native Ion Storm shader reconstruction.',
                      'glTF output is a visualization/export, NOT a game-compatible reimport format.']}
     Path(report).parent.mkdir(parents=True,exist_ok=True)
