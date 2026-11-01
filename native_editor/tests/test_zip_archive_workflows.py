@@ -112,6 +112,21 @@ class ZipWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "symbolic link"):
             staging.prepare(self.club, self.maps, self.cache, self.system)
 
+    def test_staging_cache_uses_roles_when_archive_basenames_match(self):
+        from shutil import copyfile
+        folder_a = self.root / "user_a"
+        folder_b = self.root / "user_b"
+        folder_a.mkdir()
+        folder_b.mkdir()
+        same_a = folder_a / "resources.zip"
+        same_b = folder_b / "resources.zip"
+        copyfile(self.club, same_a)
+        copyfile(self.maps, same_b)
+        report = staging.prepare(same_a, same_b, self.cache)
+        manifest = json.loads(Path(report["manifest"]).read_text())
+        self.assertEqual(set(manifest["source_archives_sha256"]), {"club", "maps"})
+        self.assertTrue(Path(report["map"]).is_file())
+
     def test_duplicate_bundle_rejected(self):
         with ZipFile(self.maps, "a") as z:
             z.writestr("other/Kernel_GFXALL.ibd", b"duplicate")
