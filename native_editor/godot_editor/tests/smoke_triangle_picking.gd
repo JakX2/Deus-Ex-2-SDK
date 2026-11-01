@@ -111,6 +111,65 @@ func _run() -> void:
     if not viewer.actors_by_name.has("StaticMeshActor__1"):
         _fail("demo actor metadata not linked")
         return
+    # A small Gamesys fixture proves typed property overrides remain separate
+    # from original map metadata and round-trip through undo and sidecars.
+    var typed_actor: Dictionary = viewer.actors_by_name["StaticMeshActor__1"]
+    typed_actor["game_properties"] = [
+        {"id": 1301, "name": "Visible", "type": "bool", "value": true},
+        {"id": 1302, "name": "Counter", "type": "int", "value": 5},
+        {"id": 1303, "name": "Radius", "type": "float", "value": 1.5},
+        {"id": 1304, "name": "Caption", "type": "string", "value": "Original"},
+        {"id": 1305, "name": "Complex", "type": "struct", "value": {"A": 7}},
+        {"id": 43, "name": "MeshReference", "type": "int", "value": 9}
+    ]
+    viewer.select_actor(typed_actor)
+    if viewer._find_editable_property(typed_actor, 1301).is_empty():
+        _fail("Boolean actor field should be editable")
+        return
+    if not viewer._find_editable_property(typed_actor, 1305).is_empty() or not viewer._find_editable_property(typed_actor, 43).is_empty():
+        _fail("Structs and mesh references must be locked")
+        return
+    viewer._actor_property_changed(11.0, str(typed_actor["name"]), 1302)
+    if viewer.property_overrides.get("StaticMeshActor__1", {}).get("1302") != 11:
+        _fail("Typed integer property was not recorded in sidecar overrides")
+        return
+    if typed_actor["game_properties"][1]["value"] != 5:
+        _fail("Edited property mutated original source data")
+        return
+    viewer._undo_edit()
+    if not viewer.property_overrides.is_empty():
+        _fail("Undo did not restore original actor property")
+        return
+    viewer._redo_edit()
+    if viewer.property_overrides.get("StaticMeshActor__1", {}).get("1302") != 11:
+        _fail("Redo did not restore changed actor property")
+        return
+    viewer._actor_property_changed(false, "StaticMeshActor__1", 1301)
+    viewer._actor_property_changed("Edited", "StaticMeshActor__1", 1304)
+    viewer._save_prop_draft()
+    var typed_draft: Variant = JSON.parse_string(FileAccess.get_file_as_string(viewer._draft_file_path()))
+    if typeof(typed_draft) != TYPE_DICTIONARY or typed_draft.get("property_edits", []).size() != 3:
+        _fail("Saved sidecar must contain only three typed property overrides")
+        return
+    if viewer._validate_property_edits([{"actor":"StaticMeshActor__1","export":7,
+        "id":43,"type":"int","value":12}]) != null:
+        _fail("Unsafe object reference override must fail validation")
+        return
+    viewer._restore_all_edits()
+    if not viewer.property_overrides.is_empty():
+        _fail("Restore All must also clear actor property edits")
+        return
+    viewer._load_prop_draft()
+    if not viewer.property_overrides.is_empty():
+        _fail("Restore All must persist an empty property sidecar")
+        return
+    viewer._undo_edit()
+    # Restore All is one undo step; its pre-reset scalar state is restored.
+    if viewer.property_overrides.get("StaticMeshActor__1", {}).get("1304") != "Edited":
+        _fail("Restore All property changes must be undoable")
+        return
+    viewer._restore_all_edits()
+
     # Unity-like workspace: actor Hierarchy links to the Inspector.
     if viewer.hierarchy_tree == null or viewer.inspector_title == null:
         _fail("Hierarchy / Inspector panes were not constructed")
