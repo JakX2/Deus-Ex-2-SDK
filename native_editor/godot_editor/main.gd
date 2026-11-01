@@ -19,6 +19,13 @@ var asset_details: Label
 var asset_catalog: Dictionary = {}
 var assets_visible: Array = []
 var selected_asset: Dictionary = {}
+var archetype_catalog: Dictionary = {}
+var archetype_visible: Array = []
+var archetype_filter: LineEdit
+var archetype_list: ItemList
+var archetype_details: Label
+var selected_archetype: Dictionary = {}
+var draft_template_provenance: Dictionary = {} # draft name -> qualified class + template export
 var asset_mesh_resources: Dictionary = {}
 var asset_thread: Thread = null
 var asset_pending_name := ""
@@ -345,6 +352,31 @@ func _make_ui() -> void:
     copy_resource.text = "Copy resource name"
     copy_resource.pressed.connect(_copy_asset_name)
     assets_tab.add_child(copy_resource)
+
+    var class_tab := VBoxContainer.new()
+    class_tab.name = "Classes"
+    left_tabs.add_child(class_tab)
+    archetype_filter = LineEdit.new()
+    archetype_filter.placeholder_text = "Search Gamesys and map actor classes..."
+    archetype_filter.text_changed.connect(func(_text): _refresh_archetype_list())
+    class_tab.add_child(archetype_filter)
+    archetype_list = ItemList.new()
+    archetype_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    archetype_list.item_selected.connect(_archetype_selected)
+    class_tab.add_child(archetype_list)
+    archetype_details = Label.new()
+    archetype_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    archetype_details.text = "Open a DX2 map to inspect its observed classes."
+    class_tab.add_child(archetype_details)
+    var locate_template := Button.new()
+    locate_template.text = "Inspect example actor"
+    locate_template.pressed.connect(_inspect_archetype_template)
+    class_tab.add_child(locate_template)
+    var place_template := Button.new()
+    place_template.text = "Place template draft"
+    place_template.tooltip_text = "Visual copy of an existing actor, not native Gamesys spawning"
+    place_template.pressed.connect(_place_archetype_template)
+    class_tab.add_child(place_template)
     # Retain the old list as a hidden compatibility model for existing picker
     # diagnostics; the new Hierarchy is the visible selection surface.
     actor_list = ItemList.new()
@@ -753,6 +785,7 @@ func load_glb(path: String) -> void:
     frame_whole_scene()
     current_folder = path.get_base_dir()
     _load_asset_catalog(current_folder.path_join("assets.json"))
+    _load_archetype_catalog(current_folder.path_join("archetypes.json"))
     var actor_path := current_folder.path_join("actors.json")
     if FileAccess.file_exists(actor_path):
         load_actors(actor_path)
@@ -786,6 +819,10 @@ func _clear_current_scene() -> void:
     _clear_selection()
     asset_catalog.clear()
     selected_asset.clear()
+    archetype_catalog.clear()
+    selected_archetype.clear()
+    draft_template_provenance.clear()
+    _refresh_archetype_list()
     asset_mesh_resources.clear()
     asset_pending_name = ""
     asset_pending_folder = ""
@@ -897,6 +934,94 @@ func _refresh_actor_list() -> void:
     _refresh_hierarchy()
     if visible_actors.is_empty() and not actors.is_empty():
         status_label.text = "No actors match search."
+
+func _load_archetype_catalog(path: String) -> void:
+    archetype_catalog.clear()
+    selected_archetype.clear()
+    if FileAccess.file_exists(path):
+        var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+        if typeof(parsed) == TYPE_DICTIONARY and parsed.get("schema") == "DX2Ed-archetype-catalog-v1":
+            var classes: Variant = parsed.get("classes", [])
+            if typeof(classes) == TYPE_ARRAY and classes.size() < 30000:
+                archetype_catalog = parsed
+    _refresh_archetype_list()
+
+
+func _refresh_archetype_list() -> void:
+    if archetype_list == null:
+        return
+    archetype_list.clear()
+    archetype_visible.clear()
+    var query := archetype_filter.text.strip_edges().to_lower() if archetype_filter != null else ""
+    var classes: Variant = archetype_catalog.get("classes", [])
+    if typeof(classes) != TYPE_ARRAY:
+        return
+    for archetype in classes:
+        if typeof(archetype) != TYPE_DICTIONARY:
+            continue
+        var search := str(archetype.get("qualified", "")) + " " + str(archetype.get("base", "")) + " " + str(archetype.get("template_mesh", ""))
+        if query != "" and query not in search.to_lower():
+            continue
+        archetype_visible.append(archetype)
+        archetype_list.add_item(str(archetype.get("class", "?")) + " [" + str(archetype.get("observed_actors", 0)) + "]")
+    if archetype_details != null and selected_archetype.is_empty():
+        archetype_details.text = str(archetype_visible.size()) + " class records. Declared classes aren't necessarily safe to instantiate."
+
+
+func _archetype_selected(index: int) -> void:
+    if index < 0 or index >= archetype_visible.size():
+        return
+    selected_archetype = archetype_visible[index]
+    var rec := selected_archetype
+    archetype_details.text = (
+        "Class: " + str(rec.get("qualified", "?")) +
+        "\nParent: " + str(rec.get("base", "unknown")) +
+        "\nSource: " + str(rec.get("source", "unknown")) +
+        "\nObserved actors: " + str(rec.get("observed_actors", 0)) +
+        "\nExample: " + str(rec.get("template_actor", "(none)")) +
+        "\nMesh: " + str(rec.get("template_mesh", "(none)")) +
+        "\nProperties observed: " + str(rec.get("property_signatures", []).size()) +
+        "\nPlacement requires a rendered example actor. No real DX2 actor is created."
+    )
+
+
+func _inspect_archetype_template() -> void:
+    var name := str(selected_archetype.get("template_actor", ""))
+    if not actors_by_name.has(name):
+        status_label.text = "No observed example for this class in the loaded map."
+        return
+    select_actor(actors_by_name[name])
+    focus_selected()
+
+
+func _place_archetype_template() -> void:
+    var source := str(selected_archetype.get("template_actor", ""))
+    var qualified := str(selected_archetype.get("qualified", ""))
+    var expected_export := int(selected_archetype.get("template_export", -1))
+    if scene_root == null or not meshes_by_actor.has(source) or not actors_by_name.has(source):
+        status_label.text = "Class lacks a rendered example; cannot create a safe visual draft."
+        return
+    if int(actors_by_name[source].get("export", -2)) != expected_export:
+        status_label.text = "Template actor source does not match Gamesys/map catalog."
+        return
+    var before := _capture_edit_state()
+    var copy_name := "DraftProp_" + str(next_prop_copy_id)
+    next_prop_copy_id += 1
+    var original: MeshInstance3D = meshes_by_actor[source]
+    var pose := original.global_transform
+    pose.origin = camera_target
+    var draft := _new_draft_copy(source, copy_name, pose)
+    if not is_instance_valid(draft):
+        return
+    draft_template_provenance[copy_name] = {
+        "qualified": qualified, "source_actor": source, "source_export": expected_export
+    }
+    _clear_selection()
+    _add_selection_mesh(draft)
+    _refresh_selection_inspector()
+    _record_edit("Place class template " + qualified, before)
+    status_label.text = "Placed visual template for " + qualified + ". No native class spawned."
+
 
 func _load_asset_catalog(path: String) -> void:
     asset_catalog.clear()
