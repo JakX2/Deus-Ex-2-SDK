@@ -923,10 +923,15 @@ func _clear_selection() -> void:
 ## Drafts live in user:// and are never written next to retail files.
 
 func _draft_selected_is_prop() -> bool:
-    if not is_instance_valid(selected_mesh) or selected_mesh.mesh == null:
+    var nodes := _selection_nodes()
+    if nodes.is_empty():
         return false
-    var name := str(selected_mesh.name)
-    return draft_prop_copies.has(name) or (meshes_by_actor.has(name) and actors_by_name.has(name))
+    for node in nodes:
+        var name := str(node.name)
+        if not draft_prop_copies.has(name) and not (meshes_by_actor.has(name) and actors_by_name.has(name)):
+            return false
+    return true
+
 
 func _draft_source_name(instance: MeshInstance3D) -> String:
     var name := str(instance.name)
@@ -956,61 +961,85 @@ func _new_draft_copy(source_name: String, copy_name: String, world_transform: Tr
 
 func _duplicate_selected_prop() -> void:
     if not _draft_selected_is_prop():
-        status_label.text = "Select a rendered prop first (not BSP or a logical-only actor)."
+        status_label.text = "Select a rendered static mesh actor first (BSP cannot be duplicated)."
         return
-    var source := _draft_source_name(selected_mesh)
-    if source.is_empty():
+    var originals := _selection_nodes()
+    var copies: Array[MeshInstance3D] = []
+    for node in originals:
+        var source := _draft_source_name(node)
+        if source.is_empty():
+            continue
+        var name := "DraftProp_" + str(next_prop_copy_id)
+        next_prop_copy_id += 1
+        var new_copy := _new_draft_copy(source, name, node.global_transform)
+        if is_instance_valid(new_copy):
+            copies.append(new_copy)
+    if copies.is_empty():
         return
-    var transform := selected_mesh.global_transform
-    var name := "DraftProp_" + str(next_prop_copy_id)
-    next_prop_copy_id += 1
-    var duplicate := _new_draft_copy(source, name, transform)
-    if is_instance_valid(duplicate):
-        _select_mesh_only(duplicate)
-        status_label.text = "Created preview copy " + name + ". Move it, then Save draft."
+    _clear_selection()
+    for node in copies:
+        _add_selection_mesh(node)
+    _refresh_selection_inspector()
+    _sync_actor_list_selection()
+    status_label.text = "Duplicated " + str(copies.size()) + " prop(s). Move the copies, then Save draft."
+
 
 func _refresh_prop_inspection() -> void:
-    if not is_instance_valid(selected_mesh):
-        return
-    if not selected_actor.is_empty():
-        selected_diagnostic = _format_actor_diagnostic(selected_actor)
-        inspector.text = selected_diagnostic + "\n\n--- ORIGINAL ACTOR PROPERTIES ---\n" + JSON.stringify(selected_actor, "  ")
-    else:
-        selected_diagnostic = _format_mesh_diagnostic(selected_mesh)
-        inspector.text = selected_diagnostic
-    inspector.text += "\n\n--- PREVIEW EDIT ---\nGodot transform: " + str(selected_mesh.global_transform)
-    status_label.text = "Preview modified: " + str(selected_mesh.name) + ". Save draft to keep changes (not GMP)."
+    _refresh_selection_inspector()
+    if not _selection_nodes().is_empty():
+        inspector.text += "\n\n--- PREVIEW EDIT ---\nGroup pivot: " + str(_selection_pivot())
+        status_label.text = "Preview modified " + str(_selection_nodes().size()) + " prop(s). Save draft to keep changes."
+
 
 func _move_selected_prop(axis: Vector3) -> void:
     if not _draft_selected_is_prop():
-        status_label.text = "Select a rendered prop first. BSP and gameplay-only actors are not editable here."
+        status_label.text = "Select one or more rendered props (not BSP)."
         return
-    selected_mesh.global_position += axis * float(prop_edit_step.value)
+    var delta := axis * float(prop_edit_step.value)
+    for node in _selection_nodes():
+        node.global_position += delta
     _refresh_prop_inspection()
+
 
 func _rotate_selected_prop(angle: float) -> void:
     if not _draft_selected_is_prop():
-        status_label.text = "Select a rendered prop to rotate."
+        status_label.text = "Select one or more rendered props to rotate."
         return
-    selected_mesh.rotate_y(deg_to_rad(angle))
+    var pivot := _selection_pivot()
+    var turn := Basis(Vector3.UP, deg_to_rad(angle))
+    for node in _selection_nodes():
+        var pose := node.global_transform
+        pose.origin = pivot + turn * (pose.origin - pivot)
+        pose.basis = turn * pose.basis
+        node.global_transform = pose
     _refresh_prop_inspection()
+
 
 func _reset_selected_prop() -> void:
     if not _draft_selected_is_prop():
         return
-    var name := str(selected_mesh.name)
-    if draft_prop_copies.has(name):
-        var copy := selected_mesh
-        _clear_selection()
-        draft_prop_copies.erase(name)
-        draft_prop_sources.erase(name)
-        all_mesh_instances.erase(copy)
-        copy.queue_free()
-        inspector.text = "Draft prop copy removed from preview."
-        status_label.text = "Draft copy removed. Save draft to keep this change."
-    elif original_mesh_transforms.has(name):
-        selected_mesh.global_transform = original_mesh_transforms[name]
-        _refresh_prop_inspection()
+    var nodes := _selection_nodes()
+    _clear_selection()
+    var restored: Array[MeshInstance3D] = []
+    var removed := 0
+    for node in nodes:
+        var name := str(node.name)
+        if draft_prop_copies.has(name):
+            draft_prop_copies.erase(name)
+            draft_prop_sources.erase(name)
+            all_mesh_instances.erase(node)
+            node.queue_free()
+            removed += 1
+        elif original_mesh_transforms.has(name):
+            node.global_transform = original_mesh_transforms[name]
+            restored.append(node)
+    for node in restored:
+        _add_selection_mesh(node)
+    _refresh_selection_inspector()
+    _sync_actor_list_selection()
+    status_label.text = "Restored " + str(restored.size()) + " original(s), deleted " + str(removed) + " copy/copies. Save draft to persist."
+
+
 
 func _draft_file_path() -> String:
     if current_folder.is_empty():
@@ -1196,11 +1225,11 @@ func _refresh_gizmo_shape() -> void:
             handle.position = axis * 0.92
         else:
             var shaft := CylinderMesh.new()
-            shaft.top_radius = 0.015
-            shaft.bottom_radius = 0.050
-            shaft.height = 0.90
+            shaft.top_radius = 0.025
+            shaft.bottom_radius = 0.095
+            shaft.height = 1.18
             handle.mesh = shaft
-            handle.position = axis * 0.52
+            handle.position = axis * 0.68
             handle.quaternion = Quaternion(Vector3.UP, axis)
         gizmo_root.add_child(handle)
         gizmo_handles.append(handle)
@@ -1214,10 +1243,12 @@ func _update_gizmo_pose() -> void:
     gizmo_root.visible = show
     if not show:
         return
-    gizmo_root.global_position = selected_mesh.global_position
+    gizmo_root.global_position = _selection_pivot()
     # Keep the handles about the same apparent size while zooming.
     var distance := camera.global_position.distance_to(gizmo_root.global_position)
-    var scale_size: float = clampf(distance * 0.11, 0.14, 12.0)
+    # Unity-sized move handle: 75% larger on screen than the old preview.
+    var size_ratio := 0.19 if editor_tool == "move" else 0.13
+    var scale_size: float = clampf(distance * size_ratio, 0.22, 15.0)
     gizmo_root.scale = Vector3.ONE * scale_size
 
 
