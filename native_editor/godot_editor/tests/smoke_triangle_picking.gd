@@ -218,7 +218,29 @@ func _run() -> void:
     if viewer.draft_prop_copies.size() != 0:
         _fail("Restore All should be redoable")
         return
+    # A complete gizmo drag is a single history entry, not one per motion.
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    var before_drag := original.global_position
+    var history_count: int = viewer.undo_stack.size()
+    viewer.gizmo_undo_before = viewer._capture_edit_state()
+    viewer.gizmo_drag_active = true
+    original.global_position += Vector3(0.5, 0.0, 0.0)
+    original.global_position += Vector3(0.5, 0.0, 0.0)
+    viewer._finish_gizmo_drag()
+    if viewer.undo_stack.size() != history_count + 1:
+        _fail("One drag should create exactly one undo entry")
+        return
+    viewer._undo_edit()
+    if original.global_position.distance_to(before_drag) > 0.001:
+        _fail("Undo should revert the entire gizmo gesture")
+        return
+    viewer._redo_edit()
+    if abs(original.global_position.x - before_drag.x - 1.0) > 0.001:
+        _fail("Redo should restore the entire gizmo gesture")
+        return
+
     # A fresh edit after undo clears redo history.
+    viewer._undo_edit()
     viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
     viewer._move_selected_prop(Vector3.RIGHT)
     if not viewer.redo_stack.is_empty():
