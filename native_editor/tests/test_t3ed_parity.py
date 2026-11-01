@@ -13,6 +13,7 @@ BACKEND = ROOT / "native_editor" / "godot_editor" / "backend"
 sys.path.insert(0, str(BACKEND))
 from dx2_asset_catalog import SCHEMA, catalog_from_bundles, catalog_from_paths
 from dx2_asset_preview import preview_path, load_selected_asset, source_bundle_paths, export_asset_preview
+from dx2_archetype_catalog import archetype_catalog, ACTOR_CLASS_SCHEMA, catalog_for_map
 
 
 def fixture_resource(name, kind, type_id, index, size=64):
@@ -157,6 +158,58 @@ class T3EdParityAndCatalogTests(unittest.TestCase):
                        return_value=([], mapping, {})):
                 with self.assertRaisesRegex(ValueError, "identity differs"):
                     export_asset_preview(catalog_path, "Door")
+
+    def test_archetype_palette_preserves_declared_parent_and_observed_template(self):
+        catalog = archetype_catalog([
+            {"name": "Door_1", "class": "DX2Door", "export": 71,
+             "mesh": "M1Door", "game_properties": [
+                 {"id":12, "name":"Locked", "type":"bool", "value":True}]},
+            {"name": "Door_2", "class": "DX2Door", "export": 72,
+             "mesh": None, "game_properties": [
+                 {"id":12, "name":"Locked", "type":"bool", "value":False}]},
+            {"name": "Zone", "class": "Trigger", "export": 73,
+             "mesh": None, "game_properties":[]},
+        ], system_classes={
+            "DX2Game.DX2Door":{"base":"Actor","package":"DX2Game.d2u"},
+            "DX2Game.UnusedNPC":{"base":"Pawn","package":"DX2Game.d2u"},
+        }, system_properties={"12":{"name":"Locked"}})
+        self.assertEqual(catalog["schema"], ACTOR_CLASS_SCHEMA)
+        self.assertFalse(catalog["native_spawn_supported"])
+        door = next(c for c in catalog["classes"] if c["qualified"]=="DX2Game.DX2Door")
+        self.assertEqual(door["base"], "Actor")
+        self.assertEqual(door["observed_actors"], 2)
+        self.assertEqual(door["template_actor"], "Door_1")
+        self.assertEqual(door["template_export"], 71)
+        self.assertEqual(door["property_signatures"][0]["id"], 12)
+        npc = next(c for c in catalog["classes"] if c["class"]=="UnusedNPC")
+        self.assertEqual(npc["observed_actors"], 0)
+        self.assertIsNone(npc["template_actor"])
+        trigger = next(c for c in catalog["classes"] if c["class"]=="Trigger")
+        self.assertEqual(trigger["source"],"map_observation")
+
+    def test_ambiguous_gamesys_short_class_names_are_not_guessed(self):
+        catalog = archetype_catalog(
+            [{"name":"Unknown_1","class":"Shared","mesh":"Block","export":5}],
+            system_classes={"DX2AI.Shared":{"base":"Pawn"},
+                            "DX2Game.Shared":{"base":"Actor"}})
+        self.assertEqual(catalog["ambiguous_names"], ["shared"])
+        observed = next(c for c in catalog["classes"] if c["source"]=="map_observation")
+        self.assertEqual(observed["qualified"],"observed.Shared")
+        self.assertEqual(observed["template_actor"],"Unknown_1")
+        self.assertEqual(sum(c["observed_actors"] for c in catalog["classes"]),1)
+
+    def test_archetypes_can_load_verified_system_catalog_json(self):
+        with TemporaryDirectory() as tmp:
+            p=Path(tmp)/"classes.json"
+            p.write_text(json.dumps({"schema":"dx2-catalog-0.1",
+                "classes":{"DX2Game.Camera":{"base":"Actor","package":"DX2Game.d2u"}},
+                "properties":{}}))
+            result = catalog_for_map([],p)
+            self.assertEqual(len(result["classes"]),1)
+            self.assertEqual(result["classes"][0]["base"],"Actor")
+            p.write_text(json.dumps({"schema":"unexpected","classes":{}}))
+            with self.assertRaisesRegex(ValueError,"Unsupported"):
+                catalog_for_map([],p)
 
     def test_tracker_calls_out_source_format_boundary(self):
         text = (ROOT / "native_editor" / "T3ED_PARITY_PLAN.md").read_text(encoding="utf8")
