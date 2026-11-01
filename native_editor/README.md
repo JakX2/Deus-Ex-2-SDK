@@ -221,3 +221,35 @@ instead of silently picking the wrong map.
 
 See Seattle_Hub_Skin_Findings.md for the original actor identifier, resource
 chain and limits. All publicly committed tests use synthetic fixtures.
+
+## Experimental 0.2.8: Unity-style 3D navigation and transform gizmos
+
+The new viewport controls are designed to feel familiar to Unity scene users:
+
+- **Hold right mouse button** over the 3D viewport and move the mouse to look
+  around. While held, **W/A/S/D** move forward/left/back/right and **Q/E**
+  move downward/upward. **Shift** speeds up movement; the mouse wheel while
+  flying adjusts fly speed. This is an editor-only camera, not DX2 movement.
+- **Alt + left drag** orbits around the current target. **Middle drag** pans.
+  **Wheel** without RMB zooms; **F** focuses the selected actor.
+- **W / E / R** outside RMB fly mode switch **Move / Rotate / Scale**.
+  These are also buttons in the Prop drafts toolbar.
+- Colored X/Y/Z handles appear on a selected rendered static mesh actor
+  or a draft clone. Drag the axis handle to edit it in world coordinates.
+  During move/rotate/scale dragging, hold **Ctrl** for coarse snapping.
+- **Save draft** persists editor preview transforms only, as before.
+  BSP geometry and logical actors without a rendered mesh are not
+  draggable. No game GMP/IBD is modified.
+
+The actors sidebar now has conservative **category filters**. BSP_ render
+nodes are world geometry, and static meshes, brushes, lights, volume/trigger
+classes, possible items and possible physics objects are classified by class
+name only. **Item candidate** and **Physics candidate** labels are explicitly
+heuristic: actor class hierarchy, runtime inventory behavior, collision
+physics and separate IBD physics-hull associations are not yet decoded
+completely. StaticMeshActor does not prove an object is static at runtime.
+
+All of the controls are experimental and need interactive Windows/Godot
+testing. The asset-free headless smoke test covers mode switching, axis
+handle creation, and class-category labels but cannot simulate complete
+mouse gestures or game-world physics.
