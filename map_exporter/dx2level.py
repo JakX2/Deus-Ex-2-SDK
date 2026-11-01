@@ -28,12 +28,12 @@ from dx2textures import parse_material,parse_texture,to_png
 CLUB_STAIR_MESHES = frozenset({'1hub_club-stair-12ft', '1hub_penthouseb1_stair1'})
 
 
-def preview_roll_sign(map_name, mesh_name):
+def preview_roll_sign(map_name, mesh_name, enabled=False):
     """Return -1 only for the two confirmed Seattle Club stair mesh types.
 
     Original game rotator values remain unchanged in actor metadata.
     """
-    if (str(map_name).casefold() == 'm1_seattle_club.gmp'
+    if (enabled and str(map_name).casefold() == 'm1_seattle_club.gmp'
             and str(mesh_name).casefold() in CLUB_STAIR_MESHES):
         return -1
     return 1
@@ -299,7 +299,7 @@ def load_resource_index(paths):
     return bundles,indexes,collisions
 
 
-def export_level(map_path,bundles,output,report,transform_overrides=None,alternate_skin_fallback=True):
+def export_level(map_path,bundles,output,report,transform_overrides=None,alternate_skin_fallback=True,preview_club_stairs=False):
     transform_overrides=transform_overrides or {}
     pkg=Package(map_path)
     if pkg.version!=95:raise ValueError('This exporter is tested only with Ion Storm package version 95')
@@ -334,7 +334,7 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
             scale=transform_overrides.get(actor['name'],(1.0,1.0,1.0))
             if actor['name'] in transform_overrides:
                 applied_overrides.append({'actor':actor['name'],'local_scale':list(scale)})
-            roll_sign=preview_roll_sign(pkg.path.name,name)
+            roll_sign=preview_roll_sign(pkg.path.name,name,enabled=preview_club_stairs)
             if roll_sign == -1:
                 club_stair_preview_fixes.append({'actor':actor['name'],
                     'export':actor['export'],'mesh':name,
@@ -357,6 +357,7 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
          'used_bundles':[b.name for b in allbundles],
          'bundle_resource_name_collisions':{str(k):v for k,v in collisions.items()},
          'actor_transform_overrides_applied':applied_overrides,
+         'club_stair_preview_enabled':bool(preview_club_stairs),
          'club_stair_preview_roll_corrections':club_stair_preview_fixes,
          'source_actor_positions':len(actors),
          'mesh_linked_actors':sum('mesh' in a for a in actors),
