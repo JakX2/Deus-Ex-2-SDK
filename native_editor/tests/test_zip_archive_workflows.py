@@ -46,7 +46,8 @@ class ZipWorkflowTests(unittest.TestCase):
 
     def test_godot_zip_toolbar_calls_safe_stager_and_importer(self):
         script = (BACKEND.parent / "main.gd").read_text(encoding="utf-8")
-        self.assertIn('Open Seattle Club ZIP...', script)
+        self.assertIn('Open DX2 map ZIP...', script)
+        self.assertIn('"--map-name", "auto", "--mission-name", "auto"', script)
         self.assertIn('Shared ZIP...', script)
         self.assertIn('System ZIP... (optional)', script)
         self.assertIn('res://backend/dx2_zip_stage.py', script)
@@ -54,6 +55,26 @@ class ZipWorkflowTests(unittest.TestCase):
         self.assertIn('open_gmp(map_path)', script)
         self.assertIn('["--system", system_path]', script)
         self.assertIn('chosen_system_path = ""', script)
+
+    def test_autodetect_seattle_hub_zip(self):
+        with ZipFile(self.club, "w") as z:
+            z.writestr("M1_Seattle_hub.gmp", b"fictional Seattle Hub map")
+            z.writestr("m1_hub.ibd", b"fictional Seattle Hub resources")
+        result = staging.prepare(self.club, self.maps, self.cache, self.system,
+                                 map_name="auto", mission_name="auto")
+        self.assertEqual(Path(result["map"]).name, "M1_Seattle_hub.gmp")
+        self.assertEqual(Path(result["mission_bundle"]).name, "m1_hub.ibd")
+        self.assertTrue(Path(result["map"]).is_file())
+        self.assertTrue(Path(result["mission_bundle"]).is_file())
+        self.assertTrue(staging.prepare(self.club, self.maps, self.cache, self.system,
+                                        map_name="auto", mission_name="auto")["cached"])
+
+    def test_autodetect_rejects_ambiguous_archive(self):
+        with ZipFile(self.club, "a") as z:
+            z.writestr("another_map.gmp", b"second map")
+        with self.assertRaisesRegex(ValueError, "exactly one GMP and one IBD"):
+            staging.prepare(self.club, self.maps, self.cache,
+                            map_name="auto", mission_name="auto")
 
     def test_staging_preserves_nested_system_paths_and_excludes_exe(self):
         result = staging.prepare(self.club, self.maps, self.cache, self.system)
