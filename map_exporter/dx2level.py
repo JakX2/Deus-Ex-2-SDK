@@ -398,6 +398,21 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
     missed=sorted(set(transform_overrides)-{x["actor"] for x in applied_overrides})
     if missed:
         raise ValueError("Transform overrides target actors without exportable static meshes: "+", ".join(missed))
+    # Expose the actual material-resolution result per requested actor skin.
+    # This distinguishes an unavailable IBD skin from a valid skin whose
+    # material record or diffuse texture is missing in the supplied bundles.
+    for selected in selected_actor_skins:
+        mesh=unique_meshes[selected['mesh'].casefold()]['mesh']
+        variant_index,_,_=resolve_skin_variant(mesh,selected['requested'])
+        materials=mesh.skins[variant_index].get('materials',[]) if mesh.skins else []
+        selected['material_status']=[]
+        for section_index,section in enumerate(mesh.sections):
+            if not section.get('index_count'):
+                continue
+            material=materials[section_index] if section_index<len(materials) else section['name']
+            detail=builder.material_diagnostics.get(material,{})
+            selected['material_status'].append({
+                'name':material, 'resolution':detail.get('resolution','not_resolved')})
     for i,block in enumerate(blocks):builder.bsp_block(block,i)
     builder.save(output)
     bsp_tris=sum(len(s['indices'])//3 for b in blocks for s in b['sections'] if s['material'].lower()!='bf')
