@@ -39,10 +39,10 @@
     {
       "id": "asset_browser",
       "title": "Static mesh and texture browser",
-      "status": "missing",
+      "status": "partial",
       "phase": 1,
-      "evidence": "T3Ed System/EditorRes/ModeAddStaticMesh.bmp; Content/T3/StaticMeshes",
-      "next_step": "Build DX2 IBD resource catalog, filters, preview/placement"
+      "evidence": "DX2Ed 0.4.0 native IBD asset catalog + searchable Assets tab; original T3Ed ModeAddStaticMesh and content resources",
+      "next_step": "Asset previews, placement of uninstantiated DX2 mesh actors with validated archetypes, resource import and thumbnails"
     },
     {
       "id": "actor_classes",
