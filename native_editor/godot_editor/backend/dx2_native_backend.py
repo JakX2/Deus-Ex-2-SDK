@@ -217,10 +217,19 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
             'status': item['status'],
             'materials': item.get('material_status', [])}
             for item in report.get('actor_skin_selections', [])}
+        roll_changes = {int(entry['export']): entry
+                        for entry in report.get('auto_roll_preview_corrections', [])}
         for actor in actors:
-            choice = decisions.get(int(actor.get('export', -1)))
+            export_id = int(actor.get('export', -1))
+            choice = decisions.get(export_id)
             if choice:
                 actor['render_skin'] = choice
+            if export_id in roll_changes:
+                actor['auto_roll_preview'] = {
+                    'applied': True, 'mode': 'invert_roll_sign',
+                    'heuristic_only': True,
+                    'source_roll': roll_changes[export_id]['source_roll']
+                }
         enrich_placement_report(actors, bundles, report)
         meta.update({'cache_version': CACHE_VERSION,
                      'source_sha256': source_hashes['map']['sha256'],
