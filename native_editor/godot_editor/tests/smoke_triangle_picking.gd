@@ -406,6 +406,47 @@ func _run() -> void:
         _fail("New edits should clear redo history")
         return
 
+    # Place a mesh that does not have a map actor. This is a draft visual
+    # only, with no invented Gamesys export, collision or gameplay identity.
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    viewer.asset_catalog = {"schema":"DX2Ed-asset-catalog-v1", "assets":[
+        {"name":"UnusedMesh","kind":"staticmesh","bundle":"synthetic.ibd",
+         "resource_index":14,"bytes":64}]}
+    viewer.asset_mesh_resources["UnusedMesh"] = BoxMesh.new()
+    viewer.selected_asset = viewer.asset_catalog["assets"][0]
+    viewer._place_selected_asset()
+    if viewer.draft_prop_copies.size() != 1 or viewer.selected_mesh == null:
+        _fail("Unplaced IBD asset should create one editable draft mesh")
+        return
+    var placed_name := str(viewer.selected_mesh.name)
+    if viewer.draft_prop_sources.get(placed_name, "") != "AssetMesh::UnusedMesh":
+        _fail("Asset draft must record resource lineage, not an invented actor")
+        return
+    viewer._move_selected_prop(Vector3.UP)
+    viewer._undo_edit()  # Undo move
+    viewer._undo_edit()  # Undo placement
+    if not viewer.draft_prop_copies.is_empty():
+        _fail("Undo should remove a preview placed from the asset browser")
+        return
+    viewer._redo_edit()
+    if viewer.draft_prop_copies.size() != 1:
+        _fail("Redo should reinstate an IBD asset preview")
+        return
+    viewer._save_prop_draft()
+    var asset_draft: Variant = JSON.parse_string(FileAccess.get_file_as_string(viewer._draft_file_path()))
+    if asset_draft.get("copies", []).size() != 1 or str(asset_draft["copies"][0]["from_actor"]) != "AssetMesh::UnusedMesh":
+        _fail("Asset preview identity must survive draft serialization")
+        return
+    viewer._reset_selected_prop()
+    viewer._load_prop_draft()
+    if viewer.draft_prop_copies.size() != 1:
+        _fail("Asset preview should be reconstructed by loading a draft")
+        return
+    viewer._restore_all_edits()
+    if not viewer.draft_prop_copies.is_empty():
+        _fail("Restore All should delete asset previews")
+        return
+
     if not diagnosis.contains("Exported skin: Tan Stones") or not diagnosis.contains("Skin material: SyntheticTan | missing_diffuse_texture"):
         _fail("skin diagnostics should show exact missing texture status")
         return
