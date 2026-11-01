@@ -22,6 +22,8 @@ var actors: Array = []
 var visible_actors: Array = []
 var actors_by_name: Dictionary = {}
 var meshes_by_actor: Dictionary = {}
+var all_mesh_instances: Array[MeshInstance3D] = []
+var selected_diagnostic: String = ""
 var selected_mesh: MeshInstance3D
 var selected_actor: Dictionary = {}
 var selected_overlay_original: Material
@@ -84,6 +86,11 @@ func _make_ui() -> void:
     focus_btn.text = "Focus actor"
     focus_btn.pressed.connect(focus_selected)
     toolbar.add_child(focus_btn)
+    var copy_btn := Button.new()
+    copy_btn.text = "Copy mesh info"
+    copy_btn.tooltip_text = "Copy selected DX2 actor/mesh name, original rotation and world bounds for reporting an export issue"
+    copy_btn.pressed.connect(_copy_selection_details)
+    toolbar.add_child(copy_btn)
     var hint := Label.new()
     hint.text = "  Left drag orbit  |  Right drag pan  |  Wheel zoom  |  Click select"
     toolbar.add_child(hint)
@@ -312,6 +319,7 @@ func _clear_current_scene() -> void:
     actors.clear()
     actors_by_name.clear()
     meshes_by_actor.clear()
+    all_mesh_instances.clear()
     visible_actors.clear()
     actor_list.clear()
     scene_bounds_valid = false
@@ -324,6 +332,7 @@ func _index_meshes(node: Node) -> void:
     if node is MeshInstance3D:
         var mesh_node := node as MeshInstance3D
         mesh_count += 1
+        all_mesh_instances.append(mesh_node)
         if mesh_node.mesh != null:
             var box := _mesh_world_aabb(mesh_node)
             if not scene_bounds_valid:
@@ -369,6 +378,65 @@ func _actor_list_selected(index: int) -> void:
     if index >= 0 and index < visible_actors.size():
         select_actor(visible_actors[index])
 
+func _format_actor_diagnostic(actor: Dictionary) -> String:
+    var name := str(actor.get("name", "Unknown"))
+    var mesh_data: Variant = actor.get("mesh", {})
+    var mesh_name := "(no static mesh)"
+    var bounds := "(no bounds metadata)"
+    if typeof(mesh_data) == TYPE_DICTIONARY:
+        mesh_name = str(mesh_data.get("name", "(unknown)"))
+        bounds = str(mesh_data.get("bounds", "(unavailable)"))
+    var rotation: Variant = actor.get("rotation", [0, 0, 0])
+    var degrees_text := "(unavailable)"
+    if typeof(rotation) == TYPE_ARRAY and rotation.size() >= 3:
+        degrees_text = "[%0.3f, %0.3f, %0.3f]" % [float(rotation[0]) * 360.0 / 65536.0, float(rotation[1]) * 360.0 / 65536.0, float(rotation[2]) * 360.0 / 65536.0]
+    var lines := [
+        "DX2Ed map geometry diagnostic (read-only)",
+        "Actor: " + name,
+        "Class: " + str(actor.get("class", "Unknown")),
+        "GMP export index: " + str(actor.get("export", "?")),
+        "Mesh resource: " + mesh_name,
+        "GMP position (UE units): " + str([actor.get("x", null), actor.get("y", null), actor.get("z", null)]),
+        "GMP rotation [Pitch, Yaw, Roll] (UE rotator units): " + str(rotation),
+        "Rotation degrees [Pitch, Yaw, Roll]: " + degrees_text,
+        "Mesh local bounds (UE units): " + bounds,
+    ]
+    if meshes_by_actor.has(name):
+        var instance: MeshInstance3D = meshes_by_actor[name]
+        var box := _mesh_world_aabb(instance)
+        lines.append("Godot mesh node: " + str(instance.name))
+        lines.append("Godot global transform: " + str(instance.global_transform))
+        lines.append("Godot world AABB: " + str(box.position) + " size " + str(box.size))
+    else:
+        lines.append("Matching rendered mesh node: not found (may be a logical-only actor)")
+    return "\n".join(lines)
+
+func _format_mesh_diagnostic(mesh_instance: MeshInstance3D) -> String:
+    var box := _mesh_world_aabb(mesh_instance)
+    return "\n".join([
+        "DX2Ed map geometry diagnostic (read-only)",
+        "Rendered mesh node: " + str(mesh_instance.name),
+        "Original DX2 actor metadata: not matched; may be BSP or imported geometry",
+        "Godot global transform: " + str(mesh_instance.global_transform),
+        "Godot world AABB: " + str(box.position) + " size " + str(box.size),
+    ])
+
+func _copy_selection_details() -> void:
+    if selected_diagnostic.is_empty():
+        status_label.text = "Select an actor or click a rendered mesh first."
+        return
+    DisplayServer.clipboard_set(selected_diagnostic)
+    status_label.text = "Copied selection diagnostic to clipboard. Paste it into your bug report."
+
+func _select_mesh_only(mesh_instance: MeshInstance3D) -> void:
+    _clear_selection()
+    selected_mesh = mesh_instance
+    selected_overlay_original = mesh_instance.material_overlay
+    selected_mesh.material_overlay = overlay_material
+    selected_diagnostic = _format_mesh_diagnostic(mesh_instance)
+    inspector.text = selected_diagnostic
+    status_label.text = "Selected scene geometry: " + str(mesh_instance.name) + " (not an actor)"
+
 func select_actor(actor: Dictionary) -> void:
     _clear_selection()
     selected_actor = actor
@@ -377,7 +445,8 @@ func select_actor(actor: Dictionary) -> void:
         selected_mesh = meshes_by_actor[name]
         selected_overlay_original = selected_mesh.material_overlay
         selected_mesh.material_overlay = overlay_material
-    inspector.text = JSON.stringify(actor, "  ")
+    selected_diagnostic = _format_actor_diagnostic(actor)
+    inspector.text = selected_diagnostic + "\n\n--- ORIGINAL ACTOR PROPERTIES ---\n" + JSON.stringify(actor, "  ")
     status_label.text = "Selected " + name + " | " + str(actor.get("class", "Unknown"))
 
 func _clear_selection() -> void:
@@ -385,6 +454,7 @@ func _clear_selection() -> void:
         selected_mesh.material_overlay = selected_overlay_original
     selected_mesh = null
     selected_overlay_original = null
+    selected_diagnostic = ""
     selected_actor = {}
 
 func focus_selected() -> void:
@@ -446,8 +516,8 @@ func _input(event: InputEvent) -> void:
         get_viewport().set_input_as_handled()
 
 func _pick_actor() -> void:
-    # Meshes do not have collisions. Select using precise world-space bounding boxes.
-    if meshes_by_actor.is_empty():
+    # Prefer actual DX2 actors; BSP bounding boxes can cover large areas.
+    if all_mesh_instances.is_empty():
         return
     var local := view_container.get_local_mouse_position()
     var screen := local * Vector2(world_view.size) / view_container.size
@@ -456,19 +526,31 @@ func _pick_actor() -> void:
     var best := INF
     var best_name := ""
     for name in meshes_by_actor:
+        if not actors_by_name.has(name):
+            continue
         var instance: MeshInstance3D = meshes_by_actor[name]
         var distance := _ray_aabb(origin, direction, _mesh_world_aabb(instance))
         if distance >= 0.0 and distance < best:
             best = distance
             best_name = str(name)
-    if best_name != "" and actors_by_name.has(best_name):
+    if best_name != "":
         select_actor(actors_by_name[best_name])
-        # Synchronize with filtered list without triggering the selection signal.
         for index in range(visible_actors.size()):
             if str(visible_actors[index].get("name", "")) == best_name:
                 actor_list.select(index)
                 actor_list.ensure_current_is_visible()
                 break
+        return
+    # Fall back to describing unlinked render/BSP geometry.
+    var fallback_mesh: MeshInstance3D = null
+    var fallback_distance := INF
+    for instance in all_mesh_instances:
+        var distance := _ray_aabb(origin, direction, _mesh_world_aabb(instance))
+        if distance >= 0.0 and distance < fallback_distance:
+            fallback_distance = distance
+            fallback_mesh = instance
+    if is_instance_valid(fallback_mesh):
+        _select_mesh_only(fallback_mesh)
 
 func _ray_aabb(origin: Vector3, direction: Vector3, box: AABB) -> float:
     var entry := -INF
