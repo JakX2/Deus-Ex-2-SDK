@@ -1,4 +1,5 @@
 extends Control
+const BrushGeometry = preload("res://brush_geometry.gd")
 ## DX2Ed native viewer: a READ-ONLY Godot 4 GLB + GMP actor inspector.
 ## Can open an original DX2 .gmp using the bundled read-only Python backend.
 ## No runtime game assets bundled. Exports are cached outside the game folder.
@@ -66,6 +67,14 @@ var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
 var draft_prop_copies: Dictionary = {}
 var draft_prop_sources: Dictionary = {}
+var draft_brush_specs: Dictionary = {} # draft name -> validated dimensions and type
+var brush_kind_control: OptionButton
+var brush_size_controls: Array[SpinBox] = []
+var brush_steps_control: SpinBox
+var brush_inspector_panel: VBoxContainer
+var brush_inspector_sizes: Array[SpinBox] = []
+var brush_inspector_steps: SpinBox
+var brush_inspector_syncing := false
 var next_prop_copy_id := 1
 # In-memory session history. Each operation stores only edited actor transforms
 # and draft clones, never the large imported GLB or retail resources.
@@ -377,6 +386,49 @@ func _make_ui() -> void:
     place_template.tooltip_text = "Visual copy of an existing actor, not native Gamesys spawning"
     place_template.pressed.connect(_place_archetype_template)
     class_tab.add_child(place_template)
+    var brushes_tab := VBoxContainer.new()
+    brushes_tab.name = "Brushes"
+    left_tabs.add_child(brushes_tab)
+    var brushes_heading := Label.new()
+    brushes_heading.text = "Primitive brushes (preview only)"
+    brushes_tab.add_child(brushes_heading)
+    brush_kind_control = OptionButton.new()
+    for kind in BrushGeometry.TYPES:
+        brush_kind_control.add_item(kind)
+    brush_kind_control.item_selected.connect(func(index): _update_brush_form(int(index)))
+    brushes_tab.add_child(brush_kind_control)
+    var dimensions_title := Label.new()
+    dimensions_title.text = "Size X / Y / Z (metres)"
+    brushes_tab.add_child(dimensions_title)
+    var dimensions_row := HBoxContainer.new()
+    brushes_tab.add_child(dimensions_row)
+    for axis in range(3):
+        var spin := SpinBox.new()
+        spin.min_value = 0.05
+        spin.max_value = 256.0
+        spin.step = 0.05
+        spin.custom_minimum_size.x = 70
+        dimensions_row.add_child(spin)
+        brush_size_controls.append(spin)
+    var steps_row := HBoxContainer.new()
+    brushes_tab.add_child(steps_row)
+    var steps_label := Label.new()
+    steps_label.text = "Stair steps"
+    steps_row.add_child(steps_label)
+    brush_steps_control = SpinBox.new()
+    brush_steps_control.min_value = 1.0
+    brush_steps_control.max_value = 64.0
+    brush_steps_control.step = 1.0
+    steps_row.add_child(brush_steps_control)
+    _update_brush_form(0)
+    var create_brush_btn := Button.new()
+    create_brush_btn.text = "Create preview brush"
+    create_brush_btn.pressed.connect(_place_preview_brush)
+    brushes_tab.add_child(create_brush_btn)
+    var brush_note := Label.new()
+    brush_note.text = "Editor geometry only. No Unreal CSG, native BSP, lightmaps or collision generated."
+    brush_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    brushes_tab.add_child(brush_note)
     # Retain the old list as a hidden compatibility model for existing picker
     # diagnostics; the new Hierarchy is the visible selection surface.
     actor_list = ItemList.new()
@@ -496,6 +548,29 @@ func _make_ui() -> void:
     property_scroll.add_child(property_editor_rows)
     property_editor_panel.visible = false
 
+    brush_inspector_panel = VBoxContainer.new()
+    brush_inspector_panel.visible = false
+    inspector_pane.add_child(brush_inspector_panel)
+    var brush_inspector_heading := Label.new()
+    brush_inspector_heading.text = "Brush parameters (preview only)"
+    brush_inspector_panel.add_child(brush_inspector_heading)
+    var brush_dims_row := HBoxContainer.new()
+    brush_inspector_panel.add_child(brush_dims_row)
+    for axis in range(3):
+        var editor := SpinBox.new()
+        editor.min_value = 0.05
+        editor.max_value = 256.0
+        editor.step = 0.05
+        editor.custom_minimum_size.x = 70
+        editor.value_changed.connect(_change_brush_dimension.bind(axis))
+        brush_dims_row.add_child(editor)
+        brush_inspector_sizes.append(editor)
+    brush_inspector_steps = SpinBox.new()
+    brush_inspector_steps.min_value = 1
+    brush_inspector_steps.max_value = 64
+    brush_inspector_steps.step = 1
+    brush_inspector_steps.value_changed.connect(_change_brush_steps)
+    brush_inspector_panel.add_child(brush_inspector_steps)
     var property_heading := Label.new()
     property_heading.text = "Source actor details (read-only)"
     inspector_pane.add_child(property_heading)
