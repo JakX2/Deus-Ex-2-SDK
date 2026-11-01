@@ -44,6 +44,17 @@ class ZipWorkflowTests(unittest.TestCase):
         self.assertEqual(len(report["targets"]["m1_seattle_club.gmp"]), 1)
         self.assertTrue(report["targets"]["m1_club.ibd"][0]["crc_checked"])
 
+    def test_godot_zip_toolbar_calls_safe_stager_and_importer(self):
+        script = (BACKEND.parent / "main.gd").read_text(encoding="utf-8")
+        self.assertIn('Open Seattle Club ZIP...', script)
+        self.assertIn('Shared ZIP...', script)
+        self.assertIn('System ZIP... (optional)', script)
+        self.assertIn('res://backend/dx2_zip_stage.py', script)
+        self.assertIn('func _zip_stage_finished(', script)
+        self.assertIn('open_gmp(map_path)', script)
+        self.assertIn('["--system", system_path]', script)
+        self.assertIn('chosen_system_path = ""', script)
+
     def test_staging_preserves_nested_system_paths_and_excludes_exe(self):
         result = staging.prepare(self.club, self.maps, self.cache, self.system)
         self.assertEqual(result["status"], "ok")
