@@ -137,3 +137,25 @@ exposing general use, validate physical collision, level re-entry,
 save/load behavior, and clean original-map restoration, preferably with
 the source and output GMP hashes captured alongside runtime testing.
 Do not redistribute the user's game screenshot or modified proprietary GMP.
+
+
+## Additional runtime observation: duplicated table has player collision (2026-11-02)
+
+Following the screenshot showing the new table, the user reports:
+**"it has the collision n everything / Alex is blocked"**.
+
+This is direct user-reported gameplay evidence that player character
+Alex is physically blocked by the newly duplicated high-tech table in WTO
+Terminal. Combined with the earlier screenshot, the one-actor test now has
+**visual placement and player collision confirmed by user observation**.
+The original source and created candidate were previously package-reparsed
+and original-export preserving; their runtime candidate checksum was not
+independently captured in the new collision report.
+
+The user has not yet reported save/reload, level transition/re-entry,
+collision response for other actor classes, navigation, physics manipulation
+or scripted behavior. Do not generalize this result to arbitrary GameSys
+archetypes, complex interactive actors, BSP/IBD reconstruction or native
+spawning in all maps. The next practical validation is a fresh level
+re-entry and save/load test, followed by opt-in gated Godot Duplicate UI
+integration for eligible existing StaticMeshActor sources.
