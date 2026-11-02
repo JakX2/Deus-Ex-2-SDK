@@ -201,3 +201,49 @@ collision on every mesh, scripted behavior or safe cloning of interactive
 archetypes. All 636 eligible original static actors passed source preflight,
 not in-game validation. Keep PR draft, preserve original backups, and
 prioritize a controlled multi-static-prop writer + Godot integration next.
+
+
+## v4: Experimental native MULTI Duplicate Save As (2026-11-02)
+
+Added a separate Godot UI action for an isolated GMP containing **two
+through eight** newly duplicated `StaticMeshActor` exports in a single
+package edit. It reuses the proven v3 source eligibility checks and
+neutral clone frame rules, but has its own source-only, machine-readable
+`dx2_actor_multi_clone_probe.py` backend and a controlled JSON plan.
+**This is not a general Save Map operation.**
+
+- Accepts only 2..8 **moved preview copies** whose source is an existing
+  original StaticMeshActor in the currently imported source map.
+- Rejects rotated/scaled copies, changed original transforms, property
+  edits, brushes, archetype visual templates and unsupported source actors.
+- Converts each Godot-metre translation back to the source Unreal XYZ
+  axes before serialization.
+- Uses one T3SDK `apply_edits` call to append multiple uniquely named
+  exports and extend the original Level actor list once.
+- Neutralizes the four-byte `latent_action` field only in each NEW actor
+  and independently confirms every appended actor's full payload
+  provenance by reversing its Location translation.
+- Confirms every original source export is byte-identical except for
+  the expected Level actor list change, with independent DX2/T3SDK
+  reparse, exact source hash and exclusive output creation.
+- A candidate GMP and `.dx2ed-multi-prop-clone.json` manifest are written
+  only to an isolated directory. The source file and any game install
+  remain untouched. The temporary preview plan lives in Godot user data
+  and is removed after the worker finishes.
+
+The UI command is **Experimental Multi Duplicate Save As...**, beside
+the earlier one-object button. Ordinary one-object Save As remains
+available and unchanged. The new multi command is separate from the
+legacy existing-actor-only GMP Save As.
+
+Asset-free Python regression tests include a synthetic 3-actor package
+with unique export identities, exact Level list, distinct translations,
+multiple copies of the same source, export manifest and negative cases.
+Godot headless smoke covers a two-source preview plan, UE Y/Z axis
+translation, and the refusal of a rotated copy.
+
+**Status:** source tests and Godot headless checks passed. **Neither
+multi-object GMP nor GUI integration has been confirmed in retail
+Windows gameplay.** Keep PR draft, verify physical collision and save
+persistence on a controlled map before widening the feature. The private
+original game assets were never committed.
