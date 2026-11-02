@@ -86,7 +86,7 @@ class SeattleClubStairPreviewTests(unittest.TestCase):
     def test_editor_backend_cache_version_changed(self):
         backend = (ROOT / "native_editor" / "godot_editor"
                    / "backend" / "dx2_native_backend.py").read_text()
-        self.assertIn("v0.2.6-actor-skins-v1", backend)
+        self.assertIn("v0.2.7-wto-glass-alpha-v1", backend)
 
     def test_export_report_names_precisely_applied_preview_corrections(self):
         source = (ROOT / "map_exporter" / "dx2level.py").read_text()
