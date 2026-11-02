@@ -39,6 +39,17 @@ def _bounded_list_count(value: int, category: str) -> int:
     return value
 
 
+def scan_property_groups(pkg: Package, r: Reader) -> dict:
+    """Validate length-prefixed GameSys grouped records to exact object EOF.
+
+    Requires an original source-derived, bounded cursor. Exposes a testable
+    parser without making any assumptions about actor creation or gameplay.
+    """
+    grouped = scan_property_groups(pkg, r)
+
+    return {"groups": groups, "multi_element_group_count": grouped_count}
+
+
 def scan_grouped_defaults(pkg: Package, source_export) -> dict:
     """Reparse an original DX2 archetype and validate every byte boundary.
 
@@ -148,8 +159,8 @@ def scan_grouped_defaults(pkg: Package, source_export) -> dict:
     return {
         "display_name": display,
         "original_tagged_defaults_count": len(defaults),
-        "groups": groups,
-        "multi_element_group_count": grouped_count,
+        "groups": grouped["groups"],
+        "multi_element_group_count": grouped["multi_element_group_count"],
         "verified_original_byte_end": end,
         "source_layout_complete": True,
         "runtime_semantics_verified": False,
