@@ -95,3 +95,53 @@ we'll need the original WTO GMP and matching resource packages or a more
 complete in-game geometry trace.
 
 Do not change any source GMP rotations based solely on this report.
+
+## Original retail GMP/IBD verified (additional evidence, 2026-11-02)
+
+The user subsequently supplied `wto.zip`, containing the **exact matching**
+retail `M1_Seattle_Hub_WTOterminal.gmp` (SHA256
+`a6c68dd8b7b8ea0b1ee27dac4b5d18a57251297feb2f8ccb9f1bc40e317e17aa`)
+and `m1_hub_wtoterminal.ibd`.
+
+A byte-level scan of the original GMP's Level export shows:
+
+| Metric | Actual source |
+|---|---:|
+| Level payload bytes | 649,640 |
+| Packed 32-byte-vertex render header markers | **105** |
+| Headers accepted by current DX2 BSP scanner | **105** |
+| Independent supplied T3SDK `t3bsp.find_render_blocks` | **105** |
+| Named render material sections | **226** |
+| All BSP render triangles, including BF | **1,384** |
+| BF-placeholder/no-draw triangles | **12** |
+| BSP triangles exported by DX2Ed and cached report | **1,372** |
+| BSP GLB nodes inferred | **104** (105 source blocks, one entirely BF-hidden) |
+
+The **only fully BF-hidden block** has source bounds
+`(3952, 1680, -160)` to `(4784, 2512, 400)` UE.
+That is **far outside** the immediate wall area around actor
+`StaticMeshActor__119`, located at `(-0.0009766, -272, 396)` UE.
+
+The target actor is within a source BSP block with bounds
+`(0, -480, 240)` to `(600, 160, 400)` UE containing
+`M1WTO_intbathwall1` (4 triangles), `M1WTO_intwall1` (7 triangles)
+and `M1WTO_intfloor1` (4 triangles). That block was decoded.
+
+**Result:** we have no evidence that the current exporter skipped any
+*recognized packed BSP render blocks* or any mesh-linked actors here.
+There is no justification to generate a phantom wall, restore BF faces in
+this room, or change the selected trim's 0° Roll.
+
+Next investigate the original neighboring trims' texture-facing and
+preview transforms, the retail renderer's visibility/shading conventions,
+and the possibility of native geometry not included in the understood
+packed BSP representation. BSP parser count parity **does not prove**
+pixel-perfect display against the retail engine.
+
+Reproduce a **read-only original-to-cache parity audit** with:
+
+```powershell
+python map_exporter/dx2_bsp_source_audit.py M1_Seattle_Hub_WTOterminal.gmp scene.report.json --target-ue 0 -272 396 --output wto_bsp_source_audit.json
+```
+
+Keep private GMP/IBD and reports out of the Git repository.
