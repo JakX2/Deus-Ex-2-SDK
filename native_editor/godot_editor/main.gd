@@ -26,6 +26,20 @@ var archetype_filter: LineEdit
 var archetype_list: ItemList
 var archetype_details: Label
 var selected_archetype: Dictionary = {}
+# Optional source-hash-bound original DX2 GameSys research sidecar.
+# Kept separate from class templates, draft properties and native Save As.
+var source_gamesys_catalog: Dictionary = {}
+var source_gamesys_sha256 := ""
+var source_gamesys_panel: VBoxContainer
+var source_gamesys_filter: LineEdit
+var source_gamesys_list: ItemList
+var source_gamesys_details: Label
+var source_gamesys_visible: Array = []
+var source_gamesys_current_export := -1
+var source_archetype_filter: LineEdit
+var source_archetype_list: ItemList
+var source_archetype_details: TextEdit
+var source_archetype_visible: Array = []
 var draft_template_provenance: Dictionary = {} # draft name -> qualified class + template export
 var asset_mesh_resources: Dictionary = {}
 var asset_thread: Thread = null
@@ -424,6 +438,27 @@ func _make_ui() -> void:
     place_template.tooltip_text = "Visual copy of an existing actor, not native Gamesys spawning"
     place_template.pressed.connect(_place_archetype_template)
     class_tab.add_child(place_template)
+    var gamesys_tab := VBoxContainer.new()
+    gamesys_tab.name = "GameSys"
+    left_tabs.add_child(gamesys_tab)
+    var gamesys_tab_header := Label.new()
+    gamesys_tab_header.text = "Original DX2Gamesys archetypes | Read-only"
+    gamesys_tab.add_child(gamesys_tab_header)
+    source_archetype_filter = LineEdit.new()
+    source_archetype_filter.placeholder_text = "Search D_* class, display or parent..."
+    source_archetype_filter.text_changed.connect(func(_q): _refresh_source_archetype_list())
+    gamesys_tab.add_child(source_archetype_filter)
+    source_archetype_list = ItemList.new()
+    source_archetype_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    source_archetype_list.item_selected.connect(_source_archetype_selected)
+    gamesys_tab.add_child(source_archetype_list)
+    source_archetype_details = TextEdit.new()
+    source_archetype_details.editable = false
+    source_archetype_details.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+    source_archetype_details.custom_minimum_size.y = 210
+    source_archetype_details.text = "Import an original map with its System folder to browse the source archetypes. No native actor spawning."
+    gamesys_tab.add_child(source_archetype_details)
+
     var brushes_tab := VBoxContainer.new()
     brushes_tab.name = "Brushes"
     left_tabs.add_child(brushes_tab)
@@ -613,6 +648,24 @@ func _make_ui() -> void:
     property_editor_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     property_scroll.add_child(property_editor_rows)
     property_editor_panel.visible = false
+
+    source_gamesys_panel = VBoxContainer.new()
+    source_gamesys_panel.visible = false
+    inspector_pane.add_child(source_gamesys_panel)
+    var source_gamesys_heading := Label.new()
+    source_gamesys_heading.text = "Original GameSys | Verified read-only data"
+    source_gamesys_panel.add_child(source_gamesys_heading)
+    source_gamesys_filter = LineEdit.new()
+    source_gamesys_filter.placeholder_text = "Filter original property ID, name or type..."
+    source_gamesys_filter.text_changed.connect(func(_q): _refresh_source_gamesys_inspector())
+    source_gamesys_panel.add_child(source_gamesys_filter)
+    source_gamesys_list = ItemList.new()
+    source_gamesys_list.custom_minimum_size.y = 150
+    source_gamesys_list.item_selected.connect(_source_gamesys_selected)
+    source_gamesys_panel.add_child(source_gamesys_list)
+    source_gamesys_details = Label.new()
+    source_gamesys_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    source_gamesys_panel.add_child(source_gamesys_details)
 
     brush_inspector_panel = VBoxContainer.new()
     brush_inspector_panel.visible = false
@@ -985,11 +1038,13 @@ func load_actors(path: String) -> void:
     actors = result["actors"]
     var metadata: Variant = result.get("meta", {})
     current_source_map_name = str(metadata.get("source_map", "")) if typeof(metadata) == TYPE_DICTIONARY else ""
+    source_gamesys_sha256 = str(metadata.get("source_sha256", metadata.get("map_sha256", ""))) if typeof(metadata) == TYPE_DICTIONARY else ""
     actors_by_name.clear()
     for actor in actors:
         if typeof(actor) == TYPE_DICTIONARY and actor.has("name"):
             actors_by_name[str(actor["name"])] = actor
     _refresh_actor_list()
+    _load_source_gamesys_catalog(path.get_base_dir().path_join("gamesys_inspector.json"))
     status_label.text = "Loaded %d actors, %d meshes. Click a mesh or select an actor." % [actors.size(), mesh_count]
 
 func _clear_current_scene() -> void:
@@ -998,6 +1053,14 @@ func _clear_current_scene() -> void:
     selected_asset.clear()
     archetype_catalog.clear()
     selected_archetype.clear()
+    source_gamesys_catalog.clear()
+    source_gamesys_sha256 = ""
+    source_gamesys_visible.clear()
+    source_gamesys_current_export = -1
+    source_archetype_visible.clear()
+    if source_gamesys_panel != null:
+        source_gamesys_panel.visible = false
+    _refresh_source_archetype_list()
     draft_template_provenance.clear()
     _refresh_archetype_list()
     asset_mesh_resources.clear()
@@ -1126,6 +1189,153 @@ func _load_archetype_catalog(path: String) -> void:
             if typeof(classes) == TYPE_ARRAY and classes.size() < 30000:
                 archetype_catalog = parsed
     _refresh_archetype_list()
+
+
+## The source GameSys Inspector never feeds actor draft/native-save controls.
+## A map-specific sidecar is accepted only with the actors.json source SHA.
+func _load_source_gamesys_catalog(path: String) -> void:
+    source_gamesys_catalog.clear()
+    if FileAccess.file_exists(path) and not source_gamesys_sha256.is_empty():
+        var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+        if (typeof(parsed) == TYPE_DICTIONARY
+            and parsed.get("schema") == "DX2Ed-gamesys-inspector-sidecar-v1"
+            and parsed.get("read_only") == true
+            and parsed.get("native_game_editing_enabled") == false
+            and str(parsed.get("source_sha256", "")) == source_gamesys_sha256
+            and str(parsed.get("source_map", "")).to_lower() == current_source_map_name.to_lower()
+            and typeof(parsed.get("actors", null)) == TYPE_DICTIONARY
+            and typeof(parsed.get("archetypes", null)) == TYPE_ARRAY):
+            var classes: Array = parsed["archetypes"]
+            if classes.size() <= 12000:
+                source_gamesys_catalog = parsed
+    source_gamesys_current_export = -1
+    _refresh_source_archetype_list()
+    _refresh_source_gamesys_inspector()
+
+
+func _refresh_source_archetype_list() -> void:
+    if source_archetype_list == null:
+        return
+    source_archetype_list.clear()
+    source_archetype_visible.clear()
+    var query := source_archetype_filter.text.strip_edges().to_lower() if source_archetype_filter != null else ""
+    var classes: Variant = source_gamesys_catalog.get("archetypes", [])
+    if typeof(classes) != TYPE_ARRAY:
+        return
+    for rec in classes:
+        if typeof(rec) != TYPE_DICTIONARY:
+            continue
+        var searchable := str(rec.get("class", "")) + " " + str(rec.get("display_name", "")) + " " + str(rec.get("parent", ""))
+        if query != "" and query not in searchable.to_lower():
+            continue
+        source_archetype_visible.append(rec)
+        source_archetype_list.add_item(str(rec.get("display_name", "?")) + "  [" + str(rec.get("class", "?")) + "]")
+    if source_archetype_details != null:
+        if classes.is_empty():
+            source_archetype_details.text = "No original DX2Gamesys archetype source for this cache. Import with its original System folder or ZIP. Existing Classes and visual templates remain available."
+        else:
+            source_archetype_details.text = "%d original classes (%d filtered). Select one to inspect read-only source defaults. Archetype-to-map-actor bindings and native spawning are unverified." % [classes.size(), source_archetype_visible.size()]
+
+
+func _source_archetype_selected(index: int) -> void:
+    if index < 0 or index >= source_archetype_visible.size() or source_archetype_details == null:
+        return
+    var rec: Dictionary = source_archetype_visible[index]
+    var chain: Variant = rec.get("source_ancestry", [])
+    var lines := [
+        "Original archetype: " + str(rec.get("display_name", "?")),
+        "Class: " + str(rec.get("class", "?")),
+        "Immediate parent: " + str(rec.get("parent", "?")),
+        "Source ancestry: " + (" -> ".join(PackedStringArray(chain)) if typeof(chain) == TYPE_ARRAY else "unavailable"),
+        "Inheritance verified: " + str(rec.get("inheritance_complete", false)),
+        "DX2 grouped-array decoder: " + str(rec.get("recovered_dx2_layout", false)),
+        "Local defaults: " + str(rec.get("local_property_count", 0)),
+        "Native actor construction: NOT SUPPORTED", ""
+    ]
+    var defaults: Variant = rec.get("local_defaults", [])
+    if typeof(defaults) == TYPE_ARRAY:
+        for item in defaults:
+            if typeof(item) != TYPE_DICTIONARY:
+                continue
+            lines.append("#" + str(item.get("property_id", "?")) + " " + str(item.get("source_declared_name", "(source name unknown)")) +
+                " (" + str(item.get("source_declared_type", item.get("encoding", "?"))) + ")" +
+                " | " + str(item.get("element_count", 1)) + " element(s)")
+            var elements: Variant = item.get("elements", [])
+            if typeof(elements) == TYPE_ARRAY:
+                for element in elements:
+                    if typeof(element) != TYPE_DICTIONARY:
+                        continue
+                    var detail := ""
+                    if element.has("typed_fields"):
+                        var pairs := []
+                        for field in element.get("typed_fields", []):
+                            if typeof(field) == TYPE_DICTIONARY:
+                                pairs.append(str(field.get("name", "?")) + "=" + str(field.get("value", "?")))
+                        detail = ", ".join(pairs)
+                    elif element.has("string_value"):
+                        detail = str(element["string_value"])
+                    lines.append("  [" + str(element.get("element_index", "?")) + "] " + detail.substr(0, 300))
+    source_archetype_details.text = "\n".join(lines).substr(0, 30000)
+
+
+func _refresh_source_gamesys_inspector() -> void:
+    if source_gamesys_panel == null or source_gamesys_list == null:
+        return
+    source_gamesys_panel.visible = false
+    source_gamesys_list.clear()
+    source_gamesys_visible.clear()
+    source_gamesys_current_export = -1
+    if source_gamesys_catalog.is_empty():
+        return
+    var nodes := _selection_nodes()
+    var actor: Dictionary = {}
+    if nodes.size() == 1 and actors_by_name.has(str(nodes[0].name)):
+        actor = actors_by_name[str(nodes[0].name)]
+    elif nodes.is_empty() and not selected_actor.is_empty():
+        actor = selected_actor
+    if actor.is_empty():
+        return
+    var export_id := int(actor.get("export", -1))
+    var source_actor: Variant = source_gamesys_catalog.get("actors", {}).get(str(export_id), {})
+    if (typeof(source_actor) != TYPE_DICTIONARY
+        or str(source_actor.get("name", "")) != str(actor.get("name", ""))
+        or int(source_actor.get("export", -2)) != export_id):
+        return
+    source_gamesys_panel.visible = true
+    source_gamesys_current_export = export_id
+    var query := source_gamesys_filter.text.strip_edges().to_lower() if source_gamesys_filter != null else ""
+    var fields: Variant = source_actor.get("properties", [])
+    if typeof(fields) != TYPE_ARRAY:
+        return
+    for rec in fields:
+        if typeof(rec) != TYPE_DICTIONARY:
+            continue
+        var label := "#" + str(rec.get("id", "?")) + " " + str(rec.get("name", "Unknown"))
+        var searchable := label + " " + str(rec.get("declared_type", "")) + " " + str(rec.get("encoding", ""))
+        if query != "" and query not in searchable.to_lower():
+            continue
+        source_gamesys_visible.append(rec)
+        source_gamesys_list.add_item(label + " [" + str(rec.get("encoding", "?")) + "]")
+    source_gamesys_details.text = "%d verified original blocks (%d matching). Select a field to inspect the source value and byte evidence. No native GameSys editing." % [fields.size(), source_gamesys_visible.size()]
+
+
+func _source_gamesys_selected(index: int) -> void:
+    if index < 0 or index >= source_gamesys_visible.size() or source_gamesys_details == null:
+        return
+    var rec: Dictionary = source_gamesys_visible[index]
+    var original_value := JSON.stringify(rec.get("source_value"))
+    source_gamesys_details.text = (
+        "Original #" + str(rec.get("id", "?")) + "  " + str(rec.get("name", "?")) +
+        "\nDeclared type: " + str(rec.get("declared_type", "(unavailable)")) +
+        "\nDeclared in: " + str(rec.get("declared_in", "(unavailable)")) +
+        "\nSerialized encoding: " + str(rec.get("encoding", "?")) +
+        "\nSource value: " + original_value.substr(0, 640) +
+        "\nOriginal ID: " + str(rec.get("encoded_id", "?")) +
+        "\nPayload offset: 0x" + ("%x" % int(rec.get("payload_offset", 0))) +
+        "\nPayload bytes: " + str(rec.get("payload_bytes", "?")) +
+        "\nSHA-256: " + str(rec.get("source_payload_sha256", "?")) +
+        "\nRead-only source evidence. No native write or script bindings."
+    )
 
 
 func _refresh_archetype_list() -> void:
@@ -2141,6 +2351,7 @@ func _refresh_inspector_panel() -> void:
     var eligible := _draft_selected_is_prop()
     inspector_transform_section.visible = eligible
     _refresh_actor_property_editor()
+    _refresh_source_gamesys_inspector()
     if nodes.is_empty():
         if selected_actor.is_empty():
             inspector_title.text = "Nothing selected"
