@@ -37,7 +37,10 @@ def level_fixture(path: Path) -> bytes:
     level_name = w.name_index("Level")
     class_name = w.name_index("Class")
     w.imports.append(ImportEntry(0, class_name, 0, level_name, (b"", b"", b"")))
-    level_body = (b"\0" * 13 + struct.pack("<II", 3, 3)\n                  + enc_index(2) + enc_index(0) + enc_index(1))\n    # Zero is the synthetic placeholder for the builder slot. This is a\n    # parser-only fixture; the source prop is the third list entry.
+    level_body = (b"\0" * 13 + struct.pack("<II", 3, 3)
+                  + enc_index(2) + enc_index(0) + enc_index(1))
+    # Zero is the synthetic placeholder for the builder slot. This is a
+    # parser-only fixture; the source prop is the third list entry.
     index = w.add_export(0, "MyLevel", level_body)
     assert index == 1
     w.exports[index].class_ref = -2
