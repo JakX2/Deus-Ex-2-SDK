@@ -60,7 +60,7 @@ def _candidate(pkg, export_index: int):
     decoded = pkg.read_actor(exp)
     if decoded.parse_error or decoded.state is None:
         raise ValueError("Source actor does not decode exactly")
-    if decoded.links or decoded.tail not in (b"", b"\\x00" * 4):
+    if decoded.links or decoded.tail not in (b"", b"\x00" * 4):
         raise ValueError("Object links and unknown/nonzero native tails cannot be cloned")
     if not (decoded.state["node"] == -2 and decoded.state["state_node"] == -2
             and decoded.state["offset"] == -1 and decoded.state["latent_action"] == 0
