@@ -18,7 +18,8 @@ sys.path.insert(0, str(ROOT / "native_editor" / "package_writer"))
 sys.path.insert(0, str(ROOT / "native_editor" / "tests"))
 
 from test_native_save_as import fixture_gmp
-from dx2_package_roundtrip import inspect_noop, write_noop_copy, main
+from dx2_package_roundtrip import inspect_noop, write_noop_copy, cross_check_translation, main
+from dx2level import SCALE, actor_matrix
 
 
 class DX2T3SDKRoundTripTests(unittest.TestCase):
@@ -103,6 +104,74 @@ class DX2T3SDKRoundTripTests(unittest.TestCase):
                 write_noop_copy(self.source, self.output)
         self.assertEqual(self.source.read_bytes(), self.original)
         self.assertFalse(self.output.exists())
+
+    def _translation_metadata(self):
+        source = self.original
+        import hashlib
+        actors_file = self.root / "Cache" / "actors.json"
+        actors_file.parent.mkdir(exist_ok=True)
+        name = "StaticMeshActor__1"
+        actor = {
+            "name": name, "class": "StaticMeshActor", "export": 1,
+            "mesh": "FictionalBox", "location": [100.0, 200.0, 300.0],
+            "rotation": [0, 0, 0],
+        }
+        actors_file.write_text(json.dumps({"meta": {
+            "source_sha256": hashlib.sha256(source).hexdigest(),
+            "source_map": self.source.name,
+        }, "actors": [actor]}))
+        matrix = actor_matrix({
+            "x": 100.0, "y": 200.0, "z": 300.0,
+            "rotation": [0, 0, 0],
+        })
+        transform = [
+            matrix[0], matrix[1], matrix[2],
+            matrix[4], matrix[5], matrix[6],
+            matrix[8], matrix[9], matrix[10],
+            120 * SCALE, 320 * SCALE, 240 * SCALE,
+        ]
+        draft = {
+            "schema": "DX2Ed-prop-draft-v1",
+            "read_only_source": True,
+            "map_cache": str(actors_file.parent),
+            "moved": [{"actor": name, "transform": transform}],
+            "copies": [], "property_edits": [],
+        }
+        draft_file = actors_file.parent / "draft.json"
+        draft_file.write_text(json.dumps(draft))
+        return actors_file, draft_file, draft
+
+    def test_t3sdk_edited_export_matches_existing_native_patch_exactly(self):
+        actors, draft_path, _ = self._translation_metadata()
+        report = cross_check_translation(self.source, actors, draft_path)
+        self.assertEqual(report["status"], "in-memory-match-only")
+        self.assertTrue(report["serializers_agree_byte_for_byte"])
+        self.assertTrue(report["same_byte_length"])
+        self.assertGreater(report["changed_bytes"], 0)
+        self.assertLessEqual(report["changed_bytes"], 12)
+        self.assertEqual(len(report["edited_existing_actors"]), 1)
+        self.assertEqual(report["edited_existing_actors"][0]["after"], [120.,240.,320.])
+        self.assertFalse(report["output_written"])
+        self.assertFalse(report["runtime_game_verified"])
+        self.assertEqual(self.source.read_bytes(), self.original)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(main(["compare-translation", str(self.source),
+                              "--actors", str(actors), "--draft", str(draft_path)]), 0)
+
+    def test_cross_check_refuses_unsupported_rotations_and_new_actors(self):
+        actors, draft_path, draft = self._translation_metadata()
+        draft["moved"][0]["transform"][0] = 0.5
+        draft_path.write_text(json.dumps(draft))
+        with self.assertRaisesRegex(ValueError, "rotation/scale"):
+            cross_check_translation(self.source, actors, draft_path)
+        draft["moved"][0]["transform"][0] = actor_matrix({
+            "x": 100.0, "y": 200.0, "z": 300.0, "rotation": [0, 0, 0]
+        })[0]
+        draft["copies"] = [{"from_actor": "StaticMeshActor__1", "name": "Copy"}]
+        draft_path.write_text(json.dumps(draft))
+        with self.assertRaisesRegex(ValueError, "native writer"):
+            cross_check_translation(self.source, actors, draft_path)
+        self.assertEqual(self.source.read_bytes(), self.original)
 
     def test_cli_audit_does_not_write_and_rejects_wrong_output(self):
         self.assertEqual(main(["audit", str(self.source)]), 0)
