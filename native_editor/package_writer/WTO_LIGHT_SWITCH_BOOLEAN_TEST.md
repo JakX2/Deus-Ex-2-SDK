@@ -196,3 +196,53 @@ Save As pathway.
 **Next gate:** run Godot headless smoke and Python tests for this commit,
 then verify a one-fixture isolated map loads and returns to normal after
 restoring the source GMP. Do not merge the draft PR on UI tests alone.
+
+
+## Source-verified retail map and four one-light candidates (2026-11-02)
+
+The user authorized reading the **DX2 project folder on Google Drive**.
+The downloaded `maps.zip` includes the original WTO Terminal GMP and its
+matching `m1_hub_wtoterminal.ibd`. The GMP is **1,112,716 bytes** and hashes
+exactly to the original baseline already pinned in this document:
+`a6c68dd8b7b8ea0b1ee27dac4b5d18a57251297feb2f8ccb9f1bc40e317e17aa`.
+
+All four earlier-proven authored `bLightOn=true` payload offsets contain
+`01`, immediately following the identical original 12-byte prefix
+`cf 05 80 00 01 00 00 00 01 00 00 00`
+(GameSys ID 1487, type word 0x0080, version 1, data length 1).
+
+A **private** no-Python Windows Forms A/B package was prepared from the user's
+identical original GMP. Every map is independently derived from the same
+baseline by setting only **one** original authored Boolean byte to zero;
+all other bytes, package tables, actors, meshes and GUID stay unchanged.
+
+| Original actor | Export | One changed offset | Candidate SHA-256 |
+|---|---:|---:|---|
+| `D_298__4` | 426 | 772889 | `65b94ce9f30683db823ae2a99e70eb855112813af6f37a32da49458c7499ac0d` |
+| `D_298__12` | 1989 | 1055306 | `0abe7993cbc83bbe47ebb235df5d2e68457da9fd3620228292cab2998ed2356f` |
+| `D_298__2` | 2027 | 1062475 | `4589145311cf09903491b1de9160234316592787d0fe6edf93c46e9cdb37e3a7` |
+| `D_298__14` | 2046 | 1067038 | `44f599046cd63208134b810b376343d391ff5de0d2f90a62d57691d09c745e74` |
+
+The private GUI verifies baseline/candidate whole-file hashes **and** checks
+that the selected GMP differs by exactly the pinned Boolean byte before
+installation. It requires an explicitly confirmed separate test game's
+`Content/DX2/Maps` directory, retains a hash-verified original backup,
+supports restoring that backup and refuses unknown map hashes or overwriting
+unknown backups. The user can compare fixtures one at a time and return to
+the original lighting.
+
+**Status:** structural/byte integrity verified against the original user's
+map; **new Windows GUI and individually altered GMPs have NOT been tested
+in game**. Do not publish proprietary derived GMPs in GitHub; keep the PR
+draft. The earlier four-light screenshot remains the only in-game light
+switch result reported so far.
+
+### Direct GMP import correction
+
+The Godot viewer's direct `.gmp` import previously cleared the System path.
+It can now use the recognized `<install>/System` sibling of
+`<install>/Content/DX2/Maps`, or a manually selected original DX2 System
+directory, when `Engine.d2u` and `DX2Gamesys.d2u` are both present.
+It still refuses to reuse unrelated ZIP-staged paths. This allows the
+source-verified GameSys panel to appear during ordinary full-installation
+imports and does not grant any new serializer permissions.
