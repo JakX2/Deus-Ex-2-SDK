@@ -114,6 +114,46 @@ func _run() -> void:
         _fail("Auto Roll candidate must be identifiable in the Inspector")
         return
 
+    # Original AI layer is only a discoverable candidate marker.
+    var ai_fixture := {"name":"D_527__0", "class":"D_527", "export":5,
+        "game_properties":[{"id":82,"value":"AI"}],
+        "trigger_script_serialized":{"items":[432,424],"interpretation":"index"}}
+    if not viewer._actor_on_original_ai_layer(ai_fixture):
+        _fail("Original source AI layer should be discoverable")
+        return
+    if viewer._actor_on_original_ai_layer({"game_properties":[{"id":82,"value":"Staticmeshes"}]}):
+        _fail("Other editor layers must not be treated as AI/NPC")
+        return
+    viewer.category_filter.select(9)
+    if not viewer._category_visible("Gameplay / other", ai_fixture):
+        _fail("AI actor filter must admit source-marked AI candidate")
+        return
+    viewer.category_filter.select(0)
+    viewer.gameplay_catalog = {
+        "script_definitions": [
+            {"id":"TestLight", "title":"Test Only", "format":"1FFE2FST",
+             "archive_member":"Defs/TestLight.tsd",
+             "actions":["kTAT_LinkedPropertySet"],
+             "conditions":["kTCT_ReceivePropagateMsgLink"]}
+        ]
+    }
+    viewer._refresh_gameplay_script_list()
+    if (viewer.gameplay_visible.size() != 1
+        or viewer.gameplay_list.item_count != 1
+        or not viewer.gameplay_details.text.contains("kTAT_LinkedPropertySet")
+        or not viewer.gameplay_details.text.contains("Not bound to a specific map actor")):
+        _fail("Read-only original TriggerScript browser list/details")
+        return
+    viewer.selected_actor = ai_fixture
+    viewer._inspect_selected_actor_scripts()
+    if (not viewer.gameplay_details.text.contains("432")
+        or not viewer.gameplay_details.text.contains("NOT verified TS_")):
+        _fail("Actor raw script indices must remain explicitly unbound")
+        return
+    viewer.selected_actor = {}
+    viewer.gameplay_catalog.clear()
+    viewer._refresh_gameplay_script_list()
+
     # Editor categories are class hints, not a substitute for decoded physics.
     if viewer._actor_category({"class":"StaticMeshActor"}) != "Static mesh":
         _fail("static-mesh category classification")
