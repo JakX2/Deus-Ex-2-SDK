@@ -16,6 +16,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
+import struct
 from pathlib import Path
 import sys
 
@@ -111,6 +113,86 @@ def inspect_noop(source: Path) -> tuple[dict, bytes]:
     return report, rewritten
 
 
+def cross_check_translation(source: Path, actors_file: Path, draft_file: Path) -> dict:
+    """Two independently implemented serializers must produce EXACTLY the same
+    position-only in-memory GMP. No edited file is written or installed.
+
+    This is a research comparison, not permission to change rotations or
+    trigger/script data, and not a guarantee of runtime loading.
+    """
+    source = _validate_input(source)
+    actors_file = actors_file.expanduser().resolve(strict=True)
+    draft_file = draft_file.expanduser().resolve(strict=True)
+    if actors_file.stat().st_size > 64_000_000 or draft_file.stat().st_size > 16_000_000:
+        raise ValueError("Actor metadata or draft exceeds allowed size")
+    actors_doc = json.loads(actors_file.read_text(encoding="utf-8"))
+    draft = json.loads(draft_file.read_text(encoding="utf-8"))
+    if Path(str(draft.get("map_cache", ""))).resolve() != actors_file.parent:
+        raise ValueError("Draft belongs to a different original map cache")
+
+    from dx2_native_save_as import plan_translation_changes, apply_location_plan
+
+    no_op_report, raw = inspect_noop(source)
+    t3, dx2 = _parse_both(source, raw)
+    edits = plan_translation_changes(dx2, actors_doc, draft)
+    direct = apply_location_plan(raw, edits)
+    writer = PackageWriter(t3)
+    edited_exports = set()
+    for edit in edits:
+        export_idx = edit["export"] - 1  # DX2 metadata uses one-based exports.
+        if export_idx in edited_exports:
+            raise ValueError("Repeated export in translation plan")
+        edited_exports.add(export_idx)
+        original_export = t3.exports[export_idx]
+        start = original_export.serial_offset
+        length = original_export.serial_size
+        object_blob = bytearray(t3.export_bytes(original_export))
+        if len(object_blob) != length or length <= 0:
+            raise ValueError("Unexpected original T3SDK export payload length")
+        for axis, value in zip("XYZ", edit["after"]):
+            absolute = edit["offsets"][axis]
+            relative = absolute - start
+            if relative < 0 or relative + 4 > len(object_blob):
+                raise ValueError("Location byte range escapes its original actor export")
+            struct.pack_into("<f", object_blob, relative, float(value))
+        writer.set_object(export_idx, bytes(object_blob))
+    rebuilt = writer.write()
+    if rebuilt != direct:
+        diff = first_difference(rebuilt, direct)
+        raise ValueError(
+            f"Independent GMP serializers disagree at byte offset {diff}; "
+            "edited package output is blocked"
+        )
+    changed = sum(a != b for a, b in zip(raw, rebuilt))
+    if not changed or len(raw) != len(rebuilt):
+        raise ValueError("No valid same-size Location-only change detected")
+    if sha256(source.read_bytes()) != no_op_report["source_sha256"]:
+        raise ValueError("Original GMP changed during translation cross-check")
+    return {
+        "schema": "DX2Ed-T3SDK-translation-parity-v1",
+        "status": "in-memory-match-only",
+        "source": str(source),
+        "source_sha256": no_op_report["source_sha256"],
+        "edited_preview_sha256": sha256(rebuilt),
+        "edited_existing_actors": [
+            {k: edit[k] for k in ("actor", "export", "before", "after")}
+            for edit in edits
+        ],
+        "changed_bytes": changed,
+        "source_bytes": len(raw),
+        "same_byte_length": True,
+        "serializers_agree_byte_for_byte": True,
+        "output_written": False,
+        "source_modified": False,
+        "runtime_game_verified": False,
+        "notes": [
+            "T3SDK PackageWriter.set_object and original DX2Ed byte-field patch generated identical bytes.",
+            "Only validated original Location.X/Y/Z translation fields were permitted.",
+            "The edit is NOT saved by this command; no runtime compatibility is claimed.",
+        ],
+    }
+
+
 def _check_copy_destination(source: Path, output: Path) -> Path:
     output = output.expanduser().resolve()
     if output.suffix.casefold() != ".gmp" or output.name.casefold() != source.name.casefold():
@@ -162,10 +244,16 @@ def main(argv=None) -> int:
     copy = sub.add_parser("copy", help="Write a byte-identical GMP into a separate folder")
     copy.add_argument("source", type=Path)
     copy.add_argument("--output", required=True, type=Path)
+    compare = sub.add_parser("compare-translation", help="In-memory T3SDK vs existing DX2 Location writer parity")
+    compare.add_argument("source", type=Path)
+    compare.add_argument("--actors", required=True, type=Path)
+    compare.add_argument("--draft", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         if args.command == "audit":
             report, _ = inspect_noop(args.source)
+        elif args.command == "compare-translation":
+            report = cross_check_translation(args.source, args.actors, args.draft)
         else:
             report = write_noop_copy(args.source, args.output)
         print(json.dumps(report, indent=2))
