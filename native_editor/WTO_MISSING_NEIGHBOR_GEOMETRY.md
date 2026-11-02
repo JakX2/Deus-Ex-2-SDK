@@ -145,3 +145,50 @@ python map_exporter/dx2_bsp_source_audit.py M1_Seattle_Hub_WTOterminal.gmp scene
 ```
 
 Keep private GMP/IBD and reports out of the Git repository.
+
+## Placed-mesh triangle parity and BSP/mesh isolation (2026-11-02)
+
+The user's **original mission IBD** plus the two supplied shared bundles
+(`Kernel_GFXALL.ibd`, `MainMenu_GFXALL.ibd`) independently account for
+**123 unique mesh resources / 802 mesh-linked actors / 44,480 source triangles**
+in WTO Terminal. This equals `placed_mesh_triangles` in the user's cached
+report exactly, not merely the number of scene nodes.
+
+The original T3SDK `t3mesh.py` source defines `BF` as a hidden material.
+The existing DX2 BSP exporter already suppresses `BF` on BSP faces, but
+the **static mesh** path incorrectly emitted these as opaque GLB faces.
+
+- WTO has **134 source `BF` triangles across placed mesh instances**, mostly
+  on coffee cups, tunnel lights, train gates/screens and WTO stairs.
+- The four WTO stair instances account for **16 BF triangles**. Two are
+  geometrically close to the selected trim region, though there is no
+  proven direct occlusion of the wall in the retail screenshot.
+- The importer now suppresses these BF static-mesh sections for the **GLB
+  visualization only**, using each actor's effective selected skin.
+  `placed_mesh_triangles` preserves the pre-existing source count,
+  while `rendered_static_mesh_triangles` and
+  `static_mesh_bf_hidden_triangles` distinguish actually rendered faces.
+- Expected WTO visible source triangle totals become 44,346 placed static
+  + 1,372 BSP = **45,718 preview triangles** (before any other display
+  effects). This is a source-based prediction for the next import, not
+  a runtime measurement of Godot's frame draw calls.
+
+### Interactive diagnosis
+
+The native editor now exposes two independent read-only checkboxes alongside
+the original map import controls:
+
+- **BSP**: hide/reveal all nodes named `BSP_...`.
+- **Placed meshes**: hide/reveal placed actor meshes.
+
+Use the running retail game screenshot as ground truth, then hide **Placed
+meshes** to verify the structural WTO wall is present and continuous, and
+hide **BSP** to see whether the horizontal trim/corner meshes line up by
+themselves. Restoring both checkboxes restores the complete scene without
+reimporting, modifying actor transforms, or writing any game files.
+
+**Important:** this is a display/occlusion diagnostic. It does not yet
+demonstrate that the missing appearance is corrected; if BSP-only and
+mesh-only geometry both look correct separately but not together,
+investigate surface depth/occlusion/material shading in the Godot preview.
+
