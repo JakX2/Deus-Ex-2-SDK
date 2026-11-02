@@ -60,10 +60,11 @@ def _candidate(pkg, export_index: int):
     decoded = pkg.read_actor(exp)
     if decoded.parse_error or decoded.state is None:
         raise ValueError("Source actor does not decode exactly")
-    if decoded.links or decoded.tail:
-        raise ValueError("Cloning source actors with object links or native tails is blocked")
-    if (decoded.state["node"] or decoded.state["state_node"]
-            or decoded.state["latent_action"]):
+    if decoded.links or decoded.tail not in (b"", b"\\x00" * 4):
+        raise ValueError("Object links and unknown/nonzero native tails cannot be cloned")
+    if not (decoded.state["node"] == -2 and decoded.state["state_node"] == -2
+            and decoded.state["offset"] == -1 and decoded.state["latent_action"] == 0
+            and decoded.state["probe_mask"] == 0xFFFFFFFFFFFFFFFF):
         raise ValueError("Source actor has active native/script state")
     # An existing authored tagged Location is mandatory: no field insertion.
     reader = ActorEdit(PackageWriter(pkg), exp)
@@ -101,14 +102,10 @@ def clone_in_memory(source: Path, *, source_sha256: str, actor_export: int,
         raise ValueError("Original GMP SHA-256 mismatch")
     if type(actor_name) is not str or not actor_name or len(actor_name) > 150:
         raise ValueError("Exact original actor name required")
-    if len(delta) != 3 or not all(
-            type(x) in (int, float) and math.isfinite(x) and 0 < abs(x) <= MAX_OFFSET
-            for x in delta):
-        # Permit zero components, but require at least one nonzero component.
-        if (len(delta) != 3 or not all(
-                type(x) in (int, float) and math.isfinite(x) and abs(x) <= MAX_OFFSET
-                for x in delta) or not any(delta)):
-            raise ValueError("Supply finite translation components <= 4096 units and a nonzero change")
+    if (len(delta) != 3 or not all(
+            type(x) in (int, float) and math.isfinite(x) and abs(x) <= MAX_OFFSET
+            for x in delta) or not any(delta)):
+        raise ValueError("Supply finite translation components <= 4096 units and a nonzero change")
 
     noop, rewritten = inspect_noop(source)
     if rewritten != raw or noop["source_sha256"] != source_sha256:
@@ -160,8 +157,9 @@ def clone_in_memory(source: Path, *, source_sha256: str, actor_export: int,
     if fresh_t3.export_class(clone) != "StaticMeshActor":
         raise ValueError("New actor has unexpected class")
     cloned_actor = fresh_t3.read_actor(clone)
-    if cloned_actor.parse_error or cloned_actor.links or cloned_actor.tail:
-        raise ValueError("New actor has unverified native data")
+    if (cloned_actor.parse_error or cloned_actor.links
+            or cloned_actor.tail != pkg.read_actor(exp).tail):
+        raise ValueError("New actor has changed or unverified native data")
     report = {
         "schema": SCHEMA,
         "status": "binary-reparsed-runtime-unverified",
@@ -178,14 +176,16 @@ def clone_in_memory(source: Path, *, source_sha256: str, actor_export: int,
         "original_bytes_unchanged": sha256(source.read_bytes()) == source_sha256,
         "runtime_game_verified": False,
         "game_installation_modified": False,
-        "notes": "Only StaticMeshActor; no script/native tail/links; not an IBD or BSP writer."
+        "notes": ("Only source-verified StaticMeshActor with a verified neutral state, "
+                  "no links, and zero or four-byte all-zero native tail retained; "
+                  "not an IBD/BSP writer.")
     }
     if not report["original_bytes_unchanged"]:
         raise ValueError("Original GMP changed during clone preparation")
     return report, candidate
 
 
-def find_candidates(source: Path, source_sha256: str, limit: int = 40):
+def find_candidates(source: Path, source_sha256: str, limit: int = 200):
     source = _validate_input(Path(source))
     _pin(source_sha256)
     if sha256(source.read_bytes()) != source_sha256:
@@ -200,8 +200,14 @@ def find_candidates(source: Path, source_sha256: str, limit: int = 40):
             _, location = _candidate(pkg, exp.index + 1)
         except (ValueError, LayoutError, IndexError, KeyError):
             continue
+        decoded = pkg.read_actor(exp)
+        mesh = decoded.block(56)
+        mesh_name = None
+        if mesh is not None and isinstance(mesh.value, list):
+            mesh_name = next((str(field.value) for field in mesh.value
+                              if field.name == "Name" and isinstance(field.value, str)), None)
         matches.append({"export": exp.index + 1, "actor": exp.name,
-                        "location": location})
+                        "location": location, "mesh": mesh_name})
         if len(matches) == limit:
             break
     return {"schema": SCHEMA, "status": "read-only-candidate-list",
