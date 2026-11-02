@@ -51,3 +51,49 @@ Restore original after testing. If there is a failed/no-visible experiment,
 confirm the selected disk SHA and actual file reads before changing code.
 
 Do not publish proprietary modified GMPs as part of this SDK.
+
+
+## Debugged Windows refusal: source actor with active native state (2026-11-02)
+
+The user attempted to clone original `StaticMeshActor__47`, export 1148,
+by Unreal translation approximately `(0, -164.58046, 0)`. Their Windows
+Godot screenshots show the preview was created and the confirm dialog
+opened, but the Python GMP writer raised an uncaught traceback; no new GMP
+appeared. The exact original retail WTO Terminal GMP was used to reproduce
+the failure offline:
+
+```
+StaticMeshActor__47 (export 1148):
+  node=-2; state_node=-2; probe_mask=0xffffffffffffffff
+  latent_action=926359614; offset=-1
+  links=[]; tail=00 00 00 00
+  => conservative clone gate rejects nonzero latent_action
+```
+
+For comparison, the previously successful collision-tested high-tech
+table `StaticMeshActor__611`, export 907, has the same quiet state
+sentinels **but latent_action=0** and passes this gate.
+
+The *repair* keeps the original gate unchanged (do not blindly clone
+potentially stateful actors). The Python writer now has a read-only
+`--check-actor` mode, performed automatically by the Godot editor
+**before** the Save As file chooser. If the actor is ineligible, Godot
+shows an explanatory refusal dialog instead of accepting a path and
+crashing. All rejected CLI checks and exports return machine-readable
+JSON with a `reason`, not a Python traceback. The UI also takes the last
+exception line if an unforeseen Python import/runtime traceback occurs.
+Only fully source-eligible actors are allowed to open Save As.
+
+The new CLI operation example (no map writes):
+
+```powershell
+python native_editor/package_writer/dx2_actor_clone_probe.py "C:\\path\\to\\M1_Seattle_Hub_WTOterminal.gmp" --source-sha256 a6c68dd8b7b8ea0b1ee27dac4b5d18a57251297feb2f8ccb9f1bc40e317e17aa --actor-export 907 --actor-name StaticMeshActor__611 --check-actor
+```
+
+These values apply only to the exact verified original map. Original
+assets and derived candidate GMPs are not included in the repository.
+
+**Remaining limits:** This does not enable arbitrary original props with
+nonzero native state, nor multi-copy serialization. Future research may
+test stateful decorations safely with extra checks and isolated runtime
+evidence, but the general actor-state restriction remains for now.
