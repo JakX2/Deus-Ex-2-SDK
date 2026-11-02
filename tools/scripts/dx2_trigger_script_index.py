@@ -21,6 +21,8 @@ import struct
 import sys
 import zipfile
 
+from dx2_script_organizer import parse_organizer, attach_organizer_index
+
 SCHEMA = "DX2Ed-trigger-symbol-index-v1"
 ACTOR_SCHEMA = "DX2Ed-unresolved-script-references-v1"
 MAX_ARCHIVE_BYTES = 32 * 1024 * 1024
@@ -115,7 +117,19 @@ def parse_tsd(data: bytes, name: str, *, deleted: bool) -> dict:
 def index_script_archive(archive_path: Path) -> dict:
     inner, member = _read_nested_or_direct_zip(archive_path)
     definitions = []
+    organizer_bytes = None
     with zipfile.ZipFile(io.BytesIO(inner)) as zipf:
+        organizer_files = [
+            item for item in zipf.infolist()
+            if not item.is_dir()
+            and item.filename.replace("\\", "/").casefold() == "organize/scriptorganizer.tso"
+        ]
+        if len(organizer_files) > 1:
+            raise ValueError("Duplicate original organizer paths")
+        if organizer_files:
+            if organizer_files[0].file_size > 2 * 1024 * 1024:
+                raise ValueError("Original organizer exceeds size limit")
+            organizer_bytes = zipf.read(organizer_files[0])
         for item in zipf.infolist():
             if item.is_dir() or not item.filename.casefold().endswith(".tsd"):
                 continue
@@ -136,7 +150,7 @@ def index_script_archive(archive_path: Path) -> dict:
     for kind in ("condition", "action", "parameter_type"):
         unique[kind] = sorted({hit["text"] for record in definitions
                                for hit in record[kind + "_symbols"]})
-    return {
+    result = {
         "schema": SCHEMA, "read_only": True,
         "archive": archive_path.name, "source_member": member,
         "embedded_archive_sha256": sha256(inner),
@@ -154,6 +168,14 @@ def index_script_archive(archive_path: Path) -> dict:
         "native_script_editing_supported": False,
         "event_graph_decoded": False,
     }
+    if organizer_bytes is not None:
+        attach_organizer_index(result, parse_organizer(organizer_bytes))
+    else:
+        result["organizer"] = None
+        result["warnings"].append(
+            "ScriptOrganizer.tso not supplied; no categories can be verified."
+        )
+    return result
 
 
 def _valid_index(value):
@@ -238,13 +260,19 @@ code{font-size:12px;color:#b2e4ff}.notice{padding:12px;background:#1c3045;color:
 <small id="summary"></small></header><div class="desc">Read-only evidence: symbols occur in .tsd definitions. This is not a decoded event graph or an in-game script editor.</div>
 <main><section><div class="controls"><input id="query" placeholder="Search script, title or kTAT/kTCT symbol" aria-label="Search scripts">
 <select id="status"><option value="active">Active definitions</option><option value="all">All sources</option><option value="deleted">Deleted source history</option></select>
+<select id="category"><option value="">All verified script categories</option></select>
 <button id="actors-btn" type="button">Actor Script Indices (unresolved)</button><div class="dim" id="count"></div></div><div id="list" class="list"></div></section>
 <section><div class="details" id="details"><p class="dim">Select a source definition to inspect contained symbols.</p></div></section></main>
 <script id="src-data" type="application/json">__DATA__</script>
 <script>(function(){"use strict";
 const data=JSON.parse(document.getElementById("src-data").textContent),list=document.getElementById("list"),details=document.getElementById("details");
-const query=document.getElementById("query"),status=document.getElementById("status");
+const query=document.getElementById("query"),status=document.getElementById("status"),category=document.getElementById("category");
 let chosen=null;
+if(data.organizer){
+ const nodes=data.organizer.category_trees.scripts.filter(x=>x.folder);
+ const names=new Set(nodes.map(x=>x.path.join(" / ")));
+ [...names].sort().forEach(function(name){let opt=document.createElement("option");opt.value=name;opt.textContent=name;category.appendChild(opt);});
+}else{category.hidden=true;}
 const actorRef=data.actor_script_references,actorsButton=document.getElementById("actors-btn");
 if(!actorRef){actorsButton.hidden=true;}else{
 actorsButton.textContent="Actor script index arrays ("+actorRef.actors_with_property_92+", unresolved)";
@@ -267,6 +295,10 @@ details.appendChild(e("h2",x.source_name||x.filename_stem));
 details.appendChild(e("p",x.member,"meta"));
 details.appendChild(e("p","SHA-256: "+x.raw_sha256,"meta"));
 if(x.display_label_hint)details.appendChild(e("p","Display label hint: "+x.display_label_hint));
+if(Array.isArray(x.organizer_paths)&&x.organizer_paths.length){
+ details.appendChild(e("h3","Original ScriptOrganizer categories"));
+ for(const path of x.organizer_paths){details.appendChild(e("div",path.join(" / ")||"(root)","token"));}
+}
 if(x.deleted_source)details.appendChild(e("p","Historical deleted script source, not an active definition","notice"));
 for(const pair of [["condition","Condition tokens (kTCT_)"],["action","Action tokens (kTAT_)"],["parameter_type","Parameter type tokens (kTPT_)"]]){
 let k=pair[0];details.appendChild(e("h3",pair[1]+" · "+x[k+"_symbols"].length));
@@ -274,8 +306,11 @@ for(const token of x[k+"_symbols"]){details.appendChild(e("div",token.text+"   @
 details.appendChild(e("p","Tokens are recovered from UTF-16LE source fields; their occurrence order does not prove event edges, branching, parameters or execution order.","notice"));
 drawList();
 }
-function drawList(){const q=query.value.toLocaleLowerCase(),mode=status.value;
-const found=data.definitions.filter(x=>(mode==="all"||(mode==="deleted"?x.deleted_source:!x.deleted_source))&&(!q||(
+function drawList(){const q=query.value.toLocaleLowerCase(),mode=status.value,cat=category.value;
+const found=data.definitions.filter(x=>(mode==="all"||(mode==="deleted"?x.deleted_source:!x.deleted_source))&&
+(!cat||(Array.isArray(x.organizer_paths)&&x.organizer_paths.some(p=>{
+ const full=p.join(" / ");return full===cat||full.startsWith(cat+" / ");
+})))&&(!q||(
 [x.source_name,x.filename_stem,x.display_label_hint].join(" ")+" "+
 x.condition_symbols.map(y=>y.text).join(" ")+" "+
 x.action_symbols.map(y=>y.text).join(" ")+" "+
@@ -288,7 +323,7 @@ div.appendChild(e("div",(x.display_label_hint||"")+" · C:"+x.condition_symbols.
 div.addEventListener("click",()=>show(x));frag.appendChild(div);}
 list.appendChild(frag);
 }
-query.addEventListener("input",drawList);status.addEventListener("change",drawList);drawList();
+query.addEventListener("input",drawList);status.addEventListener("change",drawList);category.addEventListener("change",drawList);drawList();
 if(data.definitions.length)show(data.definitions.find(x=>!x.deleted_source)||data.definitions[0]);
 })();</script></body></html>'''
     return template.replace("__DATA__", payload)
