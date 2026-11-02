@@ -65,6 +65,22 @@ class IsolatedGameSysBinaryPreflightTests(unittest.TestCase):
             verify_isolated_scalar(self.original, self.candidate)
         self.assertEqual(self.original.read_bytes(), self.source_data)
 
+    def test_forged_updated_hashes_still_cannot_hide_other_changed_bytes(self):
+        raw = bytearray(self.candidate.read_bytes())
+        # Alter a byte outside the original four-byte scalar payload.
+        # The checker must not rely only on manifest SHA claims.
+        raw[-1] ^= 1
+        self.candidate.write_bytes(raw)
+        manifest = json.loads(self.manifest.read_text())
+        hash2 = hashlib.sha256(raw).hexdigest()
+        manifest["reconstructed_sha256"] = hash2
+        manifest["output_sha256"] = hash2
+        manifest["changed_bytes"] = self.saved["changed_bytes"] + 1
+        self.manifest.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, "outside its four-byte"):
+            verify_isolated_scalar(self.original, self.candidate)
+        self.assertEqual(self.original.read_bytes(), self.source_data)
+
     def test_manifest_cannot_shift_writable_offset_or_actor_identity(self):
         for key, value, message in (
             ("original_payload_offset", self.saved["original_payload_offset"]+1, "Recorded scalar bytes"),
