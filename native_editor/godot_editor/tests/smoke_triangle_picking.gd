@@ -388,6 +388,37 @@ func _run() -> void:
     if not is_instance_valid(original):
         _fail("demo actor has no mesh")
         return
+    # Source-only diagnostic for WTO frame visibility: do NOT edit original
+    # GLB material resources, any game files, or the draft transform history.
+    var other_geom: MeshInstance3D = viewer.meshes_by_actor["StaticMeshActor__2"]
+    var other_was_visible := other_geom.visible
+    var previous_override: Material = original.material_override
+    var original_pos: Vector3 = original.global_position
+    viewer._toggle_geometry_isolation()
+    if (viewer.geometry_isolation_visibility.is_empty()
+        or not original.visible or other_geom.visible
+        or viewer.geometry_isolation_button.text != "Restore visibility"):
+        _fail("Isolate selected must hide another mesh without modifying source geometry")
+        return
+    viewer._toggle_geometry_all_faces()
+    if (not is_instance_valid(viewer.geometry_all_faces_target)
+        or not original.material_override is StandardMaterial3D
+        or original.material_override.cull_mode != BaseMaterial3D.CULL_DISABLED
+        or viewer.geometry_all_faces_button.text != "Restore materials"):
+        _fail("Inspect both faces must apply per-instance reversible no-cull preview")
+        return
+    if other_geom.material_override != null:
+        _fail("Inspect both faces must not modify the other actor material")
+        return
+    viewer._toggle_geometry_all_faces()
+    viewer._toggle_geometry_isolation()
+    if (original.material_override != previous_override or
+        other_geom.visible != other_was_visible or
+        not viewer.geometry_isolation_visibility.is_empty() or
+        is_instance_valid(viewer.geometry_all_faces_target) or
+        original.global_position != original_pos):
+        _fail("Restoring geometry diagnostics must preserve materials, visibility and pose")
+        return
     var before := original.global_position
     # Source rotator 16384 = 90 degrees. Axis remapping must match exporter.
     var converted: Basis = viewer._ue_rotator_basis([0, 16384, 0])
