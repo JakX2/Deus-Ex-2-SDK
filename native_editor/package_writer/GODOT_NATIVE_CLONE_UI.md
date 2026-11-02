@@ -247,3 +247,31 @@ multi-object GMP nor GUI integration has been confirmed in retail
 Windows gameplay.** Keep PR draft, verify physical collision and save
 persistence on a controlled map before widening the feature. The private
 original game assets were never committed.
+
+
+## Multi-duplicate v4: two placed objects render and block Alex (2026-11-02)
+
+The user supplied **two separate in-game screenshots** of the WTO Terminal
+showing distinct added architectural/static-mesh placements, including
+a large surface bearing the PEQUOD'S sign and a structural pillar in the
+hallway. The user explicitly reports: **"both have collision"**.
+
+These are the first user-reported runtime results for the v4 experimental
+**multi-object GMP export**. The images support successful in-level
+rendering, and the user's direct gameplay observation supports solid
+player-blocking collision for both added props. The user has not supplied
+the candidate GMP's exact SHA or native export identities from the
+verification manifest for this specific run; the two objects' exact
+source classes or export indexes are therefore not independently pinned
+here. Do not claim screenshot-only proof of collision or per-object
+binary identity.
+
+Technical boundary: v4's two-to-eight new StaticMeshActor creation has
+passed synthetic output parsing and level actor-list validations, and
+the user now reports two separately functioning placed objects.
+This does not yet establish all combinations, level re-entry,
+save/load persistence, scripted interaction, or rotation/scale support.
+Do not merge as a general all-actor Save Map capability; PR stays draft.
+Next priorities: retained object placements on save/load and level re-entry;
+then source-backed rotation and safe removal in a combined GMP writer.
+Keep game-derived GMPs, screenshots and personal paths out of the repository.
