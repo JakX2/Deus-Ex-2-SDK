@@ -215,11 +215,24 @@ def audit_gamesys(
                 }
                 if observed is not None:
                     cache_rec = observed[index]
-                    if (not isinstance(cache_rec, dict) or cache_rec.get("id") != block.prop_id
+                    if not isinstance(cache_rec, dict):
+                        raise ValueError(f"Cached GameSys property #{index} is malformed")
+                    cached_encoding = cache_rec.get("encoding")
+                    # DX2Ed's older independently built decoder calls
+                    # type word 0x0040 simply 'unknown'. T3SDK exposes the
+                    # more precise but still opaque label 'type0x40'.
+                    # Do not generalize this equivalence to other codes.
+                    opaque_alias = (
+                        rec["encoding_code"] == 0x0040
+                        and cached_encoding == "unknown" and kind == "type0x40"
+                    )
+                    if (cache_rec.get("id") != block.prop_id
                             or cache_rec.get("version") != block.version
-                            or cache_rec.get("encoding") != kind):
+                            or (cached_encoding != kind and not opaque_alias)):
                         raise ValueError(f"Cached GameSys property #{index} differs from original")
                     item["cached_actor_index_agrees"] = True
+                    if opaque_alias:
+                        item["cached_encoding_alias"] = "unknown (opaque original type word 0x0040)"
                 findings.append(item)
             # Some original objects have no GameSys records, which is valid.
         except (ValueError, IndexError, EOFError, struct.error) as exc:
