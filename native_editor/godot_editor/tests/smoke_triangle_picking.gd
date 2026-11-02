@@ -41,6 +41,49 @@ func _run() -> void:
         _fail("Original source/material diagnostics need a readable minimum height")
         return
 
+    # A direct .gmp import must discover the original retail System/ folder,
+    # otherwise the read-only GameSys audit and light Boolean path stay hidden.
+    var direct_root := ProjectSettings.globalize_path("user://dx2_system_discovery_smoke")
+    var direct_system := direct_root.path_join("System")
+    var direct_maps := direct_root.path_join("Content/DX2/Maps")
+    if DirAccess.make_dir_recursive_absolute(direct_system) != OK or DirAccess.make_dir_recursive_absolute(direct_maps) != OK:
+        _fail("Could not prepare direct-import System fixture")
+        return
+    for filename in ["Engine.d2u", "DX2Gamesys.d2u"]:
+        var source_fixture := FileAccess.open(direct_system.path_join(filename), FileAccess.WRITE)
+        if source_fixture == null:
+            _fail("Could not create System source fixture")
+            return
+        source_fixture.store_string("synthetic original system source")
+        source_fixture.close()
+    var demo_gmp := direct_maps.path_join("M1_Test.gmp")
+    if viewer._direct_map_system_folder(demo_gmp) != direct_system:
+        _fail("Standard retail map location should discover sibling System folder")
+        return
+    var isolated_dir := direct_root.path_join("Research")
+    DirAccess.make_dir_recursive_absolute(isolated_dir)
+    if viewer._direct_map_system_folder(isolated_dir.path_join("M1_Test.gmp")) != "":
+        _fail("A non-standard map folder must not inherit an unrelated stale System")
+        return
+    viewer._select_direct_system_folder(direct_system)
+    if viewer._direct_map_system_folder(isolated_dir.path_join("M1_Test.gmp")) != direct_system:
+        _fail("Explicitly chosen valid DX2 System folder should support direct GMP")
+        return
+    var previous_direct_system := viewer.chosen_direct_system_path
+    viewer._select_direct_system_folder(isolated_dir)
+    if viewer.chosen_direct_system_path != previous_direct_system:
+        _fail("Invalid source folder must not replace verified DX2 System selection")
+        return
+    viewer.chosen_direct_system_path = ""
+    for filename in ["Engine.d2u", "DX2Gamesys.d2u"]:
+        DirAccess.remove_absolute(direct_system.path_join(filename))
+    DirAccess.remove_absolute(direct_system)
+    DirAccess.remove_absolute(direct_maps)
+    DirAccess.remove_absolute(direct_root.path_join("Content/DX2"))
+    DirAccess.remove_absolute(direct_root.path_join("Content"))
+    DirAccess.remove_absolute(isolated_dir)
+    DirAccess.remove_absolute(direct_root)
+
     # Automatic roll correction is reversible at import and never a GMP edit.
     if not viewer.preview_auto_roll:
         _fail("Auto Roll preview should be enabled for new imports")
