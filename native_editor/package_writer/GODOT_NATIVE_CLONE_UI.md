@@ -159,3 +159,28 @@ the seat in-game and test player collision, then exit and restore the
 original. Do not enable NPCs, interactive archetypes, new mesh resources
 or general actor cloning on this evidence alone. Do not redistribute
 derived private GMPs or game binaries.
+
+
+## User confirms v3 clone visually renders in WTO Terminal (2026-11-02)
+
+After testing the v3 build, the user supplied a gameplay screenshot with
+**"here it is"**. The image shows a large dark bench-like placed prop
+in the right foreground near WTO Terminal fixtures, consistent with the
+expanded static prop duplication test. The previous Godot screenshot
+identified the attempted seat source as `StaticMeshActor__316`
+(export 814); the latest screenshot itself does **not** independently
+expose the active GMP SHA/export identity.
+
+**Evidence update:** v3's wider cloning path now has a user-reported,
+gameplay-screenshot-supported **visible placed object** in addition to
+the earlier v1 high-tech table. This establishes a practical positive
+runtime rendering result for a new clone after broadening the source
+gate. Do not treat it as proof that all 636 candidate source actors are
+safe, nor as proof of collision, physics interaction, save/load
+persistence, map re-entry, correct object skin, or runtime state.
+Those remain separate verification gates.
+
+Next check on this precise clone: whether Alex is physically blocked by
+the new prop, and whether it remains after a fresh level re-entry. Keep
+the original game map verified and backed up; no game-derived GMP or
+private user screenshot is part of this commit.
