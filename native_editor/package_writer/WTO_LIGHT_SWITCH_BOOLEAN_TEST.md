@@ -246,3 +246,44 @@ directory, when `Engine.d2u` and `DX2Gamesys.d2u` are both present.
 It still refuses to reuse unrelated ZIP-staged paths. This allows the
 source-verified GameSys panel to appear during ordinary full-installation
 imports and does not grant any new serializer permissions.
+
+
+## User A/B feedback: individual OFF did not visibly reproduce four-light effect
+
+On 2026-11-02, after receiving the isolated single-light GUI bundle,
+the user reported:
+
+> "I don't see any difference. Previous test was more effective"
+
+**Interpretation boundary:** one or more single-fixture trials were visually
+inconclusive. The user did not identify precisely which of the four isolated
+variants they tested, supply a current on-disk test GMP checksum, or confirm
+same-viewpoint original restore for this trial. It is incorrect to mark every
+single-light variant as runtime tested or visually effective.
+
+The prior four-light simultaneous `bLightOn` OFF experiment remains the
+strongest positive evidence, with user-reported screenshots showing visible
+room darkening. Possible reasons for the discrepancy include overlapping light
+contributions, actor position relative to the camera, baked illumination,
+adaptation or the game using separate fixture/emissive components. None is
+established by the available evidence.
+
+### Next controlled isolation step (private experimental binaries only)
+
+A separate, restore-safe Windows Forms GUI test bundle was prepared against
+the identical verified original WTO Terminal map, with **two pair tests**,
+**four leave-one-ON triple tests**, and the **verified four-light OFF control**.
+Every candidate changes only its two, three or four originally authored
+`bLightOn` Boolean bytes, with exact byte offsets and full-package SHA-256
+recorded in a private `verification.json`.
+
+The all-four control reproduces exactly the earlier independently verified
+four-light candidate SHA:
+`868e7ae356d02c2c00165e74bffce9004fef3ce115ded5235f977c9da26c91a4`.
+
+If PAIR A and PAIR B show no effect but ALL FOUR still darkens the scene,
+test the leave-one-ON TRIPLE cases. Compare the same PEQUOD'S viewpoint after
+fresh map entry, restoring original between trials. New grouped candidates
+are **binary-verified but not yet game-runtime tested**. The public SDK retains
+no proprietary modified map content. Godot's individual-field writer remains
+separate and strictly one field per isolated Save As.
