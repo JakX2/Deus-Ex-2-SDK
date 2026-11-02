@@ -83,6 +83,8 @@ var bundle_dialog: FileDialog
 var club_zip_dialog: FileDialog
 var shared_zip_dialog: FileDialog
 var system_zip_dialog: FileDialog
+var direct_system_dialog: FileDialog
+var chosen_direct_system_path := ""
 var chosen_ibd: String = ""
 var chosen_shared_zip: String = ""
 var chosen_system_zip: String = ""
@@ -215,6 +217,11 @@ func _make_ui() -> void:
     save_gmp_btn.tooltip_text = "Translation-only existing static mesh actors; separate folder; not game-tested"
     save_gmp_btn.pressed.connect(_open_native_save_as_dialog)
     toolbar.add_child(save_gmp_btn)
+    var direct_system_btn := Button.new()
+    direct_system_btn.text = "DX2 System folder..."
+    direct_system_btn.tooltip_text = "Optional original System folder for direct .gmp imports. Unlocks source-verified read-only GameSys data, not general editing."
+    direct_system_btn.pressed.connect(func(): direct_system_dialog.popup_centered_ratio(0.72))
+    toolbar.add_child(direct_system_btn)
     var load_btn := Button.new()
     load_btn.text = "Open exported GLB"
     load_btn.pressed.connect(func(): glb_dialog.popup_centered_ratio(0.72))
@@ -729,6 +736,11 @@ func _make_ui() -> void:
     gmp_dialog.filters = PackedStringArray(["*.gmp ; Deus Ex Invisible War map"])
     gmp_dialog.file_selected.connect(_open_gmp_file)
     add_child(gmp_dialog)
+    direct_system_dialog = FileDialog.new()
+    direct_system_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    direct_system_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+    direct_system_dialog.dir_selected.connect(_select_direct_system_folder)
+    add_child(direct_system_dialog)
     gmp_save_as_dialog = FileDialog.new()
     gmp_save_as_dialog.access = FileDialog.ACCESS_FILESYSTEM
     gmp_save_as_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -797,10 +809,41 @@ func _select_ibd(path: String) -> void:
     chosen_ibd = path
     status_label.text = "Optional IBD selected: " + path.get_file()
 
+func _dx2_system_folder_valid(folder: String) -> bool:
+    if folder.is_empty():
+        return false
+    return (FileAccess.file_exists(folder.path_join("Engine.d2u"))
+        and FileAccess.file_exists(folder.path_join("DX2Gamesys.d2u")))
+
+
+func _direct_map_system_folder(map_path: String) -> String:
+    # Standard retail layout: <install>/Content/DX2/Maps/<map>.gmp,
+    # with <install>/System/Engine.d2u and DX2Gamesys.d2u.
+    var maps_dir := map_path.get_base_dir()
+    if (maps_dir.get_file().to_lower() == "maps"
+        and maps_dir.get_base_dir().get_file().to_lower() == "dx2"
+        and maps_dir.get_base_dir().get_base_dir().get_file().to_lower() == "content"):
+        var install_root := maps_dir.get_base_dir().get_base_dir().get_base_dir()
+        var auto_system := install_root.path_join("System")
+        if _dx2_system_folder_valid(auto_system):
+            return auto_system
+    if _dx2_system_folder_valid(chosen_direct_system_path):
+        return chosen_direct_system_path
+    return ""
+
+
+func _select_direct_system_folder(path: String) -> void:
+    if not _dx2_system_folder_valid(path):
+        status_label.text = "System folder refused: Engine.d2u and DX2Gamesys.d2u are both required."
+        return
+    chosen_direct_system_path = path
+    status_label.text = "Original DX2 System selected. Reopen the GMP to refresh GameSys audit: " + path
+
+
 func _open_gmp_file(path: String) -> void:
-    # Direct GMP load should not accidentally reuse a System path from a
-    # previous ZIP staging session.
-    chosen_system_path = ""
+    # Do not reuse ZIP-staged System data across unrelated direct map imports.
+    # Prefer the exact installed System sibling; otherwise a deliberately chosen folder.
+    chosen_system_path = _direct_map_system_folder(path)
     open_gmp(path)
 
 func _set_auto_roll_preview(enabled: bool) -> void:
