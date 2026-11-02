@@ -537,3 +537,11 @@ resuming visual comparisons. If reads still go to the GOG copy, inspect
 the effective config/registry resolution without touching original
 files; avoid copying a patched GMP into the pristine GOG installation
 just to bypass the path problem. Never commit proprietary assets.
+
+## Follow-up: user removed test build and launched through GOG (2026-11-02)
+
+After ProcMon revealed that DX2Main.exe was reading the WTO Terminal GMP from the GOG installation rather than the standalone test copy, the user reports: **"I removed the test build, run the game through gog, it works now"**.
+
+This is consistent with the game having been launched against the wrong data path previously. **The exact successful operation is not yet specified:** this statement alone does not establish whether an edited light-color variant, the four-light OFF variant, or simply the game startup/map loading is working. Ask which visual variant the user observed and keep all lighting runtime claims appropriately bounded.
+
+Future safe tests should preserve an independently backed-up original GOG GMP and verify the running game's actual content path before experimenting. No proprietary map files should be committed to the repository.
