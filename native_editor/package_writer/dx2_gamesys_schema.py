@@ -71,7 +71,10 @@ def build_gamesys_declarations(system: Path) -> dict:
             "property_declarations": count,
             "package_version": pkg.version,
             "licensee": pkg.licensee,
+            "package_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         }
+    if not package_stats:
+        raise ValueError("No recognized original DX2 .d2u packages found")
     props = {}
     conflicts = []
     for pid, declarations in sorted(by_id.items()):
