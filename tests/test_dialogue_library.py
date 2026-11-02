@@ -40,6 +40,9 @@ class DialogueLibraryTests(unittest.TestCase):
             self.assertEqual(doc["lines"][1]["line"], 2)
             self.assertEqual(doc["lines"][3]["text"], "Stay.")
             self.assertFalse(doc["compiled_con_graph_decoded"])
+            self.assertEqual(len(doc["compiled_con_files"]), 1)
+            self.assertFalse(doc["compiled_con_files"][0]["recognized_container_header"])
+            self.assertFalse(doc["compiled_con_files"][0]["graph_decoded"])
             self.assertEqual(source["sha256"], hashlib.sha256(TEXT).hexdigest())
 
     def test_nested_zip_layout_and_ambiguous_archives_are_rejected(self):
@@ -52,6 +55,22 @@ class DialogueLibraryTests(unittest.TestCase):
                 archive.writestr("Conversations/English/ConText.eng", ALT)
             with self.assertRaisesRegex(ValueError, "exactly one"):
                 load_source(path)
+
+    def test_original_con_headers_are_inventory_only(self):
+        with TemporaryDirectory() as folder:
+            archive_path = Path(folder) / "DX2mr.zip"
+            original = b"1FFE1NOC" + b"\x00" * 4 + (20).to_bytes(4, "little") + b"X" * 20
+            variant = b"0FFE1NOC" + b"\x00" * 4 + (1).to_bytes(4, "little") + b"Y"
+            with ZipFile(archive_path, "w") as archive:
+                archive.writestr("Conversations/English/ConText.eng", TEXT)
+                archive.writestr("Conversations/English/M1_Seattle_Club.con", original)
+                archive.writestr("Conversations/English/TestOld.con", variant)
+            records = index_source(load_source(archive_path))["compiled_con_files"]
+            self.assertEqual(len(records), 2)
+            self.assertTrue(all(r["declared_size_matches_file"] for r in records))
+            self.assertTrue(all(r["recognized_container_header"] for r in records))
+            self.assertTrue(all(not r["map_link_verified"] for r in records))
+            self.assertEqual(records[0]["map_filename_hint"], "M1_Seattle_Club.gmp")
 
     def test_draft_preview_changes_only_text_and_preserves_crlf(self):
         with TemporaryDirectory() as folder:
@@ -137,6 +156,8 @@ class DialogueLibraryTests(unittest.TestCase):
             self.assertEqual(cli(["preview",str(path),"--draft",str(draft_path),
                                   "--output",str(path)]),1)
             self.assertEqual(path.read_bytes(),TEXT)
+            self.assertEqual(cli(["preview",str(path),"--draft",str(draft_path),
+                                  "--output",str(Path(folder)/"ConText.eng")]),1)
             with self.assertRaisesRegex(ValueError,"in-place"):
                 write_distinct(path,[path],b"corruption")
 
