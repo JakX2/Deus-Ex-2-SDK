@@ -160,6 +160,68 @@ func _run() -> void:
     viewer.gameplay_catalog.clear()
     viewer._refresh_gameplay_script_list()
 
+    # First-party source-backed environment actors are not interchangeable.
+    # DX2 ZoneProperties own sound schema strings, while Emitter is a particle
+    # class and Light carries LightColor/LightShape GameSys structs.
+    var light_fixture := {
+        "name":"Light__7","class":"Light","export":21,"location":[40,20,300],
+        "game_properties":[
+            {"id":116,"value":{"LightBrightness":24,"LightHue":150}},
+            {"id":118,"value":{"LightRadius":48}},
+            {"id":1586,"value":0.1}]
+    }
+    var zone_fixture := {
+        "name":"ZoneProperties__3","class":"ZoneProperties","export":22,
+        "location":[64,80,200],"game_properties":[
+            {"id":1287,"value":"SeattleWTOTerminal"},
+            {"id":1286,"value":"HubWTO_SmallRooms"},
+            {"id":1467,"value":"HubWTO_RandomInAdj"}]
+    }
+    var particle_fixture := {
+        "name":"Emitter__0","class":"Emitter","export":23,
+        "location":[0,0,64],"game_properties":[]
+    }
+    viewer.actors = [light_fixture, zone_fixture, particle_fixture]
+    viewer._refresh_environment_entities()
+    if viewer.environment_list.item_count != 3 or viewer.environment_visible.size() != 3:
+        _fail("Environment must list real lights, ambient zones and particle emitters separately")
+        return
+    viewer.environment_filter.text = "HubWTO_SmallRooms"
+    viewer._refresh_environment_entities()
+    if (viewer.environment_visible.size() != 1
+        or str(viewer.environment_visible[0]["class"]) != "ZoneProperties"):
+        _fail("Environment search must include original ambient sound schema values")
+        return
+    viewer.environment_filter.text = ""
+    viewer._refresh_environment_entities()
+    viewer._environment_entity_selected(0)
+    if (not viewer.environment_details.text.contains("LightColor (GameSys 116)")
+        or not viewer.environment_details.text.contains("LightShape (GameSys 118)")
+        or str(viewer.selected_actor.get("name", "")) != "Light__7"):
+        _fail("Native light actor inspector should display first-party DX2 property names")
+        return
+    viewer.focus_selected()
+    var light_focus: Vector3 = Vector3(40,300,20) * float(viewer.NATIVE_CLONE_UNREAL_METRES)
+    if viewer.camera_target.distance_to(light_focus) > 0.0001:
+        _fail("Native light entity without rendered mesh should focus source XYZ")
+        return
+    viewer._environment_entity_selected(1)
+    if (not viewer.environment_details.text.contains("HubWTO_RandomInAdj")
+        or not viewer.environment_details.text.contains("StreamSchema1 (GameSys 1287)")
+        or not viewer.environment_details.text.contains("NonStreamSchema1 (GameSys 1467)")):
+        _fail("Original ZoneProperties should expose exact source sound schema strings")
+        return
+    viewer._environment_entity_selected(2)
+    if not viewer.environment_details.text.contains("NOT sound"):
+        _fail("Particle Emitter must never be mislabeled as an audio sound entity")
+        return
+    if not viewer.draft_prop_copies.is_empty() or not viewer.property_overrides.is_empty():
+        _fail("Read-only Environment browser must not stage map edits")
+        return
+    viewer.actors = []
+    viewer.selected_actor = {}
+    viewer._refresh_environment_entities()
+
     # Editor categories are class hints, not a substitute for decoded physics.
     if viewer._actor_category({"class":"StaticMeshActor"}) != "Static mesh":
         _fail("static-mesh category classification")
