@@ -1,9 +1,18 @@
 # DX2Ed: first runtime GameSys scalar test (separate DX2 installation)
 
-**Status: NOT YET PERFORMED.** This is a reproducible field-test
-checklist for the experimental one-scalar serializer. Passing unit tests
-is not evidence that the original Invisible War game accepts/uses
-the modified property. Do not replace retail assets.
+**Status (2026-11-02): FIRST USER-REPORTED SUCCESSFUL WTO TERMINAL LOAD.**
+The user reported that the no-command edited-GameSys test package
+worked and supplied a screenshot of a rendered WTO Terminal scene
+with HUD and NPCs. This is an encouraging runtime smoke result, not
+independent proof of the edited GMP's disk hash, changed property
+behavior, or repeatability. See
+[USER_RUNTIME_REPORT_2026-11-02.md](USER_RUNTIME_REPORT_2026-11-02.md)
+for evidence boundaries and recommended confirmation checks.
+
+This remains a reproducible checklist for the experimental
+one-scalar serializer. Passing unit tests and a first reported map
+load do not establish the in-game effect of this or other
+properties. Do not replace retail assets.
 
 ## 1. Prepare an isolated copy of the installed game
 
