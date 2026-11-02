@@ -167,6 +167,97 @@ def compare_gamesys_scalar(
     }
 
 
+def save_verified_scalar_copy(
+    source: Path, output: Path, *, source_sha256: str, actor_export: int,
+    actor_name: str, property_id: int, kind: str, expected: object,
+    replacement: object,
+) -> dict:
+    """Opt-in, isolated, no-overwrite experimental *copy* for ONE scalar.
+
+    Every byte must already pass the T3SDK + independent DX2 in-memory
+    parity gate; after saving, the copied package is independently reparsed.
+    This path is NOT connected to the Godot editor's native Save As.
+    """
+    source = _validate_input(source)
+    output = Path(output).expanduser().resolve()
+    if (output.suffix.casefold() != ".gmp"
+            or output.name.casefold() != source.name.casefold()
+            or output == source
+            or output.parent == source.parent
+            or source.parent in output.parents):
+        raise ValueError(
+            "Experimental GMP output must retain original filename and use a separate folder outside source Maps"
+        )
+    manifest = output.with_suffix(".dx2ed-gamesys-scalar.json")
+    if output.exists() or manifest.exists():
+        raise FileExistsError("Refusing to overwrite existing GMP or GameSys manifest")
+
+    report = compare_gamesys_scalar(
+        source, source_sha256=source_sha256, actor_export=actor_export,
+        actor_name=actor_name, property_id=property_id,
+        kind=kind, expected=expected, replacement=replacement)
+    original = source.read_bytes()
+    if hashlib.sha256(original).hexdigest() != report["original_sha256"]:
+        raise ValueError("Original source changed after dual-writer comparison")
+    offset = report["original_payload_offset"]
+    before = bytes.fromhex(report["original_value_bytes"])
+    after = bytes.fromhex(report["proposed_value_bytes"])
+    if (len(before) != 4 or len(after) != 4
+            or original[offset:offset + 4] != before):
+        raise ValueError("Original source payload no longer matches verified plan")
+    modified = original[:offset] + after + original[offset + 4:]
+    if hashlib.sha256(modified).hexdigest() != report["reconstructed_sha256"]:
+        raise ValueError("Modified GMP does not match previously dual-verified SHA-256")
+
+    # Revalidate binary metadata before any destination is opened.
+    temp_name_check = source
+    t3, dx2 = _parse_both(temp_name_check, modified)
+    exp = dx2.exports[actor_export - 1]
+    if exp["name"] != actor_name or len(t3.exports) != len(dx2.exports):
+        raise ValueError("Modified GMP changed actor export identity")
+    props, _ = scan_dx2_gamesys(dx2, exp)
+    matches = [p for p in props if p["property_id"] == property_id]
+    if (len(matches) != 1 or matches[0]["payload_offset"] != offset
+            or modified[offset:offset + 4] != after):
+        raise ValueError("Reparsed modified GameSys block no longer matches plan")
+
+    # A second read closes most races before touching the private output.
+    if hashlib.sha256(source.read_bytes()).hexdigest() != source_sha256:
+        raise ValueError("Source GMP changed before experimental Save As")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    created_output = False
+    created_manifest = False
+    try:
+        with output.open("xb") as handle:
+            created_output = True
+            handle.write(modified)
+        actual = output.read_bytes()
+        if actual != modified:
+            raise ValueError("Experimental GMP disk bytes differ from verified image")
+        # Validate the saved copy with both readers and the native block scanner.
+        _parse_both(output, actual)
+        report["status"] = "written-isolated-runtime-unverified"
+        report["output"] = str(output)
+        report["output_sha256"] = hashlib.sha256(actual).hexdigest()
+        report["edited_package_written"] = True
+        report["experimental_single_scalar_save_as"] = True
+        report["native_gamesys_save_enabled"] = False
+        report["runtime_verified"] = False
+        report["notes"].append(
+            "EXPERIMENTAL: Do not install over retail files. Runtime loading not verified.")
+        with manifest.open("x", encoding="utf8") as handle:
+            created_manifest = True
+            json.dump(report, handle, indent=2)
+            handle.write("\n")
+        return report
+    except Exception:
+        if created_manifest:
+            manifest.unlink(missing_ok=True)
+        if created_output:
+            output.unlink(missing_ok=True)
+        raise
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("source", type=Path)
@@ -177,14 +268,20 @@ def main(argv=None) -> int:
     p.add_argument("--kind", choices=("int", "float"), required=True)
     p.add_argument("--expect", required=True)
     p.add_argument("--replace", required=True)
+    p.add_argument("--output", type=Path,
+                   help="EXPERIMENTAL isolated same-name GMP Save As (requires dual-writer parity)")
     args = p.parse_args(argv)
     try:
         convert = int if args.kind == "int" else float
-        report = compare_gamesys_scalar(
-            args.source, source_sha256=args.source_sha256,
+        opts = dict(
+            source_sha256=args.source_sha256,
             actor_export=args.actor_export, actor_name=args.actor_name,
             property_id=args.property_id, kind=args.kind,
             expected=convert(args.expect), replacement=convert(args.replace))
+        if args.output is None:
+            report = compare_gamesys_scalar(args.source, **opts)
+        else:
+            report = save_verified_scalar_copy(args.source, args.output, **opts)
         print(json.dumps(report, indent=2))
         return 0
     except (OSError, ValueError, TypeError, IndexError, EOFError, OverflowError, struct.error) as exc:
