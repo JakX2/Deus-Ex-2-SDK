@@ -35,10 +35,10 @@ def level_fixture(path: Path) -> bytes:
     actor_bytes = original.export_bytes(original.exports[0])
     # Real DX2 retail static props contain the -2/-2 state sentinel,
     # a full probe mask, latent=0, offset=-1 and a four-byte zero tail.
-    neutral_frame = (bytes([0x82, 0x82]) + b"\\xff" * 8
+    neutral_frame = (bytes([0x82, 0x82]) + b"\xff" * 8
                      + struct.pack("<I", 0) + bytes([0x81]))
     w.set_object(0, neutral_frame + actor_bytes + struct.pack("<II", 0, 0)
-                 + b"\\x00" * 4)
+                 + b"\x00" * 4)
     level_name = w.name_index("Level")
     class_name = w.name_index("Class")
     w.imports.append(ImportEntry(0, class_name, 0, level_name, (b"", b"", b"")))
@@ -54,7 +54,7 @@ def level_fixture(path: Path) -> bytes:
     path.write_bytes(raw)
     parsed = Package(path)
     assert parsed.level_actors() == [2, 0, 1]
-    assert parsed.read_actor(parsed.exports[0]).tail == b"\\x00" * 4
+    assert parsed.read_actor(parsed.exports[0]).tail == b"\x00" * 4
     return raw
 
 
