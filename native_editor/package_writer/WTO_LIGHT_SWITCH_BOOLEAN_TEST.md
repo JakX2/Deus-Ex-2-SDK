@@ -133,3 +133,66 @@ Before exposing even a limited lighting control in the normal editor:
 4. Keep the change on an isolated test installation, never on the retail
    original. Do not enable runtime-owned fields, array/struct writes,
    new properties or actor spawning.
+
+
+## Experimental Godot single-fixture Save As (follow-up)
+
+The original GameSys Inspector in `native_editor/godot_editor/main.gd` now offers
+an **experimental Save As: light OFF/ON** button only after selecting a map
+actor with a verified **existing authored** `Engine.Actor.bLightOn` field
+(GameSys ID 1487, `bool` encoding 0x0080, one byte, unflagged).
+The sidecar remains read-only: this control does not create draft properties,
+enable general GameSys writes, or modify the normal translation-only GMP
+Save As pathway.
+
+### How to use it
+
+1. Launch the **Godot editor from a complete DX2SDK repository checkout**.
+   The action uses the existing
+   `native_editor/package_writer/dx2_gamesys_bool_probe.py` and its pinned
+   MIT T3SDK dependency, which must remain alongside the editor.
+2. Import the **unmodified** WTO Terminal GMP with its original DX2
+   System folder so the source-backed GameSys audit is populated. The
+   standard map editor import and visual preview must finish first.
+3. In the **Hierarchy**, select a fixture actor carrying an authored
+   `bLightOn` record, then select that record in the Inspector's
+   **Original GameSys** panel. The experimental Save As button appears
+   only for the supported Boolean. Other GameSys values remain view-only.
+4. Click the button, choose a **separate isolated folder** for an output
+   GMP with the **same original filename**, and review the explicit
+   confirmation showing actor, one-based export and old/new state.
+5. After accepting, the standalone Boolean probe pins source GMP SHA,
+   original export/name, property ID, exact prior Boolean and original
+   payload offset. It requires **whole-package byte parity** between
+   the T3SDK serializer and an independent one-byte source edit.
+   Output is new-only and is reparsed after writing; an adjacent
+   `*.dx2ed-gamesys-bool.json` report is retained. The source GMP is
+   never modified.
+6. Only after inspecting the output and its manifest, manually test it in
+   a **disposable copied game installation**. Restore the original GMP
+   before the next experiment.
+
+### Deliberate restrictions and release status
+
+- No overwrite, batch changes, actor creation, property insertion,
+  runtime-owned Boolean edits or wrong-name output.
+- Selection, original source SHA and visible actor/field identity are
+  checked again at confirmation, not just when the button appears.
+- Only **one existing authored bLightOn** record changes per output map.
+  Testing the four fixtures requires four distinct outputs and restoring
+  the original baseline between tests; do not concatenate edits through
+  the single-field tool.
+- The generated map is **not automatically installed** into the game.
+- `native_edit_supported` in the source audit stays **false** because
+  native GameSys writing is not generally supported.
+- The earlier four-light `bLightOn` in-game observation remains user
+  reported. **This new per-light Godot workflow has not yet been tested
+  in-game or on the user's Windows setup.**
+- The repo's existing asset-free Godot smoke test now covers visibility for
+  a verified `bLightOn` record and rejection of runtime bits, non-Boolean
+  encodings and numeric lookalike values. The original standalone
+  Python Boolean parity suite remains unchanged.
+
+**Next gate:** run Godot headless smoke and Python tests for this commit,
+then verify a one-fixture isolated map loads and returns to normal after
+restoring the source GMP. Do not merge the draft PR on UI tests alone.
