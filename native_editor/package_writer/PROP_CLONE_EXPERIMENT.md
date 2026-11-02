@@ -12,8 +12,10 @@ Clone one existing, locally authored `StaticMeshActor` of the current GMP:
 - verifies source SHA-256, original actor name and one-based export index;
 - requires the actor to be present exactly once in the Level actor list
   beyond the first two protected entries;
-- refuses state-active actors, object link lists, opaque native tails,
-  missing tagged Location, unsupported class and abnormal coordinates;
+- permits only source-verified retail StaticMeshActor state sentinels
+  (node=-2, state_node=-2, probe mask all ones, latent=0, offset=-1),
+  no links, and a zero-length or four-byte all-zero tail; refuses other state,
+  opaque nonzero native tails, missing tagged Location and abnormal coordinates;
 - copies the existing export's original data and class identity;
 - appends one uniquely named export and adds it once to the Level actor list;
 - edits only the clone's existing tagged FVector Location, in **Unreal units**;
@@ -64,3 +66,47 @@ Before integrating the Godot Duplicate button, verify a single copied static
 prop at the correct position in the game, its collision, saved-game behavior,
 and clean original-map restoration. Cloning actors that reference specific
 object links or scripts is still explicitly blocked.
+
+
+## Real original WTO Terminal GMP research result (2026-11-02)
+
+After downloading the original map from the user's connected project files,
+the **private offline prototype was executed against the exact original**
+`M1_Seattle_Hub_WTOterminal.gmp` (1,112,716 bytes; SHA
+`a6c68dd8b7b8ea0b1ee27dac4b5d18a57251297feb2f8ccb9f1bc40e317e17aa`).
+
+This source contains 636 native StaticMeshActor exports. The initial
+over-conservative check correctly refused all of them: every one had a
+four-byte zero native tail and a distinctive UE/Flesh state-frame sentinel.
+Further read-only analysis established that 82 source actors share a
+conservative, fully decoded neutral sentinel
+(`node=-2, state_node=-2, probe=0xffffffffffffffff, latent=0, offset=-1`),
+have no object links, and contain only a four-byte all-zero tail.
+**No arbitrary nonzero state or opaque tails are accepted.**
+
+A specific existing static table resource was selected:
+
+- Original actor: `StaticMeshActor__611`, export **907**.
+- Original `ObjectMesh.Name`: **`FO_table_hitech3`**.
+- Original Location: **(-384, 160, 240)** Unreal units.
+- New duplicate: `StaticMeshActor__1409`, export **2090**.
+- New Location: **(-234, 160, 240)** (+150 X).
+- Original export count 2089; candidate 2090.
+- Original Level actor list count 1058; candidate 1059.
+- Candidate GMP size **1,112,967 bytes**.
+- Candidate SHA-256
+  `90d65a0f4be4e008f448a1c30b6d21ec7177f0e5cb48bff642f1aaaabfb20a3b`.
+
+The actual source was left byte-identical. The **new candidate passed**
+the T3SDK parser/writer patched-package verifier and the SDK's independent
+DX2 package parser, and all existing exports except the Level list remained
+byte-identical. A **private-only test bundle** was prepared with a Windows
+install/restore GUI, hash-verified candidate, and original-backup logic.
+No proprietary map binary was committed.
+
+**Runtime status remains unverified:** the additional table may not be
+rendered or may have collision, persistence, initialization or ownership
+issues. Next gate is a controlled fresh WTO Terminal entry using the
+Process-Monitor-verified active installation, gameplay screenshot, exit,
+and original-map restore. No general actor duplication should be exposed
+in Godot until this succeeds.
