@@ -90,6 +90,77 @@ def roll_class(rot):
             else "zero_or_full_turn_roll")
 
 
+
+# Mirrors the map exporter's 0.01905 metres / UE unit. These footprints
+# are diagnostic only; they say nothing about whether the game world
+# contains a wall in a particular direction.
+SCALE = 0.01905
+
+
+def _triplet(values):
+    if (not isinstance(values, (list, tuple)) or len(values) != 3
+            or any(isinstance(v, bool) or not isinstance(v, (int, float))
+                   or not math.isfinite(v) for v in values)):
+        return None
+    return tuple(float(v) for v in values)
+
+
+def _mesh_bounds(value):
+    if (not isinstance(value, (list, tuple)) or len(value) != 2):
+        return None
+    lo, hi = _triplet(value[0]), _triplet(value[1])
+    if lo is None or hi is None or any(a > b for a, b in zip(lo, hi)):
+        return None
+    return (lo, hi)
+
+
+def _preview_bounds(rot, location, bounds):
+    """World AABB from the 8 original mesh-bound corners, in Godot metres.
+
+    Rotation remains about the original actor origin; mesh pivot is NOT
+    recentered. This is identical to the exporter coordinate conversion.
+    """
+    from itertools import product
+    basis = dx2_preview_basis(rot)
+    origin = tuple(location[SWAP[i]] * SCALE for i in range(3))
+    pts = []
+    for corner in product(*(bounds[0][i:i+1] + bounds[1][i:i+1]
+                            for i in range(3))):
+        local = tuple(corner[SWAP[j]] * SCALE for j in range(3))
+        pts.append(tuple(origin[i] + sum(basis[i][j] * local[j]
+                            for j in range(3)) for i in range(3)))
+    mins = [round(min(p[i] for p in pts), 6) for i in range(3)]
+    maxs = [round(max(p[i] for p in pts), 6) for i in range(3)]
+    return {"min_godot_m": mins, "max_godot_m": maxs,
+            "footprint_xz_m": [round(maxs[i] - mins[i], 6) for i in (0, 2)]}
+
+
+def yaw_footprint_candidates(actor, rot):
+    """Compare reversible viewer hypotheses without selecting an answer.
+
+    Return nothing when source local bounds or original location are unknown.
+    The 90-degree alternatives correspond exactly to Rotation Lab's
+    'Yaw -90 degrees' and 'Yaw +90 degrees' modes.
+    """
+    location = _triplet(actor.get("location"))
+    bounds = _mesh_bounds(actor.get("mesh_bounds"))
+    if location is None or bounds is None:
+        return None
+    angles = {"original": 0, "yaw_minus_90": -16384,
+              "yaw_plus_90": 16384}
+    return {
+        "source_location_ue": list(location),
+        "source_local_bounds_ue": [list(bounds[0]), list(bounds[1])],
+        "rotation_lab_modes": {
+            mode: _preview_bounds((rot[0], rot[1] + delta, rot[2]),
+                                  location, bounds)
+            for mode, delta in angles.items()
+        },
+        "warning": ("Footprint size is not a wall-alignment oracle. "
+                    "Compare with the retail game before changing Yaw."),
+    }
+
+
 def analyze_actors(payload):
     """Create a deterministic, source-preserving audit of an actors.json dict."""
     if not isinstance(payload, dict) or not isinstance(payload.get("actors"), list):
@@ -121,10 +192,14 @@ def analyze_actors(payload):
         reference = ue2_reference_basis(rot)
         original = dx2_preview_basis(rot)
         inverted = dx2_preview_basis(rot, invert_roll=True)
-        result.append({**identity, "status": status, "rotation": list(rot),
-                       "auto_roll_changes_basis": status == "nontrivial_roll",
-                       "legacy_vs_ue2_max_abs": round(max_difference(original, reference), 9),
-                       "inverted_vs_ue2_max_abs": round(max_difference(inverted, reference), 9)})
+        item = {**identity, "status": status, "rotation": list(rot),
+                "auto_roll_changes_basis": status == "nontrivial_roll",
+                "legacy_vs_ue2_max_abs": round(max_difference(original, reference), 9),
+                "inverted_vs_ue2_max_abs": round(max_difference(inverted, reference), 9)}
+        candidates = yaw_footprint_candidates(actor, rot)
+        if candidates is not None:
+            item["yaw_footprint_candidates"] = candidates
+        result.append(item)
     return {
         "schema": SCHEMA, "map": meta.get("source_map", meta.get("map", "")),
         "map_sha256": meta.get("source_sha256", meta.get("map_sha256")),
