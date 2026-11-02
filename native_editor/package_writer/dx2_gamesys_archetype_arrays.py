@@ -40,53 +40,11 @@ def _bounded_list_count(value: int, category: str) -> int:
 
 
 def scan_property_groups(pkg: Package, r: Reader) -> dict:
-    """Validate length-prefixed GameSys grouped records to exact object EOF.
+    """Read and validate original DX2 GameSys grouped records to exact EOF.
 
-    Requires an original source-derived, bounded cursor. Exposes a testable
-    parser without making any assumptions about actor creation or gameplay.
+    The supplied Reader must be bounded to a verified original class
+    export; malformed element sizes or unknown multi-element formats fail.
     """
-    grouped = scan_property_groups(pkg, r)
-
-    return {"groups": groups, "multi_element_group_count": grouped_count}
-
-
-def scan_grouped_defaults(pkg: Package, source_export) -> dict:
-    """Reparse an original DX2 archetype and validate every byte boundary.
-
-    Data from a failing T3SDK parser is not reused; the final cursor must
-    reach the exact original export end, consuming optional zero sentinel.
-    """
-    if source_export.class_ref != 0 or not source_export.name.upper().startswith("D_"):
-        raise ValueError("Only original D_* class exports can be audited")
-    start, end = source_export.serial_offset, source_export.serial_offset + source_export.serial_size
-    r = Reader(pkg.data, start, end)
-    n = _bounded_list_count(r.u32(), "class link")
-    for _ in range(n):
-        r.index()
-    for _ in range(5):
-        r.index()
-    for _ in range(2):
-        r.i32()
-    if r.i32() != 0:
-        raise ValueError("Archetype class unexpectedly contains bytecode")
-    r.u64()
-    r.u64()
-    r.u16()
-    r.u32()
-    r.u32()
-    r.bytes(16)
-    n = _bounded_list_count(r.index(), "class interface")
-    for _ in range(n):
-        r.index()
-        r.u32()
-        r.u32()
-    n = _bounded_list_count(r.index(), "class package")
-    for _ in range(n):
-        r.index()
-    r.index()
-    r.index()
-    display = r.fstring()
-    defaults = pkg.read_properties(r, end)
     groups = []
     grouped_count = 0
     for _ in range(MAX_GROUPS):
@@ -156,6 +114,47 @@ def scan_grouped_defaults(pkg: Package, source_export) -> dict:
         raise ValueError("Unparsed bytes after original archetype GameSys data")
     if not groups or grouped_count == 0:
         raise ValueError("No source-verified grouped property recovered")
+    return {"groups": groups, "multi_element_group_count": grouped_count}
+
+
+def scan_grouped_defaults(pkg: Package, source_export) -> dict:
+    """Reparse an original DX2 archetype and validate every byte boundary.
+
+    Data from a failing T3SDK parser is not reused; the final cursor must
+    reach the exact original export end, consuming optional zero sentinel.
+    """
+    if source_export.class_ref != 0 or not source_export.name.upper().startswith("D_"):
+        raise ValueError("Only original D_* class exports can be audited")
+    start, end = source_export.serial_offset, source_export.serial_offset + source_export.serial_size
+    r = Reader(pkg.data, start, end)
+    n = _bounded_list_count(r.u32(), "class link")
+    for _ in range(n):
+        r.index()
+    for _ in range(5):
+        r.index()
+    for _ in range(2):
+        r.i32()
+    if r.i32() != 0:
+        raise ValueError("Archetype class unexpectedly contains bytecode")
+    r.u64()
+    r.u64()
+    r.u16()
+    r.u32()
+    r.u32()
+    r.bytes(16)
+    n = _bounded_list_count(r.index(), "class interface")
+    for _ in range(n):
+        r.index()
+        r.u32()
+        r.u32()
+    n = _bounded_list_count(r.index(), "class package")
+    for _ in range(n):
+        r.index()
+    r.index()
+    r.index()
+    display = r.fstring()
+    defaults = pkg.read_properties(r, end)
+    grouped = scan_property_groups(pkg, r)
     return {
         "display_name": display,
         "original_tagged_defaults_count": len(defaults),
