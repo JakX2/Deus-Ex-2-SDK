@@ -41,6 +41,16 @@ func _run() -> void:
         _fail("Original source/material diagnostics need a readable minimum height")
         return
 
+    # A rejected user-selected native actor must display the actual error,
+    # never the first generic "Traceback" line from a Python exception.
+    var rejected_json := '{"schema":"DX2Ed-experimental-native-prop-duplicate-v1","status":"refused","reason":"Source actor has active native/script state"}'
+    if viewer._native_clone_error_reason(rejected_json) != "Source actor has active native/script state":
+        _fail("Native clone writer JSON refusal did not show original source-state reason")
+        return
+    if viewer._native_clone_error_reason("Traceback (most recent call last):\nValueError: source actor blocked") != "ValueError: source actor blocked":
+        _fail("Native clone fallback should surface the last Python exception line")
+        return
+
     # A direct .gmp import must discover the original retail System/ folder,
     # otherwise the read-only GameSys audit and light Boolean path stay hidden.
     var direct_root := ProjectSettings.globalize_path("user://dx2_system_discovery_smoke")
