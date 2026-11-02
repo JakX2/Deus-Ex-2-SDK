@@ -1312,6 +1312,159 @@ func _mesh_world_aabb(instance: MeshInstance3D) -> AABB:
         result = result.expand(instance.global_transform * local.get_endpoint(i))
     return result
 
+## Gameplay metadata is source-bound and strictly read-only.
+func _actor_on_original_ai_layer(actor: Dictionary) -> bool:
+    var props: Variant = actor.get("game_properties", [])
+    if typeof(props) != TYPE_ARRAY:
+        return false
+    for prop in props:
+        if (typeof(prop) == TYPE_DICTIONARY
+            and int(prop.get("id", -1)) == 82
+            and prop.get("value", "") == "AI"):
+            return true
+    return false
+
+
+func _open_original_gameplay_scripts(zip_path: String) -> void:
+    if (gameplay_thread != null or build_thread != null
+        or last_gmp_path.is_empty() or loaded_actors_json_path.is_empty()
+        or not FileAccess.file_exists(last_gmp_path)
+        or not FileAccess.file_exists(loaded_actors_json_path)
+        or FileAccess.get_sha256(last_gmp_path) != source_gamesys_sha256):
+        status_label.text = "Script browser refused: import an unchanged original GMP first."
+        return
+    var script := ProjectSettings.globalize_path("res://backend/dx2_gameplay_catalog.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Original gameplay catalog backend missing."
+        return
+    var target := OS.get_user_data_dir().path_join("original_gameplay_catalog.json")
+    gameplay_thread = Thread.new()
+    var err := gameplay_thread.start(_run_original_gameplay_scripts.bind(
+        script, last_gmp_path, loaded_actors_json_path, zip_path, target))
+    if err != OK:
+        gameplay_thread = null
+        status_label.text = "Could not start original TriggerScript browser."
+        return
+    status_label.text = "Reading original compiled TriggerScripts and AI actor metadata..."
+
+
+func _run_original_gameplay_scripts(script: String, map_file: String,
+        actors_file: String, archive: String, target: String) -> void:
+    var args := PackedStringArray([
+        script, "--map", map_file, "--actors", actors_file,
+        "--scripts", archive, "--output", target
+    ])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        code = OS.execute("py", pyargs, output, true)
+    call_deferred("_original_gameplay_scripts_finished", code, "\n".join(output))
+
+
+func _original_gameplay_scripts_finished(code: int, response: String) -> void:
+    if gameplay_thread != null:
+        gameplay_thread.wait_to_finish()
+        gameplay_thread = null
+    var answer: Variant = JSON.parse_string(response.strip_edges())
+    if (code != 0 or typeof(answer) != TYPE_DICTIONARY
+        or answer.get("status") != "ok"
+        or answer.get("schema") != "DX2Ed-original-gameplay-catalog-v1"):
+        status_label.text = "Original gameplay browse refused: " + response.strip_edges().substr(0, 400)
+        return
+    var file := str(answer.get("output", ""))
+    if not FileAccess.file_exists(file):
+        status_label.text = "Gameplay browser did not save its private report."
+        return
+    var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(file))
+    if (typeof(doc) != TYPE_DICTIONARY
+        or doc.get("schema") != "DX2Ed-original-gameplay-catalog-v1"
+        or doc.get("read_only") != true
+        or doc.get("bindings_verified") != false
+        or doc.get("spawn_enabled") != false
+        or doc.get("map_sha256") != source_gamesys_sha256
+        or typeof(doc.get("script_definitions")) != TYPE_ARRAY):
+        status_label.text = "Original gameplay catalog identity failed validation."
+        return
+    gameplay_catalog = doc
+    _refresh_gameplay_script_list()
+    var counts: Dictionary = doc.get("counts", {})
+    status_label.text = (
+        "Read-only gameplay: " + str(counts.get("scripts", 0))
+        + " original scripts, " + str(counts.get("ai_candidates", 0))
+        + " AI-layer candidates, " + str(counts.get("raw_script_fields", 0))
+        + " raw script fields. No gameplay writes enabled."
+    )
+
+
+func _refresh_gameplay_script_list() -> void:
+    if gameplay_list == null:
+        return
+    gameplay_list.clear()
+    gameplay_visible.clear()
+    var query := gameplay_filter.text.strip_edges().to_lower()
+    for script in gameplay_catalog.get("script_definitions", []):
+        if typeof(script) != TYPE_DICTIONARY:
+            continue
+        var searchable := str(script.get("id", "")) + " " + str(script.get("title", ""))
+        for action in script.get("actions", []):
+            searchable += " " + str(action)
+        for condition in script.get("conditions", []):
+            searchable += " " + str(condition)
+        if not query.is_empty() and query not in searchable.to_lower():
+            continue
+        gameplay_visible.append(script)
+        gameplay_list.add_item(str(script.get("id", "?")) + " | " + str(script.get("title", "")))
+    if not gameplay_visible.is_empty():
+        gameplay_list.select(0)
+        _gameplay_script_selected(0)
+
+
+func _gameplay_script_selected(index: int) -> void:
+    if index < 0 or index >= gameplay_visible.size() or gameplay_details == null:
+        return
+    var script: Dictionary = gameplay_visible[index]
+    var lines: PackedStringArray = [
+        "ORIGINAL COMPILED TRIGGERSCRIPT | READ ONLY",
+        "ID: " + str(script.get("id", "")),
+        "Description: " + str(script.get("title", "")),
+        "Source: " + str(script.get("archive_member", "")),
+        "Format: " + str(script.get("format", "")), "",
+        "Conditions (original symbols):"
+    ]
+    for condition in script.get("conditions", []):
+        lines.append("  " + str(condition))
+    lines.append("Actions (original symbols):")
+    for action in script.get("actions", []):
+        lines.append("  " + str(action))
+    lines.append("")
+    lines.append("Not bound to a specific map actor. No executable edits.")
+    gameplay_details.text = "\n".join(lines)
+
+
+func _inspect_selected_actor_scripts() -> void:
+    if gameplay_details == null:
+        return
+    var actor: Dictionary = selected_actor
+    if is_instance_valid(selected_mesh) and actors_by_name.has(str(selected_mesh.name)):
+        actor = actors_by_name[str(selected_mesh.name)]
+    if actor.is_empty():
+        gameplay_details.text = "First select an original actor in the Hierarchy."
+        return
+    var raw: Variant = actor.get("trigger_script_serialized", null)
+    gameplay_details.text = (
+        "Original actor: " + str(actor.get("name", "?"))
+        + "\nClass: " + str(actor.get("class", "?"))
+        + "\nExport: " + str(actor.get("export", "?"))
+        + "\nOriginal AI layer: " + str(_actor_on_original_ai_layer(actor))
+        + "\nSerialized TriggerScript data: " + JSON.stringify(raw, "  ")
+        + "\n\nRaw integer indices are NOT verified TS_ IDs."
+        + "\nNo NPC spawning or script assignment is enabled."
+    )
+
+
 func _actor_category(actor: Dictionary) -> String:
     # This is class-name *discovery*, NOT proof of rigid-body physics,
     # inventory behavior, or final in-game script inheritance.
