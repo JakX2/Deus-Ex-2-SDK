@@ -158,8 +158,10 @@ class DialogueLibraryTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(),TEXT)
             self.assertEqual(cli(["preview",str(path),"--draft",str(draft_path),
                                   "--output",str(Path(folder)/"ConText.eng")]),1)
-            with self.assertRaisesRegex(ValueError,"in-place"):
+            with self.assertRaisesRegex(ValueError,"Reserved source filename"):
                 write_distinct(path,[path],b"corruption")
+            with self.assertRaisesRegex(ValueError,"in-place"):
+                write_distinct(preview_path,[preview_path],b"corruption")
 
     def test_searchable_html_safe_for_embedded_script_tags(self):
         with TemporaryDirectory() as folder:
