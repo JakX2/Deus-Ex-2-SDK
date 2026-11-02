@@ -80,7 +80,7 @@ def verify_isolated_scalar(
             or candidate.parent == original.parent
             or original.parent in candidate.parents):
         raise ValueError("Edited GMP must be a same-named copy outside the original Maps folder")
-    manifest_path = (Path(manifest_path).expanduser().resolve(strict=True)
+    manifest_path = (Path(manifest_path).expanduser().resolve()
                      if manifest_path is not None else candidate.with_suffix(".dx2ed-gamesys-scalar.json"))
     if manifest_path != candidate.with_suffix(".dx2ed-gamesys-scalar.json"):
         raise ValueError("Manifest must be the candidate GMP's adjacent exact-name report")
