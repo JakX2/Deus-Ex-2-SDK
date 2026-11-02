@@ -273,6 +273,71 @@ tagged value serialization only. It does **not** establish gameplay
 semantics, native write support, inherited runtime resolution or
 game-tested actor spawning. No `GameSys` Save As or BSP code is changed.
 
+## Seventh milestone: original GameSys data in the Godot editor (read-only)
+
+DX2Ed now creates an **optional, source-verified GameSys sidecar** in the
+private map cache when importing a GMP **with the user's original System
+folder/ZIP**:
+
+    <cache folder>/gamesys_inspector.json
+
+The source generator lives in
+native_editor/godot_editor/backend/dx2_gamesys_inspector_sidecar.py.
+
+It requires:
+- a **matching source GMP and cached actors.json SHA-256**, map filename,
+  original export index, actor name, block ID, version and sequence;
+- a successful independent source GameSys block audit, including exact
+  original payload byte extents and source declaration labels;
+- a fully source-validated original DX2Gamesys archetype audit, including
+  the 57 DX2-specific vulnerability/biomod records recovered by the
+  supplementary grouped-element parser.
+
+Existing cached GLBs are **not invalidated**. Old caches receive this
+optional sidecar on the next normal import. If original System data was
+not supplied or a new research decoder cannot verify a map, import still
+works as before and the read-only panels simply remain unavailable.
+No retail GMP, IBD, TSD or System source file is changed or written.
+
+### Godot user interface
+
+- **Inspector → Original GameSys | Verified read-only data**:
+  select exactly one original actor from Scene/Hierarchy. Browse original
+  GameSys blocks by ID/name/type and inspect the original cached value,
+  source-declared type/class, encoded property ID, original binary offset,
+  byte count and payload SHA-256. Search/filter is independent of draft
+  actor-property controls, which remain unchanged.
+- **GameSys sidebar tab**: browse original D_* archetype hierarchy,
+  display labels, source parent chains and local property defaults,
+  including recovered 29-element vulnerability structs and three-level
+  biomod descriptions. This list is **not** a list of newly spawnable
+  DX2 actors; the pre-existing Classes tab and visual-only template
+  draft behavior remain untouched.
+
+**Important:** The sidecar explicitly refuses to bind a placed map actor
+to a D_* archetype based on matching display names or numeric suffixes.
+That class/object mapping still needs research. Actor fields and source
+defaults are separate evidence, not a computed runtime inheritance
+resolution.
+
+The native GMP writer, BSP construction, Auto Roll controls, draft
+serialization and GameSys Save As are **not modified** by this work.
+
+### Regression checks
+
+- native_editor/tests/test_dx2_gamesys_inspector_sidecar.py:
+  source SHA/actor export/property-order strict join, incomplete class
+  refusal, unresolved script arrays preserved as source values and
+  no game-source writes.
+- native_editor/tests/test_dx2_gamesys_cache_integration.py:
+  opt-in System behavior, cache re-use, stale-source sidecar refusal
+  and nonfatal fallback when research decoders encounter unknown
+  original records.
+
+The Python and fixture checks run in GitHub Actions. **Godot GUI
+interaction and in-game loading have not yet been tested on a local
+Windows client**; these are separate release gates.
+
 ## Original-file compatibility evidence
 
 Tested locally using the unchanged T3SDK 0.3.1 reader and writer:
