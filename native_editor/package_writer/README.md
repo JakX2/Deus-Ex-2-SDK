@@ -221,6 +221,58 @@ such as the original GenericHuman class and its immediate source
 defaults. This does not enable actors to be added to a native GMP or
 spawned in the game.
 
+## Sixth milestone: original DX2 vulnerability and biomod grouped defaults
+
+The original T3SDK archetype parser had previously reported 57 incomplete
+source classes. **None were missing**: T3SDK read their names, display
+labels, inheritance parents and normal source prefix before encountering
+repeated GameSys values it interpreted as separate blocks.
+
+DX2Ed now includes a **separate, strictly read-only DX2-specific decoder**
+at `native_editor/package_writer/dx2_gamesys_archetype_arrays.py`.
+It validates the complete original UClass preamble, tagged defaults,
+all Group ID / element count / per-element byte length fields, and the
+original export's exact ending offset. It does **not** modify upstream
+MIT T3SDK code or create/serialize native actors.
+
+Local inspection of the supplied original DX2Gamesys.d2u established
+these observed multi-element encodings:
+
+| Encoded property ID | Original item count | Classes containing it | Contents |
+|---|---:|---:|---|
+| `0x000803bf` | 29 | 42 | Tagged vulnerability struct entries |
+| `0x00040725` | 3 | 15 | Biomod level descriptions |
+| `0x000804f0` | 3 | 1 | Biomod tagged modifier structs |
+| `0x000804be` | 3 | 1 | Biomod tagged modifier structs |
+
+For example, `D_1179` is the original **BotBasicVuln** class,
+with parent `D_1198` (**PawnVulnerabilities**). One of its
+29 tagged element records contains the source fields
+`Vulnerability=1.0`, `MinHealthDamage=5.0`, and
+`StimToHealthDamageFactor=0.5`.
+
+The previous error claiming to read 21,708,672 bytes was **not a
+missing asset**. It happened because the unmodified T3SDK parser
+interpreted an element length as the beginning of a fresh GameSys
+block and thereby lost synchronization.
+
+**Original research result:** all **57** failing classes are recovered:
+42 vulnerability classes and 15 biomod classes. The package contains
+**2,476** archetype classes total, now **2,476 structurally decoded**,
+with all **2,476 original parent chains verified** and zero remaining
+original class-layout parse errors. Original T3SDK errors remain in the
+JSON under `original_t3sdk_parse_error` for provenance.
+
+Synthetic test cases cover 29-element vulnerability struct records,
+3-element biomod strings and modifier structs, exact original lengths,
+invalid item sizes, unknown multi-item encodings, truncated records
+and inherited source-class completeness.
+
+**Critical limit:** the recovery establishes source-level framing and
+tagged value serialization only. It does **not** establish gameplay
+semantics, native write support, inherited runtime resolution or
+game-tested actor spawning. No `GameSys` Save As or BSP code is changed.
+
 ## Original-file compatibility evidence
 
 Tested locally using the unchanged T3SDK 0.3.1 reader and writer:
