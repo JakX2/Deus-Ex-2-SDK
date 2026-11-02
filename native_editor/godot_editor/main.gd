@@ -75,6 +75,9 @@ var glb_dialog: FileDialog
 var json_dialog: FileDialog
 var gmp_dialog: FileDialog
 var gmp_save_as_dialog: FileDialog
+var native_clone_dialog: FileDialog
+var native_clone_confirmation: ConfirmationDialog
+var native_clone_pending: Dictionary = {}
 var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
 var native_export_target := ""
@@ -301,6 +304,11 @@ func _make_ui() -> void:
     duplicate_button.tooltip_text = "Clone selected rendered prop in the viewer. Does not write the GMP."
     duplicate_button.pressed.connect(_duplicate_selected_prop)
     prop_bar.add_child(duplicate_button)
+    var native_clone_button := Button.new()
+    native_clone_button.text = "Experimental native Duplicate Save As..."
+    native_clone_button.tooltip_text = "Export exactly ONE translated duplicate of an original StaticMeshActor. Isolated GMP only; game folder writes refused."
+    native_clone_button.pressed.connect(_open_native_clone_dialog)
+    prop_bar.add_child(native_clone_button)
     prop_edit_step = SpinBox.new()
     prop_edit_step.min_value = 0.05
     prop_edit_step.max_value = 10.0
@@ -747,6 +755,16 @@ func _make_ui() -> void:
     gmp_save_as_dialog.filters = PackedStringArray(["*.gmp ; Experimental location-only DX2 GMP"])
     gmp_save_as_dialog.file_selected.connect(_export_native_gmp_copy)
     add_child(gmp_save_as_dialog)
+    native_clone_dialog = FileDialog.new()
+    native_clone_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_clone_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    native_clone_dialog.filters = PackedStringArray(["*.gmp ; Experimental ONE native StaticMeshActor clone GMP"])
+    native_clone_dialog.file_selected.connect(_stage_native_clone_export)
+    add_child(native_clone_dialog)
+    native_clone_confirmation = ConfirmationDialog.new()
+    native_clone_confirmation.title = "Confirm isolated DX2 StaticMeshActor duplication"
+    native_clone_confirmation.confirmed.connect(_execute_native_clone_export)
+    add_child(native_clone_confirmation)
     source_gamesys_light_dialog = FileDialog.new()
     source_gamesys_light_dialog.access = FileDialog.ACCESS_FILESYSTEM
     source_gamesys_light_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -1146,6 +1164,7 @@ func _clear_current_scene() -> void:
     draft_prop_copies.clear()
     draft_prop_sources.clear()
     draft_brush_specs.clear()
+    native_clone_pending.clear()
     next_prop_copy_id = 1
     undo_stack.clear()
     redo_stack.clear()
@@ -3526,6 +3545,180 @@ func _native_audit_finished(code: int, output: String) -> void:
     var message := str(result.get("message", "Check original GMP and matching actor metadata.")) if typeof(result) == TYPE_DICTIONARY else output.strip_edges().substr(0, 240)
     status_label.text = "Native location audit failed: " + message
 
+
+
+## Only one existing StaticMeshActor may be cloned natively at a time.
+## Normal Duplicate continues producing preview drafts until this explicit Save As.
+## A pure translation of its unmodified imported pose is the only supported edit.
+const NATIVE_CLONE_UNREAL_METRES := 0.01905
+
+func _native_clone_draft_plan() -> Dictionary:
+    if (scene_root == null or draft_prop_copies.size() != 1
+        or not property_overrides.is_empty() or not draft_brush_specs.is_empty()
+        or not draft_template_provenance.is_empty()):
+        return {}
+    # Native clone is not a combined edit mode. Other original transforms
+    # must stay at the exact imported poses; they are not silently discarded.
+    for name in original_mesh_transforms:
+        if not meshes_by_actor.has(name):
+            continue
+        var original_node: MeshInstance3D = meshes_by_actor[name]
+        if (is_instance_valid(original_node)
+            and not original_node.global_transform.is_equal_approx(original_mesh_transforms[name])):
+            return {}
+    var draft_name := str(draft_prop_copies.keys()[0])
+    var copy: MeshInstance3D = draft_prop_copies[draft_name]
+    var original_name := str(draft_prop_sources.get(draft_name, ""))
+    if (not is_instance_valid(copy) or not actors_by_name.has(original_name)
+        or not meshes_by_actor.has(original_name)
+        or not original_mesh_transforms.has(original_name)):
+        return {}
+    var original_actor: Dictionary = actors_by_name[original_name]
+    if (str(original_actor.get("class", "")) != "StaticMeshActor"
+        or int(original_actor.get("export", -1)) < 1):
+        return {}
+    var base_pose: Transform3D = original_mesh_transforms[original_name]
+    if not copy.global_transform.basis.is_equal_approx(base_pose.basis):
+        return {}  # Rotation/scale/preview auto-roll changes cannot be serialized.
+    var delta_world := copy.global_position - base_pose.origin
+    if not delta_world.is_finite() or delta_world.length_squared() <= 0.00000001:
+        return {}
+    # GLB basis: X=UE X; Y=UE Z; Z=UE Y. Never infer from mesh bounds.
+    var delta_unreal := Vector3(
+        delta_world.x / NATIVE_CLONE_UNREAL_METRES,
+        delta_world.z / NATIVE_CLONE_UNREAL_METRES,
+        delta_world.y / NATIVE_CLONE_UNREAL_METRES
+    )
+    if (not delta_unreal.is_finite()
+        or abs(delta_unreal.x) > 4096.0
+        or abs(delta_unreal.y) > 4096.0
+        or abs(delta_unreal.z) > 4096.0):
+        return {}
+    return {
+        "actor": original_name, "export": int(original_actor["export"]),
+        "draft_name": draft_name, "delta": [delta_unreal.x, delta_unreal.y, delta_unreal.z]
+    }
+
+
+func _native_clone_source_ready() -> bool:
+    return (build_thread == null and native_export_thread == null
+        and not last_gmp_path.is_empty()
+        and FileAccess.file_exists(last_gmp_path)
+        and last_gmp_path.get_file().to_lower() == current_source_map_name.to_lower()
+        and source_gamesys_sha256.length() == 64
+        and FileAccess.get_sha256(last_gmp_path) == source_gamesys_sha256)
+
+
+func _open_native_clone_dialog() -> void:
+    _finish_gizmo_drag()
+    native_clone_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Clone Save As refused: original source GMP/hash unavailable or another operation is active."
+        return
+    if _native_clone_draft_plan().is_empty():
+        status_label.text = "Clone Save As supports exactly one moved StaticMeshActor preview copy, with no rotation, scaling, other moves, brushes or property edits."
+        return
+    var backend := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_clone_probe.py")
+    if not FileAccess.file_exists(backend):
+        status_label.text = "Experimental native clone writer is unavailable."
+        return
+    native_clone_dialog.current_file = last_gmp_path.get_file()
+    native_clone_dialog.popup_centered_ratio(0.75)
+
+
+func _stage_native_clone_export(destination: String) -> void:
+    native_clone_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Clone Save As refused: source GMP or import hash changed."
+        return
+    var plan := _native_clone_draft_plan()
+    if plan.is_empty() or destination.get_file().to_lower() != current_source_map_name.to_lower():
+        status_label.text = "Clone Save As refused: invalid draft or target map filename."
+        return
+    plan["source_sha256"] = source_gamesys_sha256
+    plan["source"] = last_gmp_path
+    plan["destination"] = destination
+    native_clone_pending = plan
+    native_clone_confirmation.dialog_text = (
+        "EXPERIMENTAL one-actor GMP copy ONLY. Never install automatically."
+        + "\nOriginal actor: " + str(plan["actor"])
+        + "\nOriginal export: " + str(plan["export"])
+        + "\nUnreal translation: " + str(plan["delta"])
+        + "\nOutput: " + destination
+        + "\n\nThe Python writer refuses game Maps folders, overwrites, and"
+        + " non-byte-exact original source hashes."
+        + "\nOriginal retail map stays unchanged. Runtime still requires testing."
+    )
+    native_clone_confirmation.popup_centered(Vector2i(720, 370))
+
+
+func _execute_native_clone_export() -> void:
+    if native_clone_pending.is_empty() or not _native_clone_source_ready():
+        native_clone_pending.clear()
+        status_label.text = "Clone Save As refused: source or operation changed before confirmation."
+        return
+    var current_plan := _native_clone_draft_plan()
+    var frozen := native_clone_pending.duplicate(true)
+    native_clone_pending.clear()
+    if (current_plan.is_empty()
+        or current_plan != {
+            "actor": frozen["actor"], "export": frozen["export"],
+            "draft_name": frozen["draft_name"], "delta": frozen["delta"]
+        }
+        or str(frozen["source"]) != last_gmp_path
+        or str(frozen["source_sha256"]) != source_gamesys_sha256):
+        status_label.text = "Clone Save As refused: preview clone or original source changed."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_clone_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Clone Save As refused: Python clone script missing."
+        return
+    native_export_thread = Thread.new()
+    var error := native_export_thread.start(_run_native_clone_export.bind(script, frozen))
+    if error != OK:
+        native_export_thread = null
+        status_label.text = "Unable to start native prop clone worker."
+        return
+    status_label.text = "Verifying one native StaticMeshActor clone and writing isolated GMP..."
+
+
+func _run_native_clone_export(script: String, frozen: Dictionary) -> void:
+    var delta: Array = frozen["delta"]
+    var args := PackedStringArray([
+        script, str(frozen["source"]),
+        "--source-sha256", str(frozen["source_sha256"]),
+        "--actor-export", str(frozen["export"]),
+        "--actor-name", str(frozen["actor"]),
+        "--dx", str(delta[0]), "--dy", str(delta[1]), "--dz", str(delta[2]),
+        "--output", str(frozen["destination"])
+    ])
+    var stdout: Array = []
+    var code := OS.execute("python", args, stdout, true)
+    if code == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        stdout.clear()
+        code = OS.execute("py", pyargs, stdout, true)
+    call_deferred("_native_clone_export_finished", code, "\n".join(stdout))
+
+
+func _native_clone_export_finished(code: int, response: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    var result: Variant = JSON.parse_string(response.strip_edges())
+    if (code == 0 and typeof(result) == TYPE_DICTIONARY
+        and result.get("schema") == "DX2Ed-experimental-native-prop-duplicate-v1"
+        and result.get("status") == "isolated-GMP-created-runtime-unverified"
+        and int(result.get("new_export_count", -1)) == int(result.get("original_export_count", 0)) + 1
+        and int(result.get("level_actor_count_after", -1)) == int(result.get("level_actor_count_before", 0)) + 1):
+        status_label.text = (
+            "Experimental native clone GMP saved: " + str(result.get("output_file", ""))
+            + " | New actor: " + str(result.get("new_actor_name", ""))
+            + " | Verify in a backed-up retail test and restore original."
+        )
+        return
+    status_label.text = "Native clone Save As refused: " + response.strip_edges().substr(0, 320)
 
 func _open_native_save_as_dialog() -> void:
     if scene_root == null or current_folder.is_empty():
