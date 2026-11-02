@@ -87,3 +87,54 @@ Game/asset bytes and full script definitions are not committed to GitHub.
 4. Only then prototype a single isolated native NPC clone, with
    dependencies initialized, independent reparse, backups and an
    explicit in-game stability/collision/AI test. No retail map writes.
+
+
+## Follow-up: Native placement directly from Assets list (v6 experiment, 2026-11-02)
+
+T3Ed-style object placement can now begin with an existing `staticmesh`
+resource in the DX2Ed Assets tab. This is **not** arbitrary new-resource
+construction yet. The v6 command creates a valid draft by reusing a
+**source-verified original StaticMeshActor already placed in the current
+map** and referencing the selected IBD resource.
+
+Use the Assets tab:
+1. Select a static-mesh resource with `Native reuse source` listed
+   in its details. The button **Place native copy (placed mesh)** is
+   disabled for unused/unlinked meshes.
+2. Click that button. The original source actor and original mesh must
+   exist in the current source GMP and imported scene, with an exact
+   source hash. The Python single-actor preflight rechecks that actor
+   before any draft is created.
+3. The new preview copy retains the source actor's mesh, skin,
+   collision-reference-bearing original properties and orientation.
+   It is placed at the editor's current camera target if within the
+   existing native writer's 4096-UE-axis translation limit.
+   Otherwise a safe one-metre offset from the source is used.
+4. Move the draft as needed. For **exactly one** draft use
+   `Experimental native Duplicate Save As...`. For **2–8**
+   use `Experimental Multi Duplicate Save As...`. Both still
+   require an isolated destination with the original GMP filename,
+   preserve original map bytes, check native sources again, and
+   generate an independent verification manifest.
+5. Placing a resource not already instantiated in the map is still
+   preview-only. No fake GameSys mesh references, new mesh imports,
+   new collision hull references or native actor archetypes are made.
+
+Source-only headless Godot tests assert that a known source IBD
+resource selects the lowest valid original actor export, unused
+resources are disabled for native placement, original actor
+orientation is retained, and out-of-range/zero camera target offsets
+fall back to a strictly supported one-metre translation.
+
+**Status:** source and headless tests passed; this v6 UI workflow
+has **not yet been tested in Windows retail DX2**. The underlying
+single- and multi-copy native GMP mechanisms have previously
+been confirmed to render and block the player in-game, but this
+new UI entry path still requires a distinct runtime test.
+
+Next format work: decode exactly how an original `StaticMeshActor`
+references its mesh/material/physics hull from IBD resources,
+including what name-index or resource key must be synthesized for
+a mesh not already placed on the map. Do not enable native
+placement for previously unused meshes until those package links
+are independently reconstructed and runtime tested.
