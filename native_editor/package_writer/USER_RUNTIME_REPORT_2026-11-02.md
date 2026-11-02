@@ -23,9 +23,25 @@ They attached a screenshot depicting a running Invisible War scene
 in WTO Terminal, with the expected interior, city backdrop, NPCs and
 in-game HUD visible.
 
-**Reported outcome:** WTO Terminal reached a rendered in-game scene
-without an immediately reported crash following the experimental
-map-install workflow.
+**Reported outcome, updated:** WTO Terminal reached a rendered in-game
+scene following the experimental map-install workflow, and the user
+subsequently explored the level without reporting crashes or instability.
+
+### Follow-up gameplay stability report (2026-11-02)
+
+After the initial successful-load screenshot, the user wrote:
+
+> "I was goofing around on the level, everything went well stable without crashes"
+
+**Evidence category:** user-reported successful level load **and sustained
+ordinary exploration without crashes**. This is stronger than the initial
+one-frame smoke test. The observation is user-attested and has not been
+reproduced in an independent executable/instrumented test.
+
+No separate confirmation of NPC conversation interactions, mission
+transitions, save/load persistence, specific `EmissiveScale` visual change,
+edited GMP disk checksum, or a controlled before/after comparison was
+provided.
 
 **Evidence status:** *user-reported runtime smoke success; asset identity
 and edited scalar not independently attested by the screenshot.*
@@ -54,13 +70,12 @@ A/B comparison or second clean load were supplied.
 
 ## Suggested next GUI-only checks
 
-1. In the **separate** test installation, while the edited map is active,
-   walk around and interact with a nearby NPC to rule out an immediate
-   post-load crash or frozen state.
+1. **Completed by user report:** level loads and remains stable during
+   ordinary exploration. NPC dialogue and interaction remain unconfirmed.
 2. If practical, enter a different area, return to WTO Terminal and
-   confirm it reloads.
-3. Use the provided GUI's **Restore original test map** button. Do not
-   replace any files in the retail installation.
+   confirm it reloads without crashing.
+3. Use the provided GUI's **Restore original test map** button after
+   testing. Do not replace any files in the retail installation.
 4. For a controlled experiment on the original property's actual effect,
    compare a fixed viewpoint before and after the edit, or select a
    deliberately visible, harmless numeric property for a new test.
@@ -69,5 +84,6 @@ Do not enable the Godot Inspector's general GameSys Save As yet. The
 standalone experimental single-scalar writer and independent binary
 preflight stay fenced off pending stronger game-runtime evidence.
 
-**Current release gate:** reported first successful map load; gameplay
-property semantics remain unverified.
+**Current release gate:** reported first successful map load **and
+stable ordinary exploration**. Runtime property semantics and general
+native GameSys writing remain unverified.
