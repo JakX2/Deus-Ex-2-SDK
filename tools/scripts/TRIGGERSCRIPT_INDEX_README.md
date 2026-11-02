@@ -98,6 +98,52 @@ not proof that every contained script runs in that map.
 If the archive lacks the organizer, the index still works but leaves
 all source categories explicitly unknown.
 
+## Initial binary TSD record framing (experimental, read-only)
+
+The original-game TSD reader can now extract a **strictly bounded initial
+binary frame** from each active `Defs/*.tsd` file. This is independent
+of the string search used for `kTCT_`/`kTAT_`/parameter tokens.
+
+Verified from **all 2,645 active original source definitions** with
+**zero header/prefix parse errors**:
+
+1. Two header variants share a declared length and an additional 32-bit
+   word before the UTF-16LE script name and display label.
+2. A 32-bit value follows the source title. Its observed values range
+   from **0 through 8**, but **its gameplay meaning is not proven**.
+3. If that value is nonzero, the next UTF-16LE token begins with
+   `kTCT_` in all **2,593** examined cases. The next raw 32-bit word
+   is recorded without interpreting it as a known parameter count.
+4. Of the 52 source definitions whose first value is zero, **45**
+   have a following `kTAT_` token, **6** terminate with two zero
+   words, and **one** has another nonzero word and a `kTCT_` token.
+5. The exception is **`Defs/TS_2006.tsd`**, displayed as
+   **Security Bot Shutdown**: first word `0`, following word `2`,
+   followed by `kTCT_ChangeHealthState` at byte offset **88**.
+   This falsifies any blanket assumption that zero in the first word
+   guarantees an action-only source.
+
+The strict reader saves the exact byte offsets and field values,
+including the remaining **unparsed opaque byte count**, into
+`initial_binary_frame` for every active source. The index includes an
+`initial_binary_frame_summary` with a histogram and the anomaly list.
+The Mission Logic Browser displays the binary prefix next to each
+source definition, with an explicit warning on exceptional framing.
+
+Run the updated offline browser or JSON index with the usual CLI:
+
+```powershell
+python tools/scripts/dx2_trigger_script_index.py "C:\DX2Files\TriggerScript.zip" --format html --output "C:\DX2EdResearch\triggers.html"
+python tools/scripts/dx2_trigger_script_index.py "C:\DX2Files\TriggerScript.zip" --output "C:\DX2EdResearch\triggers.json"
+```
+
+**Crucial limit:** this is *source record framing*, **not** decoded
+condition/action nodes, executable graph edges, OR/AND grouping,
+typed parameter values, runtime links, or native serializable editing.
+The integer fields are intentionally named as raw words until their
+semantics are independently demonstrated. The original TSD blobs stay
+untouched and no editor code for geometry or Roll is modified.
+
 ## Known limitations and next steps
 
 1. Decode binary TSD nodes/condition expressions/branch order, preserving
