@@ -21,7 +21,7 @@ def tsd(name="TS_42", *, old=False, title="Door opens"):
                + "kTPT_String\x00" + "kTAT_OpenDoorLink\x00").encode("utf-16le")
     if old:
         return b"0FFE2FST" + struct.pack("<II",len(content)+4,16) + content
-    return b"1FFE2FST" + struct.pack("<II",0,len(content)) + content
+    return b"1FFE2FST" + struct.pack("<III",0,len(content)+4,16) + content
 
 
 def archive(folder: Path, *, outer=True) -> Path:
