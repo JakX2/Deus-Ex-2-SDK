@@ -209,11 +209,80 @@ def build_report(archive: Path, actors_file: Path | None = None) -> dict:
     return result
 
 
+def render_html(index: dict) -> str:
+    """Searchable offline source-symbol browser, with no runtime graph claims."""
+    payload = json.dumps(index, ensure_ascii=True, separators=(",", ":"))
+    payload = payload.replace("<", "\\u003c").replace("&", "\\u0026")
+    template = r'''<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DX2Ed Mission Logic Source Browser</title>
+<style>
+:root{font:14px Segoe UI,system-ui,sans-serif;background:#111a27;color:#e3eefb;color-scheme:dark}
+*{box-sizing:border-box}body{margin:0}header{padding:16px 24px;background:#1b2d40;border-bottom:1px solid #334b61}
+h1{font-size:20px;margin:0 0 7px}small,.dim{color:#aec0d4}.desc{padding:10px 15px;color:#d9bd80}
+main{display:grid;grid-template-columns:minmax(265px,400px) minmax(350px,1fr);height:calc(100vh - 125px);max-width:1600px;margin:auto}
+section{border-right:1px solid #314358;min-width:0;display:flex;flex-direction:column}
+.controls{padding:12px;display:grid;gap:10px;background:#192839}
+input,select{background:#253a50;border:1px solid #4c6780;color:#ebf6ff;padding:9px;border-radius:6px;width:100%}
+.list{overflow:auto;flex:1}.entry{padding:11px 13px;border-bottom:1px solid #304157;cursor:pointer}
+.entry:hover,.entry.selected{background:#27445a}.entry strong{color:#92d9ff}
+.meta{color:#b2c8db;font-size:12px;margin-top:5px}.details{padding:19px;overflow:auto;flex:1}
+h2{font-size:18px}h3{font-size:14px;margin-top:22px;color:#9bd4f4}
+.badge{display:inline-block;padding:4px 8px;margin:3px;background:#2c445c;border-radius:4px;font-size:12px;overflow-wrap:anywhere}
+.deletion{color:#f1bb89}.token{border-bottom:1px solid #33465d;padding:6px 0;overflow-wrap:anywhere}
+code{font-size:12px;color:#b2e4ff}.notice{padding:12px;background:#1c3045;color:#d4dce8;margin:12px 0}
+@media(max-width:760px){main{display:block;height:auto}section{height:48vh}.details{height:45vh}}
+</style></head><body><header><h1>DX2Ed Mission Logic Source Browser</h1>
+<small id="summary"></small></header><div class="desc">Read-only evidence: symbols occur in .tsd definitions. This is not a decoded event graph or an in-game script editor.</div>
+<main><section><div class="controls"><input id="query" placeholder="Search script, title or kTAT/kTCT symbol" aria-label="Search scripts">
+<select id="status"><option value="active">Active definitions</option><option value="all">All sources</option><option value="deleted">Deleted source history</option></select>
+<div class="dim" id="count"></div></div><div id="list" class="list"></div></section>
+<section><div class="details" id="details"><p class="dim">Select a source definition to inspect contained symbols.</p></div></section></main>
+<script id="src-data" type="application/json">__DATA__</script>
+<script>(function(){"use strict";
+const data=JSON.parse(document.getElementById("src-data").textContent),list=document.getElementById("list"),details=document.getElementById("details");
+const query=document.getElementById("query"),status=document.getElementById("status");
+let chosen=null;
+document.getElementById("summary").textContent=data.definitions_count+" original .tsd source files · "+data.unique_symbols.condition.length+" condition symbols · "+data.unique_symbols.action.length+" action symbols · "+data.counts.active_source_definitions+" active source definitions";
+function e(tag,txt,cls){const n=document.createElement(tag);if(txt!==undefined)n.textContent=String(txt);if(cls)n.className=cls;return n;}
+function show(x){chosen=x;details.replaceChildren();
+details.appendChild(e("h2",x.source_name||x.filename_stem));
+details.appendChild(e("p",x.member,"meta"));
+details.appendChild(e("p","SHA-256: "+x.raw_sha256,"meta"));
+if(x.display_label_hint)details.appendChild(e("p","Display label hint: "+x.display_label_hint));
+if(x.deleted_source)details.appendChild(e("p","Historical deleted script source, not an active definition","notice"));
+for(const pair of [["condition","Condition tokens (kTCT_)"],["action","Action tokens (kTAT_)"],["parameter_type","Parameter type tokens (kTPT_)"]]){
+let k=pair[0];details.appendChild(e("h3",pair[1]+" · "+x[k+"_symbols"].length));
+for(const token of x[k+"_symbols"]){details.appendChild(e("div",token.text+"   @ byte "+token.offset,"token"));}}
+details.appendChild(e("p","Tokens are recovered from UTF-16LE source fields; their occurrence order does not prove event edges, branching, parameters or execution order.","notice"));
+drawList();
+}
+function drawList(){const q=query.value.toLocaleLowerCase(),mode=status.value;
+const found=data.definitions.filter(x=>(mode==="all"||(mode==="deleted"?x.deleted_source:!x.deleted_source))&&(!q||(
+[x.source_name,x.filename_stem,x.display_label_hint].join(" ")+" "+
+x.condition_symbols.map(y=>y.text).join(" ")+" "+
+x.action_symbols.map(y=>y.text).join(" ")+" "+
+x.parameter_type_symbols.map(y=>y.text).join(" ")).toLocaleLowerCase().includes(q)));
+document.getElementById("count").textContent=found.length+" matches; showing first 250.";
+list.replaceChildren();const frag=document.createDocumentFragment();
+for(const x of found.slice(0,250)){let div=e("div",undefined,"entry"+(x===chosen?" selected":""));
+div.appendChild(e("strong",x.source_name||x.filename_stem));
+div.appendChild(e("div",(x.display_label_hint||"")+" · C:"+x.condition_symbols.length+" A:"+x.action_symbols.length+(x.deleted_source?" · Deleted":""),"meta"));
+div.addEventListener("click",()=>show(x));frag.appendChild(div);}
+list.appendChild(frag);
+}
+query.addEventListener("input",drawList);status.addEventListener("change",drawList);drawList();
+if(data.definitions.length)show(data.definitions.find(x=>!x.deleted_source)||data.definitions[0]);
+})();</script></body></html>'''
+    return template.replace("__DATA__", payload)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("script_archive", type=Path)
     parser.add_argument("--actors", type=Path, help="Existing DX2Ed cached actors.json")
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--format", choices=("json", "html"), default="json")
     args = parser.parse_args(argv)
     sources = {args.script_archive.resolve()}
     if args.actors:
@@ -222,9 +291,14 @@ def main(argv=None) -> int:
         parser.error("Refusing to overwrite original input")
     try:
         report = build_report(args.script_archive, args.actors)
+        if args.format == "html" and args.output.suffix.casefold() not in (".html", ".htm"):
+            raise ValueError("HTML output filename must end in .html or .htm")
+        if args.format == "json" and args.output.suffix.casefold() != ".json":
+            raise ValueError("JSON output filename must end in .json")
+        data = (render_html(report) if args.format == "html"
+                else json.dumps(report, indent=2, ensure_ascii=True) + "\n")
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(report, indent=2, ensure_ascii=True) + "\n",
-                               encoding="utf-8")
+        args.output.write_text(data, encoding="utf-8")
         print(json.dumps({"status": "ok", "source_definitions": report["definitions_count"],
                           "counts": report["counts"], "output": str(args.output)}))
         return 0
