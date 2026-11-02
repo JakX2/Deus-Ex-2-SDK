@@ -1133,7 +1133,7 @@ func _imported_triangle_coverage() -> Dictionary:
             var elements := index_count if index_count > 0 else vertex_count
             if elements % 3 != 0:
                 invalid_triangle_surfaces.append("%s / surface %d: %d indices/vertices" % [node.name, surface, elements])
-            count += elements / 3
+            count += int(elements / 3)
         if count == 0:
             empty_mesh_nodes.append(str(node.name))
         if is_bsp:
