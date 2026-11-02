@@ -32,6 +32,7 @@ from dx2_package_roundtrip import (
 )
 from t3pack import apply_edits, verify_patch
 from upkg import RF_HasStack
+from t3common import Reader
 from upkgwrite import ActorEdit, LayoutError, PackageWriter, f32
 
 SCHEMA = "DX2Ed-experimental-native-prop-duplicate-v1"
@@ -62,10 +63,14 @@ def _candidate(pkg, export_index: int):
         raise ValueError("Source actor does not decode exactly")
     if decoded.links or decoded.tail not in (b"", b"\x00" * 4):
         raise ValueError("Object links and unknown/nonzero native tails cannot be cloned")
+    # Many retail static props have garbage-like latent DWORDs (0xCCCCCCCC
+    # and ASCII text). Preserve all source actors verbatim, but permit
+    # cloning only if the *new* export's latent DWORD is normalized to zero.
+    # Never normalize a non-neutral node, state node, probe mask or offset.
     if not (decoded.state["node"] == -2 and decoded.state["state_node"] == -2
-            and decoded.state["offset"] == -1 and decoded.state["latent_action"] == 0
+            and decoded.state["offset"] == -1
             and decoded.state["probe_mask"] == 0xFFFFFFFFFFFFFFFF):
-        raise ValueError("Source actor has active native/script state")
+        raise ValueError("Source actor has an unsupported native/script frame")
     # An existing authored tagged Location is mandatory: no field insertion.
     reader = ActorEdit(PackageWriter(pkg), exp)
     if reader.layout.props.find("Location") is None:
@@ -74,6 +79,29 @@ def _candidate(pkg, export_index: int):
     if not all(math.isfinite(v) and abs(v) < 1_000_000 for v in xyz):
         raise ValueError("Source position is not finite or plausible")
     return exp, [float(v) for v in xyz]
+
+
+def _neutral_clone_payload(raw: bytes, state: dict) -> tuple[bytes, dict]:
+    """Reset only the *new export's* latent-action DWORD, never the source.
+
+    Discover the byte offset with the binary Reader, not a guessed position.
+    The unchanged source frame must have neutral node and probe markers.
+    """
+    r = Reader(raw)
+    node, state_node = r.index(), r.index()
+    mask = r.u64()
+    value_at = r.pos
+    original_latent = r.u32()
+    frame_offset = r.index() if node else None
+    if (node != -2 or state_node != -2 or mask != 0xffffffffffffffff
+            or frame_offset != -1 or original_latent != state["latent_action"]):
+        raise ValueError("Clone frame does not match verified source state")
+    updated = raw[:value_at] + b"\x00" * 4 + raw[value_at + 4:]
+    if len(updated) != len(raw):
+        raise ValueError("Native frame normalization changed payload length")
+    return updated, {"original_value": original_latent, "clone_value": 0,
+                     "clone_field_byte_offset": value_at,
+                     "clone_state_reset": original_latent != 0}
 
 
 def _destination(source: Path, output: Path):
@@ -131,6 +159,11 @@ def clone_in_memory(source: Path, *, source_sha256: str, actor_export: int,
     old_refs = pkg.level_actors()
     if patch.level_actors != old_refs + [len(pkg.exports) + 1]:
         raise ValueError("Cloned actor was not appended exactly once")
+    new_export_index = patch.added[0]
+    original_state = pkg.read_actor(exp).state
+    clone_bytes, frame_reset = _neutral_clone_payload(
+        patch.writer.object_data(new_export_index), original_state)
+    patch.writer.set_object(new_export_index, clone_bytes)
     candidate = patch.writer.write()
     if len(candidate) > MAX_FILE or candidate == raw:
         raise ValueError("Invalid candidate GMP length/content")
@@ -158,8 +191,21 @@ def clone_in_memory(source: Path, *, source_sha256: str, actor_export: int,
         raise ValueError("New actor has unexpected class")
     cloned_actor = fresh_t3.read_actor(clone)
     if (cloned_actor.parse_error or cloned_actor.links
-            or cloned_actor.tail != pkg.read_actor(exp).tail):
-        raise ValueError("New actor has changed or unverified native data")
+            or cloned_actor.tail != pkg.read_actor(exp).tail
+            or cloned_actor.state["latent_action"] != 0):
+        raise ValueError("New actor did not decode with normalized neutral frame")
+    # Prove every cloned byte other than the translated Location and neutral
+    # frame DWORD matches the source. Reverse only Location to compare payloads.
+    reverse_writer = PackageWriter(fresh_t3)
+    reverse = ActorEdit(reverse_writer, clone)
+    reverse.set_location(before)
+    reverse.commit()
+    reconstructed = reverse_writer.object_data(clone.index)
+    normalized_source, source_frame_reset = _neutral_clone_payload(
+        pkg.export_bytes(exp), original_state)
+    if (frame_reset["clone_field_byte_offset"] != source_frame_reset["clone_field_byte_offset"]
+            or reconstructed != normalized_source):
+        raise ValueError("New clone unexpectedly changes original actor fields")
     report = {
         "schema": SCHEMA,
         "status": "binary-reparsed-runtime-unverified",
@@ -174,11 +220,15 @@ def clone_in_memory(source: Path, *, source_sha256: str, actor_export: int,
         "level_actor_count_before": len(old_refs),
         "level_actor_count_after": len(fresh_t3.level_actors()),
         "original_bytes_unchanged": sha256(source.read_bytes()) == source_sha256,
+        "clone_frame_normalized": True,
+        "source_latent_action": frame_reset["original_value"],
+        "clone_latent_action": frame_reset["clone_value"],
+        "clone_payload_provenance_verified": True,
         "runtime_game_verified": False,
         "game_installation_modified": False,
-        "notes": ("Only source-verified StaticMeshActor with a verified neutral state, "
-                  "no links, and zero or four-byte all-zero native tail retained; "
-                  "not an IBD/BSP writer.")
+        "notes": ("Experimental static-mesh clone: only the appended export receives "
+                  "a neutralized latent-action DWORD; every pre-existing export is unchanged. "
+                  "No object links or nonzero native tails; not an IBD/BSP writer.")
     }
     if not report["original_bytes_unchanged"]:
         raise ValueError("Original GMP changed during clone preparation")
@@ -236,7 +286,10 @@ def check_actor(source: Path, *, source_sha256: str,
     return {"schema": SCHEMA, "status": "clone-source-eligible",
             "source_sha256": source_sha256,
             "actor": actor_name, "export": actor_export,
-            "source_location": location, "output_written": False}
+            "source_location": location,
+            "source_latent_action": pkg.read_actor(exp).state["latent_action"],
+            "new_actor_state_will_be_normalized": True,
+            "output_written": False}
 
 
 def write_isolated(source: Path, output: Path, **options):
