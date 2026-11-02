@@ -212,7 +212,7 @@ func _run() -> void:
         _fail("Original ZoneProperties should expose exact source sound schema strings")
         return
     viewer._environment_entity_selected(2)
-    if not viewer.environment_details.text.contains("NOT sound"):
+    if not viewer.environment_details.text.to_lower().contains("not sound"):
         _fail("Particle Emitter must never be mislabeled as an audio sound entity")
         return
     if not viewer.draft_prop_copies.is_empty() or not viewer.property_overrides.is_empty():
