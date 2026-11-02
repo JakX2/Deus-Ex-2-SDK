@@ -400,6 +400,59 @@ structs, script references, class creation, GameSys inheritance and
 IBD/TriggerScript write support remain disabled. Their encoding and
 runtime meaning require separate evidence.
 
+## Ninth milestone: independent binary preflight before an in-game test
+
+Once the standalone experimental GameSys scalar Save As has created
+a **separate** modified GMP and its adjacent research manifest,
+\`dx2_gamesys_runtime_preflight.py\` can independently reopen
+BOTH GMPs and prove they differ only in exactly the original four-byte
+int32/float32 GameSys field.
+
+    python native_editor/package_writer/dx2_gamesys_runtime_preflight.py --original "C:\DX2\Maps\M1_Seattle_Hub_WTOterminal.gmp" --candidate "C:\DX2EdIsolatedTest\M1_Seattle_Hub_WTOterminal.gmp" --report "C:\DX2EdIsolatedTest\preflight.json"
+
+The tool does not edit, install or run the game. It requires the
+exact manifest adjacent to the candidate, and independently confirms:
+- the manifest's source/output SHA-256 values match **actual** files;
+- each GMP's header, GUID, name/import/export metadata parses using
+  both the DX2SDK reader and the MIT T3SDK package reader;
+- original and modified actors have identical original export index,
+  name, header, size and GameSys property ID/version/type;
+- **all** changed bytes are within the same original four-byte numeric
+  payload, with no other byte changed anywhere in the GMP;
+- the original and modified float values are finite when relevant;
+- an untouched original source file still matches the initial hash.
+
+The checker refuses forged hash updates trying to conceal unrelated
+GMP bytes, missing/reordered actor data, stale sources, changed
+manifests and non-scalar or malformed GameSys blocks. It does not
+trust a writer's previous success flag as evidence.
+
+Success is reported only as
+\`binary-preflight-passed-runtime-not-tested\`.
+The output always includes \`game_runtime_tested: false\` and
+\`gameplay_effect_confirmed: false\`. These booleans are not set to
+true by this tool.
+
+The separately documented manual Windows field test is in
+[GAMESYS_RUNTIME_TEST.md](GAMESYS_RUNTIME_TEST.md).
+
+### Original source confirmation
+
+Rechecking the supplied original WTO Terminal GMP confirmed the
+existing actor \`D_464__1\` (export 23), native GameSys property
+\`1586\` (\`EmissiveScale\`), original float32 value
+\`0.49803924560546875\`. The candidate value \`0.6\` differs at
+four bytes starting at absolute offset **708948**. Both T3SDK's
+actor serializer and the independently constructed four-byte patch
+produced the same complete modified GMP in memory. No edited original
+GMP was written or run in-game. The report is available locally to
+the user, not checked into the public GitHub repository.
+
+Automated tests use synthetic GMP fixtures for both float32 and
+int32 preflight, overwritten/stale/forged manifests, altered data
+outside the intended scalar and non-overwrite JSON report behavior.
+No retail map binary is added to the SDK.
+
 ## Original-file compatibility evidence
 
 Tested locally using the unchanged T3SDK 0.3.1 reader and writer:
