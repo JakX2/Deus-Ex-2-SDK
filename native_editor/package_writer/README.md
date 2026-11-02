@@ -187,6 +187,40 @@ reserialization, native actor creation, native IBD rebuild, game
 install or playable mission compilation. These require native
 round-trip tests and isolated game runtime verification.
 
+## Fifth milestone: original DX2Gamesys archetype class hierarchy
+
+The upstream MIT T3SDK archetype parser (t3gamesys.py, now vendored
+unchanged with pinned SHA) can read most of the original DX2 class
+defaults from System/DX2Gamesys.d2u, not just map-placed actor instances.
+
+    python native_editor/package_writer/dx2_gamesys_archetype_audit.py "C:\DX2\System" --declarations "C:\DX2EdResearch\dx2-gamesys-declarations.json" --output "C:\DX2EdResearch\dx2-gamesys-archetypes.json"
+
+The same source argument accepts the user's own System ZIP or the
+standalone original DX2Gamesys.d2u. Output includes original archetype
+name and display label, immediate parent, conservative source
+inheritance chain, local GameSys default identifiers/types/byte sizes
+and source hashes. No original GameSys binary data is included.
+
+Local original-file result:
+- **2,476** DX2 archetype class records detected.
+- **2,419** parsed by upstream T3SDK unchanged.
+- **57** class layouts require additional DX2-specific reverse engineering.
+- **2,418** ancestry chains have no unparsed or missing source ancestor.
+- **58** ancestry chains incomplete (57 unparsed, one descendant).
+- **9,259** locally parsed default property blocks across parsed classes.
+
+This is partial decoding, **not proof that these archetypes can be
+instantiated correctly**. Some source classes have layout discrepancies
+from T3SDK's expected Thief 3 format. Their ancestors/descendants are
+flagged until verified. Inherited defaults are NOT treated as complete
+where any source parent failed.
+
+The original source-derived metadata was also used to generate an
+offline read-only local archetype browser for testing, showing examples
+such as the original GenericHuman class and its immediate source
+defaults. This does not enable actors to be added to a native GMP or
+spawned in the game.
+
 ## Original-file compatibility evidence
 
 Tested locally using the unchanged T3SDK 0.3.1 reader and writer:
