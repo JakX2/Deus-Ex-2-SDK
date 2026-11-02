@@ -192,3 +192,24 @@ demonstrate that the missing appearance is corrected; if BSP-only and
 mesh-only geometry both look correct separately but not together,
 investigate surface depth/occlusion/material shading in the Godot preview.
 
+
+### Cache regeneration after native BF fix
+
+`dx2_native_backend.CACHE_VERSION` is now
+`DX2Ed-Native-map-cache-v0.2.7-static-bf-v1`.
+Opening the original WTO GMP or mission ZIP with this updated branch will
+automatically export to a **new content-hashed cache folder** so the BF
+rendering change is visible immediately. Existing 0.2.6 caches and saved
+draft sidecars are **left untouched**, not deleted or migrated.
+
+Verify the refreshed `scene.report.json` fields on WTO:
+
+- `placed_mesh_triangles = 44480` (source, legacy field)
+- `static_mesh_bf_hidden_triangles = 134`
+- `rendered_static_mesh_triangles = 44346`
+- `visible_bsp_triangles = 1372`
+- `total_scene_triangles = 45718`
+
+**Do not treat this as a confirmed correction of the pictured wall gap.**
+The retail in-game image still needs comparison with the newly exported
+editor image, BSP-only view and placed-mesh-only view.
