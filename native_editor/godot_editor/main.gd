@@ -126,6 +126,14 @@ var visible_actors: Array = []
 var actors_by_name: Dictionary = {}
 var meshes_by_actor: Dictionary = {}
 var all_mesh_instances: Array[MeshInstance3D] = []
+# Read-only preview diagnostics: never mutate source GMP, shared GLB mesh or
+# material resources. Stored per-node state is restored on toggle/import.
+var geometry_isolation_visibility: Dictionary = {}
+var geometry_isolation_target: MeshInstance3D
+var geometry_all_faces_target: MeshInstance3D
+var geometry_all_faces_previous_override: Material
+var geometry_isolation_button: Button
+var geometry_all_faces_button: Button
 # Faces are shared by instances of the same imported mesh; cache per mesh resource.
 var pick_faces_by_mesh: Dictionary = {}
 var selected_diagnostic: String = ""
@@ -595,6 +603,18 @@ func _make_ui() -> void:
     copy_placement.tooltip_text = "Copy GMP vs IBD vs mesh vertex bounds and original pivot information"
     copy_placement.pressed.connect(_copy_placement_evidence)
     inspector_pane.add_child(copy_placement)
+    var geometry_debug_row := HFlowContainer.new()
+    inspector_pane.add_child(geometry_debug_row)
+    geometry_isolation_button = Button.new()
+    geometry_isolation_button.text = "Isolate selected"
+    geometry_isolation_button.tooltip_text = "Reversible inspection: hide other rendered meshes including glass, without changing their materials or game files."
+    geometry_isolation_button.pressed.connect(_toggle_geometry_isolation)
+    geometry_debug_row.add_child(geometry_isolation_button)
+    geometry_all_faces_button = Button.new()
+    geometry_all_faces_button.text = "Inspect both faces"
+    geometry_all_faces_button.tooltip_text = "Reversible: render only the selected mesh unshaded with backface culling OFF. Never changes source or shared GLB materials."
+    geometry_all_faces_button.pressed.connect(_toggle_geometry_all_faces)
+    geometry_debug_row.add_child(geometry_all_faces_button)
     inspector_transform_section = VBoxContainer.new()
     inspector_pane.add_child(inspector_transform_section)
     var inspector_transform_heading := Label.new()
@@ -1149,6 +1169,8 @@ func load_actors(path: String) -> void:
     status_label.text = "Loaded %d actors, %d meshes. Click a mesh or select an actor." % [actors.size(), mesh_count]
 
 func _clear_current_scene() -> void:
+    _restore_geometry_all_faces()
+    _restore_geometry_isolation()
     _clear_selection()
     asset_catalog.clear()
     selected_asset.clear()
@@ -2261,6 +2283,93 @@ func _selection_pivot() -> Vector3:
     return pivot / float(nodes.size())
 
 
+## Geometry debugging never writes an editor draft or a native map.
+## This is intentionally separate from the experimental actor writers.
+func _refresh_geometry_debug_buttons() -> void:
+    var available := _selection_nodes().size() == 1
+    if geometry_isolation_button != null:
+        geometry_isolation_button.disabled = not available and geometry_isolation_visibility.is_empty()
+        geometry_isolation_button.text = (
+            "Restore visibility" if not geometry_isolation_visibility.is_empty()
+            else "Isolate selected"
+        )
+    if geometry_all_faces_button != null:
+        geometry_all_faces_button.disabled = not available and not is_instance_valid(geometry_all_faces_target)
+        geometry_all_faces_button.text = (
+            "Restore materials" if is_instance_valid(geometry_all_faces_target)
+            else "Inspect both faces"
+        )
+
+
+func _restore_geometry_isolation() -> void:
+    for target in geometry_isolation_visibility:
+        if is_instance_valid(target):
+            target.visible = bool(geometry_isolation_visibility[target])
+    geometry_isolation_visibility.clear()
+    geometry_isolation_target = null
+    _refresh_geometry_debug_buttons()
+
+
+func _toggle_geometry_isolation() -> void:
+    if not geometry_isolation_visibility.is_empty():
+        _restore_geometry_isolation()
+        status_label.text = "Geometry diagnostic ended. All original scene visibility restored."
+        return
+    var nodes := _selection_nodes()
+    if nodes.size() != 1 or not is_instance_valid(nodes[0]):
+        status_label.text = "Select exactly one original rendered mesh to isolate."
+        return
+    var source: MeshInstance3D = nodes[0]
+    for node in all_mesh_instances:
+        if is_instance_valid(node):
+            geometry_isolation_visibility[node] = node.visible
+            node.visible = node == source
+    geometry_isolation_target = source
+    status_label.text = (
+        "Geometry diagnostic: isolated " + str(source.name)
+        + ". Other meshes and glass are temporarily hidden, not changed."
+    )
+    _refresh_geometry_debug_buttons()
+
+
+func _restore_geometry_all_faces() -> void:
+    if is_instance_valid(geometry_all_faces_target):
+        geometry_all_faces_target.material_override = geometry_all_faces_previous_override
+    geometry_all_faces_target = null
+    geometry_all_faces_previous_override = null
+    _refresh_geometry_debug_buttons()
+
+
+func _toggle_geometry_all_faces() -> void:
+    if is_instance_valid(geometry_all_faces_target):
+        _restore_geometry_all_faces()
+        status_label.text = "Geometry diagnostic ended. Source preview material restored."
+        return
+    var nodes := _selection_nodes()
+    if nodes.size() != 1 or not is_instance_valid(nodes[0]):
+        status_label.text = "Select exactly one mesh to inspect backfaces."
+        return
+    var source: MeshInstance3D = nodes[0]
+    if source.mesh == null:
+        status_label.text = "The selected actor has no rendered triangles."
+        return
+    geometry_all_faces_target = source
+    geometry_all_faces_previous_override = source.material_override
+    var debug_material := StandardMaterial3D.new()
+    debug_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    debug_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    debug_material.albedo_color = Color(0.25, 0.9, 0.95, 1.0)
+    source.material_override = debug_material
+    var count := 0
+    for surface in range(source.mesh.get_surface_count()):
+        count += source.mesh.surface_get_array_index_len(surface) / 3
+    status_label.text = (
+        "Geometry diagnostic: " + str(source.name) + " approx " + str(count)
+        + " triangles, both faces visible in cyan. This is a read-only preview."
+    )
+    _refresh_geometry_debug_buttons()
+
+
 func _add_selection_mesh(mesh_instance: MeshInstance3D) -> void:
     if not is_instance_valid(mesh_instance):
         return
@@ -2615,6 +2724,7 @@ func _mesh_geometry_material_summary(actor: Dictionary, node: MeshInstance3D = n
 func _refresh_inspector_panel() -> void:
     if inspector_title == null or inspector_transform_section == null:
         return
+    _refresh_geometry_debug_buttons()
     _refresh_brush_inspector()
     _refresh_placement_panel()
     var nodes := _selection_nodes()
