@@ -27,7 +27,7 @@ def parse_organizer(blob: bytes) -> dict:
         lines = blob.decode("ascii").splitlines()
     except UnicodeDecodeError as error:
         raise ValueError("Expected ASCII TSO organizer") from error
-    if len(lines) > MAX_LINES or len(lines) < 5 or lines[0] != "2":
+    if len(lines) > MAX_LINES or len(lines) < 3 or lines[0] != "2":
         raise ValueError("Unsupported ScriptOrganizer.tso version or length")
     pos = 1
 
