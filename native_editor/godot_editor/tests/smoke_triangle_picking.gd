@@ -502,6 +502,32 @@ func _run() -> void:
         or abs(float(native_plan["delta"][2])) > 0.01):
         _fail("Native clone must use the original export and transform Godot X to Unreal X")
         return
+    # Multi Duplicate must collect 2 different original sources using
+    # the same original-transform gate and UE/Godot axis conversion.
+    var synthetic_copy = viewer._new_draft_copy(
+        "StaticMeshActor__2", "DraftProp_998",
+        viewer.original_mesh_transforms["StaticMeshActor__2"])
+    if not is_instance_valid(synthetic_copy):
+        _fail("Could not create second synthetic preview duplicate")
+        return
+    synthetic_copy.global_position += Vector3(0.0, 0.0, 0.5)
+    var multiple: Array = viewer._native_multi_clone_draft_plan()
+    if (multiple.size() != 2 or multiple[0]["actor"] != "StaticMeshActor__1"
+        or multiple[1]["actor"] != "StaticMeshActor__2"
+        or abs(float(multiple[1]["delta"][1]) - 0.5 / viewer.NATIVE_CLONE_UNREAL_METRES) > 0.01):
+        _fail("Multi Duplicate plan must retain both unique source actors and UE Y translation")
+        return
+    synthetic_copy.rotate_y(0.25)
+    if not viewer._native_multi_clone_draft_plan().is_empty():
+        _fail("Multi Duplicate must reject an unverified rotated prop")
+        return
+    viewer.all_mesh_instances.erase(synthetic_copy)
+    viewer.draft_prop_copies.erase("DraftProp_998")
+    viewer.draft_prop_sources.erase("DraftProp_998")
+    synthetic_copy.free()
+    if not viewer._native_multi_clone_draft_plan().is_empty():
+        _fail("Multi Duplicate must reject a single copy")
+        return
     viewer._move_selected_prop(Vector3.UP)
     native_plan = viewer._native_clone_draft_plan()
     if (native_plan.is_empty()
