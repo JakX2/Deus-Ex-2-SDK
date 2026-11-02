@@ -16,7 +16,7 @@ for source in (ROOT / "native_editor" / "package_writer",
         sys.path.insert(0, str(source))
 
 from test_dx2_gamesys_audit import fixture_with_gamesys
-from dx2_gamesys_scalar_probe import compare_gamesys_scalar, scalar_bytes, main
+from dx2_gamesys_scalar_probe import compare_gamesys_scalar, save_verified_scalar_copy, scalar_bytes, main
 from upkg import Package
 from upkgwrite import ActorEdit, PackageWriter
 
@@ -131,6 +131,73 @@ class NativeGameSysScalarDualWriterTests(unittest.TestCase):
         self.assertEqual(self.source.read_bytes(), self.raw)
         self.assertEqual(list(self.source.parent.glob("*.gmp")),
                          [self.source])
+
+    def test_explicit_isolated_save_as_writes_only_verified_single_scalar(self):
+        output = self.source.parent.parent / "IsolatedEdited" / self.source.name
+        result = save_verified_scalar_copy(
+            self.source, output, source_sha256=self.sha,
+            actor_export=1, actor_name="StaticMeshActor__1",
+            property_id=237, kind="float", expected=2.5, replacement=4.25)
+        self.assertEqual(result["status"], "written-isolated-runtime-unverified")
+        self.assertTrue(result["edited_package_written"])
+        self.assertTrue(result["experimental_single_scalar_save_as"])
+        self.assertFalse(result["native_gamesys_save_enabled"])
+        self.assertFalse(result["runtime_verified"])
+        self.assertEqual(self.source.read_bytes(), self.raw)
+        self.assertEqual(hashlib.sha256(output.read_bytes()).hexdigest(),
+                         result["reconstructed_sha256"])
+        expected_changed = (self.raw[:result["original_payload_offset"]] +
+                            struct.pack("<f", 4.25) +
+                            self.raw[result["original_payload_offset"]+4:])
+        self.assertEqual(output.read_bytes(), expected_changed)
+        manifest = output.with_suffix(".dx2ed-gamesys-scalar.json")
+        self.assertEqual(__import__("json").loads(manifest.read_text())["status"],
+                         "written-isolated-runtime-unverified")
+        with self.assertRaisesRegex(FileExistsError, "overwrite"):
+            save_verified_scalar_copy(
+                self.source, output, source_sha256=self.sha,
+                actor_export=1, actor_name="StaticMeshActor__1",
+                property_id=237, kind="float", expected=2.5, replacement=4.25)
+
+    def test_isolated_save_as_rejects_retail_folder_nested_and_wrong_name(self):
+        sources = [
+            self.source,
+            self.source.parent / self.source.name,
+            self.source.parent / "Nested" / self.source.name,
+            self.source.parent.parent / "Isolated" / "WrongMap.gmp",
+        ]
+        for output in sources:
+            with self.subTest(output=output):
+                with self.assertRaisesRegex(ValueError, "separate folder"):
+                    save_verified_scalar_copy(
+                        self.source, output, source_sha256=self.sha,
+                        actor_export=1, actor_name="StaticMeshActor__1",
+                        property_id=237, kind="float",
+                        expected=2.5, replacement=4.25)
+        self.assertEqual(self.source.read_bytes(), self.raw)
+
+    def test_existing_manifest_is_never_overwritten_or_deleted(self):
+        output = self.source.parent.parent / "Isolated" / self.source.name
+        manifest = output.with_suffix(".dx2ed-gamesys-scalar.json")
+        manifest.parent.mkdir()
+        manifest.write_text("precious file", encoding="utf8")
+        with self.assertRaises(FileExistsError):
+            save_verified_scalar_copy(
+                self.source, output, source_sha256=self.sha,
+                actor_export=1, actor_name="StaticMeshActor__1",
+                property_id=237, kind="float", expected=2.5, replacement=4.25)
+        self.assertEqual(manifest.read_text(), "precious file")
+        self.assertFalse(output.exists())
+
+    def test_no_output_written_on_hash_mismatch(self):
+        output = self.source.parent.parent / "Isolated" / self.source.name
+        with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+            save_verified_scalar_copy(
+                self.source, output, source_sha256="0" * 64,
+                actor_export=1, actor_name="StaticMeshActor__1",
+                property_id=237, kind="float", expected=2.5, replacement=4.25)
+        self.assertFalse(output.exists())
+        self.assertFalse(output.with_suffix(".dx2ed-gamesys-scalar.json").exists())
 
     def test_bad_source_or_nonoriginal_name_does_not_write(self):
         self.source.write_bytes(b"broken original package")
