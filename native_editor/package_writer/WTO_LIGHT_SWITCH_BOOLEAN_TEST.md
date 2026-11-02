@@ -545,3 +545,65 @@ After ProcMon revealed that DX2Main.exe was reading the WTO Terminal GMP from th
 This is consistent with the game having been launched against the wrong data path previously. **The exact successful operation is not yet specified:** this statement alone does not establish whether an edited light-color variant, the four-light OFF variant, or simply the game startup/map loading is working. Ask which visual variant the user observed and keep all lighting runtime claims appropriately bounded.
 
 Future safe tests should preserve an independently backed-up original GOG GMP and verify the running game's actual content path before experimenting. No proprietary map files should be committed to the repository.
+
+## Confirmed user-visible hue/saturation and switch behavior after fixing runtime map root (2026-11-02)
+
+The user deleted the separate test install and launched through GOG. A new
+WTO Terminal gameplay screenshot shows **distinct bright red illumination**
+on the left ceiling/column/floor and nearby NPC. The user manually compared
+the five private Fixture Color Lab v2 candidates and reported:
+
+| Candidate | Actual authored GameSys changes on FOUR D_298 fixtures | User-observed result |
+|---|---|---|
+| 01 | LightBrightness=255, LightHue=0, LightSaturation=0 | Strong white light |
+| 02 | LightBrightness=255, LightHue=170, LightSaturation=0 | Strong white light |
+| 03 | LightBrightness=255, LightHue=0, LightSaturation=255 | **Red light** (screenshot) |
+| 04 | LightBrightness=0, original Hue=150, Saturation=32 | No visible light |
+| 05 | Original LightColor; bLightOn=false on all four | No visible light |
+
+**Interpretation:** This is the first user-reported, screenshot-supported
+visible native LightColor modification in Invisible War. It also independently
+supports an observable brightness-zero change and reproduced four-bLightOn
+OFF effect in the correctly loaded game. The visible red illumination was
+reported for **candidate 03**, which was incorrectly labeled WHITE in the
+original experiment. Candidates 01/02, incorrectly labeled RED/BLUE,
+appeared white instead. The observed DX2 response is consistent with
+LightSaturation=0 meaning desaturated/white and 255 yielding intense hue.
+This is the **inverse** of the older UnrealEd lighting convention found in
+community documentation; do not use the legacy convention as an automatic
+DX2 editor color converter. Also distinguish an empirical observation
+from a fully proven formula or all possible hue/saturation combinations.
+
+The binary manifest shows all four actors were modified in every candidate.
+Source-tagged actor positions explain why this screenshot may show only one
+readily visible fixture rather than four simultaneously:
+
+| Actor | Export | Original tagged Location (Unreal units) |
+|---|---:|---|
+| D_298__4 | 426 | (-16, 254, 390) |
+| D_298__12 | 1989 | (-930.598, 481.955, 399.9) |
+| D_298__2 | 2027 | (-1663.598, 543.955, 399.9) |
+| D_298__14 | 2046 | (-1319.598, 519.955, 399.9) |
+
+All four fixtures have the same original local authored LightColor struct,
+but span substantial distances along the terminal. One visible lighting
+patch does not imply only one serialized actor was changed; visibility and
+render contribution of the others have not been independently measured.
+
+Research consequences:
+1. Correct the presentation of saturation in DX2-specific tooling based
+   on the measured DX2 runtime behavior, not legacy UnrealEd examples.
+2. Add original-property and actor-identity safeguards for any future
+   experimental per-actor LightColor writer: existing ID 116, encoded
+   struct type 0x0008, expected 10-byte tagged payload, exact 3 byte
+   fields, original source hash and dual-reader validation.
+3. Preserve the experimental-only gate for native struct writes pending
+   an isolated single-actor, variable-by-variable roundtrip and reliable
+   game reload test. Never generalize to arbitrary serialized structs.
+4. Never publish the private source-derived GMPs or the user's screenshot
+   with identifiable environment details into the public SDK.
+
+User evidence for the five candidates is an explicit report plus the
+red-light screenshot; white and OFF variants are user-reported, not all
+individually screenshot-verified. The modified map was delivered to the
+correctly loading GOG installation after diagnosing the split path.
