@@ -41,11 +41,12 @@ def load_source(path: Path, *, encoding: str = "utf-8") -> dict:
     if path.suffix.casefold() == ".zip":
         with zipfile.ZipFile(path) as archive:
             matches = [i for i in archive.infolist()
-                       if not i.is_dir() and i.filename.replace("\\", "/").casefold()
-                       .endswith("/conversations/english/context.eng")]
-            # Some user's archives have ConText.eng at the archive root.
-            matches.extend(i for i in archive.infolist()
-                           if not i.is_dir() and i.filename.casefold() == "context.eng")
+                       if not i.is_dir() and (
+                           i.filename.replace("\\", "/").casefold()
+                           .endswith("/conversations/english/context.eng")
+                           or i.filename.replace("\\", "/").casefold()
+                           in ("conversations/english/context.eng", "context.eng")
+                       )]
             if len(matches) != 1:
                 raise ValueError(f"Expected exactly one English ConText.eng in ZIP, found {len(matches)}")
             member = matches[0]
