@@ -442,3 +442,11 @@ If FOUR OFF still darkens but RED does not, investigate the original
 light baking / illumination data and any rebuild pipeline before
 enabling general LightColor writes in Godot. No proprietary patches
 belong in the public repository. Keep PR #5 draft.
+
+## Follow-up: exact original four-light control no longer visibly reproduces (2026-11-02)
+
+The user reports that **even the PREVIOUS FOUR FIXTURES bLightOn OFF control** in the private v2 GUI "didn't do anything". The v2 control GMP bytes and full SHA were independently checked against the earlier four-OFF file: `868e7ae356d02c2c00165e74bffce9004fef3ce115ded5235f977c9da26c91a4`. The new observation means the earlier user screenshot cannot be taken as a generally reproducible lighting edit under the present test conditions. Neither source-map/path selection, executable install location, actual runtime file reads, nor fresh map reload have been proven for the latest trial. **Do not infer that the four-light effect reproduced** or that hue/saturation necessarily require lighting rebuild.
+
+A **private, read-only** Windows diagnostic GUI was prepared: it hashes the exact user-selected `Content/DX2/Maps/M1_Seattle_Hub_WTOterminal.gmp` and reports paths of running `DX2.exe`, `DX2Main.exe`, `DeusEx2.exe`, or `DeusEx2Launcher.exe`. For any executable directly under a `System` folder, it compares the sibling `Content/DX2/Maps` path and map checksum with the selected candidate. It does not patch assets, publish content, scan arbitrary personal folders, or claim that matching paths prove file I/O. Further confirmation, if needed, should use a targeted Process Monitor file-open trace while transitioning freshly into WTO Terminal.
+
+**Block further lighting features or more variant ZIPs** until the actual runtime map path and installed candidate SHA are established. PR remains draft.
