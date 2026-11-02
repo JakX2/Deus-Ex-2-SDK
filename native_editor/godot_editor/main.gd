@@ -1115,6 +1115,9 @@ func _imported_triangle_coverage() -> Dictionary:
     var empty_mesh_nodes: Array[String] = []
     var invalid_triangle_surfaces: Array[String] = []
     var per_mesh_triangle_counts: Dictionary = {}
+    var has_focus := is_instance_valid(selected_mesh) and selected_mesh.mesh != null
+    var focus_aabb := _mesh_world_aabb(selected_mesh) if has_focus else AABB()
+    var near_selected: Array[Dictionary] = []
     for node in all_mesh_instances:
         if not is_instance_valid(node) or node.mesh == null:
             continue
@@ -1136,10 +1139,23 @@ func _imported_triangle_coverage() -> Dictionary:
         var count: int = int(per_mesh_triangle_counts[mesh_id])
         if count == 0:
             empty_mesh_nodes.append(str(node.name))
+        if has_focus:
+            var gap_m: float = _bbox_gap(focus_aabb, _mesh_world_aabb(node))
+            if gap_m <= 1.5:
+                near_selected.append({
+                    "node": str(node.name),
+                    "layer": "BSP" if is_bsp else "placed",
+                    "imported_triangles": count,
+                    "aabb_gap_m": snappedf(gap_m, 0.0001),
+                })
         if is_bsp:
             observed_bsp += count
         else:
             observed_placed += count
+    near_selected.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+        return float(a["aabb_gap_m"]) < float(b["aabb_gap_m"]))
+    if near_selected.size() > 30:
+        near_selected.resize(30)
     var expected_bsp: Variant = null
     var expected_placed: Variant = null
     var report_path := current_folder.path_join("scene.report.json")
@@ -1162,6 +1178,9 @@ func _imported_triangle_coverage() -> Dictionary:
         "placed_count_matches_export": expected_placed != null and int(expected_placed) == observed_placed,
         "invalid_triangle_surfaces": invalid_triangle_surfaces,
         "empty_mesh_nodes": empty_mesh_nodes,
+        "selected_node": str(selected_mesh.name) if has_focus else "",
+        "near_selected_aabb_within_1_5m": near_selected,
+        "proximity_warning": "AABB overlaps are not proof that the source triangles touch.",
         "read_only": true, "retail_rendering_verified": false,
     }
 
@@ -1187,7 +1206,8 @@ func _show_rendered_geometry_audit() -> void:
             "MATCH" if audit["placed_count_matches_export"] else "NOT VERIFIED / MISMATCH"] +
         "\nMalformed triangle surfaces: " + str(audit["invalid_triangle_surfaces"]) +
         "\nEmpty imported mesh nodes: " + str(audit["empty_mesh_nodes"]) +
-        "\n\nCounts reflect imported Godot buffers, not GPU visibility or retail game fidelity."
+        "\nNearby imported nodes (up to 30): " + str(audit["near_selected_aabb_within_1_5m"]) +
+        "\n\nAABB proximity is approximate. Counts reflect imported Godot buffers, not GPU visibility or retail game fidelity."
     )
     if geometry_audit_dialog != null:
         geometry_audit_dialog.dialog_text = body
