@@ -53,6 +53,48 @@ not link them to guessed TSD filenames**.
 The index preserves the input archive identity, script source hashes,
 raw symbolic byte offsets and map source hash, where provided.
 
+## Original ScriptOrganizer.tso hierarchy
+
+When the original archive includes `Organize/ScriptOrganizer.tso`,
+the source index now validates and imports the actual nested folder trees
+instead of guessing categories from `TS_` numeric suffixes.
+
+The original file is ASCII TSO **version 2**. It contains exactly three
+`HeaderBegin` trees (scripts, conditions, actions), with a declared
+child count for each folder. A `0` record starts a folder, while a
+`1` record identifies a script/symbol entry. The parser rejects
+truncated nodes, invalid record tags, excessive depth, unsupported
+versions and unexpected trailing text.
+
+Verified source counts:
+
+| Tree | Original organizer leaf entries | Distinct entries | Folders |
+|---|---:|---:|---:|
+| Script sources | 2,646 | 2,645 | 121 |
+| Condition symbols | 154 | 154 | 25 |
+| Action symbols | 277 | 277 | 43 |
+
+All **2,645 active `Defs/*.tsd` source filenames** occur in the
+ScriptOrganizer source tree. No orphan organizer names or unlisted active
+definitions were found. The extra leaf is a deliberate/repeated
+`TS_2316` organizer entry: it appears twice in different paths.
+A single original definition may legitimately have multiple organizer
+paths. Historical `DeletedScripts/` sources are not automatically
+assigned to active categories.
+
+**The browser now provides an original script-category filter** (including
+nested mission folders) and shows source paths for each active definition.
+Condition and action folder trees are recorded separately in the JSON
+index for future source-backed parameter/action pickers.
+
+These folders describe original authoring organization, **not** the
+game's runtime condition/action execution order, actor bindings or event
+graph topology. Category names such as `M1_Seattle` are directory labels,
+not proof that every contained script runs in that map.
+
+If the archive lacks the organizer, the index still works but leaves
+all source categories explicitly unknown.
+
 ## Known limitations and next steps
 
 1. Decode binary TSD nodes/condition expressions/branch order, preserving
