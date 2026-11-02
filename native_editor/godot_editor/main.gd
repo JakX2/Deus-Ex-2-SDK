@@ -107,6 +107,12 @@ var gameplay_filter: LineEdit
 var gameplay_list: ItemList
 var gameplay_details: TextEdit
 var gameplay_visible: Array = []
+# Original per-map light actors, ambient sound zones and particle emitters.
+# This tab never creates lights, changes sound schemas or writes game files.
+var environment_filter: LineEdit
+var environment_list: ItemList
+var environment_details: TextEdit
+var environment_visible: Array = []
 var loaded_actors_json_path: String = ""
 var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
@@ -549,6 +555,33 @@ func _make_ui() -> void:
     gameplay_details.custom_minimum_size.y = 180
     gameplay_details.text = "Open a GMP and its original TriggerScript.zip. No native script binding or NPC spawning yet."
     gameplay_tab.add_child(gameplay_details)
+
+    var environment_tab := VBoxContainer.new()
+    environment_tab.name = "Environment"
+    left_tabs.add_child(environment_tab)
+    var environment_heading := Label.new()
+    environment_heading.text = "Original light / ambient zone / particle entities | Read-only"
+    environment_heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    environment_tab.add_child(environment_heading)
+    environment_filter = LineEdit.new()
+    environment_filter.placeholder_text = "Search lights, zone schemas and particles..."
+    environment_filter.text_changed.connect(func(_filter): _refresh_environment_entities())
+    environment_tab.add_child(environment_filter)
+    environment_list = ItemList.new()
+    environment_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    environment_list.item_selected.connect(_environment_entity_selected)
+    environment_tab.add_child(environment_list)
+    var environment_locate := Button.new()
+    environment_locate.text = "Locate selected source entity (F)"
+    environment_locate.tooltip_text = "Focus original actor Location. No runtime entity is spawned."
+    environment_locate.pressed.connect(func(): focus_selected())
+    environment_tab.add_child(environment_locate)
+    environment_details = TextEdit.new()
+    environment_details.editable = false
+    environment_details.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+    environment_details.custom_minimum_size.y = 200
+    environment_details.text = "Import an original DX2 map to browse its native lights and audio zones. Read-only."
+    environment_tab.add_child(environment_details)
 
     var brushes_tab := VBoxContainer.new()
     brushes_tab.name = "Brushes"
@@ -1227,6 +1260,7 @@ func load_actors(path: String) -> void:
         if typeof(actor) == TYPE_DICTIONARY and actor.has("name"):
             actors_by_name[str(actor["name"])] = actor
     _refresh_actor_list()
+    _refresh_environment_entities()
     _load_source_gamesys_catalog(path.get_base_dir().path_join("gamesys_inspector.json"))
     status_label.text = "Loaded %d actors, %d meshes. Click a mesh or select an actor." % [actors.size(), mesh_count]
 
@@ -1260,6 +1294,11 @@ func _clear_current_scene() -> void:
     _refresh_asset_list()
     actors.clear()
     actors_by_name.clear()
+    environment_visible.clear()
+    if environment_list != null:
+        environment_list.clear()
+    if environment_details != null:
+        environment_details.text = "Import a source map to inspect light and sound entities."
     loaded_actors_json_path = ""
     gameplay_catalog.clear()
     gameplay_visible.clear()
@@ -1475,6 +1514,94 @@ func _inspect_selected_actor_scripts() -> void:
         + "\n\nRaw integer indices are NOT verified TS_ IDs."
         + "\nNo NPC spawning or script assignment is enabled."
     )
+
+
+
+## These property IDs and names are verified against the original
+## DX2 System/Engine.d2u and Gamesys declarations. A stream schema is
+## a ZONE-level sound setting, not a positionable AmbientSound actor.
+func _environment_entity_kind(actor: Dictionary) -> String:
+    match str(actor.get("class", "")):
+        "Light":
+            return "Light"
+        "ZoneProperties":
+            return "Ambient sound zone"
+        "Emitter":
+            return "Particle emitter (NOT sound)"
+    return ""
+
+
+func _environment_game_value(actor: Dictionary, property_id: int) -> Variant:
+    var props: Variant = actor.get("game_properties", [])
+    if typeof(props) != TYPE_ARRAY:
+        return null
+    for prop in props:
+        if typeof(prop) == TYPE_DICTIONARY and int(prop.get("id", -1)) == property_id:
+            return prop.get("value")
+    return null
+
+
+func _refresh_environment_entities() -> void:
+    if environment_list == null:
+        return
+    environment_list.clear()
+    environment_visible.clear()
+    var query := environment_filter.text.strip_edges().to_lower() if environment_filter != null else ""
+    for actor in actors:
+        if typeof(actor) != TYPE_DICTIONARY:
+            continue
+        var kind := _environment_entity_kind(actor)
+        if kind.is_empty():
+            continue
+        var searchable := str(actor.get("name", "")) + " " + kind
+        for property_id in [116, 118, 1586, 1467, 1286, 1287]:
+            searchable += " " + str(_environment_game_value(actor, property_id))
+        if not query.is_empty() and query not in searchable.to_lower():
+            continue
+        environment_visible.append(actor)
+        environment_list.add_item(str(actor.get("name", "?")) + " [" + kind + "]")
+    if environment_details != null:
+        environment_details.text = (
+            "Original environment actors: " + str(environment_visible.size())
+            + " match the current filter.\nLights are native actors; sound schemas "
+            + "are attached to ZoneProperties. Particle Emitters are NOT audio.\n"
+            + "Select a source entity to view exact original parameters. "
+            + "No sound playback, new lights or GMP writes."
+        )
+
+
+func _environment_entity_selected(index: int) -> void:
+    if index < 0 or index >= environment_visible.size():
+        return
+    var actor: Dictionary = environment_visible[index]
+    var kind := _environment_entity_kind(actor)
+    select_actor(actor)
+    if environment_details == null:
+        return
+    var rows: PackedStringArray = [
+        "ORIGINAL DX2 " + kind.to_upper() + " | READ ONLY",
+        "Actor: " + str(actor.get("name", "?")),
+        "Native class: " + str(actor.get("class", "?")),
+        "Source export: " + str(actor.get("export", "?")),
+        "Source Unreal XYZ: " + str(actor.get("location", [])),
+        ""
+    ]
+    if kind == "Light":
+        rows.append("LightColor (GameSys 116): " + str(_environment_game_value(actor, 116)))
+        rows.append("LightShape (GameSys 118): " + str(_environment_game_value(actor, 118)))
+        rows.append("EmissiveScale (GameSys 1586): " + str(_environment_game_value(actor, 1586)))
+        rows.append("bLightOn (GameSys 1487, explicit value only): " + str(_environment_game_value(actor, 1487)))
+        rows.append("To create a new light we must validate native Region/PhysicsVolume state.")
+    elif kind == "Ambient sound zone":
+        rows.append("StreamSchema1 (GameSys 1287): " + str(_environment_game_value(actor, 1287)))
+        rows.append("StreamSchema2 (GameSys 1286): " + str(_environment_game_value(actor, 1286)))
+        rows.append("NonStreamSchema1 (GameSys 1467): " + str(_environment_game_value(actor, 1467)))
+        rows.append("These configure zone audio, not a standalone point sound emitter.")
+    else:
+        rows.append("Particle effects are unrelated to the sound emitter system.")
+    rows.append("")
+    rows.append("Source asset untouched. No native create/edit/save operation in this tab.")
+    environment_details.text = "\n".join(rows)
 
 
 func _actor_category(actor: Dictionary) -> String:
@@ -4624,7 +4751,9 @@ func focus_selected() -> void:
         return
     # Most original AI/NPC candidates have no GLB mesh. Make them locatable
     # without fabricating any native NPC geometry or gameplay behavior.
-    if not selected_actor.is_empty() and _actor_on_original_ai_layer(selected_actor):
+    if (not selected_actor.is_empty() and
+        (_actor_on_original_ai_layer(selected_actor)
+         or not _environment_entity_kind(selected_actor).is_empty())):
         var coords: Variant = selected_actor.get("location", [])
         if typeof(coords) != TYPE_ARRAY or coords.size() != 3:
             return
@@ -4638,8 +4767,8 @@ func focus_selected() -> void:
         orbit_distance = 6.0
         _update_camera()
         status_label.text = (
-            "Focused original AI-layer actor " + str(selected_actor.get("name", ""))
-            + " at source Location. This is not a spawned NPC."
+            "Focused original source actor " + str(selected_actor.get("name", ""))
+            + " at original Location. No new entity spawned."
         )
 
 func frame_whole_scene() -> void:
