@@ -1,0 +1,34 @@
+name: DX2Ed experimental prop clone source bundle
+
+on:
+  pull_request:
+    paths:
+      - 'native_editor/package_writer/dx2_actor_clone_probe.py'
+      - 'native_editor/package_writer/dx2_package_roundtrip.py'
+      - 'third_party/t3sdk_assets/**'
+      - 'map_exporter/dx2inspect.py'
+      - '.github/workflows/dx2-prop-clone-tool-bundle.yml'
+  workflow_dispatch:
+
+jobs:
+  source-only-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble source-only research bundle (NO game assets)
+        run: |
+          mkdir -p staging/native_editor/package_writer staging/third_party/t3sdk_assets staging/map_exporter
+          cp native_editor/package_writer/dx2_actor_clone_probe.py staging/native_editor/package_writer/
+          cp native_editor/package_writer/dx2_package_roundtrip.py staging/native_editor/package_writer/
+          cp third_party/t3sdk_assets/*.py staging/third_party/t3sdk_assets/
+          cp third_party/t3sdk_assets/LICENSE staging/third_party/t3sdk_assets/
+          cp map_exporter/dx2inspect.py staging/map_exporter/
+          cp native_editor/package_writer/PROP_CLONE_EXPERIMENT.md staging/
+          python -m compileall -q staging
+          find staging -type d -name __pycache__ -prune -exec rm -rf {} +
+          (cd staging && zip -q -r ../DX2Ed_Experimental_Prop_Clone_Source.zip .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DX2Ed_Experimental_Prop_Clone_Source
+          path: DX2Ed_Experimental_Prop_Clone_Source.zip
+          retention-days: 7
