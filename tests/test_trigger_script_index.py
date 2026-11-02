@@ -17,8 +17,15 @@ from dx2_trigger_script_index import (
 
 
 def tsd(name="TS_42", *, old=False, title="Door opens"):
-    content = (name + "\x00" + title + "\x00" + "kTCT_FrobByPlayer\x00"
-               + "kTPT_String\x00" + "kTAT_OpenDoorLink\x00").encode("utf-16le")
+    content = (
+        (name + "\x00" + title + "\x00").encode("utf-16le")
+        + struct.pack("<I", 1)
+        + "kTCT_FrobByPlayer\x00".encode("utf-16le")
+        + struct.pack("<I", 1)
+        + "kTPT_String\x00Example\x00".encode("utf-16le")
+        + struct.pack("<I", 1)
+        + "kTAT_OpenDoorLink\x00".encode("utf-16le")
+    )
     if old:
         return b"0FFE2FST" + struct.pack("<II",len(content)+4,16) + content
     return b"1FFE2FST" + struct.pack("<III",0,len(content)+4,16) + content
@@ -49,6 +56,50 @@ class TriggerScriptIndexTests(unittest.TestCase):
             self.assertEqual(item["action_symbols"][0]["text"],"kTAT_OpenDoorLink")
             self.assertEqual(item["parameter_type_symbols"][0]["text"],"kTPT_String")
             self.assertFalse(item["symbol_graph_decoded"])
+
+    def test_binary_first_record_probe_does_not_guess_execution_order(self):
+        from dx2_tsd_initial_frame import (
+            inspect_tsd_initial_frame, summarize_initial_frames)
+        records = []
+        for blob in (tsd(), tsd(old=True)):
+            parsed = inspect_tsd_initial_frame(blob, "Defs/TS_42.tsd")
+            self.assertEqual(parsed["source_name"], "TS_42")
+            self.assertEqual(parsed["display_label"], "Door opens")
+            self.assertEqual(parsed["first_word_u32"], 1)
+            self.assertEqual(parsed["first_symbol"], "kTCT_FrobByPlayer")
+            self.assertEqual(parsed["first_symbol_kind"], "condition_token")
+            self.assertEqual(parsed["word_after_first_symbol_u32"], 1)
+            self.assertFalse(parsed["graph_decoded"])
+            records.append(parsed)
+        summary = summarize_initial_frames(records)
+        self.assertEqual(summary["initial_word_histogram"]["1"], 2)
+        self.assertFalse(summary["initial_word_meaning_verified"])
+
+    def test_zero_word_action_and_condition_anomaly(self):
+        from dx2_tsd_initial_frame import (
+            inspect_tsd_initial_frame, summarize_initial_frames)
+        def with_zero(next_count, token):
+            payload = ("TS_2006\x00Security Bot Shutdown\x00").encode("utf-16le")
+            payload += struct.pack("<II", 0, next_count)
+            payload += (token + "\x00").encode("utf-16le") + struct.pack("<I", 2)
+            return b"1FFE2FST" + struct.pack("<III", 0, len(payload) + 4, 16) + payload
+        action = inspect_tsd_initial_frame(
+            with_zero(1, "kTAT_Reset"), "Defs/Action.tsd")
+        exceptional = inspect_tsd_initial_frame(
+            with_zero(2, "kTCT_ChangeHealthState"), "Defs/TS_2006.tsd")
+        self.assertEqual(action["first_symbol_kind"], "action_token")
+        self.assertEqual(exceptional["first_symbol_kind"], "condition_token_after_zero")
+        summary = summarize_initial_frames([action, exceptional])
+        self.assertEqual(len(summary["anomalous_source_records"]), 1)
+        self.assertEqual(summary["anomalous_source_records"][0]["source_member"],
+                         "Defs/TS_2006.tsd")
+
+    def test_first_record_probe_rejects_forged_header_length(self):
+        from dx2_tsd_initial_frame import inspect_tsd_initial_frame
+        with self.assertRaisesRegex(ValueError, "length mismatch"):
+            inspect_tsd_initial_frame(tsd()[:-1])
+        with self.assertRaisesRegex(ValueError, "unsupported or truncated"):
+            inspect_tsd_initial_frame(b"bad")
 
     def test_truncated_corrupt_size_rejected(self):
         with self.assertRaisesRegex(ValueError,"header"):
