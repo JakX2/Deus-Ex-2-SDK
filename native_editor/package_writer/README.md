@@ -338,6 +338,68 @@ The Python and fixture checks run in GitHub Actions. **Godot GUI
 interaction and in-game loading have not yet been tested on a local
 Windows client**; these are separate release gates.
 
+## Eighth milestone: exact native GameSys scalar serialization
+
+The read-only property Inspector can now be complemented by a separate
+**opt-in, strictly limited experimental native GMP writer** for a single
+**existing** GameSys float32/int32 block on an **existing** actor:
+
+    native_editor/package_writer/dx2_gamesys_scalar_probe.py
+
+The first gate is still **memory-only**. It requires the exact original
+GMP SHA-256, the original one-based actor export number AND name, one
+unambiguous existing GameSys numeric ID, the original source numeric
+value, and the proposed new value.
+
+    python native_editor/package_writer/dx2_gamesys_scalar_probe.py "C:\DX2\Maps\M1_Seattle_Hub_WTOterminal.gmp" --source-sha256 ORIGINAL_HASH --actor-export 23 --actor-name D_464__1 --property-id 1586 --kind float --expect 0.49803924560546875 --replace 0.6
+
+The tool verifies a **byte-identical no-op** baseline, then uses both:
+
+- DX2SDK's independent native GameSys reader and original byte-offset
+  replacement, limited to an existing 4-byte scalar payload.
+- The unchanged, MIT-licensed T3SDK \`ActorEdit.set_block\` +
+  \`PackageWriter.write\` path.
+
+Both outputs must match **for every byte of the entire GMP**, and
+**the only differences from the original are within the exact four
+original payload bytes**. The source file is checked again for drift.
+Any unknown type, duplicate property, unsupported runtime bit, wrong
+original value or unexpected byte change aborts the operation.
+
+### Experimental isolated Save As (optional)
+
+**This does not enable or modify Godot's native Save As button.**
+Users explicitly choosing \`--output\` can create a separate
+*experimental* copy, never an in-place retail replacement:
+
+    python native_editor/package_writer/dx2_gamesys_scalar_probe.py "C:\DX2\Maps\M1_Seattle_Hub_WTOterminal.gmp" --source-sha256 ORIGINAL_HASH --actor-export 23 --actor-name D_464__1 --property-id 1586 --kind float --expect 0.49803924560546875 --replace 0.6 --output "C:\DX2EdIsolatedTest\M1_Seattle_Hub_WTOterminal.gmp"
+
+- Output filename must match the original and its directory must be
+  outside the source map folder and its descendants.
+- An existing output or manifest is **never overwritten**.
+- Writes only after full in-memory serializer parity, then independently
+  re-parses the binary GMP from disk and writes an adjacent
+  \`*.dx2ed-gamesys-scalar.json\` report.
+- Both report and tool explicitly say \`runtime_verified=false\`.
+  **Do not copy this over retail files until a separate disposable
+  game-installation test verifies it.**
+
+Original file compatibility sampled **40 individual edits** across
+two original user-owned GMPs: 20 WTO Terminal existing float32
+GameSys fields and 20 Seattle Club existing int32 GameSys fields,
+with exact complete-file parity between T3SDK and direct byte-patch
+serializers, and no writes to source assets.
+
+Original-source inventories contain 173 eligible 4-byte GameSys float
+blocks and 19 int blocks in WTO Terminal, and 316 float plus 34 int
+in Seattle Club. **The 40 sampled parity passes are not a claim that
+all these candidate fields have been gameplay-tested**.
+
+Native strings/names, object references, byte and bool flags, arrays,
+structs, script references, class creation, GameSys inheritance and
+IBD/TriggerScript write support remain disabled. Their encoding and
+runtime meaning require separate evidence.
+
 ## Original-file compatibility evidence
 
 Tested locally using the unchanged T3SDK 0.3.1 reader and writer:
