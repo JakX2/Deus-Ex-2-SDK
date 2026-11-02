@@ -27,7 +27,9 @@ from dx2placement import analyze_mesh_placement, summarize_placement, add_world_
 from dx2level import actor_matrix, load_resource_index
 from dx2bundles import parse_mesh
 
-# Updated preview shader behavior: source-alpha glass needs a fresh GLB,\n# not reuse a cache keyed only by original GMP and IBD hashes.\nCACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.7-wto-glass-alpha-v1'
+# Updated preview shader behavior: source-alpha glass needs a fresh GLB,
+# not reuse a cache keyed only by original GMP and IBD hashes.
+CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.7-wto-glass-alpha-v1'
 
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
