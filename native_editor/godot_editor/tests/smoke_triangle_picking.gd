@@ -172,8 +172,14 @@ func _run() -> void:
     bsp_probe.name = "BSP_998"
     bsp_probe.mesh = BoxMesh.new()
     viewer.world_root.add_child(bsp_probe)
+    bsp_probe.global_position = actor_mesh.global_position
     viewer.all_mesh_instances.append(bsp_probe)
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
     var audit_before: Dictionary = viewer._imported_triangle_coverage()
+    var nearby: Array = audit_before["near_selected_aabb_within_1_5m"]
+    if not nearby.any(func(item: Dictionary) -> bool: return item["node"] == "BSP_998"):
+        _fail("Imported geometry audit must report the selected actor's nearby BSP")
+        return
     if int(audit_before["imported_bsp_triangles"]) != 12:
         _fail("Godot geometry audit must count actual synthetic BSP triangle buffers")
         return
