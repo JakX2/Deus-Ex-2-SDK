@@ -677,5 +677,77 @@ func _run() -> void:
         _fail("skin diagnostics should show exact missing texture status")
         return
 
+    # A separate original GameSys source sidecar enriches the Inspector.
+    # Its values NEVER become draft edits, GameSys native writes or spawn actions.
+    if viewer.source_gamesys_panel == null or viewer.source_archetype_list == null:
+        _fail("Source GameSys inspector and recovered archetype tab must exist")
+        return
+    viewer._clear_selection()
+    viewer.current_source_map_name = "M1_Fixture.gmp"
+    viewer.source_gamesys_sha256 = "a".repeat(64)
+    var original_gamesys_fixture := {
+        "schema": "DX2Ed-gamesys-inspector-sidecar-v1",
+        "read_only": true,
+        "native_game_editing_enabled": false,
+        "source_map": "M1_Fixture.gmp",
+        "source_sha256": "a".repeat(64),
+        "actors": {str(source_export): {
+            "name": "StaticMeshActor__1",
+            "export": source_export,
+            "properties": [{
+                "id": 92, "name": "TriggerScripts",
+                "declared_type": "array<name>", "declared_in": "Engine.Actor",
+                "source_value": {"items": [71, 72], "interpretation": "index"},
+                "encoding": "array", "encoded_id": 67108956,
+                "payload_offset": 432, "payload_bytes": 3,
+                "source_payload_sha256": "deadbeef"
+            }]
+        }},
+        "archetypes": [{
+            "class": "D_1179", "display_name": "BotBasicVuln",
+            "parent": "D_1198", "source_ancestry": ["D_1179", "D_1198"],
+            "inheritance_complete": true, "recovered_dx2_layout": true,
+            "local_property_count": 1,
+            "local_defaults": [{
+                "property_id": 959, "source_declared_name": "VulnerabilityArray",
+                "source_declared_type": "array<struct>", "element_count": 29,
+                "elements": [{"element_index": 1,
+                    "typed_fields": [{"name": "Vulnerability", "value": 1.0}]}]
+            }]
+        }]
+    }
+    var gamesys_smoke_path := ProjectSettings.globalize_path("user://gamesys_sidecar_smoke.json")
+    var gamesys_smoke_file := FileAccess.open(gamesys_smoke_path, FileAccess.WRITE)
+    if gamesys_smoke_file == null:
+        _fail("Unable to write private GameSys smoke fixture")
+        return
+    gamesys_smoke_file.store_string(JSON.stringify(original_gamesys_fixture))
+    gamesys_smoke_file.close()
+    viewer._load_source_gamesys_catalog(gamesys_smoke_path)
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    if not viewer.source_gamesys_panel.visible or viewer.source_gamesys_list.item_count != 1:
+        _fail("Verified GameSys actor fields did not reach the read-only Inspector")
+        return
+    viewer._source_gamesys_selected(0)
+    if not viewer.source_gamesys_details.text.contains("array<name>") or not viewer.source_gamesys_details.text.contains("Payload offset: 0x1b0"):
+        _fail("GameSys Inspector did not show type and original native byte offset")
+        return
+    if viewer.source_archetype_list.item_count != 1:
+        _fail("Verified original DX2 archetype did not reach source browser")
+        return
+    viewer._source_archetype_selected(0)
+    if not viewer.source_archetype_details.text.contains("BotBasicVuln") or not viewer.source_archetype_details.text.contains("Vulnerability"):
+        _fail("Recovered grouped vulnerability fields are missing from GameSys tab")
+        return
+    if viewer._capture_edit_state()["property_edits"] != {}:
+        _fail("Reading native GameSys fields must never create draft property edits")
+        return
+    viewer.source_gamesys_sha256 = "b".repeat(64)
+    viewer._load_source_gamesys_catalog(gamesys_smoke_path)
+    if not viewer.source_gamesys_catalog.is_empty() or viewer.source_gamesys_panel.visible:
+        _fail("Mismatched source SHA must hide stale GameSys Inspector data")
+        return
+    DirAccess.remove_absolute(gamesys_smoke_path)
+
     print("DX2Ed triangle picking smoke: PASS (faces, transforms, sparse AABB, actor schema)")
     quit(0)
