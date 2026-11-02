@@ -114,14 +114,14 @@ def _mesh_bounds(value):
     return (lo, hi)
 
 
-def _preview_bounds(rot, location, bounds):
+def _preview_bounds(rot, location, bounds, invert_roll=False):
     """World AABB from the 8 original mesh-bound corners, in Godot metres.
 
     Rotation remains about the original actor origin; mesh pivot is NOT
     recentered. This is identical to the exporter coordinate conversion.
     """
     from itertools import product
-    basis = dx2_preview_basis(rot)
+    basis = dx2_preview_basis(rot, invert_roll=invert_roll)
     origin = tuple(location[SWAP[i]] * SCALE for i in range(3))
     pts = []
     for corner in product(*(bounds[0][i:i+1] + bounds[1][i:i+1]
@@ -159,6 +159,28 @@ def yaw_footprint_candidates(actor, rot):
         "warning": ("Footprint size is not a wall-alignment oracle. "
                     "Compare with the retail game before changing Yaw."),
     }
+
+
+def roll_bounds_candidates(actor, rot):
+    """AABB coordinates for the two conventions, from original source data.
+
+    In particular a 90-degree source Roll can displace a non-centered trim
+    box even when its long-axis orientation looks the same.
+    """
+    location = _triplet(actor.get("location"))
+    bounds = _mesh_bounds(actor.get("mesh_bounds"))
+    if location is None or bounds is None:
+        return None
+    raw = _preview_bounds(rot, location, bounds, invert_roll=False)
+    inverted = _preview_bounds(rot, location, bounds, invert_roll=True)
+    return {"raw_gmp_roll": raw, "ue2_inverted_roll": inverted,
+            "aabb_min_delta_m": [
+                round(inverted["min_godot_m"][i] - raw["min_godot_m"][i], 6)
+                for i in range(3)],
+            "aabb_max_delta_m": [
+                round(inverted["max_godot_m"][i] - raw["max_godot_m"][i], 6)
+                for i in range(3)],
+            "warning": "AABB shifts are not evidence of incorrect retail placement."}
 
 
 def analyze_actors(payload):
@@ -199,6 +221,9 @@ def analyze_actors(payload):
         candidates = yaw_footprint_candidates(actor, rot)
         if candidates is not None:
             item["yaw_footprint_candidates"] = candidates
+        roll_bounds = roll_bounds_candidates(actor, rot)
+        if roll_bounds is not None and status == "nontrivial_roll":
+            item["roll_bounds_candidates"] = roll_bounds
         result.append(item)
     return {
         "schema": SCHEMA, "map": meta.get("source_map", meta.get("map", "")),
