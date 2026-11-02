@@ -208,6 +208,26 @@ func _run() -> void:
         _fail("Native light actor inspector should display first-party DX2 property names")
         return
     viewer.focus_selected()
+    viewer._preview_selected_light_at_target()
+    if viewer.environment_light_previews.size() != 1:
+        _fail("Source Light should create one visual-only Godot preview without native actor")
+        return
+    var light_preview: OmniLight3D = viewer.environment_light_previews[0]
+    if (not is_instance_valid(light_preview)
+        or not light_preview.get_meta("editor_only", false)
+        or str(light_preview.get_meta("source_actor", "")) != "Light__7"
+        or light_preview.get_parent() != viewer.world_root
+        or light_preview.global_position.distance_to(viewer.camera_target) > 0.00001
+        or not viewer.draft_prop_copies.is_empty()
+        or not viewer.property_overrides.is_empty()
+        or viewer.environment_light_clear_button.disabled):
+        _fail("Editor-only Light preview must stay out of imported GLB and GMP draft state")
+        return
+    viewer._clear_environment_light_previews()
+    if (not viewer.environment_light_previews.is_empty()
+        or not viewer.environment_light_clear_button.disabled):
+        _fail("Light preview clear should be reversible and remove editor-only lights")
+        return
     var light_focus: Vector3 = Vector3(40,300,20) * float(viewer.NATIVE_CLONE_UNREAL_METRES)
     if viewer.camera_target.distance_to(light_focus) > 0.0001:
         _fail("Native light entity without rendered mesh should focus source XYZ")
