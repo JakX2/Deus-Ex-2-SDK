@@ -25,7 +25,8 @@ class NativeGameSysScalarDualWriterTests(unittest.TestCase):
     def setUp(self):
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.source = Path(self.temp.name) / "M1_OriginalFixture.gmp"
+        self.source = Path(self.temp.name) / "Retail" / "M1_OriginalFixture.gmp"
+        self.source.parent.mkdir()
         self.raw = fixture_with_gamesys(self.source)
         self.sha = hashlib.sha256(self.raw).hexdigest()
 
