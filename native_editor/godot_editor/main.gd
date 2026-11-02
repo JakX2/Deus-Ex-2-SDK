@@ -1112,9 +1112,9 @@ func _imported_triangle_coverage() -> Dictionary:
     var observed_placed := 0
     var bsp_nodes := 0
     var placed_nodes := 0
-    var other_primitives := 0
     var empty_mesh_nodes: Array[String] = []
     var invalid_triangle_surfaces: Array[String] = []
+    var per_mesh_triangle_counts: Dictionary = {}
     for node in all_mesh_instances:
         if not is_instance_valid(node) or node.mesh == null:
             continue
@@ -1123,17 +1123,17 @@ func _imported_triangle_coverage() -> Dictionary:
             bsp_nodes += 1
         else:
             placed_nodes += 1
-        var count := 0
-        for surface in range(node.mesh.get_surface_count()):
-            if node.mesh.surface_get_primitive_type(surface) != Mesh.PRIMITIVE_TRIANGLES:
-                other_primitives += 1
-                continue
-            var index_count: int = node.mesh.surface_get_array_index_len(surface)
-            var vertex_count: int = node.mesh.surface_get_array_len(surface)
-            var elements: int = index_count if index_count > 0 else vertex_count
-            if elements % 3 != 0:
-                invalid_triangle_surfaces.append("%s / surface %d: %d indices/vertices" % [node.name, surface, elements])
-            count += int(elements / 3)
+        # Mesh.get_faces() works for GLTF-imported ArrayMesh AND PrimitiveMesh
+        # (BoxMesh, SphereMesh, etc). Some surface_get_array_* calls exist
+        # only on ArrayMesh and crash Godot on a PrimitiveMesh fixture.
+        # Cache by resource instance ID so repeated actor meshes are cheap.
+        var mesh_id: int = node.mesh.get_instance_id()
+        if not per_mesh_triangle_counts.has(mesh_id):
+            var faces: PackedVector3Array = node.mesh.get_faces()
+            if faces.size() % 3 != 0:
+                invalid_triangle_surfaces.append(str(node.name) + " (faces not divisible by three)")
+            per_mesh_triangle_counts[mesh_id] = int(faces.size() / 3)
+        var count: int = int(per_mesh_triangle_counts[mesh_id])
         if count == 0:
             empty_mesh_nodes.append(str(node.name))
         if is_bsp:
@@ -1160,7 +1160,6 @@ func _imported_triangle_coverage() -> Dictionary:
         "expected_placed_mesh_triangles": expected_placed,
         "bsp_count_matches_export": expected_bsp != null and int(expected_bsp) == observed_bsp,
         "placed_count_matches_export": expected_placed != null and int(expected_placed) == observed_placed,
-        "non_triangle_surfaces": other_primitives,
         "invalid_triangle_surfaces": invalid_triangle_surfaces,
         "empty_mesh_nodes": empty_mesh_nodes,
         "read_only": true, "retail_rendering_verified": false,
@@ -1186,7 +1185,6 @@ func _show_rendered_geometry_audit() -> void:
         "\nTriangle parity: BSP %s | placed meshes %s" % [
             "MATCH" if audit["bsp_count_matches_export"] else "NOT VERIFIED / MISMATCH",
             "MATCH" if audit["placed_count_matches_export"] else "NOT VERIFIED / MISMATCH"] +
-        "\nNon-triangle surfaces: " + str(audit["non_triangle_surfaces"]) +
         "\nMalformed triangle surfaces: " + str(audit["invalid_triangle_surfaces"]) +
         "\nEmpty imported mesh nodes: " + str(audit["empty_mesh_nodes"]) +
         "\n\nCounts reflect imported Godot buffers, not GPU visibility or retail game fidelity."
