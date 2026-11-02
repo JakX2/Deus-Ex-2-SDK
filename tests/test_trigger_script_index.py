@@ -1,0 +1,121 @@
+"""Synthetic, asset-free TriggerScript source and map actor reference checks."""
+from __future__ import annotations
+import io
+import json
+from pathlib import Path
+import struct
+import sys
+from tempfile import TemporaryDirectory
+import unittest
+from zipfile import ZipFile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "scripts"))
+from dx2_trigger_script_index import (
+    SCHEMA, ACTOR_SCHEMA, actor_script_reference_report,
+    build_report, index_script_archive, main, parse_tsd,
+)
+
+
+def tsd(name="TS_42", *, old=False, title="Door opens"):
+    content = (name + "\x00" + title + "\x00" + "kTCT_FrobByPlayer\x00"
+               + "kTPT_String\x00" + "kTAT_OpenDoorLink\x00").encode("utf-16le")
+    if old:
+        return b"0FFE2FST" + struct.pack("<II",len(content)+4,16) + content
+    return b"1FFE2FST" + struct.pack("<II",0,len(content)) + content
+
+
+def archive(folder: Path, *, outer=True) -> Path:
+    raw = io.BytesIO()
+    with ZipFile(raw, "w") as z:
+        z.writestr("Defs/TS_42.tsd", tsd())
+        z.writestr("Defs/GenericDoor.tsd", tsd("GenericDoor", old=True))
+        z.writestr("DeletedScripts/TS_17.tsd", tsd("TS_17"))
+    path = folder / ("game_resources.zip" if outer else "TriggerScript.zip")
+    if outer:
+        with ZipFile(path, "w") as z:
+            z.writestr("TriggerScript.zip", raw.getvalue())
+    else:
+        path.write_bytes(raw.getvalue())
+    return path
+
+
+class TriggerScriptIndexTests(unittest.TestCase):
+    def test_valid_new_and_old_declarations(self):
+        for blob in (tsd(), tsd(old=True)):
+            item = parse_tsd(blob,"Defs/TS_42.tsd",deleted=False)
+            self.assertEqual(item["source_name"],"TS_42")
+            self.assertTrue(item["embedded_name_matches_filename"])
+            self.assertEqual(item["condition_symbols"][0]["text"],"kTCT_FrobByPlayer")
+            self.assertEqual(item["action_symbols"][0]["text"],"kTAT_OpenDoorLink")
+            self.assertEqual(item["parameter_type_symbols"][0]["text"],"kTPT_String")
+            self.assertFalse(item["symbol_graph_decoded"])
+
+    def test_truncated_corrupt_size_rejected(self):
+        with self.assertRaisesRegex(ValueError,"header"):
+            parse_tsd(b"random","Defs/X.tsd",deleted=False)
+        with self.assertRaisesRegex(ValueError,"length mismatch"):
+            parse_tsd(tsd()[:-2],"Defs/X.tsd",deleted=False)
+
+    def test_original_and_nested_zip_index_without_guessing_graph_edges(self):
+        with TemporaryDirectory() as temp:
+            for outer in (True,False):
+                path=archive(Path(temp),outer=outer)
+                index=index_script_archive(path)
+                self.assertEqual(index["schema"],SCHEMA)
+                self.assertEqual(index["definitions_count"],3)
+                self.assertEqual(index["counts"]["active_source_definitions"],2)
+                self.assertEqual(index["counts"]["deleted_sources"],1)
+                self.assertIn("kTAT_OpenDoorLink",index["unique_symbols"]["action"])
+                self.assertFalse(index["event_graph_decoded"])
+                self.assertFalse(index["native_script_editing_supported"])
+                record=next(x for x in index["definitions"] if x["member"]=="DeletedScripts/TS_17.tsd")
+                self.assertTrue(record["deleted_source"])
+
+    def test_indices_in_cached_actor_property_not_equated_to_ts_names(self):
+        actors={"meta":{"source_map":"M1_Seattle_Hub_WTOterminal.gmp",
+                        "source_map_sha256":"fixture"},
+                "actors":[
+                    {"name":"D_527__0","class":"D_527","export":5,
+                     "game_properties":[{"id":92,"value":{"items":[432,424,438],"interpretation":"index"}}]},
+                    {"name":"StaticMeshActor__119","class":"StaticMeshActor","export":554,"game_properties":[]},
+                    {"name":"Other__0","class":"Other","export":15,
+                     "game_properties":[{"id":92,"value":{"items":[0]}}]},
+                ]}
+        summary=actor_script_reference_report(actors)
+        self.assertEqual(summary["schema"],ACTOR_SCHEMA)
+        self.assertEqual(summary["actors_with_property_92"],2)
+        self.assertEqual(summary["serialized_indices_total"],4)
+        self.assertEqual(summary["actors"][0]["serialized_indices"],[432,424,438])
+        self.assertEqual(summary["actors"][0]["status"],"unresolved_script_index_array")
+        self.assertFalse(summary["native_script_binding_verified"])
+        self.assertEqual(summary["source_map_sha256"],"fixture")
+
+    def test_invalid_serialized_property_not_falsely_resolved(self):
+        report=actor_script_reference_report({"actors":[
+            {"name":"NPC","export":1,"class":"NPC","game_properties":[{"id":92,"value":{"items":[True,3]}}]},
+        ]})
+        self.assertEqual(report["actors"][0]["status"],"unparsed_serialized_value")
+        self.assertEqual(report["serialized_indices_total"],0)
+
+    def test_cli_writes_separate_json_without_mutating_sources(self):
+        with TemporaryDirectory() as d:
+            folder=Path(d)
+            src=archive(folder)
+            actors=folder/"actors.json"
+            actors.write_text(json.dumps({"actors":[
+                {"name":"NPC","class":"NPC","export":1,
+                 "game_properties":[{"id":92,"value":{"items":[42]}}]}
+            ]}))
+            original=src.read_bytes()
+            output=folder/"logic_index.json"
+            self.assertEqual(main([str(src),"--actors",str(actors),"--output",str(output)]),0)
+            doc=json.loads(output.read_text())
+            self.assertEqual(doc["actor_script_references"]["serialized_indices_total"],1)
+            self.assertEqual(src.read_bytes(),original)
+            with self.assertRaises(SystemExit):
+                main([str(src),"--output",str(src)])
+            self.assertEqual(src.read_bytes(),original)
+
+
+if __name__=="__main__":
+    unittest.main()
