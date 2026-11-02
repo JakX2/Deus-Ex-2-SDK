@@ -66,6 +66,40 @@ beside the output. Read it and confirm:
 
 Keep this output file out of the retail game.
 
+## 4b. Independently preflight the ORIGINAL and edited files
+
+The saved GMP has passed two serializers at creation time. Before
+installing it even in a **disposable** game copy, re-read the original
+and experimental copies and the manifest using the separate native
+preflight tool. This validates the actual bytes on disk, not just
+the original writer's success flag:
+
+    python native_editor/package_writer/dx2_gamesys_runtime_preflight.py --original "$map" --candidate "C:\DX2EdIsolatedTest\M1_Seattle_Hub_WTOterminal.gmp" --report "C:\DX2EdIsolatedTest\preflight.json"
+
+The preflight **fails closed** unless:
+- Both original and modified GMPs are accepted by the independently
+  implemented DX2 parser and unchanged MIT T3SDK package reader.
+- The source hash, edited hash, original and edited field contents,
+  actor ID/export, original block version, raw GameSys encoding,
+  byte offset, payload length and diff count all match reality.
+- **Every changed byte** falls within the exact original four-byte
+  scalar payload, and the manifest is adjacent to the candidate GMP.
+- The original byte length, package GUID, export structure and names
+  remain unchanged.
+
+A successful report says
+\`binary-preflight-passed-runtime-not-tested\` and
+\`game_runtime_tested=false\`. It never claims that Invisible War
+successfully loaded the map. The tool **does not install, replace,
+repair or otherwise write GMP files**. The optional JSON report
+must be a new separate file outside the original Maps directory.
+
+The supplied original WTO Terminal package was independently
+sampled in memory for \`D_464__1\`, GameSys 1586
+(\`EmissiveScale\`, 0.49803924560546875 to 0.6), and both
+T3SDK and a direct four-byte patch produced the exact same GMP
+bytes. This is **not** evidence of in-game behavior.
+
 ## 5. Test only in a disposable game installation
 
 Put the independently verified edited GMP into the appropriate mission
