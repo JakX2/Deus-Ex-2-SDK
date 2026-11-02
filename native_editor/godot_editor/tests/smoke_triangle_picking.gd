@@ -742,6 +742,49 @@ func _run() -> void:
     if viewer._capture_edit_state()["property_edits"] != {}:
         _fail("Reading native GameSys fields must never create draft property edits")
         return
+    # The only conditional GameSys writer affordance is a source-verified
+    # authored Boolean #1487. Scripts, other types and runtime bits stay locked.
+    if viewer.source_gamesys_light_button == null or viewer.source_gamesys_light_button.visible:
+        _fail("Non-Boolean GameSys source may not offer native light Save As")
+        return
+    var light_record := {
+        "id": 1487, "name": "bLightOn",
+        "declared_type": "bool", "declared_in": "Engine.Actor",
+        "source_value": true, "encoding": "bool",
+        "encoded_id": (128 << 16) | 1487,
+        "payload_offset": 470, "payload_bytes": 1,
+        "source_payload_sha256": "aa".repeat(32)
+    }
+    original_gamesys_fixture["actors"][str(source_export)]["properties"].append(light_record)
+    var new_file := FileAccess.open(gamesys_smoke_path, FileAccess.WRITE)
+    new_file.store_string(JSON.stringify(original_gamesys_fixture))
+    new_file.close()
+    viewer._load_source_gamesys_catalog(gamesys_smoke_path)
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    viewer._source_gamesys_selected(1)
+    var light_context: Dictionary = viewer._selected_source_light_bool_context()
+    if (not viewer.source_gamesys_light_button.visible
+        or int(light_context.get("property_id", -1)) != 1487
+        or light_context.get("expected") != true
+        or str(light_context.get("actor", "")) != "StaticMeshActor__1"
+        or viewer._capture_edit_state()["property_edits"] != {}):
+        _fail("Verified authored bLightOn must allow only an isolated test; no draft edits")
+        return
+    viewer._source_gamesys_selected(0)
+    if viewer.source_gamesys_light_button.visible:
+        _fail("Switching from bLightOn to TriggerScripts must hide the light writer")
+        return
+    viewer._source_gamesys_selected(1)
+    original_gamesys_fixture["actors"][str(source_export)]["properties"][1]["encoded_id"] |= (0x4000 << 16)
+    var runtime_file := FileAccess.open(gamesys_smoke_path, FileAccess.WRITE)
+    runtime_file.store_string(JSON.stringify(original_gamesys_fixture))
+    runtime_file.close()
+    viewer._load_source_gamesys_catalog(gamesys_smoke_path)
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    viewer._source_gamesys_selected(1)
+    if viewer.source_gamesys_light_button.visible or not viewer._selected_source_light_bool_context().is_empty():
+        _fail("Runtime-flagged bLightOn must never expose native Save As")
+        return
     viewer.source_gamesys_sha256 = "b".repeat(64)
     viewer._load_source_gamesys_catalog(gamesys_smoke_path)
     if not viewer.source_gamesys_catalog.is_empty() or viewer.source_gamesys_panel.visible:
