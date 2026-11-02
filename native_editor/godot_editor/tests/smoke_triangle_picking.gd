@@ -145,6 +145,11 @@ func _run() -> void:
         _fail("Read-only original TriggerScript browser list/details")
         return
     viewer.selected_actor = ai_fixture
+    viewer.focus_selected()
+    var expected_ai_focus := Vector3(1.0, 3.0, 2.0) * viewer.NATIVE_CLONE_UNREAL_METRES
+    if viewer.camera_target.distance_to(expected_ai_focus) > 0.0001:
+        _fail("Original AI-layer candidates without meshes must be focusable from source XYZ")
+        return
     viewer._inspect_selected_actor_scripts()
     if (not viewer.gameplay_details.text.contains("432")
         or not viewer.gameplay_details.text.contains("NOT verified TS_")):
