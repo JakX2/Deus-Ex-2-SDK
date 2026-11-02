@@ -27,7 +27,7 @@ from dx2level import actor_matrix, load_resource_index
 from dx2bundles import parse_mesh
 from dx2_rotation_audit import analyze_actors
 
-CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.6-actor-skins-v1'
+CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.7-static-bf-v1'
 
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
