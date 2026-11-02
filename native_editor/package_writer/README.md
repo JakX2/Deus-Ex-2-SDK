@@ -39,6 +39,30 @@ The original input package is never modified.
 This is **not evidence** that changed actor data, BSP, physics, scripts
 or IBD resources will load in-game.
 
+## Second milestone: cross-check edited Location bytes (in memory only)
+
+DX2Ed now independently compares the upstream T3SDK PackageWriter's
+same-sized set_object replacement against the existing DX2Ed
+apply_location_plan byte-range writer for **existing StaticMeshActor
+Location.X/Y/Z** changes. Both must produce exactly the same complete
+GMP byte stream. The original draft constraints are reused, including
+source SHA, actor export index, original transform basis (no Roll/rotation
+changes), and absence of cloned objects or unsupported property edits.
+
+    python native_editor/package_writer/dx2_package_roundtrip.py compare-translation "C:\DX2\Content\DX2\Maps\M1_Seattle_Hub_WTOterminal.gmp" --actors "C:\DX2EdCache\WTO\actors.json" --draft "C:\DX2EdCache\WTO\editor_draft.json"
+
+The comparison reports the edited actor names, changed byte count, and
+result hash, without saving a modified GMP. It refuses the result if the
+two independently implemented serializers disagree by even one byte.
+Synthetic CI verifies a real nested tagged FVector Location change and
+rejection of edited rotation bases and new actor drafts.
+
+**This is not an in-game test.** The unchanged DX2Ed experimental
+Location-only Save As remains the separate way to create an edited GMP
+for isolated retail testing, with its own manifest and binary verifier.
+No new editor button or silently enabled native-save capability is added.
+
+
 ## Original-file compatibility evidence
 
 Tested locally using the unchanged T3SDK 0.3.1 reader and writer:
