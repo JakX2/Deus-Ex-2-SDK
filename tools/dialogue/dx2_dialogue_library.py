@@ -220,6 +220,53 @@ def preview_changes(source: dict, draft: dict) -> tuple[bytes, dict]:
     }
 
 
+def render_html(document: dict) -> str:
+    """Portable offline browser. All source strings enter the DOM as text."""
+    payload = json.dumps(document, ensure_ascii=False, separators=(",", ":"))
+    payload = payload.replace("<", "\\u003c").replace("&", "\\u0026")
+    template = r'''<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DX2Ed Dialogue Source Browser</title>
+<style>
+:root{font:14px Segoe UI,system-ui,sans-serif;color:#e0ebfa;background:#111b28;color-scheme:dark}
+*{box-sizing:border-box}body{margin:0}header{padding:17px 22px;background:#1b2b3c;border-bottom:1px solid #34465a}
+h1{font-size:19px;margin:0 0 7px}small,.muted{color:#a0b8cf}main{max-width:1200px;margin:0 auto;padding:18px}
+.tools{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:16px}input,select{background:#1d3043;color:#e6f4ff;padding:10px;border:1px solid #465e75;border-radius:6px}
+input{flex:1;min-width:240px}.row{border-bottom:1px solid #2d3e50;padding:11px 10px;display:grid;grid-template-columns:80px minmax(80px,160px) 1fr;gap:12px;align-items:start}
+.row:nth-child(even){background:#172536}.row .line{color:#82a8c6;font-variant-numeric:tabular-nums}.row .speaker{color:#92d5fa;font-weight:600;word-break:break-word}
+.row.comment .speaker{color:#e6b96d}.row.choice .speaker{color:#ecbafa}.row .content{overflow-wrap:anywhere;white-space:pre-wrap}
+#out{border:1px solid #354b61;border-radius:8px;overflow:hidden}.hint{margin:10px 0;color:#bed1e4}
+@media(max-width:700px){.row{grid-template-columns:52px 100px 1fr;gap:6px}}
+</style></head><body>
+<header><h1>DX2Ed Dialogue Source Browser</h1><small id="source"></small></header>
+<main><p class="hint">Source text only. Line order does not establish game dialogue branching or event conditions.</p>
+<div class="tools"><input id="query" placeholder="Search lines, speakers and developer comments" aria-label="Search dialogue">
+<select id="speaker" aria-label="Filter speaker"><option value="">All speakers</option></select>
+<select id="kind" aria-label="Filter kind"><option value="">All line types</option><option value="spoken">Spoken</option><option value="choice">Choice labels</option><option value="comment">Developer comments</option></select></div>
+<div class="hint" id="count"></div><div id="out"></div><p class="hint" id="footer"></p></main>
+<script id="dialogue-data" type="application/json">__DATA__</script>
+<script>
+(function(){
+"use strict";
+const doc=JSON.parse(document.getElementById("dialogue-data").textContent);
+const rows=doc.lines,out=document.getElementById("out"),query=document.getElementById("query"),speaker=document.getElementById("speaker"),kind=document.getElementById("kind");
+document.getElementById("source").textContent=doc.source_member+" · "+doc.source_line_count+" lines · "+doc.compiled_con_files.length+" compiled .con containers (metadata only)";
+document.getElementById("footer").textContent="Compiled .con branching and TriggerScript execution are not decoded. Source SHA-256: "+doc.source_sha256;
+Object.keys(doc.counts_by_speaker).sort().forEach(function(name){let o=document.createElement("option");o.value=name;o.textContent=name;speaker.appendChild(o);});
+function el(tag,content,cls){let e=document.createElement(tag);e.textContent=content;if(cls)e.className=cls;return e;}
+function draw(){let q=query.value.toLocaleLowerCase(),sp=speaker.value,k=kind.value;
+let rowsFound=rows.filter(function(r){return (!sp||r.speaker===sp)&&(!k||r.kind===k)&&(!q||((r.speaker||"")+" "+(r.text||"")).toLocaleLowerCase().includes(q));});
+document.getElementById("count").textContent=rowsFound.length+" / "+rows.length+" matching source lines; showing at most 350.";
+out.replaceChildren();let frag=document.createDocumentFragment();
+rowsFound.slice(0,350).forEach(function(r){let item=el("div","","row "+r.kind);
+item.appendChild(el("div","#"+r.line,"line"));item.appendChild(el("div",r.speaker||r.kind,"speaker"));
+item.appendChild(el("div",r.text||"","content"));frag.appendChild(item);});out.appendChild(frag);}
+query.addEventListener("input",draw);speaker.addEventListener("change",draw);kind.addEventListener("change",draw);draw();
+})();
+</script></body></html>'''
+    return template.replace("__DATA__", payload)
+
+
 def write_distinct(output: Path, inputs: list[Path], content: bytes):
     if output.resolve() in {p.resolve() for p in inputs}:
         raise ValueError("Output must differ from every input; refusing in-place edit")
@@ -230,7 +277,7 @@ def write_distinct(output: Path, inputs: list[Path], content: bytes):
 def cli(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="command", required=True)
-    for cmd in ("index", "new-draft", "preview"):
+    for cmd in ("index", "html", "new-draft", "preview"):
         p = sub.add_parser(cmd)
         p.add_argument("source", type=Path, help="ConText.eng or ZIP containing it")
         p.add_argument("--output", type=Path, required=True)
@@ -240,11 +287,13 @@ def cli(argv=None):
     args = ap.parse_args(argv)
     try:
         source = load_source(args.source, encoding=args.encoding)
-        if args.command == "index":
+        if args.command in ("index", "html"):
             document = index_source(source)
-            content = (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+            content = ((json.dumps(document, ensure_ascii=False, indent=2) + "\n")
+                       if args.command == "index" else render_html(document)).encode("utf-8")
             inputs = [args.source]
-            summary = {"source_lines": document["source_line_count"], "counts": document["counts_by_kind"]}
+            summary = {"source_lines": document["source_line_count"], "counts": document["counts_by_kind"],
+                       "compiled_con_files": len(document["compiled_con_files"])}
         elif args.command == "new-draft":
             content = (json.dumps(new_draft(source), ensure_ascii=False, indent=2) + "\n").encode("utf-8")
             inputs = [args.source]
