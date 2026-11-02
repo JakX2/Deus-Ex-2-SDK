@@ -114,6 +114,79 @@ actual edited-GMP output from this new path, raw GameSys property edits,
 nested typed structures, arrays, string/object references, new objects,
 BSP or collision rebuilding, and native IBD resource editing.
 
+## Fourth milestone: original GameSys property inventory and declaration schema
+
+This phase connects **DX2-specific source declarations** to original cooked
+GameSys blocks, **without enabling native GameSys writes**.
+
+- dx2_gamesys_schema.py loads the user's original System folder or System
+  ZIP containing *.d2u script packages, extracts TextBuffer declarations,
+  and uses the MIT-licensed T3SDK parser **against DX2 sources**, not
+  against the Thief 3 property table. It records source property IDs,
+  declared names, types, categories, editor descriptions, owner classes,
+  original package SHA-256 and ambiguous declarations. The original
+  UnrealScript source bodies are not published.
+- dx2_gamesys_audit.py independently scans every source actor's serialized
+  GameSys block IDs, version numbers, original offsets and exact byte
+  lengths using DX2SDK's tagged actor parser. It then **checks each
+  block** against the T3SDK GamesysBlock reader, including the raw
+  payload bytes. It can validate an existing DX2Ed actors.json against
+  the source map's exact SHA-256 and actor export indices.
+- The original DX2Ed decoder labels raw encoding code **0x0040** as
+  "unknown", whereas T3SDK labels the same opaque value "type0x40".
+  That single raw encoding is admitted as a **label alias only**.
+  No interpretation or editing of this unknown encoding is attempted.
+- Source names and declared types are **editor metadata only**. They do
+  not prove runtime actor inheritance, event graph edges, correct array
+  element references, or playable GameSys edits.
+
+### CLI
+
+With original game data supplied locally:
+
+    python native_editor/package_writer/dx2_gamesys_schema.py "C:\DX2\System" --output "C:\DX2EdResearch\dx2-gamesys-declarations.json"
+
+    python native_editor/package_writer/dx2_gamesys_audit.py "C:\DX2\Content\DX2\Maps\M1_Seattle_Hub_WTOterminal.gmp" --system "C:\DX2\System" --actors "C:\DX2EdCache\WTO\actors.json" --output "C:\DX2EdResearch\WTO-gamesys-audit.json"
+
+The schema CLI also accepts the original System ZIP. The audit CLI accepts
+that same folder/ZIP, the resulting rich schema JSON, or the existing
+DX2Ed dx2-catalog-0.1 JSON as --system.
+
+Both default to fail-closed source verification. The audit's optional
+--allow-partial is **for diagnostics only**: it explicitly records
+unverified actors without fabricating source values. Both tools create
+new JSON files and refuse overwrites.
+
+### Direct original-file research results
+
+Original System(3).zip source TextBuffers declare **1,126 distinct
+GameSys property IDs**, with zero name/type ID conflicts in the
+current original archive. For example, Engine.Actor declares **ID 92
+TriggerScripts** with source type **array<name>**, under the Scripts
+editor category; this **does not** establish the runtime mapping of
+cooked numeric array elements to TS_*.tsd filenames.
+
+| Original GMP | State-frame exports | Original blocks | Source-labeled blocks |
+|---|---:|---:|---:|
+| WTO Terminal | 1,058 | 5,177 | 5,177 |
+| Seattle Club | 1,640 | 7,637 | 7,636 |
+
+The old WTO actor cache contains 1,033 map actors with 5,075 blocks;
+their source IDs, version and encodings match the original data once
+the **11 opaque 0x0040** labels are normalized. The additional
+state-frame exports are not necessarily actors placed in the scene.
+
+The 2005 original Thief 3 editor binaries and retail game data are
+not committed. The upstream MIT T3SDK source and license are included,
+and synthetic automated regression tests cover GameSys boundaries,
+corrupted sizes, source declarations, source-hash-pinned cache identity
+and unknown native block types.
+
+**Not yet available**: GameSys property editing, array or struct
+reserialization, native actor creation, native IBD rebuild, game
+install or playable mission compilation. These require native
+round-trip tests and isolated game runtime verification.
+
 ## Original-file compatibility evidence
 
 Tested locally using the unchanged T3SDK 0.3.1 reader and writer:
