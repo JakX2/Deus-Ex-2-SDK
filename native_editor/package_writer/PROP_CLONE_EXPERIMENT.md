@@ -110,3 +110,30 @@ issues. Next gate is a controlled fresh WTO Terminal entry using the
 Process-Monitor-verified active installation, gameplay screenshot, exit,
 and original-map restore. No general actor duplication should be exposed
 in Godot until this succeeds.
+
+
+## First user-reported in-game result: duplicated table visible (2026-11-02)
+
+The user launched the modified retail DX2 WTO Terminal map and supplied a
+gameplay screenshot, saying **"here it is!"**. The scene visibly contains
+two large round high-tech tables in the PEQUOD'S seating area, including
+a foreground table consistent with the extra exported
+`FO_table_hitech3` / `StaticMeshActor__1409` from the experimental
+one-actor clone. Other furniture and NPCs are still rendered.
+
+**Evidence tier:** user-reported and screenshot-supported **successful
+visual placement of an additional StaticMeshActor** in a loaded map.
+The file produced offline had already passed exact export-table and Level
+actor-list reparse/byte-preservation checks. The screenshot alone does
+not independently identify the running GMP SHA or prove collision,
+object interaction, save/reload persistence, physics or long-session
+stability. Those remain open gates.
+
+**Implications:** the strict clone writer can proceed from binary research
+to *experimental native Godot UI integration*, gated to qualifying
+original source actors. Keep creation of non-StaticMeshActor entities,
+new meshes, BSP, navigation or GameSys references disabled. Before
+exposing general use, validate physical collision, level re-entry,
+save/load behavior, and clean original-map restoration, preferably with
+the source and output GMP hashes captured alongside runtime testing.
+Do not redistribute the user's game screenshot or modified proprietary GMP.
