@@ -12,7 +12,7 @@ from zipfile import ZipFile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "scripts"))
 from dx2_trigger_script_index import (
     SCHEMA, ACTOR_SCHEMA, actor_script_reference_report,
-    build_report, index_script_archive, main, parse_tsd,
+    build_report, index_script_archive, main, parse_tsd, render_html,
 )
 
 
@@ -96,6 +96,24 @@ class TriggerScriptIndexTests(unittest.TestCase):
         ]})
         self.assertEqual(report["actors"][0]["status"],"unparsed_serialized_value")
         self.assertEqual(report["serialized_indices_total"],0)
+
+    def test_offline_html_escapes_dangerous_actor_names_and_lists_unknown_indices(self):
+        with TemporaryDirectory() as d:
+            src=archive(Path(d))
+            actors=Path(d)/"actors.json"
+            actors.write_text(json.dumps({"actors":[{
+                "name":"</script><script>alert(1)</script>", "class":"NPC",
+                "export":1, "game_properties":[{"id":92,"value":{"items":[424]}}]
+            }]}))
+            document=build_report(src,actors)
+            html=render_html(document)
+            self.assertEqual(html.count("</script>"),2)
+            self.assertIn("\\u003c/script>",html)
+            self.assertIn("actor_script_references",html)
+            html_path=Path(d)/"triggers.html"
+            self.assertEqual(main([str(src),"--actors",str(actors),
+                                   "--format","html","--output",str(html_path)]),0)
+            self.assertIn("DX2Ed Mission Logic Source Browser",html_path.read_text())
 
     def test_cli_writes_separate_json_without_mutating_sources(self):
         with TemporaryDirectory() as d:
