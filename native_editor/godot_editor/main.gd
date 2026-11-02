@@ -98,6 +98,15 @@ var chosen_system_path: String = ""
 var preview_club_stairs := false
 var preview_auto_roll := true # GLB visualization hypothesis; never retail GMP
 var last_gmp_path: String = ""
+# Original source-only TriggerScript/AI browser; native spawn disabled.
+var gameplay_zip_dialog: FileDialog
+var gameplay_thread: Thread = null
+var gameplay_catalog: Dictionary = {}
+var gameplay_filter: LineEdit
+var gameplay_list: ItemList
+var gameplay_details: TextEdit
+var gameplay_visible: Array = []
+var loaded_actors_json_path: String = ""
 var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
 var draft_prop_copies: Dictionary = {}
@@ -181,6 +190,9 @@ func _exit_tree() -> void:
     if native_export_thread != null:
         native_export_thread.wait_to_finish()
         native_export_thread = null
+    if gameplay_thread != null:
+        gameplay_thread.wait_to_finish()
+        gameplay_thread = null
 
 
 func _ready() -> void:
@@ -396,7 +408,7 @@ func _make_ui() -> void:
     for choice in [
         "All actors", "Static meshes", "Brushes", "Lights",
         "Volumes / triggers", "Item candidates", "Physics candidates",
-        "Gameplay / other", "Review mesh placement"
+        "Gameplay / other", "Review mesh placement", "Original AI layer (NPC candidates)"
     ]:
         category_filter.add_item(choice)
     category_filter.selected = 0
@@ -494,6 +506,39 @@ func _make_ui() -> void:
     source_archetype_details.custom_minimum_size.y = 210
     source_archetype_details.text = "Import an original map with its System folder to browse the source archetypes. No native actor spawning."
     gamesys_tab.add_child(source_archetype_details)
+
+    # These original .tsd definitions are source evidence, NOT an actor
+    # script binding nor an executable gameplay compiler.
+    var gameplay_tab := VBoxContainer.new()
+    gameplay_tab.name = "Scripts"
+    left_tabs.add_child(gameplay_tab)
+    var scripts_note := Label.new()
+    scripts_note.text = "Original TriggerScripts and AI actors | Read-only"
+    gameplay_tab.add_child(scripts_note)
+    var open_gameplay_scripts := Button.new()
+    open_gameplay_scripts.text = "Open original TriggerScript.zip..."
+    open_gameplay_scripts.tooltip_text = "Inspect original Defs/*.tsd. Neither game scripts nor GMPs are changed."
+    open_gameplay_scripts.pressed.connect(func(): gameplay_zip_dialog.popup_centered_ratio(0.7))
+    gameplay_tab.add_child(open_gameplay_scripts)
+    gameplay_filter = LineEdit.new()
+    gameplay_filter.placeholder_text = "Search original script ID, title or action..."
+    gameplay_filter.text_changed.connect(func(_q): _refresh_gameplay_script_list())
+    gameplay_tab.add_child(gameplay_filter)
+    gameplay_list = ItemList.new()
+    gameplay_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    gameplay_list.item_selected.connect(_gameplay_script_selected)
+    gameplay_tab.add_child(gameplay_list)
+    var actor_script_button := Button.new()
+    actor_script_button.text = "Inspect selected actor script fields"
+    actor_script_button.tooltip_text = "Raw serialized indices are NOT verified TS_ script IDs."
+    actor_script_button.pressed.connect(_inspect_selected_actor_scripts)
+    gameplay_tab.add_child(actor_script_button)
+    gameplay_details = TextEdit.new()
+    gameplay_details.editable = false
+    gameplay_details.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+    gameplay_details.custom_minimum_size.y = 180
+    gameplay_details.text = "Open a GMP and its original TriggerScript.zip. No native script binding or NPC spawning yet."
+    gameplay_tab.add_child(gameplay_details)
 
     var brushes_tab := VBoxContainer.new()
     brushes_tab.name = "Brushes"
@@ -841,6 +886,12 @@ func _make_ui() -> void:
     json_dialog.filters = PackedStringArray(["*.json ; DX2Ed actor metadata"])
     json_dialog.file_selected.connect(load_actors)
     add_child(json_dialog)
+    gameplay_zip_dialog = FileDialog.new()
+    gameplay_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    gameplay_zip_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    gameplay_zip_dialog.filters = PackedStringArray(["*.zip ; Original TriggerScript definitions ZIP"])
+    gameplay_zip_dialog.file_selected.connect(_open_original_gameplay_scripts)
+    add_child(gameplay_zip_dialog)
 
     shared_zip_dialog = FileDialog.new()
     shared_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -1157,6 +1208,7 @@ func load_actors(path: String) -> void:
         status_label.text = "Invalid actor JSON: " + path
         return
     actors = result["actors"]
+    loaded_actors_json_path = path
     var metadata: Variant = result.get("meta", {})
     current_source_map_name = str(metadata.get("source_map", "")) if typeof(metadata) == TYPE_DICTIONARY else ""
     source_gamesys_sha256 = str(metadata.get("source_sha256", metadata.get("map_sha256", ""))) if typeof(metadata) == TYPE_DICTIONARY else ""
@@ -1196,6 +1248,13 @@ func _clear_current_scene() -> void:
     _refresh_asset_list()
     actors.clear()
     actors_by_name.clear()
+    loaded_actors_json_path = ""
+    gameplay_catalog.clear()
+    gameplay_visible.clear()
+    if gameplay_list != null:
+        gameplay_list.clear()
+    if gameplay_details != null:
+        gameplay_details.text = "Open a source-matched original GMP and TriggerScript.zip."
     meshes_by_actor.clear()
     current_source_map_name = ""
     original_mesh_transforms.clear()
@@ -1274,6 +1333,8 @@ func _category_visible(category: String, actor: Dictionary = {}) -> bool:
     if category_filter.selected == 8:
         var evidence: Variant = actor.get("placement_diagnostic", {})
         return typeof(evidence) == TYPE_DICTIONARY and bool(evidence.get("needs_review", false))
+    if category_filter.selected == 9:
+        return _actor_on_original_ai_layer(actor)
     var values := [
         "All actors", "Static mesh", "Brush", "Light",
         "Volume / trigger", "Item candidate", "Physics candidate", "Gameplay / other"
