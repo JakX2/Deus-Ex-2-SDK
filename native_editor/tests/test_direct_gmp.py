@@ -53,7 +53,7 @@ class DirectGMPTests(unittest.TestCase):
                         'material_status': [{'name':'SyntheticTan',
                                              'resolution':'missing_diffuse_texture'}]}]}
         def actors(path, system):
-            return ({'schema':'test'}, [{'name':'StaticMeshActor__1', 'class':'StaticMeshActor', 'export':7}])
+            return ({'schema':'test'}, [{'name':'StaticMeshActor__1', 'class':'StaticMeshActor', 'export':7, 'mesh':'SyntheticStair', 'rotation':[0,32768,16384], 'location':[0,0,0]}])
         with patch.object(backend, 'list_levels', return_value=[self.level]), \
              patch.object(backend, 'run_export', side_effect=exporter), \
              patch.object(backend, 'actor_records', side_effect=actors), \
@@ -67,6 +67,7 @@ class DirectGMPTests(unittest.TestCase):
             auto_second = backend.build(self.game_map, self.output, preview_auto_roll=True)
             # Emulate an older private cache without the new class catalog.
             Path(first['archetypes_json']).unlink()
+            Path(first['rotation_audit_json']).unlink()  # old cache, audit not yet present
             third = backend.build(self.game_map, self.output)
         self.assertFalse(first['cached'])
         self.assertTrue(second['cached'])
@@ -77,6 +78,15 @@ class DirectGMPTests(unittest.TestCase):
         self.assertNotEqual(first['glb'], auto_first['glb'])
         self.assertTrue(third['cached'])
         self.assertTrue(Path(third['archetypes_json']).is_file())
+        self.assertTrue(Path(third['rotation_audit_json']).is_file())
+        audit = json.loads(Path(third['rotation_audit_json']).read_text())
+        self.assertEqual(audit['schema'], 'DX2Ed-rotation-reference-audit-v1')
+        self.assertEqual(audit['counts']['nontrivial_roll'], 1)
+        self.assertEqual(audit['counts']['mesh_linked'], 1)
+        self.assertFalse(audit['game_verified'])
+        self.assertEqual(audit['actors'][0]['rotation'], [0.0, 32768.0, 16384.0])
+        self.assertTrue(Path(auto_first['rotation_audit_json']).is_file())
+        self.assertNotEqual(third['rotation_audit_json'], auto_first['rotation_audit_json'])
         class_doc = json.loads(Path(third['archetypes_json']).read_text())
         self.assertEqual(class_doc['schema'], 'DX2Ed-archetype-catalog-v1')
         self.assertEqual(class_doc['classes'][0]['class'], 'StaticMeshActor')
