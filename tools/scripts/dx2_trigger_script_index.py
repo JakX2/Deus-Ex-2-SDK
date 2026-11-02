@@ -22,6 +22,7 @@ import sys
 import zipfile
 
 from dx2_script_organizer import parse_organizer, attach_organizer_index
+from dx2_tsd_initial_frame import inspect_tsd_initial_frame, summarize_initial_frames
 
 SCHEMA = "DX2Ed-trigger-symbol-index-v1"
 ACTOR_SCHEMA = "DX2Ed-unresolved-script-references-v1"
@@ -139,8 +140,15 @@ def index_script_archive(archive_path: Path) -> dict:
                 continue
             if item.file_size > MAX_SCRIPT_BYTES:
                 raise ValueError(f"Script source exceeds size limit: {normalized}")
-            definitions.append(parse_tsd(zipf.read(item), normalized,
-                                         deleted=(top == "deletedscripts")))
+            raw_tsd = zipf.read(item)
+            record = parse_tsd(raw_tsd, normalized, deleted=(top == "deletedscripts"))
+            if top == "defs":
+                # Active records have a validated header, two initial UTF-16
+                # strings, and a partially decoded token prefix. Keep ALL
+                # subsequent expression bytes opaque rather than guessing.
+                record["initial_binary_frame"] = inspect_tsd_initial_frame(
+                    raw_tsd, normalized)
+            definitions.append(record)
     counts = Counter()
     for record in definitions:
         counts["deleted_sources" if record["deleted_source"] else "active_source_definitions"] += 1
@@ -157,6 +165,9 @@ def index_script_archive(archive_path: Path) -> dict:
         "definitions_count": len(definitions),
         "counts": dict(sorted(counts.items())),
         "unique_symbols": unique,
+        "initial_binary_frame_summary": summarize_initial_frames([
+            r["initial_binary_frame"] for r in definitions
+            if "initial_binary_frame" in r]),
         "definitions": sorted(definitions, key=lambda x: x["member"].casefold()),
         "warnings": [
             "kTCT/kTAT/kTPT are source-declared string tokens, not decoded runtime nodes.",
@@ -164,6 +175,7 @@ def index_script_archive(archive_path: Path) -> dict:
             "DeletedScripts are historical source records; they are not active scripts.",
             "Script display labels, source filenames, and map actor array indices are not verified bindings.",
             "No original game package or native TriggerScript is modified.",
+            "Initial binary words are not proven expression counts; TS_2006 is an observed exception.",
         ],
         "native_script_editing_supported": False,
         "event_graph_decoded": False,
