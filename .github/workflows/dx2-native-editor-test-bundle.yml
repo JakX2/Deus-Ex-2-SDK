@@ -26,6 +26,7 @@ jobs:
           cp -R map_exporter actor_explorer staging/
           cp -R third_party/t3sdk_assets staging/third_party/
           cp native_editor/package_writer/dx2_actor_clone_probe.py staging/native_editor/package_writer/
+          cp native_editor/package_writer/dx2_actor_multi_clone_probe.py staging/native_editor/package_writer/
           cp native_editor/package_writer/dx2_package_roundtrip.py staging/native_editor/package_writer/
           cp native_editor/package_writer/dx2_gamesys_bool_probe.py staging/native_editor/package_writer/
           cp native_editor/package_writer/dx2_gamesys_audit.py staging/native_editor/package_writer/
