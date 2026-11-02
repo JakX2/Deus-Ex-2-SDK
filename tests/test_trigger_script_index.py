@@ -90,6 +90,62 @@ class TriggerScriptIndexTests(unittest.TestCase):
         self.assertFalse(summary["native_script_binding_verified"])
         self.assertEqual(summary["source_map_sha256"],"fixture")
 
+
+    def test_original_organizer_three_trees_and_active_source_join(self):
+        from dx2_script_organizer import parse_organizer, attach_organizer_index
+        organizer = ("2\\r\\nHeaderBegin\\r\\n2\\r\\n"
+                     "0\\r\\nM1_Seattle\\r\\n2\\r\\n"
+                     "1\\r\\nTS_42\\r\\n1\\r\\nGenericDoor\\r\\n"
+                     "1\\r\\nTS_42\\r\\n"
+                     "HeaderBegin\\r\\n1\\r\\n0\\r\\nAI\\r\\n1\\r\\n"
+                     "1\\r\\nkTCT_FrobByPlayer\\r\\n"
+                     "HeaderBegin\\r\\n1\\r\\n0\\r\\nActions\\r\\n1\\r\\n"
+                     "1\\r\\nkTAT_OpenDoorLink\\r\\n").encode("ascii")
+        parsed = parse_organizer(organizer)
+        self.assertEqual(parsed["trees"]["scripts"]["entry_count"], 3)
+        self.assertEqual(parsed["trees"]["scripts"]["unique_entry_count"], 2)
+        self.assertEqual(parsed["trees"]["scripts"]["duplicate_entry_names"],
+                         [{"name":"TS_42", "count":2}])
+        self.assertEqual(parsed["trees"]["scripts"]["paths_by_name"]["ts_42"],
+                         [["M1_Seattle"], []])
+        index = {"definitions":[
+            {"filename_stem":"TS_42", "deleted_source":False},
+            {"filename_stem":"GenericDoor", "deleted_source":False},
+            {"filename_stem":"Deleted", "deleted_source":True},
+        ]}
+        attach_organizer_index(index, parsed)
+        self.assertEqual(index["organizer"]["unlisted_active_definitions"],[])
+        self.assertEqual(index["organizer"]["orphan_script_organizer_entries"],[])
+        self.assertEqual(index["definitions"][0]["organizer_paths"],
+                         [["M1_Seattle"], []])
+        self.assertEqual(index["definitions"][2]["organizer_status"],
+                         "historical_deleted_source")
+        self.assertTrue(index["organizer"]["categories_are_source_metadata_only"])
+
+    def test_organizer_bad_counts_and_extra_trailing_data_are_rejected(self):
+        from dx2_script_organizer import parse_organizer
+        good = ("2\\nHeaderBegin\\n1\\n1\\nTS_42\\n"
+                "HeaderBegin\\n0\\nHeaderBegin\\n0\\n")
+        with self.assertRaisesRegex(ValueError,"trailing"):
+            parse_organizer((good+"UNEXPECTED\\n").encode())
+        with self.assertRaisesRegex(ValueError,"Truncated"):
+            parse_organizer(b"2\\nHeaderBegin\\n1\\n0\\n")
+        with self.assertRaisesRegex(ValueError,"Unsupported"):
+            parse_organizer(good.replace("2\\n","3\\n",1).encode())
+
+    def test_original_tso_can_be_read_from_nested_archive(self):
+        with TemporaryDirectory() as d:
+            path=Path(d)/"TriggerScript.zip"
+            with ZipFile(path,"w") as z:
+                z.writestr("Defs/TS_42.tsd", tsd())
+                z.writestr("Organize/ScriptOrganizer.tso",
+                    "2\\r\\nHeaderBegin\\r\\n1\\r\\n"
+                    "0\\r\\nM1_Seattle\\r\\n1\\r\\n1\\r\\nTS_42\\r\\n"
+                    "HeaderBegin\\r\\n0\\r\\nHeaderBegin\\r\\n0\\r\\n")
+            idx=index_script_archive(path)
+            self.assertEqual(idx["organizer"]["counts"]["scripts"]["folder_count"],1)
+            self.assertEqual(idx["definitions"][0]["organizer_paths"],[["M1_Seattle"]])
+
     def test_invalid_serialized_property_not_falsely_resolved(self):
         report=actor_script_reference_report({"actors":[
             {"name":"NPC","export":1,"class":"NPC","game_properties":[{"id":92,"value":{"items":[True,3]}}]},
