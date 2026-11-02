@@ -177,13 +177,20 @@ func _run() -> void:
             {"id":1286,"value":"HubWTO_SmallRooms"},
             {"id":1467,"value":"HubWTO_RandomInAdj"}]
     }
+    var second_zone_fixture := {
+        "name":"ZoneProperties__4","class":"ZoneProperties","export":24,
+        "location":[80,80,200],"game_properties":[
+            {"id":1287,"value":"SeattleWTOTerminal"},
+            {"id":1286,"value":"HubWTO_LargeRooms"},
+            {"id":1467,"value":"HubWTO_FlybyInside"}]
+    }
     var particle_fixture := {
         "name":"Emitter__0","class":"Emitter","export":23,
         "location":[0,0,64],"game_properties":[]
     }
-    viewer.actors = [light_fixture, zone_fixture, particle_fixture]
+    viewer.actors = [light_fixture, zone_fixture, particle_fixture, second_zone_fixture]
     viewer._refresh_environment_entities()
-    if viewer.environment_list.item_count != 3 or viewer.environment_visible.size() != 3:
+    if viewer.environment_list.item_count != 4 or viewer.environment_visible.size() != 4:
         _fail("Environment must list real lights, ambient zones and particle emitters separately")
         return
     viewer.environment_filter.text = "HubWTO_SmallRooms"
@@ -211,7 +218,20 @@ func _run() -> void:
         or not viewer.environment_details.text.contains("NonStreamSchema1 (GameSys 1467)")):
         _fail("Original ZoneProperties should expose exact source sound schema strings")
         return
+    var sound_plan: Dictionary = viewer._environment_sound_plan()
+    if (viewer.environment_sound_field.disabled
+        or viewer.environment_sound_schema.disabled
+        or viewer.environment_sound_button.disabled
+        or sound_plan.is_empty()
+        or not int(sound_plan.get("property_id", -1)) in [1286,1467]
+        or sound_plan.get("expect") == sound_plan.get("replace")
+        or sound_plan.get("actor") != "ZoneProperties__3"):
+        _fail("Experimental sound zone Save As should only select original cross-verified schema values")
+        return
     viewer._environment_entity_selected(2)
+    if not viewer._environment_sound_plan().is_empty() or not viewer.environment_sound_button.disabled:
+        _fail("Particle emitters must never allow native sound schema editing")
+        return
     if not viewer.environment_details.text.to_lower().contains("not sound"):
         _fail("Particle Emitter must never be mislabeled as an audio sound entity")
         return
