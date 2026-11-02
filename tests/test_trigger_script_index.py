@@ -168,7 +168,7 @@ class TriggerScriptIndexTests(unittest.TestCase):
             self.assertIn("actor_script_references",html)
             self.assertIn("Condition palette",html)
             self.assertIn("Action palette",html)
-            self.assertIn("Original organizer categories",html)
+            self.assertIn("All original categories",html)
             html_path=Path(d)/"triggers.html"
             self.assertEqual(main([str(src),"--actors",str(actors),
                                    "--format","html","--output",str(html_path)]),0)
