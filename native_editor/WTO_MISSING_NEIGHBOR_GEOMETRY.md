@@ -246,3 +246,47 @@ encoding rather than missing triangles in the GLB-to-Godot import.
 representation, not a GPU draw-call audit or proof of retail-game
 pixel-level fidelity. The nearest-node table uses AABB distance, not
 polygon-to-polygon contact.
+
+## Confirmed Godot imported triangle parity and reversible BSP culling test
+
+The user ran **Audit rendered geometry** on the original WTO Terminal
+and supplied a screenshot showing:
+
+| Category | Imported Godot triangles | Expected source export |
+|---|---:|---:|
+| BSP | 1,372 / 104 nodes | 1,372 |
+| Placed meshes | 44,346 / 802 nodes | 44,346 |
+
+Both returned **MATCH**; there are zero malformed triangle surfaces and
+zero empty imported mesh nodes. This proves the currently recognized
+source triangles survived into the Godot CPU-side imported mesh buffers.
+It does **not** prove the visual surfaces are correctly exposed or shaded.
+
+The source BSP around the selected trim includes a wall at **UE X=-32**
+in render block `BSP_080`, with source triangles facing negative X.
+The legacy GLB builder sets `doubleSided: true` for every material,
+including BSP walls. This can expose normally back-facing surfaces and
+potentially occlude foreground trims.
+
+The editor now provides an **experimental and reversible**
+`BSP one-sided (test)` checkbox (default OFF).
+- OFF: preserve imported glTF double-sided BSP materials exactly.
+- ON: duplicate **only** the BSP's effective BaseMaterial3D resources
+  and set `CULL_BACK` on those per-instance surface overrides.
+- Toggling OFF restores **exactly** the prior per-instance surface
+  overrides, including null overrides. Placed meshes and their
+  materials remain untouched.
+- No changes to Roll, actor positions, cached GLB, GMP/IBD, or drafts.
+- No reimport needed to compare culling at the same camera angle.
+
+For the WTO wall, select `StaticMeshActor__119`, keep **BSP** and
+**Placed meshes** both visible, and compare the result with
+`BSP one-sided (test)` OFF then ON. If the trim's missing portions
+reappear only with one-sided BSP, this supports an occlusion issue.
+If no change, a BSP culling explanation is less likely; proceed to
+BSP/trim world geometry, material alpha and normal-facing diagnostics.
+This is a **test**, not a game-verified global material change.
+
+The headless Godot smoke test confirms that culling previews do not
+alter source material resources, do not affect placed actor meshes,
+and restore previous per-surface overrides after disable.
