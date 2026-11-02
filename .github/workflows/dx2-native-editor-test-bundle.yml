@@ -1,0 +1,44 @@
+name: DX2Ed native editor source-only test bundle
+
+on:
+  pull_request:
+    paths:
+      - 'native_editor/godot_editor/**'
+      - 'native_editor/package_writer/dx2_actor_clone_probe.py'
+      - 'native_editor/package_writer/GODOT_NATIVE_CLONE_UI.md'
+      - 'native_editor/package_writer/dx2_package_roundtrip.py'
+      - 'map_exporter/**'
+      - 'actor_explorer/**'
+      - 'third_party/t3sdk_assets/**'
+      - '.github/workflows/dx2-native-editor-test-bundle.yml'
+  workflow_dispatch:
+
+jobs:
+  source-only-editor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build DX2Ed native Godot test bundle (no licensed game data)
+        run: |
+          set -eu
+          mkdir -p staging/native_editor/package_writer staging/third_party
+          cp -R native_editor/godot_editor staging/native_editor/
+          cp -R map_exporter actor_explorer staging/
+          cp -R third_party/t3sdk_assets staging/third_party/
+          cp native_editor/package_writer/dx2_actor_clone_probe.py staging/native_editor/package_writer/
+          cp native_editor/package_writer/dx2_package_roundtrip.py staging/native_editor/package_writer/
+          cp native_editor/package_writer/dx2_gamesys_bool_probe.py staging/native_editor/package_writer/
+          cp native_editor/package_writer/dx2_gamesys_audit.py staging/native_editor/package_writer/
+          cp native_editor/package_writer/dx2_gamesys_schema.py staging/native_editor/package_writer/
+          cp native_editor/package_writer/dx2_gamesys_archetype_audit.py staging/native_editor/package_writer/
+          cp native_editor/package_writer/dx2_gamesys_archetype_arrays.py staging/native_editor/package_writer/
+          cp native_editor/package_writer/GODOT_NATIVE_CLONE_UI.md staging/READ_FIRST.md
+          find staging -type d -name __pycache__ -prune -exec rm -rf {} +
+          python -m compileall -q staging
+          find staging -type d -name __pycache__ -prune -exec rm -rf {} +
+          (cd staging && zip -q -r ../DX2Ed_Native_Editor_Clone_Test_Source.zip .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DX2Ed_Native_Editor_Clone_Test_Source
+          path: DX2Ed_Native_Editor_Clone_Test_Source.zip
+          retention-days: 7
