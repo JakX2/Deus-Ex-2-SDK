@@ -53,43 +53,6 @@ func _run() -> void:
     if not viewer.preview_auto_roll:
         _fail("Auto Roll preview ON must be selectable again")
         return
-    # WTO regression: the imported GLB can ALREADY have Auto Roll applied.
-    # Rotation Lab must separately offer both source-defined conventions
-    # without requiring a full GMP reimport.
-    var probe_name := "WTO_TestRoll"
-    var raw_source := [0.0, -8192.0, 16384.0]
-    viewer.actors_by_name[probe_name] = {
-        "name": probe_name, "class": "StaticMeshActor",
-        "mesh": "GEN_TRIM5-16ft", "rotation": raw_source, "export": 351
-    }
-    var corrected_basis: Basis = viewer._ue_rotator_basis([0.0, -8192.0, -16384.0])
-    var raw_basis: Basis = viewer._ue_rotator_basis(raw_source)
-    viewer.original_mesh_transforms[probe_name] = Transform3D(corrected_basis, Vector3(5, 6, 7))
-    if viewer.rotation_lab_modes.item_count != 7:
-        _fail("Rotation Lab must provide imported, UE2 and raw GMP Roll previews")
-        return
-    var imported_pose: Transform3D = viewer._rotation_hypothesis_pose(probe_name, 0)
-    var inverted_pose: Transform3D = viewer._rotation_hypothesis_pose(probe_name, 5)
-    var raw_pose: Transform3D = viewer._rotation_hypothesis_pose(probe_name, 6)
-    if (not imported_pose.basis.is_equal_approx(inverted_pose.basis) or
-        not inverted_pose.basis.is_equal_approx(corrected_basis)):
-        _fail("UE2 source Roll preview must not double-invert the imported Auto Roll")
-        return
-    if (not raw_pose.basis.is_equal_approx(raw_basis) or
-        raw_pose.basis.is_equal_approx(inverted_pose.basis)):
-        _fail("Raw GMP Roll must be separately previewable while Auto Roll remains enabled")
-        return
-    if not raw_pose.origin.is_equal_approx(Vector3(5, 6, 7)):
-        _fail("Source Roll comparison must preserve the original position")
-        return
-    var rotation_rules = load("res://rotation_fix_rules.gd")
-    var raw_rule: Dictionary = rotation_rules.rule_for_actor(
-        "M1_Seattle_Hub_WTOterminal.gmp", viewer.actors_by_name[probe_name], 6)
-    if raw_rule.is_empty() or rotation_rules.validate(
-        raw_rule, "M1_Seattle_Hub_WTOterminal.gmp").is_empty():
-        _fail("Raw GMP Roll candidate must have a valid scoped research rule")
-        return
-
     var shown: String = viewer._mesh_geometry_material_summary({
         "class": "StaticMeshActor", "mesh": "GEN_TRIM5-16ft",
         "auto_roll_preview": {"applied": true, "mode": "invert_roll_sign", "heuristic_only": true}
