@@ -4507,6 +4507,26 @@ func focus_selected() -> void:
         camera_target = aabb.get_center()
         orbit_distance = max(1.0, aabb.size.length() * 2.4)
         _update_camera()
+        return
+    # Most original AI/NPC candidates have no GLB mesh. Make them locatable
+    # without fabricating any native NPC geometry or gameplay behavior.
+    if not selected_actor.is_empty() and _actor_on_original_ai_layer(selected_actor):
+        var coords: Variant = selected_actor.get("location", [])
+        if typeof(coords) != TYPE_ARRAY or coords.size() != 3:
+            return
+        for value in coords:
+            if typeof(value) != TYPE_FLOAT and typeof(value) != TYPE_INT:
+                return
+        var source_point := Vector3(float(coords[0]), float(coords[2]), float(coords[1]))
+        if not source_point.is_finite():
+            return
+        camera_target = source_point * NATIVE_CLONE_UNREAL_METRES
+        orbit_distance = 6.0
+        _update_camera()
+        status_label.text = (
+            "Focused original AI-layer actor " + str(selected_actor.get("name", ""))
+            + " at source Location. This is not a spawned NPC."
+        )
 
 func frame_whole_scene() -> void:
     if scene_bounds_valid:
