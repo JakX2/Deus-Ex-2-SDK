@@ -475,8 +475,43 @@ func _run() -> void:
         _fail("Redo should recreate the duplicate under its original name")
         return
     var preview: MeshInstance3D = viewer.selected_mesh
+    # Preview duplication can become ONE native actor only after a pure
+    # translation; no mutations to the original pose or unrelated drafts.
+    if not viewer._native_clone_draft_plan().is_empty():
+        _fail("An unmoved duplicate must not be writable as a native actor")
+        return
+    viewer._move_selected_prop(Vector3.RIGHT)
+    var native_plan: Dictionary = viewer._native_clone_draft_plan()
+    if native_plan.is_empty():
+        _fail("Moved original StaticMeshActor preview should pass native clone gate")
+        return
+    if (native_plan.get("actor") != "StaticMeshActor__1"
+        or int(native_plan.get("export", -1)) != int(viewer.actors_by_name["StaticMeshActor__1"]["export"])
+        or abs(float(native_plan["delta"][0]) - 0.25 / viewer.NATIVE_CLONE_UNREAL_METRES) > 0.01
+        or abs(float(native_plan["delta"][1])) > 0.01
+        or abs(float(native_plan["delta"][2])) > 0.01):
+        _fail("Native clone must use the original export and transform Godot X to Unreal X")
+        return
     viewer._move_selected_prop(Vector3.UP)
+    native_plan = viewer._native_clone_draft_plan()
+    if (native_plan.is_empty()
+        or abs(float(native_plan["delta"][2]) - 0.25 / viewer.NATIVE_CLONE_UNREAL_METRES) > 0.01):
+        _fail("Native clone must translate Godot Y to Unreal Z")
+        return
+    viewer.property_overrides["StaticMeshActor__1"] = {"1": 2}
+    if not viewer._native_clone_draft_plan().is_empty():
+        _fail("Native clone may not silently ignore unrelated draft property edits")
+        return
+    viewer.property_overrides.clear()
+    preview.scale *= 1.1
+    if not viewer._native_clone_draft_plan().is_empty():
+        _fail("Native clone may not serialize unverified rotation/scale changes")
+        return
+    preview.scale /= 1.1
     viewer._rotate_selected_prop(15.0)
+    if not viewer._native_clone_draft_plan().is_empty():
+        _fail("Native clone must reject preview rotation")
+        return
     viewer._save_prop_draft()
     if not FileAccess.file_exists(viewer._draft_file_path()):
         _fail("draft sidecar was not saved")
