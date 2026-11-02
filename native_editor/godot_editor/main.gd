@@ -36,6 +36,11 @@ var source_gamesys_list: ItemList
 var source_gamesys_details: Label
 var source_gamesys_visible: Array = []
 var source_gamesys_current_export := -1
+var source_gamesys_selected_field: Dictionary = {}
+var source_gamesys_light_button: Button
+var source_gamesys_light_dialog: FileDialog
+var source_gamesys_light_confirmation: ConfirmationDialog
+var source_gamesys_light_pending: Dictionary = {}
 var source_archetype_filter: LineEdit
 var source_archetype_list: ItemList
 var source_archetype_details: TextEdit
@@ -666,6 +671,13 @@ func _make_ui() -> void:
     source_gamesys_details = Label.new()
     source_gamesys_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     source_gamesys_panel.add_child(source_gamesys_details)
+    # Deliberately separate from normal GMP Save As and draft-property editing.
+    source_gamesys_light_button = Button.new()
+    source_gamesys_light_button.text = "Experimental light Boolean Save As..."
+    source_gamesys_light_button.tooltip_text = "Isolated copy of ONE verified original bLightOn byte; never writes into retail Maps."
+    source_gamesys_light_button.visible = false
+    source_gamesys_light_button.pressed.connect(_open_source_light_bool_dialog)
+    source_gamesys_panel.add_child(source_gamesys_light_button)
 
     brush_inspector_panel = VBoxContainer.new()
     brush_inspector_panel.visible = false
@@ -723,6 +735,16 @@ func _make_ui() -> void:
     gmp_save_as_dialog.filters = PackedStringArray(["*.gmp ; Experimental location-only DX2 GMP"])
     gmp_save_as_dialog.file_selected.connect(_export_native_gmp_copy)
     add_child(gmp_save_as_dialog)
+    source_gamesys_light_dialog = FileDialog.new()
+    source_gamesys_light_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    source_gamesys_light_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    source_gamesys_light_dialog.filters = PackedStringArray(["*.gmp ; Experimental single-light DX2 GMP"])
+    source_gamesys_light_dialog.file_selected.connect(_stage_source_light_bool_export)
+    add_child(source_gamesys_light_dialog)
+    source_gamesys_light_confirmation = ConfirmationDialog.new()
+    source_gamesys_light_confirmation.title = "Confirm isolated light Boolean test"
+    source_gamesys_light_confirmation.confirmed.connect(_execute_source_light_bool_export)
+    add_child(source_gamesys_light_confirmation)
     gmp_verify_dialog = FileDialog.new()
     gmp_verify_dialog.access = FileDialog.ACCESS_FILESYSTEM
     gmp_verify_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -1057,6 +1079,10 @@ func _clear_current_scene() -> void:
     source_gamesys_sha256 = ""
     source_gamesys_visible.clear()
     source_gamesys_current_export = -1
+    source_gamesys_selected_field.clear()
+    source_gamesys_light_pending.clear()
+    if source_gamesys_light_button != null:
+        source_gamesys_light_button.visible = false
     source_archetype_visible.clear()
     if source_gamesys_panel != null:
         source_gamesys_panel.visible = false
@@ -1209,6 +1235,10 @@ func _load_source_gamesys_catalog(path: String) -> void:
             if classes.size() <= 12000:
                 source_gamesys_catalog = parsed
     source_gamesys_current_export = -1
+    source_gamesys_selected_field.clear()
+    source_gamesys_light_pending.clear()
+    if source_gamesys_light_button != null:
+        source_gamesys_light_button.visible = false
     _refresh_source_archetype_list()
     _refresh_source_gamesys_inspector()
 
@@ -1285,6 +1315,10 @@ func _refresh_source_gamesys_inspector() -> void:
     source_gamesys_list.clear()
     source_gamesys_visible.clear()
     source_gamesys_current_export = -1
+    source_gamesys_selected_field.clear()
+    source_gamesys_light_pending.clear()
+    if source_gamesys_light_button != null:
+        source_gamesys_light_button.visible = false
     if source_gamesys_catalog.is_empty():
         return
     var nodes := _selection_nodes()
@@ -1323,6 +1357,13 @@ func _source_gamesys_selected(index: int) -> void:
     if index < 0 or index >= source_gamesys_visible.size() or source_gamesys_details == null:
         return
     var rec: Dictionary = source_gamesys_visible[index]
+    source_gamesys_selected_field = rec.duplicate(true)
+    source_gamesys_light_pending.clear()
+    var light_context := _selected_source_light_bool_context()
+    if source_gamesys_light_button != null:
+        source_gamesys_light_button.visible = not light_context.is_empty()
+        if not light_context.is_empty():
+            source_gamesys_light_button.text = "Experimental Save As: light " + ("OFF" if bool(light_context["expected"]) else "ON")
     var original_value := JSON.stringify(rec.get("source_value"))
     source_gamesys_details.text = (
         "Original #" + str(rec.get("id", "?")) + "  " + str(rec.get("name", "?")) +
@@ -1336,6 +1377,163 @@ func _source_gamesys_selected(index: int) -> void:
         "\nSHA-256: " + str(rec.get("source_payload_sha256", "?")) +
         "\nRead-only source evidence. No native write or script bindings."
     )
+
+
+## Experimental: one SOURCE-VERIFIED existing authored bLightOn per separate GMP.
+## Never mutates draft-property values, original GameSys catalog or normal Save As.
+func _selected_source_light_bool_context() -> Dictionary:
+    if (source_gamesys_selected_field.is_empty()
+        or source_gamesys_current_export < 1
+        or source_gamesys_catalog.get("read_only") != true
+        or source_gamesys_catalog.get("native_game_editing_enabled") != false
+        or str(source_gamesys_catalog.get("source_sha256", "")) != source_gamesys_sha256
+        or str(source_gamesys_catalog.get("source_map", "")).to_lower() != current_source_map_name.to_lower()):
+        return {}
+    var rec := source_gamesys_selected_field
+    var encoded_id := int(rec.get("encoded_id", -1))
+    if (int(rec.get("id", -1)) != 1487 or str(rec.get("name", "")) != "bLightOn"
+        or str(rec.get("declared_type", "")).to_lower() != "bool"
+        or str(rec.get("encoding", "")) != "bool"
+        or int(rec.get("payload_bytes", -1)) != 1
+        or (encoded_id & 65535) != 1487
+        or ((encoded_id >> 16) & 65535) != 128
+        or typeof(rec.get("source_value")) != TYPE_BOOL):
+        return {}
+    var source_actor: Variant = source_gamesys_catalog.get("actors", {}).get(str(source_gamesys_current_export), {})
+    if typeof(source_actor) != TYPE_DICTIONARY:
+        return {}
+    var original_rows: Variant = source_actor.get("properties", [])
+    if (typeof(original_rows) != TYPE_ARRAY or not original_rows.has(rec)
+        or not source_gamesys_visible.has(rec)):
+        return {}
+    var actor_name := str(source_actor.get("name", ""))
+    if (actor_name.is_empty()
+        or int(source_actor.get("export", -1)) != source_gamesys_current_export
+        or not actors_by_name.has(actor_name)
+        or int(actors_by_name[actor_name].get("export", -2)) != source_gamesys_current_export):
+        return {}
+    var selected_name := ""
+    var nodes := _selection_nodes()
+    if nodes.size() == 1:
+        selected_name = str(nodes[0].name)
+    elif nodes.is_empty() and not selected_actor.is_empty():
+        selected_name = str(selected_actor.get("name", ""))
+    if selected_name != actor_name:
+        return {}
+    return {
+        "export": source_gamesys_current_export,
+        "actor": actor_name,
+        "property_id": 1487,
+        "expected": bool(rec["source_value"]),
+        "source_sha256": source_gamesys_sha256,
+        "source_map": current_source_map_name
+    }
+
+
+func _open_source_light_bool_dialog() -> void:
+    var context := _selected_source_light_bool_context()
+    if context.is_empty():
+        status_label.text = "Light test refused: select a verified original authored bLightOn Boolean."
+        return
+    if (native_export_thread != null or build_thread != null
+        or last_gmp_path.is_empty() or not FileAccess.file_exists(last_gmp_path)
+        or last_gmp_path.get_file().to_lower() != current_source_map_name.to_lower()):
+        status_label.text = "Light test refused: original GMP unavailable or a native operation is active."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_gamesys_bool_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Experimental one-byte GameSys probe unavailable. Use a full DX2SDK repository checkout."
+        return
+    source_gamesys_light_dialog.current_file = last_gmp_path.get_file()
+    source_gamesys_light_dialog.popup_centered_ratio(0.72)
+
+
+func _stage_source_light_bool_export(destination: String) -> void:
+    var context := _selected_source_light_bool_context()
+    if context.is_empty() or destination.get_file().to_lower() != current_source_map_name.to_lower():
+        status_label.text = "Light test refused: actor selection changed or target GMP filename differs."
+        return
+    source_gamesys_light_pending = context.duplicate(true)
+    source_gamesys_light_pending["destination"] = destination
+    source_gamesys_light_confirmation.dialog_text = (
+        "EXPERIMENTAL, ONE ORIGINAL LIGHT ONLY\n\n"
+        + "Actor: " + str(context["actor"]) + " | export #" + str(context["export"])
+        + "\nbLightOn: " + str(context["expected"]) + " -> " + str(not bool(context["expected"]))
+        + "\nOutput: " + destination
+        + "\n\nThe strict serializer refuses source changes, existing output files,"
+        + " runtime fields and any edits outside the original byte."
+        + "\nUse only an isolated test installation. The game runtime is not automatically verified."
+    )
+    source_gamesys_light_confirmation.popup_centered(Vector2i(680, 310))
+
+
+func _execute_source_light_bool_export() -> void:
+    var context := _selected_source_light_bool_context()
+    if (context.is_empty() or native_export_thread != null or build_thread != null
+        or last_gmp_path.is_empty() or not FileAccess.file_exists(last_gmp_path)
+        or last_gmp_path.get_file().to_lower() != current_source_map_name.to_lower()):
+        status_label.text = "Light test refused: source, selection or worker changed."
+        source_gamesys_light_pending.clear()
+        return
+    var destination := str(source_gamesys_light_pending.get("destination", ""))
+    var frozen := source_gamesys_light_pending.duplicate(true)
+    frozen.erase("destination")
+    source_gamesys_light_pending.clear()
+    if frozen != context or destination.get_file().to_lower() != current_source_map_name.to_lower():
+        status_label.text = "Light test refused: verified actor field changed before confirmation."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_gamesys_bool_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Light test refused: experimental one-byte Boolean probe not installed."
+        return
+    native_export_thread = Thread.new()
+    var started := native_export_thread.start(_run_source_light_bool_export.bind(
+        script, last_gmp_path, context, destination
+    ))
+    if started != OK:
+        native_export_thread = null
+        status_label.text = "Could not start experimental single-light worker."
+        return
+    status_label.text = "Building isolated single-light GMP; checking byte-exact T3SDK parity..."
+
+
+func _run_source_light_bool_export(script: String, source: String, context: Dictionary, destination: String) -> void:
+    var original := "true" if bool(context["expected"]) else "false"
+    var replacement := "false" if bool(context["expected"]) else "true"
+    var args := PackedStringArray([
+        script, source,
+        "--source-sha256", str(context["source_sha256"]),
+        "--actor-export", str(context["export"]),
+        "--actor-name", str(context["actor"]),
+        "--property-id", str(context["property_id"]),
+        "--expect", original, "--replace", replacement, "--output", destination
+    ])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        var launcher := PackedStringArray(["-3"])
+        launcher.append_array(args)
+        output.clear()
+        code = OS.execute("py", launcher, output, true)
+    call_deferred("_source_light_bool_finished", code, "\n".join(output))
+
+
+func _source_light_bool_finished(code: int, output: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    var result: Variant = JSON.parse_string(output.strip_edges())
+    if (code == 0 and typeof(result) == TYPE_DICTIONARY
+        and result.get("status") == "isolated-boolean-gmp-written-runtime-unverified"
+        and result.get("independent_full_package_byte_match") == true
+        and int(result.get("changed_bytes", -1)) == 1):
+        status_label.text = (
+            "Single-light GMP saved (one verified byte only): " + str(result.get("output", ""))
+            + " | Runtime test and original restoration still required."
+        )
+        return
+    var reason := str(result.get("reason", "Check source map, SHA, actor and isolated destination.")) if typeof(result) == TYPE_DICTIONARY else output.strip_edges().substr(0, 300)
+    status_label.text = "Experimental light Boolean Save As refused: " + reason
 
 
 func _refresh_archetype_list() -> void:
