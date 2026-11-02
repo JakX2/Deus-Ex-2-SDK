@@ -275,3 +275,51 @@ Do not merge as a general all-actor Save Map capability; PR stays draft.
 Next priorities: retained object placements on save/load and level re-entry;
 then source-backed rotation and safe removal in a combined GMP writer.
 Keep game-derived GMPs, screenshots and personal paths out of the repository.
+
+
+## WTO Terminal window preview: overlapped glass was exported opaque (2026-11-02)
+
+The user identified **StaticMeshActor__578** (export 889) and the
+architectural mesh `1Hub_wto_term-detail1-j`: a lower frame section is
+visible in DX2Ed while its adjacent matching section appears missing.
+The user explicitly said the *frame*, **not the skyline/skybox**, is
+the subject of the bug. This is a **preview-only visual regression**.
+
+Independent original-format research found:
+- The IBD mesh and the generated GLB contain **all 204 triangles**
+  for the original `1Hub_wto_term-detail1-j`; no triangles were omitted.
+- Two nearby original window glass actors, `StaticMeshActor__26`
+  (export 1349) and `StaticMeshActor__14` (export 1395), use
+  `1Hub_wto_term2-glass` (four triangles per instance).
+- The associated original material `GEN_GlassUnBreakableA01` uses
+  diffuse stage `GEN_GLASS-UNBREAKABLEJ01` plus
+  `env_noise_01`. Its decoded 64×64 RGBA DXT3 source texture has
+  alpha in **[0, 204]**, with many fully transparent pixels.
+- Previous GLB exports forced that glass material to **OPAQUE**,
+  despite the source texture having transparent pixels. Opaque glass
+  draws over the architectural frame, producing a false missing-part
+  appearance in the editor.
+- The new source-verified material pair maps only this specific glass
+  to glTF `alphaMode=BLEND`, retaining original diffuse alpha and
+  marking the unrecreated DX2 cubemap stage as a preview
+  approximation. It does **not** enable blending for unrelated DXT3
+  materials.
+- The backend private `CACHE_VERSION` was bumped: old opaque preview
+  GLBs must not be reused merely because the retail GMP and IBD hashes
+  haven't changed.
+
+**Read-only retail-map export comparison:** 896 scene nodes,
+226 mesh definitions, 98 materials, unchanged images, unchanged
+packed binary GLB geometry. **Exactly two glTF material records**
+named `GEN_GlassUnBreakableA01` changed (`alphaMode` and
+provenance metadata). Neither original game file changed.
+The private GLB regenerated successfully with
+`translucent_glass_alpha` diagnosis for the window glass.
+Asset-free automated regression tests verify this precise
+material/diffuse pair and reject unrelated materials.
+
+**Evidence boundary:** binary source/preview cause is supported;
+**the refreshed Godot visual appearance has not yet been verified on
+Windows** by the user. Retain a follow-up for a source-backed screenshot
+with the window frame visible behind the corrected glass. This is not
+a native DX2 shader or skybox reconstruction.
