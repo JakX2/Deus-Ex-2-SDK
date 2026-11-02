@@ -117,6 +117,14 @@ class TriggerScriptIndexTests(unittest.TestCase):
                 self.assertEqual(index["counts"]["active_source_definitions"],2)
                 self.assertEqual(index["counts"]["deleted_sources"],1)
                 self.assertIn("kTAT_OpenDoorLink",index["unique_symbols"]["action"])
+                binary = index["initial_binary_frame_summary"]
+                self.assertEqual(binary["source_records_inspected"], 2)
+                self.assertEqual(binary["initial_word_histogram"]["1"], 2)
+                self.assertFalse(binary["initial_word_meaning_verified"])
+                self.assertTrue(all("initial_binary_frame" in item for item in
+                                    index["definitions"] if not item["deleted_source"]))
+                self.assertTrue(all("initial_binary_frame" not in item for item in
+                                    index["definitions"] if item["deleted_source"]))
                 self.assertFalse(index["event_graph_decoded"])
                 self.assertFalse(index["native_script_editing_supported"])
                 record=next(x for x in index["definitions"] if x["member"]=="DeletedScripts/TS_17.tsd")
