@@ -113,6 +113,14 @@ var environment_filter: LineEdit
 var environment_list: ItemList
 var environment_details: TextEdit
 var environment_visible: Array = []
+# Explicitly opt-in isolated native editing for existing ZoneProperties
+# schema strings. Never a new point sound actor or a direct game-folder write.
+var environment_sound_field: OptionButton
+var environment_sound_schema: OptionButton
+var environment_sound_button: Button
+var environment_sound_dialog: FileDialog
+var environment_sound_confirmation: ConfirmationDialog
+var environment_sound_pending: Dictionary = {}
 var loaded_actors_json_path: String = ""
 var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
@@ -582,6 +590,27 @@ func _make_ui() -> void:
     environment_details.custom_minimum_size.y = 200
     environment_details.text = "Import an original DX2 map to browse its native lights and audio zones. Read-only."
     environment_tab.add_child(environment_details)
+    var env_schema_note := Label.new()
+    env_schema_note.text = "Experimental existing-zone sound edit (isolated GMP only)"
+    env_schema_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    environment_tab.add_child(env_schema_note)
+    environment_sound_field = OptionButton.new()
+    environment_sound_field.disabled = true
+    environment_sound_field.item_selected.connect(func(_index): _refresh_environment_sound_replacements())
+    environment_tab.add_child(environment_sound_field)
+    environment_sound_schema = OptionButton.new()
+    environment_sound_schema.disabled = true
+    environment_sound_schema.tooltip_text = "Only names already authored for this exact field in the original map can be selected."
+    environment_tab.add_child(environment_sound_schema)
+    environment_sound_button = Button.new()
+    environment_sound_button.text = "Experimental Zone Sound Save As..."
+    environment_sound_button.disabled = true
+    environment_sound_button.tooltip_text = (
+        "Replaces one existing ZoneProperties sound string with another source-observed schema. "
+        + "No new emitter; original GMP remains untouched."
+    )
+    environment_sound_button.pressed.connect(_open_environment_sound_dialog)
+    environment_tab.add_child(environment_sound_button)
 
     var brushes_tab := VBoxContainer.new()
     brushes_tab.name = "Brushes"
@@ -891,6 +920,16 @@ func _make_ui() -> void:
     native_multi_confirmation.title = "Confirm 2..8 experimental static prop clones"
     native_multi_confirmation.confirmed.connect(_execute_native_multi_export)
     add_child(native_multi_confirmation)
+    environment_sound_dialog = FileDialog.new()
+    environment_sound_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    environment_sound_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    environment_sound_dialog.filters = PackedStringArray(["*.gmp ; Experimental original ZoneProperties sound edit"])
+    environment_sound_dialog.file_selected.connect(_stage_environment_sound_export)
+    add_child(environment_sound_dialog)
+    environment_sound_confirmation = ConfirmationDialog.new()
+    environment_sound_confirmation.title = "Confirm isolated existing sound-zone schema edit"
+    environment_sound_confirmation.confirmed.connect(_execute_environment_sound_export)
+    add_child(environment_sound_confirmation)
     source_gamesys_light_dialog = FileDialog.new()
     source_gamesys_light_dialog.access = FileDialog.ACCESS_FILESYSTEM
     source_gamesys_light_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -1295,6 +1334,15 @@ func _clear_current_scene() -> void:
     actors.clear()
     actors_by_name.clear()
     environment_visible.clear()
+    environment_sound_pending.clear()
+    if environment_sound_field != null:
+        environment_sound_field.clear()
+        environment_sound_field.disabled = true
+    if environment_sound_schema != null:
+        environment_sound_schema.clear()
+        environment_sound_schema.disabled = true
+    if environment_sound_button != null:
+        environment_sound_button.disabled = true
     if environment_list != null:
         environment_list.clear()
     if environment_details != null:
@@ -1600,8 +1648,229 @@ func _environment_entity_selected(index: int) -> void:
     else:
         rows.append("Particle effects are unrelated to the sound emitter system.")
     rows.append("")
-    rows.append("Source asset untouched. No native create/edit/save operation in this tab.")
+    rows.append("Original source unchanged; zone edits are opt-in, isolated and experimental.")
     environment_details.text = "\n".join(rows)
+    _refresh_environment_sound_fields(actor)
+
+
+
+func _environment_sound_values(property_id: int) -> Array[String]:
+    # Strictly source-observed values for this exact property; never convert
+    # unrelated zone label/actor name fields into fake sound schemas.
+    var values: Array[String] = []
+    for rec in actors:
+        if typeof(rec) != TYPE_DICTIONARY or rec.get("class") != "ZoneProperties":
+            continue
+        var value: Variant = _environment_game_value(rec, property_id)
+        if typeof(value) != TYPE_STRING:
+            continue
+        var name := str(value)
+        if (not name.is_valid_identifier() or name.length() > 95
+            or name.to_lower() in ["silence", "inaccessible", "outside_world", "elevator"]):
+            continue
+        if not values.has(name):
+            values.append(name)
+    values.sort()
+    return values
+
+
+func _refresh_environment_sound_fields(actor: Dictionary) -> void:
+    if environment_sound_field == null:
+        return
+    environment_sound_field.clear()
+    environment_sound_schema.clear()
+    environment_sound_field.disabled = true
+    environment_sound_schema.disabled = true
+    environment_sound_button.disabled = true
+    if actor.get("class", "") != "ZoneProperties":
+        return
+    for pid in [1287, 1286, 1467]:
+        var original: Variant = _environment_game_value(actor, pid)
+        if typeof(original) != TYPE_STRING:
+            continue
+        var choices := _environment_sound_values(pid)
+        if choices.size() < 2 or not choices.has(str(original)):
+            continue
+        var label := ("StreamSchema1" if pid == 1287 else "StreamSchema2" if pid == 1286 else "NonStreamSchema1")
+        environment_sound_field.add_item(label + ": " + str(original), pid)
+    if environment_sound_field.item_count > 0:
+        environment_sound_field.disabled = false
+        environment_sound_field.select(0)
+        _refresh_environment_sound_replacements()
+
+
+func _refresh_environment_sound_replacements() -> void:
+    if environment_sound_schema == null:
+        return
+    environment_sound_schema.clear()
+    environment_sound_schema.disabled = true
+    environment_sound_button.disabled = true
+    if environment_sound_field == null or environment_sound_field.selected < 0:
+        return
+    var actor: Dictionary = selected_actor
+    if actor.get("class", "") != "ZoneProperties":
+        return
+    var pid := environment_sound_field.get_selected_id()
+    var original: Variant = _environment_game_value(actor, pid)
+    if typeof(original) != TYPE_STRING:
+        return
+    for candidate in _environment_sound_values(pid):
+        if candidate != str(original):
+            environment_sound_schema.add_item(candidate)
+    if environment_sound_schema.item_count > 0:
+        environment_sound_schema.disabled = false
+        environment_sound_schema.select(0)
+        environment_sound_button.disabled = false
+
+
+func _environment_sound_plan() -> Dictionary:
+    if environment_sound_field == null or environment_sound_schema == null:
+        return {}
+    var actor: Dictionary = selected_actor
+    if (actor.get("class", "") != "ZoneProperties"
+        or environment_sound_field.selected < 0
+        or environment_sound_schema.selected < 0):
+        return {}
+    var pid := environment_sound_field.get_selected_id()
+    if not pid in [1287, 1286, 1467]:
+        return {}
+    var expected: Variant = _environment_game_value(actor, pid)
+    var replacement := environment_sound_schema.get_item_text(environment_sound_schema.selected)
+    if (typeof(expected) != TYPE_STRING
+        or replacement == str(expected)
+        or not _environment_sound_values(pid).has(replacement)
+        or int(actor.get("export", -1)) < 1):
+        return {}
+    return {
+        "actor": str(actor.get("name", "")),
+        "export": int(actor.get("export", -1)),
+        "property_id": pid, "expect": str(expected),
+        "replace": replacement
+    }
+
+
+func _environment_sound_clean_draft() -> bool:
+    if (not draft_prop_copies.is_empty()
+        or not draft_brush_specs.is_empty()
+        or not property_overrides.is_empty()
+        or not draft_template_provenance.is_empty()):
+        return false
+    for name in original_mesh_transforms:
+        if meshes_by_actor.has(name):
+            var node: MeshInstance3D = meshes_by_actor[name]
+            if (is_instance_valid(node)
+                and not node.global_transform.is_equal_approx(original_mesh_transforms[name])):
+                return false
+    return true
+
+
+func _open_environment_sound_dialog() -> void:
+    _finish_gizmo_drag()
+    environment_sound_pending.clear()
+    if not _native_clone_source_ready() or not _environment_sound_clean_draft():
+        status_label.text = "Sound zone Save As requires an unchanged original map and no unrelated draft edits."
+        return
+    if _environment_sound_plan().is_empty():
+        status_label.text = "Select an original ZoneProperties source with a verified alternative sound schema."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_zone_sound_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Experimental native ZoneProperties sound writer not installed."
+        return
+    environment_sound_dialog.current_file = last_gmp_path.get_file()
+    environment_sound_dialog.popup_centered_ratio(0.75)
+
+
+func _stage_environment_sound_export(destination: String) -> void:
+    environment_sound_pending.clear()
+    if not _native_clone_source_ready() or not _environment_sound_clean_draft():
+        status_label.text = "Sound zone edit refused: source map or draft state changed."
+        return
+    var plan := _environment_sound_plan()
+    if (plan.is_empty() or destination.get_file().to_lower() != last_gmp_path.get_file().to_lower()):
+        status_label.text = "Sound zone edit refused: source selection or output map filename invalid."
+        return
+    environment_sound_pending = plan.duplicate(true)
+    environment_sound_pending["source"] = last_gmp_path
+    environment_sound_pending["source_sha256"] = source_gamesys_sha256
+    environment_sound_pending["destination"] = destination
+    environment_sound_confirmation.dialog_text = (
+        "EXPERIMENTAL: replace ONE original sound schema field."
+        + "\nActor: " + str(plan["actor"]) + " | export " + str(plan["export"])
+        + "\nGameSys property " + str(plan["property_id"])
+        + "\nFrom: " + str(plan["expect"]) + "\nTo: " + str(plan["replace"])
+        + "\n\nNew GMP: " + destination
+        + "\nOriginal map untouched. No game installation writes."
+        + "\nSound effect has NOT been confirmed in retail gameplay."
+    )
+    environment_sound_confirmation.popup_centered(Vector2i(760, 350))
+
+
+func _execute_environment_sound_export() -> void:
+    if environment_sound_pending.is_empty() or not _native_clone_source_ready() or not _environment_sound_clean_draft():
+        environment_sound_pending.clear()
+        status_label.text = "Sound zone Save As refused: original source or editor state changed."
+        return
+    var frozen := environment_sound_pending.duplicate(true)
+    environment_sound_pending.clear()
+    if (str(frozen["source"]) != last_gmp_path
+        or str(frozen["source_sha256"]) != source_gamesys_sha256
+        or _environment_sound_plan() != {
+            "actor": frozen["actor"], "export": frozen["export"],
+            "property_id": frozen["property_id"],
+            "expect": frozen["expect"], "replace": frozen["replace"]
+        }):
+        status_label.text = "Sound zone export cancelled: actor, field or source changed."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_zone_sound_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Sound zone writer unavailable."
+        return
+    native_export_thread = Thread.new()
+    var started := native_export_thread.start(_run_environment_sound_export.bind(script, frozen))
+    if started != OK:
+        native_export_thread = null
+        status_label.text = "Could not start sound zone writer."
+        return
+    status_label.text = "Verifying original sound zone property and writing isolated GMP..."
+
+
+func _run_environment_sound_export(script: String, frozen: Dictionary) -> void:
+    var args := PackedStringArray([
+        script, str(frozen["source"]), "--source-sha256",
+        str(frozen["source_sha256"]), "--actor-export", str(frozen["export"]),
+        "--actor-name", str(frozen["actor"]), "--property-id",
+        str(frozen["property_id"]), "--expect", str(frozen["expect"]),
+        "--replace", str(frozen["replace"]),
+        "--output", str(frozen["destination"])
+    ])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        code = OS.execute("py", pyargs, output, true)
+    call_deferred("_environment_sound_export_finished", code, "\n".join(output))
+
+
+func _environment_sound_export_finished(code: int, response: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    var doc: Variant = JSON.parse_string(response.strip_edges())
+    if (code == 0 and typeof(doc) == TYPE_DICTIONARY
+        and doc.get("schema") == "DX2Ed-experimental-existing-zone-schema-v1"
+        and doc.get("status") == "isolated-gmp-written-runtime-unverified"
+        and doc.get("reverse_payload_parity") == true
+        and doc.get("original_exports_preserved_except_target") == true
+        and doc.get("source_modified") == false):
+        status_label.text = (
+            "Verified isolated sound-zone GMP: " + str(doc.get("output", ""))
+            + " | One source schema changed. Retail sound effect unverified."
+        )
+        return
+    status_label.text = "Experimental sound zone export refused: " + _native_clone_error_reason(response)
 
 
 func _actor_category(actor: Dictionary) -> String:
