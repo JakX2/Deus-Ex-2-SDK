@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 import struct
 import sys
@@ -22,7 +23,7 @@ for p in (ROOT / "native_editor" / "tests",
 from test_native_save_as import fixture_gmp
 from upkg import Package, RF_HasStack
 from upkgwrite import PackageWriter, ImportEntry, enc_index
-from dx2_actor_clone_probe import clone_in_memory, find_candidates, write_isolated
+from dx2_actor_clone_probe import check_actor, clone_in_memory, find_candidates, write_isolated
 
 
 def level_fixture(path: Path) -> bytes:
@@ -70,6 +71,47 @@ class ExperimentalSingleCloneTests(unittest.TestCase):
         self.opts = dict(source_sha256=self.sha,
                          actor_export=1, actor_name="StaticMeshActor__1",
                          delta=(100.0, 0.0, 0.0))
+
+    def _clone_cli(self, *args):
+        script = ROOT / "native_editor/package_writer/dx2_actor_clone_probe.py"
+        run = subprocess.run([sys.executable, str(script), str(self.source),
+                              "--source-sha256", hashlib.sha256(self.source.read_bytes()).hexdigest(),
+                              "--actor-export", "1",
+                              "--actor-name", "StaticMeshActor__1", *args],
+                             text=True, capture_output=True, check=False)
+        return run, json.loads(run.stdout)
+
+    def test_read_only_check_actor_cli_is_eligible_and_writes_nothing(self):
+        data = check_actor(self.source, source_sha256=self.sha,
+                           actor_export=1, actor_name="StaticMeshActor__1")
+        self.assertEqual(data["status"], "clone-source-eligible")
+        run, report = self._clone_cli("--check-actor")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(report["status"], "clone-source-eligible")
+        self.assertEqual(report["export"], 1)
+        self.assertFalse(report["output_written"])
+        self.assertEqual(self.source.read_bytes(), self.original)
+        self.assertEqual(list(self.source.parent.iterdir()), [self.source])
+
+    def test_uncloneable_native_state_returns_clear_json_no_traceback(self):
+        original = Package(self.source)
+        writer = PackageWriter(original)
+        stateful = bytearray(original.export_bytes(original.exports[0]))
+        # Non-zero latent_action, replicating the real-world rejection pattern.
+        stateful[10:14] = struct.pack("<I", 926359614)
+        writer.set_object(0, bytes(stateful))
+        self.source.write_bytes(writer.write())
+        run, report = self._clone_cli("--check-actor")
+        self.assertEqual(run.returncode, 2)
+        self.assertEqual(report["schema"], "DX2Ed-experimental-native-prop-duplicate-v1")
+        self.assertEqual(report["status"], "refused")
+        self.assertIn("active native/script state", report["reason"])
+        self.assertFalse(report["output_written"])
+        self.assertNotIn("Traceback", run.stdout + run.stderr)
+        run2, report2 = self._clone_cli("--dx", "50")
+        self.assertEqual(run2.returncode, 2)
+        self.assertIn("active native/script state", report2["reason"])
+        self.assertEqual(list(self.source.parent.iterdir()), [self.source])
 
     def test_listing_is_read_only_and_only_eligible_actor_is_shown(self):
         data = find_candidates(self.source, self.sha)
