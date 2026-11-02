@@ -1,8 +1,10 @@
 # WTO Terminal: original bLightOn authored-Boolean runtime test
 
-**Status (2026-11-02):** source-backed binary experiment prepared,
-Windows no-command GUI package delivered to the user. **No game test
-of this specific Boolean modification has yet been reported.**
+**Status (2026-11-02): USER-REPORTED IN-GAME VISUAL EFFECT.**
+The user installed the separate LIGHTS OFF GUI candidate, reported that
+it worked and that the WTO Terminal is darker, and supplied before/after
+screenshots. This is a visible runtime observation, not an independently
+measured lighting delta or an on-disk checksum attestation.
 
 ## Why another test?
 
@@ -91,15 +93,43 @@ LIGHTS OFF GMP by exact SHA-256.
 - No retail game content, source texture, edited proprietary GMP
   or in-game screenshot is checked into GitHub.
 
-## Runtime evidence boundary
+## User-reported in-game A/B result (2026-11-02)
 
-The original game scripts strongly suggest bLightOn is more relevant
-to a visible light switch than EmissiveScale. Nevertheless, an existing
-light fixture can have baked lightmaps, a scripted state override or
-a separate dynamic-light component. **A visible lighting change is a
-hypothesis, not a demonstrated result.**
+After trying the delivered LIGHTS OFF Windows GUI candidate, the user wrote:
 
-The prior user-reported load and stable exploration of a different
-GameSys edit do **not** automatically establish bLightOn behavior.
-Before extending general native GameSys writes, the next step is an
-isolated game test with an on/off comparison and a successful restore.
+> "I checked the file you sent and it worked, it's darker now"
+
+The user attached screenshots marked **before** and **after**, both showing
+the WTO Terminal PEQUOD'S counter and seating area. The after view visibly
+shows darker room surfaces, including the floor and furniture; the
+PEQUOD'S sign and some bright fixture artwork remain luminous.
+
+**Interpretation:** this is user-attested evidence that changing the four
+original authored `bLightOn` Boolean flags can affect in-game scene
+illumination. It is the first reported visible property effect of our
+DX2 GameSys GMP edits, unlike the earlier inconclusive EmissiveScale A/B
+test. Do not infer that every light actor responds identically or that
+fixture emissive artwork is controlled by the same property.
+
+**Evidence limits:** screenshots differ in viewpoint and NPC state; this
+was not a same-camera pixel-calibrated comparison. The user's installed
+GMP hash, game executable build, second launch, restored-original
+retest, individual-fixture causality, save/load and mission transitions
+were not independently verified. Images and proprietary game files remain
+in the private conversation, not this repository.
+
+## Runtime evidence boundary and next gate
+
+The visually observed result is sufficient to advance the experimental
+`bLightOn` path from *binary-only* to *user-reported visible runtime effect*.
+It is **not** a green light for unrestricted Godot GameSys editing or
+package rewriting.
+
+Before exposing even a limited lighting control in the normal editor:
+1. Confirm **RESTORE ORIGINAL** returns the same area to original brightness.
+2. If practical, re-enter the map from a fresh load using the changed copy.
+3. Isolate one original authored `bLightOn` field at a time to map which
+   fixture affects which nearby surfaces; preserve exact SHA / byte gates.
+4. Keep the change on an isolated test installation, never on the retail
+   original. Do not enable runtime-owned fields, array/struct writes,
+   new properties or actor spawning.
