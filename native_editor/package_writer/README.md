@@ -63,6 +63,57 @@ for isolated retail testing, with its own manifest and binary verifier.
 No new editor button or silently enabled native-save capability is added.
 
 
+## Third milestone: existing tagged int32/float32 properties (read-only)
+
+The new source-only inspector:
+- native_editor/package_writer/dx2_native_scalar_catalog.py
+- native_editor/package_writer/dx2_scalar_property_probe.py
+
+uses T3SDK's strict actor layout together with **an independent DX2
+tagged-property offset parser**. It only admits one **existing** four-byte
+top-level tagged Int or Float in an original actor. It refuses duplicate
+tags, array indices, missing properties, wrong source values, changed
+original hashes, unrecognized actor names or export indices, and unknown
+types. It leaves all other actor bytes, including GameSys and native
+tails, entirely unchanged.
+
+List verified original 32-bit scalar source fields:
+
+    python native_editor/package_writer/dx2_native_scalar_catalog.py "C:\DX2\Maps\M1_Seattle_Hub_WTOterminal.gmp" --output "C:\DX2EdResearch\wto-scalars.json"
+
+The output is source metadata only, **not** a claim that those properties
+are safe to edit in-game. The catalog includes the SHA-256 needed for
+strict source pinning. It refuses to overwrite existing research JSON.
+
+Compare a single proposed value in memory, without writing a GMP:
+
+    python native_editor/package_writer/dx2_scalar_property_probe.py "C:\DX2\Maps\M1_Seattle_Hub_WTOterminal.gmp" --source-sha256 ORIGINAL_GMP_SHA256 --actor-export EXPORT_NUMBER --actor-name SkyZoneInfo__0 --property DistanceFogEnd --kind float --expect 300.0 --replace 310.0
+
+The process makes the same exact one-field change twice: once via
+T3SDK's structured ActorEdit and once via DX2Ed's independent
+field-level offsets. It refuses any full-package byte discrepancy,
+unexpected change outside four bytes, or accidental table growth.
+**The modified bytes exist in memory only**.
+
+Direct original-file research (no modified files written):
+- WTO Terminal SkyZoneInfo__0.DistanceFogEnd float32 300 -> 310:
+  T3SDK serializer and independent four-byte replacement match exactly.
+- Seattle Club LevelInfo__0.DistanceFogStart float32 500 -> 600:
+  the two implementations match exactly.
+- The original WTO actor corpus contains 1,058 state-frame exports and
+  86 eligible unique top-level 32-bit scalar fields; Seattle Club has
+  1,640 state-frame exports and 258 such fields. In both cases there were
+  zero actor layout parse failures. These are not all the properties or
+  GameSys values present in the map.
+- Synthetic v95 native tests cover both int32 and float32 modification,
+  stale hashes, wrong actor/value, absent tags, wrong type, no-op edits
+  and rejection of exports without an actor state frame.
+
+**Still unsupported:** gameplay semantics and any in-game runtime proof,
+actual edited-GMP output from this new path, raw GameSys property edits,
+nested typed structures, arrays, string/object references, new objects,
+BSP or collision rebuilding, and native IBD resource editing.
+
 ## Original-file compatibility evidence
 
 Tested locally using the unchanged T3SDK 0.3.1 reader and writer:
