@@ -146,7 +146,7 @@ func _run() -> void:
         return
     viewer.selected_actor = ai_fixture
     viewer.focus_selected()
-    var expected_ai_focus := Vector3(1.0, 3.0, 2.0) * viewer.NATIVE_CLONE_UNREAL_METRES
+    var expected_ai_focus: Vector3 = Vector3(1.0, 3.0, 2.0) * float(viewer.NATIVE_CLONE_UNREAL_METRES)
     if viewer.camera_target.distance_to(expected_ai_focus) > 0.0001:
         _fail("Original AI-layer candidates without meshes must be focusable from source XYZ")
         return
