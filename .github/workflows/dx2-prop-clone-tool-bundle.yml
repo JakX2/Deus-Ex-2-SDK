@@ -22,6 +22,7 @@ jobs:
           cp native_editor/package_writer/dx2_package_roundtrip.py staging/native_editor/package_writer/
           cp third_party/t3sdk_assets/*.py staging/third_party/t3sdk_assets/
           cp third_party/t3sdk_assets/LICENSE staging/third_party/t3sdk_assets/
+          cp third_party/t3sdk_assets/formats.json staging/third_party/t3sdk_assets/
           cp map_exporter/dx2inspect.py staging/map_exporter/
           cp native_editor/package_writer/PROP_CLONE_EXPERIMENT.md staging/
           python -m compileall -q staging
