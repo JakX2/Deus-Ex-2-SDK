@@ -52,8 +52,9 @@ class DX2GamesysArchetypeTests(unittest.TestCase):
                 z.writestr("extra/DX2Gamesys.d2u", b"two")
             with self.assertRaisesRegex(ValueError, "exactly one"):
                 _original_gamesys(p)
-            with self.assertRaisesRegex(ValueError, "fresh JSON"):
-                main([str(p), "--output", str(p)])
+            original = p.read_bytes()
+            self.assertEqual(main([str(p), "--output", str(p)]), 1)
+            self.assertEqual(p.read_bytes(), original)
 
     def test_no_gamesys_package_is_not_treated_as_empty_valid_schema(self):
         with TemporaryDirectory() as tmp:
