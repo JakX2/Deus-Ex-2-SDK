@@ -495,3 +495,45 @@ Next controlled runtime gate:
 
 Do not include copyrighted GMP bytes or user-specific local Windows paths
 in public release notes or research commits.
+
+
+## Process Monitor proves DX2 reads a different installation's GMP (2026-11-02)
+
+**Decisive new user-supplied screenshot evidence:** the running `DX2Main.EXE`
+from the **test** installation searches multiple content roots when opening
+`M1_Seattle_Hub_WTOterminal.gmp`.
+
+- `<test-install>/System/M1_Seattle_Hub_WTOterminal.gmp`:
+  `CreateFile / NAME NOT FOUND` (normal search-path miss).
+- `<test-install>/Content/DX2/Maps/M1_Seattle_Hub_WTOterminal.gmp`:
+  `QueryStandardInformationFile / SUCCESS` and `CloseFile / SUCCESS`.
+  This proves a successful metadata query **but no successful map data ReadFile
+  is visible for this path** in the supplied filtered capture.
+- `<original-GOG-install>/Content/DX2/Maps/M1_Seattle_Hub_WTOterminal.gmp`:
+  `CreateFile / SUCCESS`, then repeated `ReadFile / SUCCESS` operations
+  at multiple offsets, followed by `CloseFile / SUCCESS`.
+
+**Interpretation:** The test process has been reading the original GOG map
+rather than the expected edited map from its own install. This explains
+why source-verified color and four-light OFF GMPs in the test copy had no
+visible effect. It supersedes the previous suggestion that static/baked
+lighting was the leading explanation of these particular negative runtime
+tests. Static lighting may still be relevant to future tests, but **the
+actual engine map path must be corrected first**.
+
+The original source `System/Default.ini` includes `[Core.System]`
+`Paths__d=..\\Content\\DX2\\Maps\\*.gmp`, and `[ResPathsWhenNotBlockLoading]`
+`SearchPaths__d=..\\Content\\DX2` plus related entries. These relative
+paths alone do not establish why the executable resolves the GOG install;
+working-directory, launcher state, user configuration and installed-game
+registry values all remain possible sources. Do not present any one as fact.
+
+**Next gate:** fully quit the game and launch `DX2.exe` with its Windows
+working directory explicitly set to the *test* installation's `System`
+folder, then capture the fresh WTO Terminal load in Process Monitor.
+Accept only successful `ReadFile` events against
+`<test-install>/Content/DX2/Maps/M1_Seattle_Hub_WTOterminal.gmp` before
+resuming visual comparisons. If reads still go to the GOG copy, inspect
+the effective config/registry resolution without touching original
+files; avoid copying a patched GMP into the pristine GOG installation
+just to bypass the path problem. Never commit proprietary assets.
