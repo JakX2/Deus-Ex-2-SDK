@@ -93,14 +93,14 @@ class TriggerScriptIndexTests(unittest.TestCase):
 
     def test_original_organizer_three_trees_and_active_source_join(self):
         from dx2_script_organizer import parse_organizer, attach_organizer_index
-        organizer = ("2\\r\\nHeaderBegin\\r\\n2\\r\\n"
-                     "0\\r\\nM1_Seattle\\r\\n2\\r\\n"
-                     "1\\r\\nTS_42\\r\\n1\\r\\nGenericDoor\\r\\n"
-                     "1\\r\\nTS_42\\r\\n"
-                     "HeaderBegin\\r\\n1\\r\\n0\\r\\nAI\\r\\n1\\r\\n"
-                     "1\\r\\nkTCT_FrobByPlayer\\r\\n"
-                     "HeaderBegin\\r\\n1\\r\\n0\\r\\nActions\\r\\n1\\r\\n"
-                     "1\\r\\nkTAT_OpenDoorLink\\r\\n").encode("ascii")
+        organizer = ("2\r\nHeaderBegin\r\n2\r\n"
+                     "0\r\nM1_Seattle\r\n2\r\n"
+                     "1\r\nTS_42\r\n1\r\nGenericDoor\r\n"
+                     "1\r\nTS_42\r\n"
+                     "HeaderBegin\r\n1\r\n0\r\nAI\r\n1\r\n"
+                     "1\r\nkTCT_FrobByPlayer\r\n"
+                     "HeaderBegin\r\n1\r\n0\r\nActions\r\n1\r\n"
+                     "1\r\nkTAT_OpenDoorLink\r\n").encode("ascii")
         parsed = parse_organizer(organizer)
         self.assertEqual(parsed["trees"]["scripts"]["entry_count"], 3)
         self.assertEqual(parsed["trees"]["scripts"]["unique_entry_count"], 2)
@@ -124,14 +124,14 @@ class TriggerScriptIndexTests(unittest.TestCase):
 
     def test_organizer_bad_counts_and_extra_trailing_data_are_rejected(self):
         from dx2_script_organizer import parse_organizer
-        good = ("2\\nHeaderBegin\\n1\\n1\\nTS_42\\n"
-                "HeaderBegin\\n0\\nHeaderBegin\\n0\\n")
+        good = ("2\nHeaderBegin\n1\n1\nTS_42\n"
+                "HeaderBegin\n0\nHeaderBegin\n0\n")
         with self.assertRaisesRegex(ValueError,"trailing"):
-            parse_organizer((good+"UNEXPECTED\\n").encode())
+            parse_organizer((good+"UNEXPECTED\n").encode())
         with self.assertRaisesRegex(ValueError,"Truncated"):
-            parse_organizer(b"2\\nHeaderBegin\\n1\\n0\\n")
+            parse_organizer(b"2\nHeaderBegin\n1\n0\n")
         with self.assertRaisesRegex(ValueError,"Unsupported"):
-            parse_organizer(good.replace("2\\n","3\\n",1).encode())
+            parse_organizer(good.replace("2\n","3\n",1).encode())
 
     def test_original_tso_can_be_read_from_nested_archive(self):
         with TemporaryDirectory() as d:
@@ -139,9 +139,9 @@ class TriggerScriptIndexTests(unittest.TestCase):
             with ZipFile(path,"w") as z:
                 z.writestr("Defs/TS_42.tsd", tsd())
                 z.writestr("Organize/ScriptOrganizer.tso",
-                    "2\\r\\nHeaderBegin\\r\\n1\\r\\n"
-                    "0\\r\\nM1_Seattle\\r\\n1\\r\\n1\\r\\nTS_42\\r\\n"
-                    "HeaderBegin\\r\\n0\\r\\nHeaderBegin\\r\\n0\\r\\n")
+                    "2\r\nHeaderBegin\r\n1\r\n"
+                    "0\r\nM1_Seattle\r\n1\r\n1\r\nTS_42\r\n"
+                    "HeaderBegin\r\n0\r\nHeaderBegin\r\n0\r\n")
             idx=index_script_archive(path)
             self.assertEqual(idx["organizer"]["counts"]["scripts"]["folder_count"],1)
             self.assertEqual(idx["definitions"][0]["organizer_paths"],[["M1_Seattle"]])
