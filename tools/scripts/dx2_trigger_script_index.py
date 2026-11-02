@@ -260,19 +260,25 @@ code{font-size:12px;color:#b2e4ff}.notice{padding:12px;background:#1c3045;color:
 <small id="summary"></small></header><div class="desc">Read-only evidence: symbols occur in .tsd definitions. This is not a decoded event graph or an in-game script editor.</div>
 <main><section><div class="controls"><input id="query" placeholder="Search script, title or kTAT/kTCT symbol" aria-label="Search scripts">
 <select id="status"><option value="active">Active definitions</option><option value="all">All sources</option><option value="deleted">Deleted source history</option></select>
+<select id="viewtype" aria-label="Source catalog"><option value="scripts">Script definitions</option><option value="conditions">Condition palette</option><option value="actions">Action palette</option></select>
 <select id="category"><option value="">All verified script categories</option></select>
 <button id="actors-btn" type="button">Actor Script Indices (unresolved)</button><div class="dim" id="count"></div></div><div id="list" class="list"></div></section>
 <section><div class="details" id="details"><p class="dim">Select a source definition to inspect contained symbols.</p></div></section></main>
 <script id="src-data" type="application/json">__DATA__</script>
 <script>(function(){"use strict";
 const data=JSON.parse(document.getElementById("src-data").textContent),list=document.getElementById("list"),details=document.getElementById("details");
-const query=document.getElementById("query"),status=document.getElementById("status"),category=document.getElementById("category");
+const query=document.getElementById("query"),status=document.getElementById("status"),category=document.getElementById("category"),viewtype=document.getElementById("viewtype");
 let chosen=null;
-if(data.organizer){
- const nodes=data.organizer.category_trees.scripts.filter(x=>x.folder);
+if(!data.organizer){category.hidden=true;viewtype.hidden=true;}
+function updateCategoryChoices(){
+ category.replaceChildren();
+ let root=document.createElement("option");root.value="";root.textContent="All original categories";category.appendChild(root);
+ if(!data.organizer)return;
+ const nodes=data.organizer.category_trees[viewtype.value].filter(x=>x.folder);
  const names=new Set(nodes.map(x=>x.path.join(" / ")));
  [...names].sort().forEach(function(name){let opt=document.createElement("option");opt.value=name;opt.textContent=name;category.appendChild(opt);});
-}else{category.hidden=true;}
+}
+updateCategoryChoices();
 const actorRef=data.actor_script_references,actorsButton=document.getElementById("actors-btn");
 if(!actorRef){actorsButton.hidden=true;}else{
 actorsButton.textContent="Actor script index arrays ("+actorRef.actors_with_property_92+", unresolved)";
@@ -306,24 +312,61 @@ for(const token of x[k+"_symbols"]){details.appendChild(e("div",token.text+"   @
 details.appendChild(e("p","Tokens are recovered from UTF-16LE source fields; their occurrence order does not prove event edges, branching, parameters or execution order.","notice"));
 drawList();
 }
-function drawList(){const q=query.value.toLocaleLowerCase(),mode=status.value,cat=category.value;
-const found=data.definitions.filter(x=>(mode==="all"||(mode==="deleted"?x.deleted_source:!x.deleted_source))&&
-(!cat||(Array.isArray(x.organizer_paths)&&x.organizer_paths.some(p=>{
- const full=p.join(" / ");return full===cat||full.startsWith(cat+" / ");
-})))&&(!q||(
-[x.source_name,x.filename_stem,x.display_label_hint].join(" ")+" "+
-x.condition_symbols.map(y=>y.text).join(" ")+" "+
-x.action_symbols.map(y=>y.text).join(" ")+" "+
-x.parameter_type_symbols.map(y=>y.text).join(" ")).toLocaleLowerCase().includes(q)));
-document.getElementById("count").textContent=found.length+" matches; showing first 250.";
-list.replaceChildren();const frag=document.createDocumentFragment();
-for(const x of found.slice(0,250)){let div=e("div",undefined,"entry"+(x===chosen?" selected":""));
-div.appendChild(e("strong",x.source_name||x.filename_stem));
-div.appendChild(e("div",(x.display_label_hint||"")+" · C:"+x.condition_symbols.length+" A:"+x.action_symbols.length+(x.deleted_source?" · Deleted":""),"meta"));
-div.addEventListener("click",()=>show(x));frag.appendChild(div);}
-list.appendChild(frag);
+
+function matchesCategory(paths,cat){
+ return !cat||paths.some(p=>{
+  const full=p.join(" / ");return full===cat||full.startsWith(cat+" / ");
+ });
 }
-query.addEventListener("input",drawList);status.addEventListener("change",drawList);category.addEventListener("change",drawList);drawList();
+function showPalette(leaf,kind){
+ chosen=null;details.replaceChildren();
+ details.appendChild(e("h2",leaf.name));
+ details.appendChild(e("p","Original "+(kind==="conditions"?"condition":"action")+" symbol palette entry","meta"));
+ details.appendChild(e("h3","Authoring category"));
+ details.appendChild(e("div",leaf.path.slice(0,-1).join(" / ")||"(root)","token"));
+ const field=kind==="conditions"?"condition_symbols":"action_symbols";
+ const active=data.definitions.filter(x=>!x.deleted_source&&x[field].some(y=>y.text===leaf.name));
+ details.appendChild(e("h3","Source definition occurrences"));
+ details.appendChild(e("p",active.length+" distinct active source definitions contain this symbol."));
+ for(const rec of active.slice(0,50)){details.appendChild(e("div",rec.filename_stem,"token"));}
+ details.appendChild(e("p","This is source-text occurrence matching, NOT proof of graph edges, runtime execution or actor bindings.","notice"));
+}
+function drawList(){
+ const q=query.value.toLocaleLowerCase(),mode=status.value,cat=category.value,kind=viewtype.value;
+ status.hidden=kind!=="scripts";
+ list.replaceChildren();const frag=document.createDocumentFragment();
+ if(kind!=="scripts"&&data.organizer){
+  const found=data.organizer.category_trees[kind].filter(x=>!x.folder&&
+   matchesCategory([x.path.slice(0,-1)],cat)&&(!q||x.name.toLocaleLowerCase().includes(q)));
+  document.getElementById("count").textContent=found.length+" verified "+kind+" palette entries (showing first 250).";
+  for(const x of found.slice(0,250)){
+   let div=e("div",undefined,"entry");div.appendChild(e("strong",x.name));
+   div.appendChild(e("div",x.path.slice(0,-1).join(" / ")||"(root)","meta"));
+   div.addEventListener("click",()=>showPalette(x,kind));frag.appendChild(div);
+  }
+ }else{
+  const found=data.definitions.filter(x=>(mode==="all"||(mode==="deleted"?x.deleted_source:!x.deleted_source))&&
+   matchesCategory(x.organizer_paths||[],cat)&&(!q||(
+   [x.source_name,x.filename_stem,x.display_label_hint].join(" ")+" "+
+   x.condition_symbols.map(y=>y.text).join(" ")+" "+
+   x.action_symbols.map(y=>y.text).join(" ")+" "+
+   x.parameter_type_symbols.map(y=>y.text).join(" ")).toLocaleLowerCase().includes(q)));
+  document.getElementById("count").textContent=found.length+" source definitions (showing first 250).";
+  for(const x of found.slice(0,250)){
+   let div=e("div",undefined,"entry"+(x===chosen?" selected":""));
+   div.appendChild(e("strong",x.source_name||x.filename_stem));
+   div.appendChild(e("div",(x.display_label_hint||"")+" · C:"+x.condition_symbols.length+
+      " A:"+x.action_symbols.length+(x.deleted_source?" · Deleted":""),"meta"));
+   div.addEventListener("click",()=>show(x));frag.appendChild(div);
+  }
+ }
+ list.appendChild(frag);
+}
+query.addEventListener("input",drawList);
+status.addEventListener("change",drawList);
+category.addEventListener("change",drawList);
+viewtype.addEventListener("change",()=>{updateCategoryChoices();details.replaceChildren();drawList();});
+drawList();
 if(data.definitions.length)show(data.definitions.find(x=>!x.deleted_source)||data.definitions[0]);
 })();</script></body></html>'''
     return template.replace("__DATA__", payload)
