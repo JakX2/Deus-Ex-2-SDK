@@ -9,6 +9,45 @@ source mesh bounds. Its source rotator is `[0, 16384, 0]` (Yaw 90°, Roll 0°),
 so Auto Roll has no effect. The visual discrepancy is **adjacent missing
 surface/trim geometry**, not proof that this selected mesh was skipped.
 
+## Verified cached WTO import (2026-11-02)
+
+The user supplied both original **DX2Ed cache exports**, `actors.json` and
+`scene.report.json`, for the same retail WTO Terminal map hash
+`a6c68dd8b7b8ea0b1ee27dac4b5d18a57251297feb2f8ccb9f1bc40e317e17aa`.
+
+- **1,033 actors** decoded, including **623 StaticMeshActor** instances.
+- Every one of the 623 StaticMeshActors has a resolved mesh name.
+- Exactly **802/802 mesh-linked actors were rendered** and have placement
+  diagnostic records. `missing_mesh_actors` is **empty**; this excludes a
+  straightforward missing-IBD/static-mesh-actor cause for the screenshot.
+- The generated GLB contains 906 scene nodes, so **104 BSP block nodes** are
+  inferred from 906 - 802; 1,372 visible BSP triangles were reported.
+- The three unresolved diffuse material names were monitor-screen effects
+  (`Mon_screen1`, `Mon_screen4`, `Mon_screen7`), **not** the target trim.
+- `StaticMeshActor__119` / export 554 has **matched** skin/diffuse,
+  source rotator `[0,16384,0]`, and calculated world AABB
+  X [-0.00005,0.51315], Y [4.64009,7.54380], Z [-6.40080,-5.18159] m.
+- Among meshes nearest its transformed *AABB*, two intersect its AABB:
+  `StaticMeshActor__567` (export 351, `GEN_TRIM5-16ft`) and
+  `StaticMeshActor__599` (export 898,
+  `1Hub_wto_term2-trim2-crnr1`). The world AABBs of
+  `StaticMeshActor__450` (697), `__452` (691), and `__459` (722) are
+  approximately 0.61 m away by conservative box-to-box distance. These three
+  use `GEN_TRIM5-16ft` but have different source Pitch/Roll values.
+
+**Conclusion:** the report does not support "DX2Ed silently dropped a
+referenced static mesh". Target next: BSP render block/section recovery and
+preview transforms of existing trim geometry. Box-to-box distance is
+**not** triangle-to-triangle surface distance; no claim that an actual wall
+opening is exactly 0.61m.
+
+**Limitation:** these two cache JSONs do not contain the raw BSP render
+payload, missing/filtered BSP section listing, or the source WTO GMP itself.
+A fully independent extraction audit requires the matching original
+`M1_Seattle_Hub_WTOterminal.gmp` and `m1_hub_wtoterminal.ibd`.
+Existing cache reports predate the new `mesh_export_coverage` and
+`bsp_export_coverage` fields and should not be interpreted as zeros.
+
 ## What the importer can now report
 
 A freshly generated `scene.report.json` contains:
