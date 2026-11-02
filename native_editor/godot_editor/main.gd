@@ -1732,7 +1732,7 @@ func _environment_sound_plan() -> Dictionary:
         or environment_sound_schema.selected < 0):
         return {}
     var pid := environment_sound_field.get_selected_id()
-    if not pid in [1287, 1286, 1467]:
+    if pid not in [1287, 1286, 1467]:
         return {}
     var expected: Variant = _environment_game_value(actor, pid)
     var replacement := environment_sound_schema.get_item_text(environment_sound_schema.selected)
