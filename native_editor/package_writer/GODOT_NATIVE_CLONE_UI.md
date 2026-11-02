@@ -97,3 +97,65 @@ assets and derived candidate GMPs are not included in the repository.
 nonzero native state, nor multi-copy serialization. Future research may
 test stateful decorations safely with extra checks and isolated runtime
 evidence, but the general actor-state restriction remains for now.
+
+
+## Broader static-prop source gate: experimental neutral clone frame (2026-11-02)
+
+The user demonstrated another blocked source: `StaticMeshActor__316`
+(export 814, an upholstered seat) with a screenshot of the correctly
+working v2 preflight refusal. An independent audit of the original
+`M1_Seattle_Hub_WTOterminal.gmp` showed **554 of 636** StaticMeshActor
+exports contain nonzero values in the frame field decoded as
+`latent_action`. Many of these four-byte words are recognizable filler,
+such as `0xCCCCCCCC`, `0x00000001` or ASCII text fragments. In this
+context treating *every* nonzero value as evidence of an active script
+is much too restrictive. This does not prove the precise meaning of
+every original value, and it does not justify editing source actor state.
+
+### New isolated experimental clone operation
+
+The writer now permits source actors only when **all** of the remaining
+frame markers indicate the same neutral state as our previously working
+table: `node=-2`, `state_node=-2`,
+`probe_mask=0xffffffffffffffff`, `offset=-1`;
+original Level membership exactly once; class exactly `StaticMeshActor`;
+original authored Location; no object links, no unknown/nonzero native tail,
+and no parse errors. Instead of copying the latent field verbatim,
+it resets that **one four-byte value only in the newly appended actor**.
+The original actor export is preserved byte-for-byte.
+
+After building the candidate, the writer independently reparses both
+source and output, confirms that the original exports are byte-identical
+apart from Level's actor list, checks the newly appended actor has
+latent value 0, and **reverses the new Location translation** to prove
+the *entire appended actor payload* matches its original source
+except for that precise four-byte reset.
+
+Offline source/identity checks on the original WTO GMP:
+
+- `StaticMeshActor__316`, export **814**, original
+  latent value **943267902**; new copy neutralized to zero.
+- `StaticMeshActor__47`, export **1148**, original
+  latent value **926359614**; new copy neutralized to zero.
+- `StaticMeshActor__611`, export **907**, original
+  latent value **0**; stays zero and retains the known table clone path.
+
+All three produced candidates that passed source-hash, package
+table, Level list, independent parsers and exact new-clone provenance
+checks. No source or game installation was changed during those checks.
+A full original WTO source scan found **636/636 StaticMeshActor exports
+pass the revised *preflight***; only three were used for the additional
+end-to-end clone-generation tests. The count is not a runtime-success rate.
+
+### Runtime gate
+
+**This v3 normalization has NOT been tested in Invisible War.**
+It is possible that a nonzero serialized field is meaningful for some
+actors despite its garbage-like values, or that an otherwise structurally
+valid clone can behave incorrectly in-game. Therefore keep this feature
+experimental and opt-in. The next user test should duplicate
+`StaticMeshActor__316` on a disposable backed-up WTO GMP, inspect
+the seat in-game and test player collision, then exit and restore the
+original. Do not enable NPCs, interactive archetypes, new mesh resources
+or general actor cloning on this evidence alone. Do not redistribute
+derived private GMPs or game binaries.
