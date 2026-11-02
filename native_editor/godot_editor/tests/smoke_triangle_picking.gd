@@ -414,21 +414,49 @@ func _run() -> void:
     # Catalog UI includes resources not already placed in the scene.
     viewer.asset_catalog = {"schema":"DX2Ed-asset-catalog-v1", "assets":[
         {"name":"SyntheticStair","kind":"staticmesh","bundle":"fictional.ibd","resource_index":1,"bytes":128},
-        {"name":"UnusedMesh","kind":"staticmesh","bundle":"fictional.ibd","resource_index":2,"bytes":64}]}
+        {"name":"UnusedMesh","kind":"staticmesh","bundle":"fictional.ibd","resource_index":2,"bytes":64},
+        {"name":"OriginalDemoCube","kind":"staticmesh","bundle":"fixture.ibd","resource_index":3,"bytes":256}]}
     viewer._refresh_asset_list()
-    if viewer.asset_list.item_count != 2:
+    if viewer.asset_list.item_count != 3:
         _fail("T3Ed-like asset browser should list both placed and unplaced resources")
         return
     viewer._asset_selected(1)
     if not viewer.asset_details.text.contains("UnusedMesh"):
         _fail("Asset Browser should show source provenance and resource metadata")
         return
-    if viewer._placed_instances_for_asset("UnusedMesh").size() != 0:
-        _fail("An unplaced resource must not be confused with an actor")
+    if (viewer._placed_instances_for_asset("UnusedMesh").size() != 0
+        or not viewer._native_asset_source_for("UnusedMesh").is_empty()
+        or not viewer.native_asset_place_button.disabled):
+        _fail("Unplaced IBD mesh cannot be misrepresented as a native placeable actor")
         return
     viewer._asset_selected(0)
     if viewer._placed_instances_for_asset("SyntheticStair").size() != 0:
-        _fail("Fixture uses only TestMesh name; unexpected match")
+        _fail("Fixture source name does not match scene; unexpected match")
+        return
+    viewer._asset_selected(2)
+    var linked_source: Dictionary = viewer._native_asset_source_for("OriginalDemoCube")
+    if (str(linked_source.get("name", "")) != "StaticMeshActor__1"
+        or int(linked_source.get("export", -1)) != 1
+        or viewer.native_asset_place_button.disabled
+        or not viewer.asset_details.text.contains("Native reuse source: StaticMeshActor__1")):
+        _fail("Asset native placement must choose existing original actor by matching IBD mesh")
+        return
+    var base_pose: Transform3D = viewer.original_mesh_transforms["StaticMeshActor__1"]
+    var camera_pose: Transform3D = viewer._native_asset_target_pose(
+        "StaticMeshActor__1", base_pose.origin + Vector3(0.75, 0.0, 0.0))
+    if (camera_pose.origin.distance_to(base_pose.origin + Vector3(0.75, 0.0, 0.0)) > 0.00001
+        or not camera_pose.basis.is_equal_approx(base_pose.basis)):
+        _fail("Asset native placement must retain original actor rotation and valid camera placement")
+        return
+    var far_pose: Transform3D = viewer._native_asset_target_pose(
+        "StaticMeshActor__1", base_pose.origin + Vector3(1000, 0, 0))
+    if (far_pose.origin.distance_to(base_pose.origin + Vector3(1, 0, 0)) > 0.00001
+        or not far_pose.basis.is_equal_approx(base_pose.basis)):
+        _fail("Out-of-range native placement must keep source basis and stay within supported translation")
+        return
+    var none_pose: Transform3D = viewer._native_asset_target_pose("StaticMeshActor__1", base_pose.origin)
+    if none_pose.origin == base_pose.origin:
+        _fail("Native placement cannot create a zero-delta clone at source location")
         return
     var original: MeshInstance3D = viewer.selected_mesh
     if not is_instance_valid(original):
