@@ -70,6 +70,8 @@ var chosen_system_zip: String = ""
 var chosen_system_path: String = ""
 var preview_club_stairs := false
 var preview_auto_roll := true # GLB visualization hypothesis; never retail GMP
+var preview_show_bsp := true # Display only, does not alter GLB or original game map
+var preview_show_actor_meshes := true # Show/hide independently from BSP geometry
 var last_gmp_path: String = ""
 var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
@@ -251,6 +253,21 @@ func _make_ui() -> void:
     auto_roll_toggle.button_pressed = preview_auto_roll
     auto_roll_toggle.toggled.connect(_set_auto_roll_preview)
     zip_bar.add_child(auto_roll_toggle)
+    var geometry_label := Label.new()
+    geometry_label.text = "  Geometry:"
+    zip_bar.add_child(geometry_label)
+    var show_bsp_toggle := CheckBox.new()
+    show_bsp_toggle.text = "BSP"
+    show_bsp_toggle.button_pressed = preview_show_bsp
+    show_bsp_toggle.tooltip_text = "Show/hide original level BSP render blocks (read-only, no reimport)."
+    show_bsp_toggle.toggled.connect(_set_bsp_preview_visible)
+    zip_bar.add_child(show_bsp_toggle)
+    var show_mesh_toggle := CheckBox.new()
+    show_mesh_toggle.text = "Placed meshes"
+    show_mesh_toggle.button_pressed = preview_show_actor_meshes
+    show_mesh_toggle.tooltip_text = "Show/hide placed static meshes, props and other non-BSP meshes (read-only, no reimport)."
+    show_mesh_toggle.toggled.connect(_set_actor_mesh_preview_visible)
+    zip_bar.add_child(show_mesh_toggle)
     var zip_hint := Label.new()
     zip_hint.text = "  Select shared resources, optional System, then a mission ZIP"
     zip_bar.add_child(zip_hint)
@@ -959,6 +976,7 @@ func load_glb(path: String) -> void:
     scene_root = imported
     world_root.add_child(scene_root)
     _index_meshes(scene_root)
+    _apply_geometry_layer_visibility()
     frame_whole_scene()
     current_folder = path.get_base_dir()
     _load_asset_catalog(current_folder.path_join("assets.json"))
@@ -1052,6 +1070,29 @@ func _index_meshes(node: Node) -> void:
                 meshes_by_actor[actor_name] = mesh_node
     for child in node.get_children():
         _index_meshes(child)
+
+# Layer visibility is only a view filter; original nodes, transforms, GLB
+# geometry and GMP/IBD source are preserved. The triangle picker already
+# excludes is_visible_in_tree() == false instances.
+func _set_bsp_preview_visible(enabled: bool) -> void:
+    preview_show_bsp = enabled
+    _apply_geometry_layer_visibility()
+    status_label.text = "BSP geometry %s. Original level unchanged." % ("shown" if enabled else "hidden")
+
+
+func _set_actor_mesh_preview_visible(enabled: bool) -> void:
+    preview_show_actor_meshes = enabled
+    _apply_geometry_layer_visibility()
+    status_label.text = "Placed meshes %s. Original level unchanged." % ("shown" if enabled else "hidden")
+
+
+func _apply_geometry_layer_visibility() -> void:
+    for instance in all_mesh_instances:
+        if not is_instance_valid(instance):
+            continue
+        var is_bsp: bool = str(instance.name).begins_with("BSP_")
+        instance.visible = preview_show_bsp if is_bsp else preview_show_actor_meshes
+
 
 func _mesh_world_aabb(instance: MeshInstance3D) -> AABB:
     var local := instance.get_aabb()
