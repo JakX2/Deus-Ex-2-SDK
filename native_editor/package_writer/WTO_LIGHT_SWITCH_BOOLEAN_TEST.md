@@ -458,13 +458,13 @@ The user pasted the actual read-only Windows path/hash report taken while the
 game was running. The report verifies:
 
 - Selected target map:
-  `C:\\Users\\Dav\\Desktop\\Deus Ex 2 test\\Content\\DX2\\Maps\\M1_Seattle_Hub_WTOterminal.gmp`
+  `<test-install>/Content/DX2/Maps/M1_Seattle_Hub_WTOterminal.gmp`
 - SHA-256:
   `868e7ae356d02c2c00165e74bffce9004fef3ce115ded5235f977c9da26c91a4`
   (exact match for the previous independently verified four-bLightOn OFF GMP).
 - Running process: `DX2Main.exe`, PID **18216** at the time of the report.
 - Executable:
-  `C:\\Users\\Dav\\Desktop\\Deus Ex 2 test\\System\\DX2Main.EXE`.
+  `<test-install>/System/DX2Main.EXE`.
 - The sibling `Content/DX2/Maps` location derived from the running process
   is **the same exact map path**, and its SHA is the known OFF control.
 
@@ -493,6 +493,5 @@ Next controlled runtime gate:
    defaults, and/or baked illumination, rather than inventing new color
    patches. Remain in draft research status.
 
-Do not include copyrighted GMP bytes or any user-specific local Windows
-paths in public release notes. This report section is a research note
-inside the draft PR and can be anonymized before merging.
+Do not include copyrighted GMP bytes or user-specific local Windows paths
+in public release notes or research commits.
