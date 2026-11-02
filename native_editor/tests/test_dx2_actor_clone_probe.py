@@ -93,24 +93,53 @@ class ExperimentalSingleCloneTests(unittest.TestCase):
         self.assertEqual(self.source.read_bytes(), self.original)
         self.assertEqual(list(self.source.parent.iterdir()), [self.source])
 
-    def test_uncloneable_native_state_returns_clear_json_no_traceback(self):
+    def test_nonzero_latent_source_is_normalized_only_on_new_export(self):
         original = Package(self.source)
         writer = PackageWriter(original)
         stateful = bytearray(original.export_bytes(original.exports[0]))
-        # Non-zero latent_action, replicating the real-world rejection pattern.
+        # Real retail props contain nonzero/garbage-like DWORDs including
+        # 0xcccccccc; this must never be copied into the *new* export.
         stateful[10:14] = struct.pack("<I", 926359614)
         writer.set_object(0, bytes(stateful))
         self.source.write_bytes(writer.write())
+        raw_original = self.source.read_bytes()
+        sha = hashlib.sha256(raw_original).hexdigest()
+        run, preflight = self._clone_cli("--check-actor")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(preflight["new_actor_state_will_be_normalized"])
+        self.assertEqual(preflight["source_latent_action"], 926359614)
+        self.assertFalse(preflight["output_written"])
+        run2, report2 = self._clone_cli("--dx", "50")
+        self.assertEqual(run2.returncode, 0, run2.stdout + run2.stderr)
+        self.assertTrue(report2["clone_payload_provenance_verified"])
+        self.assertTrue(report2["clone_frame_normalized"])
+        self.assertEqual(report2["source_latent_action"], 926359614)
+        self.assertEqual(report2["clone_latent_action"], 0)
+        result, output = clone_in_memory(self.source, **(self.opts | {"source_sha256": sha}))
+        candidate = self.root / "new-prop.gmp"
+        candidate.write_bytes(output)
+        parsed = Package(candidate)
+        self.assertEqual(parsed.read_actor(parsed.exports[0]).state["latent_action"], 926359614)
+        self.assertEqual(parsed.read_actor(parsed.exports[-1]).state["latent_action"], 0)
+        self.assertEqual(self.source.read_bytes(), raw_original)
+
+    def test_unsafe_non_neutral_frame_returns_clear_json_refusal(self):
+        original = Package(self.source)
+        writer = PackageWriter(original)
+        bad = bytearray(original.export_bytes(original.exports[0]))
+        # Only two neutral compact references (-2,-2) are supported.
+        bad[1] = 1
+        writer.set_object(0, bytes(bad))
+        self.source.write_bytes(writer.write())
         run, report = self._clone_cli("--check-actor")
         self.assertEqual(run.returncode, 2)
-        self.assertEqual(report["schema"], "DX2Ed-experimental-native-prop-duplicate-v1")
         self.assertEqual(report["status"], "refused")
-        self.assertIn("active native/script state", report["reason"])
+        self.assertIn("unsupported native/script frame", report["reason"])
         self.assertFalse(report["output_written"])
         self.assertNotIn("Traceback", run.stdout + run.stderr)
         run2, report2 = self._clone_cli("--dx", "50")
         self.assertEqual(run2.returncode, 2)
-        self.assertIn("active native/script state", report2["reason"])
+        self.assertIn("unsupported native/script frame", report2["reason"])
         self.assertEqual(list(self.source.parent.iterdir()), [self.source])
 
     def test_listing_is_read_only_and_only_eligible_actor_is_shown(self):
@@ -181,7 +210,7 @@ class ExperimentalSingleCloneTests(unittest.TestCase):
         w.set_object(0, bytes(modified))
         self.source.write_bytes(w.write())
         current = hashlib.sha256(self.source.read_bytes()).hexdigest()
-        with self.assertRaisesRegex(ValueError, "active native/script state"):
+        with self.assertRaisesRegex(ValueError, "unsupported native/script frame"):
             clone_in_memory(self.source, **(self.opts | {"source_sha256": current}))
 
 
