@@ -409,3 +409,36 @@ control still darkens the room while red does nothing, study baked
 lighting/lighting initialization or the actual renderer path before
 attempting further `LightColor` GameSys editing. The public repo contains
 only this research note; no copyrighted derived GMPs are committed.
+
+## Follow-up: fixture color v2 reported ineffective (2026-11-02)
+
+The user reports 'it didn't work' after the second private fixture-color lab.
+Treat this as a negative visible result, not a successful runtime LightColor edit.
+The selected v2 variant, on-disk target SHA, and whether the known OFF control
+was also tested are not established by that report.
+
+Source-backed findings from the uploaded original System/Engine.d2u:
+- Actor defines LightColorStruct containing byte LightBrightness,
+  LightHue and LightSaturation, declared as inherited property ID 116.
+- It independently declares LightDamping (904), bLightOn (1487),
+  and a RenderFlagsStruct field bStaticLighting with the comment
+  'Uses raytraced lighting'.
+- The original four D_298 fixture exports all have existing local
+  GameSys #116 with Brightness 96, Hue 150, Saturation 32, and #1487 true.
+- Byte-precise map patch validity does not prove the game regenerated
+  lighting or used these color fields in its runtime renderer.
+
+Working hypothesis: precomputed/static lighting, or light values
+recomputed during initialization, may prevent color edits from becoming
+visible without rebuilding illumination. This is NOT yet a verified
+DX2-specific rendering conclusion. Old UnrealEd documentation describes
+needing a lighting rebuild after changing light colors, but custom Ion
+Storm processing still requires separate investigation.
+
+Next gate: Do not produce more blind colors. First compare the exact
+original and known FOUR bLightOn OFF control in the same test installation,
+from a fresh level entry, and capture the selected GMP disk hash.
+If FOUR OFF still darkens but RED does not, investigate the original
+light baking / illumination data and any rebuild pipeline before
+enabling general LightColor writes in Godot. No proprietary patches
+belong in the public repository. Keep PR #5 draft.
