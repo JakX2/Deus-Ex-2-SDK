@@ -25,6 +25,7 @@ for path in (HERE, ROOT / "third_party" / "t3sdk_assets"):
         sys.path.insert(0, str(path))
 
 from t3gamesys import Gamesys  # noqa: E402
+from dx2_gamesys_archetype_arrays import scan_grouped_defaults  # noqa: E402
 
 SCHEMA = "DX2Ed-gamesys-archetype-research-v1"
 MAX_GAMESYS_BYTES = 64_000_000
@@ -57,8 +58,10 @@ def _original_gamesys(system: Path) -> tuple[bytes, str]:
         return z.read(found[0]), found[0].filename
 
 
-def ancestry_status(arch, mapping: dict) -> tuple[list[str], bool, str | None]:
-    """Require a complete, successfully parsed D_* parent chain before resolve."""
+def ancestry_status(
+    arch, mapping: dict, recovered_names: frozenset[str] = frozenset()
+) -> tuple[list[str], bool, str | None]:
+    """Verify D_* parent chains using either original T3 or DX2 recovery."""
     chain = []
     seen = set()
     current = arch
@@ -67,7 +70,7 @@ def ancestry_status(arch, mapping: dict) -> tuple[list[str], bool, str | None]:
             return chain, False, "archetype inheritance cycle"
         seen.add(current.name.casefold())
         chain.append(current.name)
-        if current.error:
+        if current.error and current.name.upper() not in recovered_names:
             return chain, False, "archetype record has unparsed fields"
         parent = current.parent
         if not parent or not parent.upper().startswith("D_"):
@@ -94,23 +97,63 @@ def analyze_archetypes(system: Path, *, declaration_catalog: Path | None = None)
         local = Path(temp) / "DX2Gamesys.d2u"
         local.write_bytes(original)
         reader = Gamesys(local)
+    recovered = {}
+    recovery_failures = {}
+    for exp in reader.package.exports:
+        name = exp.name.upper()
+        arch = reader.archetypes.get(name)
+        if arch is None or not arch.error:
+            continue
+        try:
+            candidate = scan_grouped_defaults(reader.package, exp)
+            if not candidate["display_name"] or candidate["display_name"] != arch.display:
+                raise ValueError("DX2 decoder display name differs from original T3SDK prefix")
+            recovered[name] = candidate
+        except (EOFError, IndexError, ValueError, UnicodeDecodeError) as error:
+            recovery_failures[name] = str(error)
+    recovered_names = frozenset(recovered)
     outputs = []
     counts = Counter()
     failures = []
     for name, arch in sorted(reader.archetypes.items()):
-        chain, complete, reason = ancestry_status(arch, reader.archetypes)
+        original_t3sdk_error = arch.error
+        extension = recovered.get(name)
+        is_parsed = not arch.error or extension is not None
+        chain, complete, reason = ancestry_status(arch, reader.archetypes, recovered_names)
         counts["classes_found"] += 1
-        if arch.error:
+        if not is_parsed:
             counts["classes_unparsed"] += 1
-            failures.append({"class": name, "error": arch.error})
+            failures.append({"class": name, "error": arch.error,
+                             "dx2_decoder_error": recovery_failures.get(name)})
         else:
             counts["classes_locally_parsed"] += 1
+            if extension is not None:
+                counts["classes_recovered_with_dx2_grouped_defaults"] += 1
+                counts["verified_grouped_elements"] += sum(
+                    group["element_count"] for group in extension["groups"]
+                    if group["element_count"] > 1)
         if complete:
             counts["complete_source_inheritance_chains"] += 1
         else:
             counts["incomplete_source_inheritance_chains"] += 1
         local_props = []
-        if not arch.error:
+        if extension is not None:
+            for group in extension["groups"]:
+                pid = group["property_id"]
+                declared = catalog.get(str(pid), {})
+                local_props.append({
+                    "property_id": pid,
+                    "encoded_id": f"0x{group['encoded_id']:08x}",
+                    "element_count": group["element_count"],
+                    "encoding": group["encoding"],
+                    "source_header_offset": group["source_header_offset"],
+                    "elements": group["elements"],
+                    "source_declared_name": declared.get("name"),
+                    "source_declared_type": declared.get("type"),
+                    "native_edit_enabled": False,
+                })
+                counts["parsed_local_default_blocks"] += 1
+        elif not arch.error:
             for pid, block in sorted(arch.blocks.items()):
                 declared = catalog.get(str(pid), {})
                 local_props.append({
@@ -124,10 +167,15 @@ def analyze_archetypes(system: Path, *, declaration_catalog: Path | None = None)
                 })
                 counts["parsed_local_default_blocks"] += 1
         outputs.append({
-            "class": arch.name, "display_name": arch.display if not arch.error else None,
+            "class": arch.name, "display_name": arch.display or None,
             "parent": arch.parent, "local_property_count": len(local_props),
-            "source_class_parsed": not bool(arch.error),
-            "parse_error": arch.error,
+            "source_class_parsed": is_parsed,
+            "parse_error": None if is_parsed else arch.error,
+            "original_t3sdk_parse_error": original_t3sdk_error,
+            "original_t3sdk_grouped_layout_recovered": extension is not None,
+            "source_record_decoder": (
+                "dx2_grouped_defaults" if extension is not None
+                else "t3sdk_standard" if is_parsed else "unparsed"),
             "source_ancestry": chain,
             "inheritance_complete": complete,
             "inheritance_issue": reason,
@@ -148,6 +196,8 @@ def analyze_archetypes(system: Path, *, declaration_catalog: Path | None = None)
             "T3SDK's T3Gamesys class parser is reused against DX2 data; partial compatibility is diagnostic.",
             "An unparsed class or ancestor must not be used to infer complete inherited properties.",
             "Parsed source archetype/default blocks do not demonstrate runtime-safe actor spawning.",
+            "The DX2 grouped-field supplement does not modify original T3SDK code.",
+            "Source element counts and exact bytes are verified, but gameplay meanings and native editing remain unverified.",
             "No original game assets are modified or committed to the SDK.",
         ],
     }
