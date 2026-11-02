@@ -5,7 +5,7 @@ extends RefCounted
 
 const SCHEMA := "DX2Ed-rotation-fix-rules-v1"
 const ROTATOR_TOLERANCE := 0.01
-const ALLOWED_MODES := [1, 2, 3, 4, 5]
+const ALLOWED_MODES := [1, 2, 3, 4, 5, 6]  # 6: raw GMP Roll, even with Auto Roll enabled
 
 static func mesh_name(actor: Dictionary) -> String:
     var source: Variant = actor.get("mesh", null)
