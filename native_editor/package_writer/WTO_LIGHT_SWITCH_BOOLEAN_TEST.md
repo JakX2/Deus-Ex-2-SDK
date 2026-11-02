@@ -349,3 +349,63 @@ for struct contents. A private byte-patch diagnostic is **not** permission
 to enable general Godot `LightColor` struct serialization, game-wide
 light-color editing, or editing inherited class defaults. Do not commit
 game-derived binaries; do not merge PR #5 on this evidence alone.
+
+
+## Negative native-Light hue test; fixture-identity correction (2026-11-02)
+
+The user tested the prior private **Red Lights Lab v1** and supplied a
+WTO Terminal gameplay screenshot, reporting **"the red lights didn't work"**.
+The scene has no obvious red illumination. This is a *negative visual
+observation*, not a proof of which GMP was loaded: the active test map hash,
+chosen v1 variant, and controlled before/after camera position have not been
+supplied. Do not mark v1 color editing as runtime successful.
+
+**Important source-backed correction:** v1 targeted nearby native
+`Light__1`, `Light__5`, and optionally six more `Light__*` actors, not
+the four `D_298` / `HubWTOCeilingLight2` actors involved in the earlier
+visibly effective four-`bLightOn` OFF trial. This difference in *actor
+identity* was not controlled for, making the v1 failure inconclusive for the
+four fixtures. The source shows these four D_298 exports also have
+**existing** GameSys `LightColor` (#116, struct type 0x0008, version 1)
+with *identical* authored values:
+
+```
+39 01 60 3b 01 96 3c 01 20 00
+  Brightness 96;  Hue 150;  Saturation 32
+```
+
+Original `Engine.d2u` `Actor` script declares
+`var(Lighting) inherited(116) LightColorStruct LightColor`,
+where `LightBrightness`, `LightHue`, and `LightSaturation` are bytes.
+Their four native actor export IDs are 426, 1989, 2027 and 2046.
+Each of these four `D_298` actors also has `bLightOn` (#1487, bool 01).
+
+A **separate, private-only Fixture Color Lab v2** was assembled from the
+exact original 1,112,716-byte GMP (SHA
+`a6c68dd8b7b8ea0b1ee27dac4b5d18a57251297feb2f8ccb9f1bc40e317e17aa`).
+Four cases modify `LightColor` ONLY on those four original ceiling
+fixtures: red (brightness=255 hue=0 saturation=0), blue (255,170,0),
+white (255,0,255), and black/zero brightness (0,150,32).
+A fifth case reproduces the **identical existing four-bLightOn OFF
+control**, output SHA
+`868e7ae356d02c2c00165e74bffce9004fef3ce115ded5235f977c9da26c91a4`.
+
+All five alternatives have been independently checked against the original:
+exact approved byte offsets and prior values, full-file output hashes, no
+changed bytes elsewhere, same byte length, and successful source package
+reparse of each fixture's existing GameSys blocks. **These v2 outputs are
+not yet Windows-runtime or in-game verified.**
+
+v2's GUI adds a `COPY MAP HASH` diagnostic for the selected test
+`Content/DX2/Maps` file. This verifies the *selected disk file* and
+cannot alone prove the executable loads that installation. It accepts
+previously known test hashes for read-only recognition but still refuses
+to overwrite a missing/unverified original backup.
+
+**Next experimental gate:** with the game closed, confirm v2 selected map
+hash, test the four-fixture red case after a fresh level entry, then
+restore original and reproduce the four-switch OFF control. If the
+control still darkens the room while red does nothing, study baked
+lighting/lighting initialization or the actual renderer path before
+attempting further `LightColor` GameSys editing. The public repo contains
+only this research note; no copyrighted derived GMPs are committed.
