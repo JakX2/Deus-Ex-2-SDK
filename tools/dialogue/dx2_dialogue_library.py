@@ -93,6 +93,39 @@ def classify(line: str, number: int) -> dict:
     return result
 
 
+def conversation_inventory(source_path: Path) -> list[dict]:
+    """List compiled .con containers in the same ZIP without decoding graphs.
+
+    The 0FFE/1FFE header variants are recorded literally; a size header
+    matching file length does NOT establish correct branch/condition parsing.
+    """
+    if source_path.suffix.casefold() != ".zip":
+        return []
+    records = []
+    with zipfile.ZipFile(source_path) as archive:
+        for member in archive.infolist():
+            if member.is_dir() or not member.filename.casefold().endswith(".con"):
+                continue
+            if member.file_size > MAX_SOURCE_BYTES:
+                raise ValueError("Compiled conversation exceeds safety size limit")
+            raw = archive.read(member)
+            magic = raw[:8]
+            declared = int.from_bytes(raw[12:16], "little") if len(raw) >= 16 else None
+            records.append({
+                "member": member.filename,
+                "map_filename_hint": Path(member.filename).stem + ".gmp",
+                "bytes": len(raw),
+                "sha256": digest(raw),
+                "header_variant": magic.decode("ascii", errors="replace"),
+                "recognized_container_header": magic in (b"0FFE1NOC", b"1FFE1NOC"),
+                "declared_payload_bytes": declared,
+                "declared_size_matches_file": declared == len(raw) - 16 if declared is not None else False,
+                "graph_decoded": False,
+                "map_link_verified": False,
+            })
+    return sorted(records, key=lambda r: r["member"].casefold())
+
+
 def index_source(source: dict) -> dict:
     # Hashes for drafts must follow the user's selected encoding, not UTF8
     # for the source text when an alternate encoding was supplied.
@@ -114,6 +147,7 @@ def index_source(source: dict) -> dict:
         "source_line_count": len(records),
         "counts_by_kind": dict(sorted(by_kind.items())),
         "counts_by_speaker": dict(sorted(speakers.items(), key=lambda x: x[0].casefold())),
+        "compiled_con_files": conversation_inventory(source["path"]),
         "warnings": [
             "These are original ConText.eng text lines, not .con node links or gameplay order.",
             "Choice lines are source labels only; branching conditions are not decoded.",
@@ -216,6 +250,8 @@ def cli(argv=None):
             inputs = [args.source]
             summary = {"edits": 0}
         else:
+            if args.output.name.casefold() == "context.eng":
+                raise ValueError("Preview output must not be named ConText.eng (use preview.eng)")
             draft = json.loads(args.draft.read_text(encoding="utf-8"))
             content, summary = preview_changes(source, draft)
             inputs = [args.source, args.draft]
