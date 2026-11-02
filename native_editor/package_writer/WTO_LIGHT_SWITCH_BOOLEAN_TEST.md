@@ -287,3 +287,65 @@ fresh map entry, restoring original between trials. New grouped candidates
 are **binary-verified but not yet game-runtime tested**. The public SDK retains
 no proprietary modified map content. Godot's individual-field writer remains
 separate and strictly one field per isolated Save As.
+
+## Native LightColor saturation/hue experiment (2026-11-02)
+
+Following the single and grouped `bLightOn` tests, the user reported **no
+obvious visual difference** in those follow-ups, while the earlier four-light
+test remained visibly more effective. The exact current on-disk test map SHA
+and camera-view alignment were not provided. Do **not** infer that the earlier
+Boolean experiment was invalidated or that all candidate variants were
+individually tested.
+
+The original, SHA-pinned retail WTO Terminal GMP was inspected against
+the original DX2 `Engine.d2u` declarations. Two **distinct classes of actors**
+matter:
+
+- `D_298` / `HubWTOCeilingLight2` placed archetype actors authored the
+  one-byte GameSys `bLightOn` field (#1487).
+- The map also has **native `Light` actors** with existing GameSys
+  `LightColor` (#116, encoded type word 0x0008, tagged struct).
+  Unlike the `D_298` fields, this native color struct is already present
+  on many lights, with its own byte fields for `LightBrightness`,
+  `LightHue` and `LightSaturation`.
+
+For example, `Light__1` (export 1053) and `Light__5` (export 1061)
+lie near the PEQUOD'S sign at (-314, 516, 340) and (-398, 522, 340)
+in map Unreal coordinates. Both have **original authored** #116 payload:
+
+```text
+39 01 30  3b 01 55  3c 01 60  00
+^  ^ 48  ^  ^ 85  ^  ^ 96  terminator
+brightness   hue       saturation
+```
+
+The three fields are bytes within one existing, size-10 struct, allowing
+diagnostic changes **without adding properties or shifting package offsets**.
+The names are decoded from the original GMP's name table, not assumed from
+numeric indices in another package. Source declaration:
+`Engine.d2u` / `var(Lighting) inherited(116) LightColorStruct LightColor`.
+
+A **private-only** Windows color A/B bundle was generated from the original
+1,112,716-byte WTO GMP, providing:
+
+1. PEQUOD'S two nearby native `Light` actors at brightness=255, hue=0
+   (red), saturation=0 (strong color);
+2. eight verified native `Light` actors across the terminal with the
+   same vivid red values;
+3. the same eight with hue=85 (green), saturation=0, brightness=255;
+4. an eight-light white/high-brightness reference at saturation=255;
+5. the **exact previous four-light `bLightOn` OFF control**, verified by its
+   full-package SHA-256
+   `868e7ae356d02c2c00165e74bffce9004fef3ce115ded5235f977c9da26c91a4`.
+
+Every candidate was independently compared to the byte-identical original,
+with every changed original offset and replacement value explicitly checked.
+All GMPs retain the same size and package tables. The color targets
+correspond to standard UE1/UE2 HSB light semantics; actual DX2 runtime
+lighting behavior has **not** been confirmed.
+
+**Critical gate:** The GameSys source Inspector continues to be read-only
+for struct contents. A private byte-patch diagnostic is **not** permission
+to enable general Godot `LightColor` struct serialization, game-wide
+light-color editing, or editing inherited class defaults. Do not commit
+game-derived binaries; do not merge PR #5 on this evidence alone.
