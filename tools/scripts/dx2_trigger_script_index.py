@@ -75,7 +75,9 @@ def parse_tsd(data: bytes, name: str, *, deleted: bool) -> dict:
         raise ValueError(f"{name}: declared payload length mismatch")
     if header_bytes == 16 and struct.unpack_from("<I", data, 8)[0] != 0:
         raise ValueError(f"{name}: unexpected v1 TSD prefix")
-    source_name = _read_utf16_zero_string(data, header_bytes)
+    # Both header variants contain a 32-bit field (0x10 in retail files)
+    # before the first UTF-16LE script name. It is not part of the name.
+    source_name = _read_utf16_zero_string(data, header_bytes + 4)
     if source_name is None:
         # Some original deletion/metadata stubs may lack a normal name.
         source_name = None
