@@ -47,6 +47,7 @@ var source_archetype_details: TextEdit
 var source_archetype_visible: Array = []
 var draft_template_provenance: Dictionary = {} # draft name -> qualified class + template export
 var asset_mesh_resources: Dictionary = {}
+var native_asset_place_button: Button
 var asset_thread: Thread = null
 var asset_pending_name := ""
 var asset_pending_folder := ""
@@ -453,6 +454,15 @@ func _make_ui() -> void:
     place_resource.tooltip_text = "Place a cataloged static mesh as an editable draft; does not create native DX2 actors"
     place_resource.pressed.connect(_place_selected_asset)
     assets_tab.add_child(place_resource)
+    native_asset_place_button = Button.new()
+    native_asset_place_button.text = "Place native copy (placed mesh)"
+    native_asset_place_button.tooltip_text = (
+        "Creates a saveable static prop draft using an original actor of the selected IBD mesh. "
+        + "Only for resources already placed as valid StaticMeshActor in THIS map; source preflight required."
+    )
+    native_asset_place_button.disabled = true
+    native_asset_place_button.pressed.connect(_place_asset_as_native_copy)
+    assets_tab.add_child(native_asset_place_button)
     var focus_resource := Button.new()
     focus_resource.text = "Find placed instance"
     focus_resource.pressed.connect(_focus_asset_instance)
@@ -1226,6 +1236,8 @@ func _clear_current_scene() -> void:
     _clear_selection()
     asset_catalog.clear()
     selected_asset.clear()
+    if native_asset_place_button != null:
+        native_asset_place_button.disabled = true
     archetype_catalog.clear()
     selected_archetype.clear()
     source_gamesys_catalog.clear()
@@ -1957,6 +1969,8 @@ func _place_archetype_template() -> void:
 func _load_asset_catalog(path: String) -> void:
     asset_catalog.clear()
     selected_asset.clear()
+    if native_asset_place_button != null:
+        native_asset_place_button.disabled = true
     if not FileAccess.file_exists(path):
         _refresh_asset_list()
         return
@@ -1991,6 +2005,8 @@ func _refresh_asset_list() -> void:
         return
     asset_list.clear()
     assets_visible.clear()
+    if native_asset_place_button != null:
+        native_asset_place_button.disabled = true
     var query := asset_filter.text.strip_edges().to_lower() if asset_filter != null else ""
     var resources: Variant = asset_catalog.get("assets", [])
     if typeof(resources) != TYPE_ARRAY:
@@ -2020,6 +2036,9 @@ func _asset_selected(index: int) -> void:
     selected_asset = assets_visible[index]
     var name := str(selected_asset.get("name", ""))
     var placed := _placed_instances_for_asset(name) if str(selected_asset.get("kind", "")) == "staticmesh" else []
+    var native_candidate := _native_asset_source_for(name)
+    if native_asset_place_button != null:
+        native_asset_place_button.disabled = native_candidate.is_empty()
     asset_details.text = (
         "Name: " + name +
         "\nKind: " + str(selected_asset.get("kind", "")) +
@@ -2027,7 +2046,11 @@ func _asset_selected(index: int) -> void:
         "\nResource index: " + str(selected_asset.get("resource_index", "?")) +
         "\nBytes: " + str(selected_asset.get("bytes", "?")) +
         "\nPlaced actors: " + str(placed.size()) +
-        "\nPlace preview creates editor-only geometry, not a native game actor."
+        "\nNative reuse source: " + (
+            str(native_candidate.get("name", "?")) + " (export " + str(native_candidate.get("export", "?")) + ")"
+            if not native_candidate.is_empty() else "Unavailable; only preview placement possible"
+        ) +
+        "\nPlace preview = editor-only. Place native copy = uses verified original actor; isolated GMP export still required."
     )
 
 
@@ -2181,6 +2204,97 @@ func _place_loaded_asset(name: String) -> void:
     _sync_actor_list_selection()
     _record_edit("Place IBD asset " + name, before)
     status_label.text = "Placed preview mesh " + name + ". Save draft; GMP remains untouched."
+
+
+
+## Use the Assets list for real native prop placement when a verified
+## original StaticMeshActor already references this exact mesh resource.
+## This never fabricates a new StaticMesh resource reference or collision.
+func _native_asset_source_for(resource_name: String) -> Dictionary:
+    var catalog_item := _asset_record(resource_name)
+    if catalog_item.is_empty() or str(catalog_item.get("kind", "")) != "staticmesh":
+        return {}
+    var chosen: Dictionary = {}
+    for source in _placed_instances_for_asset(resource_name):
+        if typeof(source) != TYPE_DICTIONARY:
+            continue
+        var source_name := str(source.get("name", ""))
+        if (str(source.get("class", "")) != "StaticMeshActor"
+            or int(source.get("export", -1)) < 1
+            or not meshes_by_actor.has(source_name)
+            or not original_mesh_transforms.has(source_name)):
+            continue
+        var mesh_node: MeshInstance3D = meshes_by_actor[source_name]
+        if not is_instance_valid(mesh_node) or mesh_node.mesh == null:
+            continue
+        if chosen.is_empty() or int(source["export"]) < int(chosen["export"]):
+            chosen = source
+    return chosen
+
+
+func _native_asset_target_pose(source_name: String, target: Vector3) -> Transform3D:
+    var original_pose: Transform3D = original_mesh_transforms[source_name]
+    var difference := target - original_pose.origin
+    var max_translation := 4095.0 * NATIVE_CLONE_UNREAL_METRES
+    # The first position is the camera target when safely serializable.
+    # Never silently extrapolate an impossibly distant placement. Start
+    # a metre from the original if the camera is in a different region.
+    if (not difference.is_finite()
+        or difference.length_squared() < 0.0000001
+        or abs(difference.x) >= max_translation
+        or abs(difference.y) >= max_translation
+        or abs(difference.z) >= max_translation):
+        target = original_pose.origin + Vector3(1.0, 0.0, 0.0)
+    return Transform3D(original_pose.basis, target)
+
+
+func _place_asset_as_native_copy() -> void:
+    var name := str(selected_asset.get("name", ""))
+    if scene_root == null or not _native_clone_source_ready():
+        status_label.text = "Native asset placement needs an unchanged original GMP and finished import."
+        return
+    var source_actor := _native_asset_source_for(name)
+    if source_actor.is_empty():
+        status_label.text = (
+            "No original StaticMeshActor uses " + name
+            + " in this map. Preview-only placement still works; new asset references aren't supported yet."
+        )
+        return
+    if draft_prop_copies.size() >= 8:
+        status_label.text = "Native Save As supports at most eight draft copies. Save a batch or Restore All."
+        return
+    var name_of_source := str(source_actor.get("name", ""))
+    var checker := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_clone_probe.py")
+    if not FileAccess.file_exists(checker):
+        status_label.text = "Native source verification backend is unavailable."
+        return
+    var checked := _native_clone_check_actor(checker, {
+        "actor": name_of_source, "export": int(source_actor["export"])
+    })
+    if checked.get("eligible", false) != true:
+        status_label.text = (
+            "Native placement refused for " + name_of_source + ": "
+            + str(checked.get("reason", "Original source is not eligible."))
+        )
+        return
+    var history_before := _capture_edit_state()
+    var draft_name := "DraftProp_" + str(next_prop_copy_id)
+    var placement := _native_asset_target_pose(name_of_source, camera_target)
+    var copy := _new_draft_copy(name_of_source, draft_name, placement)
+    if not is_instance_valid(copy):
+        status_label.text = "Could not create source-verified native preview from " + name_of_source
+        return
+    next_prop_copy_id += 1
+    _clear_selection()
+    _add_selection_mesh(copy)
+    _refresh_selection_inspector()
+    _sync_actor_list_selection()
+    _record_edit("Place native asset " + name + " from " + name_of_source, history_before)
+    status_label.text = (
+        "Native draft " + draft_name + " uses original " + name_of_source
+        + " (export " + str(source_actor["export"]) + "). Use ONE Duplicate Save As "
+        + "(or MULTI for 2-8) to write an isolated GMP. Original game unchanged."
+    )
 
 
 func _focus_asset_instance() -> void:
