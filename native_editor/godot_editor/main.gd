@@ -73,6 +73,8 @@ var preview_club_stairs := false
 var preview_auto_roll := true # GLB visualization hypothesis; never retail GMP
 var preview_show_bsp := true # Display only, does not alter GLB or original game map
 var preview_show_actor_meshes := true # Show/hide independently from BSP geometry
+var preview_cull_bsp_backfaces := false # Reversible rendering hypothesis, OFF by default
+var bsp_original_surface_overrides: Dictionary = {} # node id -> original override Materials
 var last_gmp_path: String = ""
 var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
@@ -274,6 +276,12 @@ func _make_ui() -> void:
     show_mesh_toggle.tooltip_text = "Show/hide placed static meshes, props and other non-BSP meshes (read-only, no reimport)."
     show_mesh_toggle.toggled.connect(_set_actor_mesh_preview_visible)
     zip_bar.add_child(show_mesh_toggle)
+    var bsp_cull_toggle := CheckBox.new()
+    bsp_cull_toggle.text = "BSP one-sided (test)"
+    bsp_cull_toggle.button_pressed = preview_cull_bsp_backfaces
+    bsp_cull_toggle.tooltip_text = "Compare native-like backface culling against the imported double-sided BSP. Preview only; placed meshes and GMP unchanged."
+    bsp_cull_toggle.toggled.connect(_set_bsp_backface_preview)
+    zip_bar.add_child(bsp_cull_toggle)
     var zip_hint := Label.new()
     zip_hint.text = "  Select shared resources, optional System, then a mission ZIP"
     zip_bar.add_child(zip_hint)
@@ -987,6 +995,7 @@ func load_glb(path: String) -> void:
     world_root.add_child(scene_root)
     _index_meshes(scene_root)
     _apply_geometry_layer_visibility()
+    _apply_bsp_backface_preview()
     frame_whole_scene()
     current_folder = path.get_base_dir()
     _load_asset_catalog(current_folder.path_join("assets.json"))
@@ -1050,6 +1059,7 @@ func _clear_current_scene() -> void:
     _refresh_history_buttons()
     all_mesh_instances.clear()
     pick_faces_by_mesh.clear()
+    bsp_original_surface_overrides.clear()
     visible_actors.clear()
     actor_list.clear()
     if hierarchy_tree != null:
@@ -1102,6 +1112,46 @@ func _apply_geometry_layer_visibility() -> void:
             continue
         var is_bsp: bool = str(instance.name).begins_with("BSP_")
         instance.visible = preview_show_bsp if is_bsp else preview_show_actor_meshes
+
+
+# BSP-only culling test. GLB currently marks every material double-sided,
+# including BSP. The retail engine may cull back faces on structural walls.
+# Never modify the shared imported mesh/material resource: duplicate the
+# effective material into a per-node surface override and restore on OFF.
+# Actor meshes, source map and saved drafts are completely unaffected.
+func _set_bsp_backface_preview(enabled: bool) -> void:
+    preview_cull_bsp_backfaces = enabled
+    _apply_bsp_backface_preview()
+    if status_label != null:
+        status_label.text = "BSP backface culling %s (preview only). Roll and source geometry unchanged." % ("ON" if enabled else "OFF")
+
+
+func _apply_bsp_backface_preview() -> void:
+    for instance in all_mesh_instances:
+        if not is_instance_valid(instance) or instance.mesh == null:
+            continue
+        if not str(instance.name).begins_with("BSP_"):
+            continue
+        var key: int = instance.get_instance_id()
+        if not preview_cull_bsp_backfaces:
+            if bsp_original_surface_overrides.has(key):
+                var originals: Array = bsp_original_surface_overrides[key]
+                for surface in range(min(originals.size(), instance.mesh.get_surface_count())):
+                    instance.set_surface_override_material(surface, originals[surface])
+                bsp_original_surface_overrides.erase(key)
+            continue
+        if bsp_original_surface_overrides.has(key):
+            continue
+        var original_overrides: Array = []
+        for surface in range(instance.mesh.get_surface_count()):
+            var previous: Material = instance.get_surface_override_material(surface)
+            original_overrides.append(previous)
+            var material: Material = previous if previous != null else instance.mesh.surface_get_material(surface)
+            if material is BaseMaterial3D:
+                var test_material: BaseMaterial3D = material.duplicate() as BaseMaterial3D
+                test_material.cull_mode = BaseMaterial3D.CULL_BACK
+                instance.set_surface_override_material(surface, test_material)
+        bsp_original_surface_overrides[key] = original_overrides
 
 
 func _imported_triangle_coverage() -> Dictionary:
