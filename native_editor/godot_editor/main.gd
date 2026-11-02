@@ -3644,7 +3644,9 @@ func _native_clone_check_actor(script: String, plan: Dictionary) -> Dictionary:
         and str(parsed.get("actor", "")) == str(plan["actor"])
         and int(parsed.get("export", -1)) == int(plan["export"])
         and str(parsed.get("source_sha256", "")) == source_gamesys_sha256):
-        return {"eligible": true}
+        return {"eligible": true,
+            "source_latent_action": int(parsed.get("source_latent_action", 0)),
+            "state_normalized": parsed.get("new_actor_state_will_be_normalized", false)}
     return {"eligible": false, "reason": _native_clone_error_reason(response)}
 
 
@@ -3676,6 +3678,10 @@ func _open_native_clone_dialog() -> void:
             )
             native_audit_dialog.popup_centered(Vector2i(720, 310))
         return
+    status_label.text = (
+        "Source actor verified. A new static prop will be created with neutralized "
+        + "native state; source actor and original GMP unchanged."
+    )
     native_clone_dialog.current_file = last_gmp_path.get_file()
     native_clone_dialog.popup_centered_ratio(0.75)
 
@@ -3698,6 +3704,8 @@ func _stage_native_clone_export(destination: String) -> void:
         + "\nOriginal actor: " + str(plan["actor"])
         + "\nOriginal export: " + str(plan["export"])
         + "\nUnreal translation: " + str(plan["delta"])
+        + "\n\nNew export: latent/script action DWORD reset to zero."
+        + "\nOriginal actor and its bytes will not be changed."
         + "\nOutput: " + destination
         + "\n\nThe Python writer refuses game Maps folders, overwrites, and"
         + " non-byte-exact original source hashes."
@@ -3765,7 +3773,11 @@ func _native_clone_export_finished(code: int, response: String) -> void:
         and result.get("schema") == "DX2Ed-experimental-native-prop-duplicate-v1"
         and result.get("status") == "isolated-GMP-created-runtime-unverified"
         and int(result.get("new_export_count", -1)) == int(result.get("original_export_count", 0)) + 1
-        and int(result.get("level_actor_count_after", -1)) == int(result.get("level_actor_count_before", 0)) + 1):
+        and int(result.get("level_actor_count_after", -1)) == int(result.get("level_actor_count_before", 0)) + 1
+        and result.get("clone_frame_normalized") == true
+        and result.get("clone_payload_provenance_verified") == true
+        and int(result.get("clone_latent_action", -1)) == 0
+        and result.get("original_bytes_unchanged") == true):
         status_label.text = (
             "Experimental native clone GMP saved: " + str(result.get("output_file", ""))
             + " | New actor: " + str(result.get("new_actor_name", ""))
