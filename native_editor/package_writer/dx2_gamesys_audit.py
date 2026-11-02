@@ -107,22 +107,25 @@ def _safe_preview(block) -> object:
 def _read_declarations(system_source: Path | None) -> tuple[dict, dict | None]:
     if system_source is None:
         return {}, None
-    from dx2catalog import build_catalog
+    from dx2_gamesys_schema import build_gamesys_declarations
     system_source = system_source.expanduser().resolve(strict=True)
     if system_source.suffix.casefold() == ".json":
         if system_source.stat().st_size > MAX_JSON_BYTES:
             raise ValueError("Source declaration catalog is too large")
         catalog = json.loads(system_source.read_text(encoding="utf-8"))
     else:
-        catalog = build_catalog(system_source)
-    if catalog.get("schema") != "dx2-catalog-0.1":
+        catalog = build_gamesys_declarations(system_source)
+    if catalog.get("schema") not in ("dx2-catalog-0.1", "DX2Ed-gamesys-declarations-v1"):
         raise ValueError("Unsupported DX2 source declaration catalog")
+    if catalog.get("conflicting_property_ids"):
+        raise ValueError("Source declarations contain conflicting property ID meanings")
     return catalog.get("properties", {}), {
         "schema": catalog["schema"],
         "source": system_source.name,
         "property_ids": len(catalog.get("properties", {})),
         "declaration_warnings": len(catalog.get("warnings", [])),
         "source_read_only": True,
+        "source_property_labels_only": True,
     }
 
 
