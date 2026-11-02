@@ -123,6 +123,20 @@ class NativeGameSysAuditTests(unittest.TestCase):
         self.assertFalse(report["runtime_game_verified"])
         self.assertEqual(self.source.read_bytes(), raw)
 
+    def test_original_dx2_opaque_type_word_0x40_uses_only_verified_alias(self):
+        raw = fixture_with_gamesys(self.source)
+        cache = self._cache(raw)
+        data = json.loads(cache.read_text())
+        data["actors"][0]["game_properties"][2]["encoding"] = "unknown"
+        cache.write_text(json.dumps(data))
+        report = audit_gamesys(self.source, actors_file=cache)
+        self.assertEqual(report["fields"][2]["encoding"], "type0x40")
+        self.assertIn("opaque original type word",
+                      report["fields"][2]["cached_encoding_alias"])
+        self.assertIsNone(report["fields"][2]["preview_value"])
+        self.assertFalse(report["native_gamesys_write_supported"])
+        self.assertEqual(self.source.read_bytes(), raw)
+
     def test_corrupt_block_length_fails_closed_without_writing(self):
         raw = fixture_with_gamesys(self.source, bad_length=True)
         with self.assertRaisesRegex(ValueError, "extends beyond actor|actor parse"):
