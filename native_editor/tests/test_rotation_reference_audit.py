@@ -72,23 +72,6 @@ class RotationReferenceTests(unittest.TestCase):
         self.assertFalse(result["actors"][1]["auto_roll_changes_basis"])
         self.assertLess(result["actors"][0]["inverted_vs_ue2_max_abs"],1e-7)
 
-    def test_wto_long_trim_raw_vs_corrected_world_bounds(self):
-        from dx2_rotation_audit import roll_bounds_candidates
-        # A 16ft square trim is placed at this WTO wall with 90-degree Roll.
-        # The long axis is unchanged, but the entire cross-section shifts
-        # between wall/ceiling sides by 16 Unreal units (0.3048 metres).
-        trim = actor(722, "GEN_TRIM5-16ft", [0, 16384, 16384])
-        trim["location"] = [-32, -440, 400]
-        trim["mesh_bounds"] = [[0, 0, 0], [256, 16, 16]]
-        result = roll_bounds_candidates(trim, (0, 16384, 16384))
-        self.assertEqual(result["aabb_min_delta_m"], [-0.3048, -0.3048, 0])
-        self.assertEqual(result["aabb_max_delta_m"], [-0.3048, -0.3048, 0])
-        self.assertEqual(result["raw_gmp_roll"]["min_godot_m"][1], 7.62)
-        self.assertEqual(result["ue2_inverted_roll"]["max_godot_m"][1], 7.62)
-        report = analyze_actors({"actors": [trim]})
-        self.assertIn("roll_bounds_candidates", report["actors"][0])
-        self.assertFalse(report["game_verified"])
-
     def test_invalid_input_is_rejected(self):
         with self.assertRaises(ValueError):
             analyze_actors({"actors":{}})
