@@ -16,6 +16,7 @@ These files are copied verbatim from upstream `tools/assets/`:
 | `formats.json` | `493d0a1cb6ed068bbc9976d936b5376842a4002f` | Tool format metadata |
 | `t3props.py` | `6036ac4dc52e202bce6fd62b6eb919813f3b2025` | T3-specific typed game property metadata reference |
 | `t3pack.py` | `5c2f9e5429914298e457334df6c57523790ba5c8` | T3-specific actor edit/installation reference |
+| `t3gamesys.py` | `b7b34a74143552b220e86b7f3c189fe21c4773db` | T3 class archetype reader; experimental DX2Gamesys read-only compatibility |
 | `LICENSE` | `76e2b4bc5fc14b9098a556d5dec0b5e60d772693` | Required MIT attribution and license grant |
 
 The accompanying SDK tests check Git-blob hashes to flag accidental edits
