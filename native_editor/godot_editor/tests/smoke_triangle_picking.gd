@@ -116,6 +116,7 @@ func _run() -> void:
 
     # Original AI layer is only a discoverable candidate marker.
     var ai_fixture := {"name":"D_527__0", "class":"D_527", "export":5,
+        "location":[1,2,3],
         "game_properties":[{"id":82,"value":"AI"}],
         "trigger_script_serialized":{"items":[432,424],"interpretation":"index"}}
     if not viewer._actor_on_original_ai_layer(ai_fixture):
