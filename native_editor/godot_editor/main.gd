@@ -3609,18 +3609,72 @@ func _native_clone_source_ready() -> bool:
         and FileAccess.get_sha256(last_gmp_path) == source_gamesys_sha256)
 
 
+func _native_clone_error_reason(response: String) -> String:
+    var parsed: Variant = JSON.parse_string(response.strip_edges())
+    if typeof(parsed) == TYPE_DICTIONARY:
+        return str(parsed.get("reason", parsed.get("message", "Unknown clone writer refusal."))).substr(0, 480)
+    # A script/import crash might still be a traditional Python traceback.
+    # Show the FINAL exception line, not the useless first traceback line.
+    var lines := response.strip_edges().split("\n")
+    return lines[lines.size() - 1].strip_edges().substr(0, 480) if lines.size() > 0 else "Python clone writer unavailable."
+
+
+func _native_clone_check_actor(script: String, plan: Dictionary) -> Dictionary:
+    # Read-only source-verified eligibility check BEFORE showing Save As.
+    # The writer independently repeats all checks when exporting.
+    var args := PackedStringArray([
+        script, last_gmp_path,
+        "--source-sha256", source_gamesys_sha256,
+        "--check-actor",
+        "--actor-export", str(plan["export"]),
+        "--actor-name", str(plan["actor"])
+    ])
+    var stdout: Array = []
+    var code := OS.execute("python", args, stdout, true)
+    if code == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        stdout.clear()
+        code = OS.execute("py", pyargs, stdout, true)
+    var response := "\n".join(stdout).strip_edges()
+    var parsed: Variant = JSON.parse_string(response)
+    if (code == 0 and typeof(parsed) == TYPE_DICTIONARY
+        and parsed.get("schema") == "DX2Ed-experimental-native-prop-duplicate-v1"
+        and parsed.get("status") == "clone-source-eligible"
+        and str(parsed.get("actor", "")) == str(plan["actor"])
+        and int(parsed.get("export", -1)) == int(plan["export"])
+        and str(parsed.get("source_sha256", "")) == source_gamesys_sha256):
+        return {"eligible": true}
+    return {"eligible": false, "reason": _native_clone_error_reason(response)}
+
+
 func _open_native_clone_dialog() -> void:
     _finish_gizmo_drag()
     native_clone_pending.clear()
     if not _native_clone_source_ready():
         status_label.text = "Clone Save As refused: original source GMP/hash unavailable or another operation is active."
         return
-    if _native_clone_draft_plan().is_empty():
+    var plan := _native_clone_draft_plan()
+    if plan.is_empty():
         status_label.text = "Clone Save As supports exactly one moved StaticMeshActor preview copy, with no rotation, scaling, other moves, brushes or property edits."
         return
     var backend := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_clone_probe.py")
     if not FileAccess.file_exists(backend):
         status_label.text = "Experimental native clone writer is unavailable."
+        return
+    var preflight := _native_clone_check_actor(backend, plan)
+    if preflight.get("eligible", false) != true:
+        var reason := str(preflight.get("reason", "Actor cannot be cloned safely."))
+        status_label.text = "This prop cannot be cloned natively: " + reason
+        if native_audit_dialog != null:
+            native_audit_dialog.title = "Original actor is not eligible for native duplication"
+            native_audit_dialog.dialog_text = (
+                "Actor: " + str(plan["actor"]) + " (export " + str(plan["export"]) + ")"
+                + "\n\n" + reason
+                + "\n\nNothing was saved or modified."
+                + "\nFor the first test, choose StaticMeshActor__611, the previously proven table."
+            )
+            native_audit_dialog.popup_centered(Vector2i(720, 310))
         return
     native_clone_dialog.current_file = last_gmp_path.get_file()
     native_clone_dialog.popup_centered_ratio(0.75)
@@ -3718,7 +3772,7 @@ func _native_clone_export_finished(code: int, response: String) -> void:
             + " | Verify in a backed-up retail test and restore original."
         )
         return
-    status_label.text = "Native clone Save As refused: " + response.strip_edges().substr(0, 320)
+    status_label.text = "Native clone Save As refused: " + _native_clone_error_reason(response)
 
 func _open_native_save_as_dialog() -> void:
     if scene_root == null or current_folder.is_empty():
