@@ -268,6 +268,10 @@ query.addEventListener("input",draw);speaker.addEventListener("change",draw);kin
 
 
 def write_distinct(output: Path, inputs: list[Path], content: bytes):
+    # Even when the source is a ZIP, never allow a generated document/draft
+    # to masquerade as the original installed game's ConText.eng file.
+    if output.name.casefold() == "context.eng":
+        raise ValueError("Reserved source filename ConText.eng; choose a research output name")
     if output.resolve() in {p.resolve() for p in inputs}:
         raise ValueError("Output must differ from every input; refusing in-place edit")
     output.parent.mkdir(parents=True, exist_ok=True)
