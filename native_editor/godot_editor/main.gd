@@ -60,6 +60,7 @@ var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
 var native_export_target := ""
 var native_audit_dialog: AcceptDialog
+var geometry_audit_dialog: AcceptDialog
 var bundle_dialog: FileDialog
 var club_zip_dialog: FileDialog
 var shared_zip_dialog: FileDialog
@@ -219,6 +220,11 @@ func _make_ui() -> void:
     copy_btn.tooltip_text = "Copy selected DX2 actor/mesh name, original rotation and world bounds for reporting an export issue"
     copy_btn.pressed.connect(_copy_selection_details)
     toolbar.add_child(copy_btn)
+    var geometry_audit_btn := Button.new()
+    geometry_audit_btn.text = "Audit rendered geometry"
+    geometry_audit_btn.tooltip_text = "Compare Godot-imported BSP and mesh triangle counts against the source export report (read-only)."
+    geometry_audit_btn.pressed.connect(_show_rendered_geometry_audit)
+    toolbar.add_child(geometry_audit_btn)
     var hint := Label.new()
     hint.text = "  Ctrl+click multi-select  |  RMB+WASD fly  |  Alt+LMB orbit  |  F focus"
     toolbar.add_child(hint)
@@ -693,6 +699,10 @@ func _make_ui() -> void:
     gmp_verify_dialog.filters = PackedStringArray(["*.gmp ; Experimental DX2 GMP copy"])
     gmp_verify_dialog.file_selected.connect(_verify_native_gmp_file)
     add_child(gmp_verify_dialog)
+    geometry_audit_dialog = AcceptDialog.new()
+    geometry_audit_dialog.title = "DX2Ed imported triangle coverage (read-only)"
+    geometry_audit_dialog.dialog_text = "Load a scene GLB to audit imported geometry."
+    add_child(geometry_audit_dialog)
     native_audit_dialog = AcceptDialog.new()
     native_audit_dialog.title = "DX2Ed native Location audit (read-only)"
     native_audit_dialog.dialog_text = "Import a retail GMP before running the source audit."
@@ -1092,6 +1102,100 @@ func _apply_geometry_layer_visibility() -> void:
             continue
         var is_bsp: bool = str(instance.name).begins_with("BSP_")
         instance.visible = preview_show_bsp if is_bsp else preview_show_actor_meshes
+
+
+func _imported_triangle_coverage() -> Dictionary:
+    # Compare the actually imported Godot Mesh surface buffers to the
+    # separate cached exporter report. This does NOT claim the GPU rendered
+    # every triangle or that the retail engine's mesh is pixel-identical.
+    var observed_bsp := 0
+    var observed_placed := 0
+    var bsp_nodes := 0
+    var placed_nodes := 0
+    var other_primitives := 0
+    var empty_mesh_nodes: Array[String] = []
+    var invalid_triangle_surfaces: Array[String] = []
+    for node in all_mesh_instances:
+        if not is_instance_valid(node) or node.mesh == null:
+            continue
+        var is_bsp := str(node.name).begins_with("BSP_")
+        if is_bsp:
+            bsp_nodes += 1
+        else:
+            placed_nodes += 1
+        var count := 0
+        for surface in range(node.mesh.get_surface_count()):
+            if node.mesh.surface_get_primitive_type(surface) != Mesh.PRIMITIVE_TRIANGLES:
+                other_primitives += 1
+                continue
+            var index_count := node.mesh.surface_get_array_index_len(surface)
+            var vertex_count := node.mesh.surface_get_array_len(surface)
+            var elements := index_count if index_count > 0 else vertex_count
+            if elements % 3 != 0:
+                invalid_triangle_surfaces.append("%s / surface %d: %d indices/vertices" % [node.name, surface, elements])
+            count += elements / 3
+        if count == 0:
+            empty_mesh_nodes.append(str(node.name))
+        if is_bsp:
+            observed_bsp += count
+        else:
+            observed_placed += count
+    var expected_bsp: Variant = null
+    var expected_placed: Variant = null
+    var report_path := current_folder.path_join("scene.report.json")
+    if FileAccess.file_exists(report_path):
+        var report: Variant = JSON.parse_string(FileAccess.get_file_as_string(report_path))
+        if typeof(report) == TYPE_DICTIONARY:
+            if typeof(report.get("visible_bsp_triangles")) in [TYPE_INT, TYPE_FLOAT]:
+                expected_bsp = int(report["visible_bsp_triangles"])
+            if typeof(report.get("rendered_static_mesh_triangles")) in [TYPE_INT, TYPE_FLOAT]:
+                expected_placed = int(report["rendered_static_mesh_triangles"])
+            elif typeof(report.get("placed_mesh_triangles")) in [TYPE_INT, TYPE_FLOAT]:
+                expected_placed = int(report["placed_mesh_triangles"])
+    return {
+        "imported_bsp_triangles": observed_bsp,
+        "imported_placed_mesh_triangles": observed_placed,
+        "imported_bsp_nodes": bsp_nodes, "imported_placed_mesh_nodes": placed_nodes,
+        "expected_bsp_triangles": expected_bsp,
+        "expected_placed_mesh_triangles": expected_placed,
+        "bsp_count_matches_export": expected_bsp != null and int(expected_bsp) == observed_bsp,
+        "placed_count_matches_export": expected_placed != null and int(expected_placed) == observed_placed,
+        "non_triangle_surfaces": other_primitives,
+        "invalid_triangle_surfaces": invalid_triangle_surfaces,
+        "empty_mesh_nodes": empty_mesh_nodes,
+        "read_only": true, "retail_rendering_verified": false,
+    }
+
+
+func _show_rendered_geometry_audit() -> void:
+    if scene_root == null or all_mesh_instances.is_empty():
+        status_label.text = "Import a scene GLB before auditing rendered geometry."
+        return
+    var audit := _imported_triangle_coverage()
+    var observed_bsp := int(audit["imported_bsp_triangles"])
+    var observed_placed := int(audit["imported_placed_mesh_triangles"])
+    var expected_bsp: Variant = audit["expected_bsp_triangles"]
+    var expected_placed: Variant = audit["expected_placed_mesh_triangles"]
+    var body := (
+        "DX2Ed actual Godot Mesh buffer audit (read-only)" +
+        "\nSource map: " + current_source_map_name +
+        "\nBSP: %d nodes / %d triangles (cached export: %s)" % [
+            int(audit["imported_bsp_nodes"]), observed_bsp, str(expected_bsp)] +
+        "\nPlaced meshes: %d nodes / %d triangles (cached export: %s)" % [
+            int(audit["imported_placed_mesh_nodes"]), observed_placed, str(expected_placed)] +
+        "\nTriangle parity: BSP %s | placed meshes %s" % [
+            "MATCH" if audit["bsp_count_matches_export"] else "NOT VERIFIED / MISMATCH",
+            "MATCH" if audit["placed_count_matches_export"] else "NOT VERIFIED / MISMATCH"] +
+        "\nNon-triangle surfaces: " + str(audit["non_triangle_surfaces"]) +
+        "\nMalformed triangle surfaces: " + str(audit["invalid_triangle_surfaces"]) +
+        "\nEmpty imported mesh nodes: " + str(audit["empty_mesh_nodes"]) +
+        "\n\nCounts reflect imported Godot buffers, not GPU visibility or retail game fidelity."
+    )
+    if geometry_audit_dialog != null:
+        geometry_audit_dialog.dialog_text = body
+        geometry_audit_dialog.popup_centered(Vector2i(790, 440))
+    DisplayServer.clipboard_set(JSON.stringify(audit, "  "))
+    status_label.text = "Copied Godot geometry coverage audit. BSP: %d, placed: %d triangles." % [observed_bsp, observed_placed]
 
 
 func _mesh_world_aabb(instance: MeshInstance3D) -> AABB:
