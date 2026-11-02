@@ -450,3 +450,49 @@ The user reports that **even the PREVIOUS FOUR FIXTURES bLightOn OFF control** i
 A **private, read-only** Windows diagnostic GUI was prepared: it hashes the exact user-selected `Content/DX2/Maps/M1_Seattle_Hub_WTOterminal.gmp` and reports paths of running `DX2.exe`, `DX2Main.exe`, `DeusEx2.exe`, or `DeusEx2Launcher.exe`. For any executable directly under a `System` folder, it compares the sibling `Content/DX2/Maps` path and map checksum with the selected candidate. It does not patch assets, publish content, scan arbitrary personal folders, or claim that matching paths prove file I/O. Further confirmation, if needed, should use a targeted Process Monitor file-open trace while transitioning freshly into WTO Terminal.
 
 **Block further lighting features or more variant ZIPs** until the actual runtime map path and installed candidate SHA are established. PR remains draft.
+
+
+## Read-only diagnostic confirms test-installation and control GMP identity (2026-11-02 13:54 +01:00)
+
+The user pasted the actual read-only Windows path/hash report taken while the
+game was running. The report verifies:
+
+- Selected target map:
+  `C:\\Users\\Dav\\Desktop\\Deus Ex 2 test\\Content\\DX2\\Maps\\M1_Seattle_Hub_WTOterminal.gmp`
+- SHA-256:
+  `868e7ae356d02c2c00165e74bffce9004fef3ce115ded5235f977c9da26c91a4`
+  (exact match for the previous independently verified four-bLightOn OFF GMP).
+- Running process: `DX2Main.exe`, PID **18216** at the time of the report.
+- Executable:
+  `C:\\Users\\Dav\\Desktop\\Deus Ex 2 test\\System\\DX2Main.EXE`.
+- The sibling `Content/DX2/Maps` location derived from the running process
+  is **the same exact map path**, and its SHA is the known OFF control.
+
+**Result:** the "wrong game installation" and "patch GUI didn't change the
+target file" explanations are ruled out for the selected path. **Important
+limit:** same-directory process and GMP hashes do **not** show that the
+running engine actually opened or consumed that GMP, nor that the lighting
+was rebuilt or the map entered freshly. The user's report is that no
+obvious OFF/color effect was observed in the current tests. Therefore
+do not promote the previous isolated four-light visual observation to
+repeatable proof, or label general color/lighting edits supported.
+
+Next controlled runtime gate:
+1. Fully quit the game; leave the verified four-light OFF GMP installed.
+2. Use the official Microsoft Sysinternals Process Monitor to capture
+   file-system events during a **fresh transition into WTO Terminal**;
+   filter for `DX2Main.exe` and path containing
+   `M1_Seattle_Hub_WTOterminal.gmp`. Inspect `CreateFile` and `ReadFile`
+   results, especially successful opens, and note alternate roots.
+   No global or persistent monitoring, nor invasive instrumentation, is
+   required. If no events are shown, verify capture was active *before*
+   level entry, check that File System Activity was enabled, and
+   temporarily relax filters before drawing conclusions.
+3. If the engine demonstrably reads this GMP yet does not reflect the
+   edit, investigate load-time override of GameSys actor values, inherited
+   defaults, and/or baked illumination, rather than inventing new color
+   patches. Remain in draft research status.
+
+Do not include copyrighted GMP bytes or any user-specific local Windows
+paths in public release notes. This report section is a research note
+inside the draft PR and can be anonymized before merging.
