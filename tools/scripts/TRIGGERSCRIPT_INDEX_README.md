@@ -82,10 +82,13 @@ A single original definition may legitimately have multiple organizer
 paths. Historical `DeletedScripts/` sources are not automatically
 assigned to active categories.
 
-**The browser now provides an original script-category filter** (including
-nested mission folders) and shows source paths for each active definition.
-Condition and action folder trees are recorded separately in the JSON
-index for future source-backed parameter/action pickers.
+**The browser now provides **three source browsing modes**:
+**Script definitions**, **Condition palette**, and **Action palette**.
+Each has its own hierarchy-based original category filter. Source
+definitions display their precise organizer folder paths. The condition
+and action palettes show which active TSD source definitions contain
+a given symbol name as text. These matches do **not** establish runtime
+graph connections or executed events.
 
 These folders describe original authoring organization, **not** the
 game's runtime condition/action execution order, actor bindings or event
