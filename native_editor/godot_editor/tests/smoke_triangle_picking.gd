@@ -173,7 +173,21 @@ func _run() -> void:
     bsp_probe.mesh = BoxMesh.new()
     viewer.world_root.add_child(bsp_probe)
     viewer.all_mesh_instances.append(bsp_probe)
+    var audit_before: Dictionary = viewer._imported_triangle_coverage()
+    if int(audit_before["imported_bsp_triangles"]) != 12:
+        _fail("Godot geometry audit must count actual synthetic BSP triangle buffers")
+        return
+    if int(audit_before["imported_placed_mesh_triangles"]) < 12:
+        _fail("Godot geometry audit must count actual imported placed-mesh triangles")
+        return
+    if audit_before["expected_bsp_triangles"] != null or audit_before["expected_placed_mesh_triangles"] != null:
+        _fail("No source report must not be misrepresented as successful source parity")
+        return
     viewer._set_bsp_preview_visible(false)
+    var hidden_audit: Dictionary = viewer._imported_triangle_coverage()
+    if hidden_audit["imported_bsp_triangles"] != audit_before["imported_bsp_triangles"]:
+        _fail("Hiding a layer must not delete imported geometry buffers")
+        return
     if bsp_probe.visible or not actor_mesh.visible:
         _fail("Hiding BSP must keep placed actor meshes visible")
         return
