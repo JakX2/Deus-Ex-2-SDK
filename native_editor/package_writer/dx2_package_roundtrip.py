@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import struct
 from pathlib import Path
 import sys
@@ -24,7 +23,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 T3SDK = ROOT / "third_party" / "t3sdk_assets"
 MAP_EXPORTER = ROOT / "map_exporter"
-for dependency in (str(T3SDK), str(MAP_EXPORTER)):
+BACKEND = ROOT / "native_editor" / "godot_editor" / "backend"
+for dependency in (str(T3SDK), str(MAP_EXPORTER), str(BACKEND)):
     if dependency not in sys.path:
         sys.path.insert(0, dependency)
 
@@ -216,8 +216,10 @@ def write_noop_copy(source: Path, output: Path) -> dict:
         raise ValueError("Source GMP changed after preflight audit")
     output.parent.mkdir(parents=True, exist_ok=True)
     manifest = output.with_suffix(".dx2ed-roundtrip.json")
+    created_output = False
     try:
         with output.open("xb") as handle:
+            created_output = True
             handle.write(rewritten)
         actual = output.read_bytes()
         if actual != rewritten:
@@ -230,8 +232,10 @@ def write_noop_copy(source: Path, output: Path) -> dict:
             json.dump(report, handle, indent=2)
             handle.write("\n")
     except Exception:
-        # Only delete the copy we created; never delete preexisting paths.
-        output.unlink(missing_ok=True)
+        # Do not delete an unrelated file that appeared between the
+        # destination preflight and the exclusive-create operation.
+        if created_output:
+            output.unlink(missing_ok=True)
         raise
     return report
 
@@ -258,7 +262,7 @@ def main(argv=None) -> int:
             report = write_noop_copy(args.source, args.output)
         print(json.dumps(report, indent=2))
         return 0
-    except (OSError, ValueError, IndexError, OverflowError) as err:
+    except (OSError, ValueError, IndexError, OverflowError, EOFError) as err:
         print(json.dumps({"status": "error", "error": str(err)}), file=sys.stderr)
         return 1
 
