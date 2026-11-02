@@ -18,6 +18,7 @@ BLOBS = {
     "formats.json": "493d0a1cb6ed068bbc9976d936b5376842a4002f",
     "t3props.py": "6036ac4dc52e202bce6fd62b6eb919813f3b2025",
     "t3pack.py": "5c2f9e5429914298e457334df6c57523790ba5c8",
+    "t3gamesys.py": "b7b34a74143552b220e86b7f3c189fe21c4773db",
     "LICENSE": "76e2b4bc5fc14b9098a556d5dec0b5e60d772693",
 }
 
