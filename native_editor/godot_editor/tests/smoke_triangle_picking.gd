@@ -171,6 +171,9 @@ func _run() -> void:
     var bsp_probe := MeshInstance3D.new()
     bsp_probe.name = "BSP_998"
     bsp_probe.mesh = BoxMesh.new()
+    var original_bsp_mat := StandardMaterial3D.new()
+    original_bsp_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+    bsp_probe.set_surface_override_material(0, original_bsp_mat)
     viewer.world_root.add_child(bsp_probe)
     bsp_probe.global_position = actor_mesh.global_position
     viewer.all_mesh_instances.append(bsp_probe)
@@ -208,6 +211,28 @@ func _run() -> void:
         return
     if not actor_mesh.global_transform.is_equal_approx(source_transform):
         _fail("Geometry layer filter must never modify source actor transforms")
+        return
+    var source_actor_mat: Material = actor_mesh.get_surface_override_material(0)
+    viewer._set_bsp_backface_preview(true)
+    var culled: Material = bsp_probe.get_surface_override_material(0)
+    if not (culled is BaseMaterial3D) or (culled as BaseMaterial3D).cull_mode != BaseMaterial3D.CULL_BACK:
+        _fail("BSP one-sided test must enable backface culling on BSP only")
+        return
+    if culled == original_bsp_mat:
+        _fail("BSP test must not modify the original imported material")
+        return
+    if original_bsp_mat.cull_mode != BaseMaterial3D.CULL_DISABLED:
+        _fail("BSP test changed the original material shared with geometry")
+        return
+    if actor_mesh.get_surface_override_material(0) != source_actor_mat:
+        _fail("BSP backface test must not affect actor meshes")
+        return
+    viewer._set_bsp_backface_preview(false)
+    if bsp_probe.get_surface_override_material(0) != original_bsp_mat:
+        _fail("BSP test did not restore the exact original surface override")
+        return
+    if not actor_mesh.global_transform.is_equal_approx(source_transform):
+        _fail("BSP culling changed actor placement")
         return
     viewer.all_mesh_instances.erase(bsp_probe)
     bsp_probe.queue_free()
