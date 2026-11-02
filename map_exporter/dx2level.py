@@ -21,6 +21,7 @@ import struct
 from dx2scene import Package,find_bsp,mesh_metadata,scene_data,SCALE,unreal_to_world
 from dx2bundles import load_bundles,parse_mesh
 from dx2placement import analyze_mesh_placement, summarize_placement, add_world_transform_evidence
+from dx2coverage import summarize_mesh_export_coverage
 from dx2textures import parse_material,parse_texture,to_png
 
 
@@ -371,7 +372,7 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
     builder.doc['asset']['extras'].update({'DX2SourceMapSHA256':hashlib.sha256(pkg.data).hexdigest(),
                                               'DX2SourceMapName':pkg.path.name,
                                               'DX2UnitsToMetres':SCALE})
-    unique_meshes={};actors_real=[];miss=[];triangles=0
+    unique_meshes={};actors_real=[];miss=[];empty_sections=[];triangles=0
     actor_names={actor["name"] for actor in actors}
     unknown=sorted(set(transform_overrides)-actor_names)
     if unknown:
@@ -407,6 +408,9 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
         if skin_index not in resource['gltf_by_skin']:
             resource['gltf_by_skin'][skin_index]=builder.mesh_data(m,resource['bundle'],skin_index)
         mid=resource['gltf_by_skin'][skin_index]
+        if mid is None:
+            empty_sections.append({'actor': actor['name'], 'export': actor['export'],
+                                   'mesh': name, 'bundle': resource['bundle']})
         if mid is not None:
             scale=transform_overrides.get(actor['name'],(1.0,1.0,1.0))
             if actor['name'] in transform_overrides:
@@ -459,6 +463,15 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
     for i,block in enumerate(blocks):builder.bsp_block(block,i)
     builder.save(output)
     bsp_tris=sum(len(s['indices'])//3 for b in blocks for s in b['sections'] if s['material'].lower()!='bf')
+    mesh_coverage = summarize_mesh_export_coverage(actors, actors_real, miss, empty_sections)
+    bsp_coverage = {
+        'decoded_bsp_render_blocks': len(blocks),
+        'decoded_bsp_sections': sum(len(b['sections']) for b in blocks),
+        'sections_suppressed_by_bf_rule': sum(
+            s['material'].lower() == 'bf' for b in blocks for s in b['sections']),
+        'visible_bsp_triangle_count': bsp_tris,
+        'warning': ('Decoded BSP blocks and filtered BF sections are counted; '
+                    'this cannot prove that all retail BSP geometry was decoded.')}
     out={'source_map':Path(map_path).name,'source_map_sha256':hashlib.sha256(pkg.data).hexdigest(),
          'used_bundles':[b.name for b in allbundles],
          'bundle_resource_name_collisions':{str(k):v for k,v in collisions.items()},
@@ -475,6 +488,8 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
          'source_actor_positions':len(actors),
          'mesh_linked_actors':sum('mesh' in a for a in actors),
          'placed_real_mesh_actors':len(actors_real),'missing_mesh_actors':miss,
+         'mesh_export_coverage': mesh_coverage,
+         'bsp_export_coverage': bsp_coverage,
          'unique_placed_meshes':len(unique_meshes),
          'placed_mesh_triangles':triangles,'visible_bsp_triangles':bsp_tris,
          'total_scene_triangles':triangles+bsp_tris,
