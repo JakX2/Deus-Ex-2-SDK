@@ -118,7 +118,7 @@ class NativeScalarPropertyParityTests(unittest.TestCase):
     def test_missing_actor_state_frame_is_rejected(self):
         raw = fixture_gmp()
         self.source.write_bytes(raw)
-        with self.assertRaisesRegex(ValueError, "state-frame"):
+        with self.assertRaisesRegex(ValueError, "actor state frame"):
             compare_scalar(self.source, 1, "StaticMeshActor__1",
                            "FixtureFlag", "int", 98765, 98766,
                            source_sha256=hashlib.sha256(raw).hexdigest())
