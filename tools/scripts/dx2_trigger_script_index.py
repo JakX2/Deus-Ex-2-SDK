@@ -306,13 +306,28 @@ box.appendChild(e("p",ref.status+": "+JSON.stringify(ref.serialized_indices||[])
 details.appendChild(box);
 }drawList();});
 }
-document.getElementById("summary").textContent=data.definitions_count+" original .tsd source files · "+data.unique_symbols.condition.length+" condition symbols · "+data.unique_symbols.action.length+" action symbols · "+data.counts.active_source_definitions+" active source definitions";
+document.getElementById("summary").textContent=data.definitions_count+" original .tsd source files · "+data.unique_symbols.condition.length+" condition symbols · "+data.unique_symbols.action.length+" action symbols · "+data.counts.active_source_definitions+" active source definitions · "+(data.initial_binary_frame_summary?data.initial_binary_frame_summary.source_records_inspected:0)+" active binary prefixes inspected";
 function e(tag,txt,cls){const n=document.createElement(tag);if(txt!==undefined)n.textContent=String(txt);if(cls)n.className=cls;return n;}
 function show(x){chosen=x;details.replaceChildren();
 details.appendChild(e("h2",x.source_name||x.filename_stem));
 details.appendChild(e("p",x.member,"meta"));
 details.appendChild(e("p","SHA-256: "+x.raw_sha256,"meta"));
 if(x.display_label_hint)details.appendChild(e("p","Display label hint: "+x.display_label_hint));
+if(x.initial_binary_frame){
+ const f=x.initial_binary_frame;
+ details.appendChild(e("h3","Binary record prefix (verified offsets)"));
+ details.appendChild(e("div","Header: "+f.header_magic+" · name @ "+f.name_utf16_offset+" · label @ "+f.title_utf16_offset,"token"));
+ details.appendChild(e("div","First 32-bit value @ "+f.first_word_offset+": "+f.first_word_u32+" (meaning unresolved)","token"));
+ if(f.word_after_initial_zero!==null){details.appendChild(e("div","Following 32-bit value: "+f.word_after_initial_zero,"token"));}
+ if(f.first_symbol!==null){
+  details.appendChild(e("div","First token @ "+f.first_symbol_utf16_offset+": "+f.first_symbol+" ("+f.first_symbol_kind+")","token"));
+  details.appendChild(e("div","32-bit value following token: "+f.word_after_first_symbol_u32+" (meaning unresolved)","token"));
+ }
+ details.appendChild(e("p","Unparsed tail: "+f.opaque_tail_bytes+" bytes from offset "+f.opaque_tail_offset+". No expression edges or parameters inferred.","meta"));
+ if(f.first_symbol_kind==="condition_token_after_zero"){
+   details.appendChild(e("p","Unusual original framing: zero first word followed by a condition token. This intentionally blocks naive count-based graph decoding.","notice"));
+ }
+}
 if(Array.isArray(x.organizer_paths)&&x.organizer_paths.length){
  details.appendChild(e("h3","Original ScriptOrganizer categories"));
  for(const path of x.organizer_paths){details.appendChild(e("div",path.join(" / ")||"(root)","token"));}
