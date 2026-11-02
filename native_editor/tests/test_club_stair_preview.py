@@ -86,7 +86,9 @@ class SeattleClubStairPreviewTests(unittest.TestCase):
     def test_editor_backend_cache_version_changed(self):
         backend = (ROOT / "native_editor" / "godot_editor"
                    / "backend" / "dx2_native_backend.py").read_text()
-        self.assertIn("v0.2.6-actor-skins-v1", backend)
+        # New BF-filtered previews must never silently reuse old GLB geometry.
+        # Prior cache/draft directories remain intact under their old keys.
+        self.assertIn("v0.2.7-static-bf-v1", backend)
 
     def test_export_report_names_precisely_applied_preview_corrections(self):
         source = (ROOT / "map_exporter" / "dx2level.py").read_text()

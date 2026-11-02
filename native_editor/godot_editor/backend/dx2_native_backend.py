@@ -25,8 +25,9 @@ from dx2_archetype_catalog import catalog_for_map
 from dx2placement import analyze_mesh_placement, summarize_placement, add_world_transform_evidence
 from dx2level import actor_matrix, load_resource_index
 from dx2bundles import parse_mesh
+from dx2_rotation_audit import analyze_actors
 
-CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.6-actor-skins-v1'
+CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.7-static-bf-v1'
 
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
@@ -167,6 +168,7 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
     glb = folder / 'scene.glb'
     actor_json = folder / 'actors.json'
     report_json = folder / 'scene.report.json'
+    rotation_audit_json = folder / 'rotation_audit.json'
     assets_json = folder / 'assets.json'
     archetypes_json = folder / 'archetypes.json'
     manifest_path = folder / 'source_manifest.json'
@@ -194,8 +196,15 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
                     actor_json.write_text(json.dumps(actors_doc, ensure_ascii=True), encoding='utf8')
                 if not had_audit:
                     report_json.write_text(json.dumps(cached_report, indent=2), encoding='utf8')
+                # Backfill only a new companion report; never rebuild the GLB,
+                # overwrite actor drafts or alter the original GMP/IBD.
+                if not rotation_audit_json.is_file():
+                    rotation_audit_json.write_text(json.dumps(
+                        analyze_actors(actors_doc), indent=2, ensure_ascii=True,
+                        allow_nan=False), encoding='utf8')
                 return {'status': 'ok', 'cached': True, 'folder': str(folder),
                         'glb': str(glb), 'actors_json': str(actor_json),
+                        'rotation_audit_json': str(rotation_audit_json),
                         'assets_json': str(assets_json),
                         'archetypes_json': str(archetypes_json),
                         'map': map_path.name, 'actors': len(actors_doc['actors']),
@@ -234,7 +243,11 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
         meta.update({'cache_version': CACHE_VERSION,
                      'source_sha256': source_hashes['map']['sha256'],
                      'source_map': map_path.name, 'glb': 'scene.glb'})
-        actor_json.write_text(json.dumps({'meta': meta, 'actors': actors}, ensure_ascii=True), encoding='utf8')
+        actor_document = {'meta': meta, 'actors': actors}
+        actor_json.write_text(json.dumps(actor_document, ensure_ascii=True), encoding='utf8')
+        rotation_audit_json.write_text(json.dumps(
+            analyze_actors(actor_document), indent=2, ensure_ascii=True,
+            allow_nan=False), encoding='utf8')
         asset_doc = catalog_from_paths(bundles)
         # Local-only paths are required for later on-demand GLB previews.
         # They are never part of GitHub, glTF, or the game's retail files.
@@ -247,7 +260,7 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
                                              'sources': source_hashes,
                                              'actors': len(actors)}, indent=2), encoding='utf8')
     except Exception:
-        for path in (glb, actor_json, assets_json, archetypes_json, report_json, manifest_path):
+        for path in (glb, actor_json, rotation_audit_json, assets_json, archetypes_json, report_json, manifest_path):
             try:
                 path.unlink(missing_ok=True)
             except OSError:
@@ -255,6 +268,7 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
         raise
     return {'status': 'ok', 'cached': False, 'folder': str(folder),
             'glb': str(glb), 'actors_json': str(actor_json),
+            'rotation_audit_json': str(rotation_audit_json),
             'assets_json': str(assets_json),
             'archetypes_json': str(archetypes_json),
             'map': map_path.name, 'actors': len(actors),

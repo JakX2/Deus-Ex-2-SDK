@@ -164,6 +164,78 @@ func _run() -> void:
     if not viewer.actors_by_name.has("StaticMeshActor__1"):
         _fail("demo actor metadata not linked")
         return
+    # WTO missing-wall triage: isolate BSP and placed meshes without
+    # reloading a map, changing its GLB, or altering any actor transform.
+    var actor_mesh: MeshInstance3D = viewer.meshes_by_actor["StaticMeshActor__1"]
+    var source_transform: Transform3D = actor_mesh.global_transform
+    var bsp_probe := MeshInstance3D.new()
+    bsp_probe.name = "BSP_998"
+    bsp_probe.mesh = BoxMesh.new()
+    var original_bsp_mat := StandardMaterial3D.new()
+    original_bsp_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+    bsp_probe.set_surface_override_material(0, original_bsp_mat)
+    viewer.world_root.add_child(bsp_probe)
+    bsp_probe.global_position = actor_mesh.global_position
+    viewer.all_mesh_instances.append(bsp_probe)
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    var audit_before: Dictionary = viewer._imported_triangle_coverage()
+    var nearby: Array = audit_before["near_selected_aabb_within_1_5m"]
+    if not nearby.any(func(item: Dictionary) -> bool: return item["node"] == "BSP_998"):
+        _fail("Imported geometry audit must report the selected actor's nearby BSP")
+        return
+    if int(audit_before["imported_bsp_triangles"]) != 12:
+        _fail("Godot geometry audit must count actual synthetic BSP triangle buffers")
+        return
+    if int(audit_before["imported_placed_mesh_triangles"]) < 12:
+        _fail("Godot geometry audit must count actual imported placed-mesh triangles")
+        return
+    if audit_before["expected_bsp_triangles"] != null or audit_before["expected_placed_mesh_triangles"] != null:
+        _fail("No source report must not be misrepresented as successful source parity")
+        return
+    viewer._set_bsp_preview_visible(false)
+    var hidden_audit: Dictionary = viewer._imported_triangle_coverage()
+    if hidden_audit["imported_bsp_triangles"] != audit_before["imported_bsp_triangles"]:
+        _fail("Hiding a layer must not delete imported geometry buffers")
+        return
+    if bsp_probe.visible or not actor_mesh.visible:
+        _fail("Hiding BSP must keep placed actor meshes visible")
+        return
+    viewer._set_bsp_preview_visible(true)
+    viewer._set_actor_mesh_preview_visible(false)
+    if actor_mesh.visible or not bsp_probe.visible:
+        _fail("Hiding placed meshes must preserve BSP visibility")
+        return
+    viewer._set_actor_mesh_preview_visible(true)
+    if not actor_mesh.visible or not bsp_probe.visible:
+        _fail("Restoring geometry filters must restore all original nodes")
+        return
+    if not actor_mesh.global_transform.is_equal_approx(source_transform):
+        _fail("Geometry layer filter must never modify source actor transforms")
+        return
+    var source_actor_mat: Material = actor_mesh.get_surface_override_material(0)
+    viewer._set_bsp_backface_preview(true)
+    var culled: Material = bsp_probe.get_surface_override_material(0)
+    if not (culled is BaseMaterial3D) or (culled as BaseMaterial3D).cull_mode != BaseMaterial3D.CULL_BACK:
+        _fail("BSP one-sided test must enable backface culling on BSP only")
+        return
+    if culled == original_bsp_mat:
+        _fail("BSP test must not modify the original imported material")
+        return
+    if original_bsp_mat.cull_mode != BaseMaterial3D.CULL_DISABLED:
+        _fail("BSP test changed the original material shared with geometry")
+        return
+    if actor_mesh.get_surface_override_material(0) != source_actor_mat:
+        _fail("BSP backface test must not affect actor meshes")
+        return
+    viewer._set_bsp_backface_preview(false)
+    if bsp_probe.get_surface_override_material(0) != original_bsp_mat:
+        _fail("BSP test did not restore the exact original surface override")
+        return
+    if not actor_mesh.global_transform.is_equal_approx(source_transform):
+        _fail("BSP culling changed actor placement")
+        return
+    viewer.all_mesh_instances.erase(bsp_probe)
+    bsp_probe.queue_free()
     # A small Gamesys fixture proves typed property overrides remain separate
     # from original map metadata and round-trip through undo and sidecars.
     var typed_actor: Dictionary = viewer.actors_by_name["StaticMeshActor__1"]

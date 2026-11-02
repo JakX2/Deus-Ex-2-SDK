@@ -60,6 +60,7 @@ var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
 var native_export_target := ""
 var native_audit_dialog: AcceptDialog
+var geometry_audit_dialog: AcceptDialog
 var bundle_dialog: FileDialog
 var club_zip_dialog: FileDialog
 var shared_zip_dialog: FileDialog
@@ -70,6 +71,10 @@ var chosen_system_zip: String = ""
 var chosen_system_path: String = ""
 var preview_club_stairs := false
 var preview_auto_roll := true # GLB visualization hypothesis; never retail GMP
+var preview_show_bsp := true # Display only, does not alter GLB or original game map
+var preview_show_actor_meshes := true # Show/hide independently from BSP geometry
+var preview_cull_bsp_backfaces := false # Reversible rendering hypothesis, OFF by default
+var bsp_original_surface_overrides: Dictionary = {} # node id -> original override Materials
 var last_gmp_path: String = ""
 var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
@@ -217,6 +222,11 @@ func _make_ui() -> void:
     copy_btn.tooltip_text = "Copy selected DX2 actor/mesh name, original rotation and world bounds for reporting an export issue"
     copy_btn.pressed.connect(_copy_selection_details)
     toolbar.add_child(copy_btn)
+    var geometry_audit_btn := Button.new()
+    geometry_audit_btn.text = "Audit rendered geometry"
+    geometry_audit_btn.tooltip_text = "Compare Godot-imported BSP and mesh triangle counts against the source export report (read-only)."
+    geometry_audit_btn.pressed.connect(_show_rendered_geometry_audit)
+    toolbar.add_child(geometry_audit_btn)
     var hint := Label.new()
     hint.text = "  Ctrl+click multi-select  |  RMB+WASD fly  |  Alt+LMB orbit  |  F focus"
     toolbar.add_child(hint)
@@ -251,6 +261,27 @@ func _make_ui() -> void:
     auto_roll_toggle.button_pressed = preview_auto_roll
     auto_roll_toggle.toggled.connect(_set_auto_roll_preview)
     zip_bar.add_child(auto_roll_toggle)
+    var geometry_label := Label.new()
+    geometry_label.text = "  Geometry:"
+    zip_bar.add_child(geometry_label)
+    var show_bsp_toggle := CheckBox.new()
+    show_bsp_toggle.text = "BSP"
+    show_bsp_toggle.button_pressed = preview_show_bsp
+    show_bsp_toggle.tooltip_text = "Show/hide original level BSP render blocks (read-only, no reimport)."
+    show_bsp_toggle.toggled.connect(_set_bsp_preview_visible)
+    zip_bar.add_child(show_bsp_toggle)
+    var show_mesh_toggle := CheckBox.new()
+    show_mesh_toggle.text = "Placed meshes"
+    show_mesh_toggle.button_pressed = preview_show_actor_meshes
+    show_mesh_toggle.tooltip_text = "Show/hide placed static meshes, props and other non-BSP meshes (read-only, no reimport)."
+    show_mesh_toggle.toggled.connect(_set_actor_mesh_preview_visible)
+    zip_bar.add_child(show_mesh_toggle)
+    var bsp_cull_toggle := CheckBox.new()
+    bsp_cull_toggle.text = "BSP one-sided (test)"
+    bsp_cull_toggle.button_pressed = preview_cull_bsp_backfaces
+    bsp_cull_toggle.tooltip_text = "Compare native-like backface culling against the imported double-sided BSP. Preview only; placed meshes and GMP unchanged."
+    bsp_cull_toggle.toggled.connect(_set_bsp_backface_preview)
+    zip_bar.add_child(bsp_cull_toggle)
     var zip_hint := Label.new()
     zip_hint.text = "  Select shared resources, optional System, then a mission ZIP"
     zip_bar.add_child(zip_hint)
@@ -676,6 +707,10 @@ func _make_ui() -> void:
     gmp_verify_dialog.filters = PackedStringArray(["*.gmp ; Experimental DX2 GMP copy"])
     gmp_verify_dialog.file_selected.connect(_verify_native_gmp_file)
     add_child(gmp_verify_dialog)
+    geometry_audit_dialog = AcceptDialog.new()
+    geometry_audit_dialog.title = "DX2Ed imported triangle coverage (read-only)"
+    geometry_audit_dialog.dialog_text = "Load a scene GLB to audit imported geometry."
+    add_child(geometry_audit_dialog)
     native_audit_dialog = AcceptDialog.new()
     native_audit_dialog.title = "DX2Ed native Location audit (read-only)"
     native_audit_dialog.dialog_text = "Import a retail GMP before running the source audit."
@@ -959,6 +994,8 @@ func load_glb(path: String) -> void:
     scene_root = imported
     world_root.add_child(scene_root)
     _index_meshes(scene_root)
+    _apply_geometry_layer_visibility()
+    _apply_bsp_backface_preview()
     frame_whole_scene()
     current_folder = path.get_base_dir()
     _load_asset_catalog(current_folder.path_join("assets.json"))
@@ -1022,6 +1059,7 @@ func _clear_current_scene() -> void:
     _refresh_history_buttons()
     all_mesh_instances.clear()
     pick_faces_by_mesh.clear()
+    bsp_original_surface_overrides.clear()
     visible_actors.clear()
     actor_list.clear()
     if hierarchy_tree != null:
@@ -1052,6 +1090,181 @@ func _index_meshes(node: Node) -> void:
                 meshes_by_actor[actor_name] = mesh_node
     for child in node.get_children():
         _index_meshes(child)
+
+# Layer visibility is only a view filter; original nodes, transforms, GLB
+# geometry and GMP/IBD source are preserved. The triangle picker already
+# excludes is_visible_in_tree() == false instances.
+func _set_bsp_preview_visible(enabled: bool) -> void:
+    preview_show_bsp = enabled
+    _apply_geometry_layer_visibility()
+    status_label.text = "BSP geometry %s. Original level unchanged." % ("shown" if enabled else "hidden")
+
+
+func _set_actor_mesh_preview_visible(enabled: bool) -> void:
+    preview_show_actor_meshes = enabled
+    _apply_geometry_layer_visibility()
+    status_label.text = "Placed meshes %s. Original level unchanged." % ("shown" if enabled else "hidden")
+
+
+func _apply_geometry_layer_visibility() -> void:
+    for instance in all_mesh_instances:
+        if not is_instance_valid(instance):
+            continue
+        var is_bsp: bool = str(instance.name).begins_with("BSP_")
+        instance.visible = preview_show_bsp if is_bsp else preview_show_actor_meshes
+
+
+# BSP-only culling test. GLB currently marks every material double-sided,
+# including BSP. The retail engine may cull back faces on structural walls.
+# Never modify the shared imported mesh/material resource: duplicate the
+# effective material into a per-node surface override and restore on OFF.
+# Actor meshes, source map and saved drafts are completely unaffected.
+func _set_bsp_backface_preview(enabled: bool) -> void:
+    preview_cull_bsp_backfaces = enabled
+    _apply_bsp_backface_preview()
+    if status_label != null:
+        status_label.text = "BSP backface culling %s (preview only). Roll and source geometry unchanged." % ("ON" if enabled else "OFF")
+
+
+func _apply_bsp_backface_preview() -> void:
+    for instance in all_mesh_instances:
+        if not is_instance_valid(instance) or instance.mesh == null:
+            continue
+        if not str(instance.name).begins_with("BSP_"):
+            continue
+        var key: int = instance.get_instance_id()
+        if not preview_cull_bsp_backfaces:
+            if bsp_original_surface_overrides.has(key):
+                var originals: Array = bsp_original_surface_overrides[key]
+                for surface in range(min(originals.size(), instance.mesh.get_surface_count())):
+                    instance.set_surface_override_material(surface, originals[surface])
+                bsp_original_surface_overrides.erase(key)
+            continue
+        if bsp_original_surface_overrides.has(key):
+            continue
+        var original_overrides: Array = []
+        for surface in range(instance.mesh.get_surface_count()):
+            var previous: Material = instance.get_surface_override_material(surface)
+            original_overrides.append(previous)
+            var material: Material = previous if previous != null else instance.mesh.surface_get_material(surface)
+            if material is BaseMaterial3D:
+                var test_material: BaseMaterial3D = material.duplicate() as BaseMaterial3D
+                test_material.cull_mode = BaseMaterial3D.CULL_BACK
+                instance.set_surface_override_material(surface, test_material)
+        bsp_original_surface_overrides[key] = original_overrides
+
+
+func _imported_triangle_coverage() -> Dictionary:
+    # Compare the actually imported Godot Mesh surface buffers to the
+    # separate cached exporter report. This does NOT claim the GPU rendered
+    # every triangle or that the retail engine's mesh is pixel-identical.
+    var observed_bsp := 0
+    var observed_placed := 0
+    var bsp_nodes := 0
+    var placed_nodes := 0
+    var empty_mesh_nodes: Array[String] = []
+    var invalid_triangle_surfaces: Array[String] = []
+    var per_mesh_triangle_counts: Dictionary = {}
+    var has_focus := is_instance_valid(selected_mesh) and selected_mesh.mesh != null
+    var focus_aabb := _mesh_world_aabb(selected_mesh) if has_focus else AABB()
+    var near_selected: Array[Dictionary] = []
+    for node in all_mesh_instances:
+        if not is_instance_valid(node) or node.mesh == null:
+            continue
+        var is_bsp := str(node.name).begins_with("BSP_")
+        if is_bsp:
+            bsp_nodes += 1
+        else:
+            placed_nodes += 1
+        # Mesh.get_faces() works for GLTF-imported ArrayMesh AND PrimitiveMesh
+        # (BoxMesh, SphereMesh, etc). Some surface_get_array_* calls exist
+        # only on ArrayMesh and crash Godot on a PrimitiveMesh fixture.
+        # Cache by resource instance ID so repeated actor meshes are cheap.
+        var mesh_id: int = node.mesh.get_instance_id()
+        if not per_mesh_triangle_counts.has(mesh_id):
+            var faces: PackedVector3Array = node.mesh.get_faces()
+            if faces.size() % 3 != 0:
+                invalid_triangle_surfaces.append(str(node.name) + " (faces not divisible by three)")
+            per_mesh_triangle_counts[mesh_id] = int(faces.size() / 3)
+        var count: int = int(per_mesh_triangle_counts[mesh_id])
+        if count == 0:
+            empty_mesh_nodes.append(str(node.name))
+        if has_focus:
+            var gap_m: float = _bbox_gap(focus_aabb, _mesh_world_aabb(node))
+            if gap_m <= 1.5:
+                near_selected.append({
+                    "node": str(node.name),
+                    "layer": "BSP" if is_bsp else "placed",
+                    "imported_triangles": count,
+                    "aabb_gap_m": snappedf(gap_m, 0.0001),
+                })
+        if is_bsp:
+            observed_bsp += count
+        else:
+            observed_placed += count
+    near_selected.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+        return float(a["aabb_gap_m"]) < float(b["aabb_gap_m"]))
+    if near_selected.size() > 30:
+        near_selected.resize(30)
+    var expected_bsp: Variant = null
+    var expected_placed: Variant = null
+    var report_path := current_folder.path_join("scene.report.json")
+    if FileAccess.file_exists(report_path):
+        var report: Variant = JSON.parse_string(FileAccess.get_file_as_string(report_path))
+        if typeof(report) == TYPE_DICTIONARY:
+            if typeof(report.get("visible_bsp_triangles")) in [TYPE_INT, TYPE_FLOAT]:
+                expected_bsp = int(report["visible_bsp_triangles"])
+            if typeof(report.get("rendered_static_mesh_triangles")) in [TYPE_INT, TYPE_FLOAT]:
+                expected_placed = int(report["rendered_static_mesh_triangles"])
+            elif typeof(report.get("placed_mesh_triangles")) in [TYPE_INT, TYPE_FLOAT]:
+                expected_placed = int(report["placed_mesh_triangles"])
+    return {
+        "imported_bsp_triangles": observed_bsp,
+        "imported_placed_mesh_triangles": observed_placed,
+        "imported_bsp_nodes": bsp_nodes, "imported_placed_mesh_nodes": placed_nodes,
+        "expected_bsp_triangles": expected_bsp,
+        "expected_placed_mesh_triangles": expected_placed,
+        "bsp_count_matches_export": expected_bsp != null and int(expected_bsp) == observed_bsp,
+        "placed_count_matches_export": expected_placed != null and int(expected_placed) == observed_placed,
+        "invalid_triangle_surfaces": invalid_triangle_surfaces,
+        "empty_mesh_nodes": empty_mesh_nodes,
+        "selected_node": str(selected_mesh.name) if has_focus else "",
+        "near_selected_aabb_within_1_5m": near_selected,
+        "proximity_warning": "AABB overlaps are not proof that the source triangles touch.",
+        "read_only": true, "retail_rendering_verified": false,
+    }
+
+
+func _show_rendered_geometry_audit() -> void:
+    if scene_root == null or all_mesh_instances.is_empty():
+        status_label.text = "Import a scene GLB before auditing rendered geometry."
+        return
+    var audit := _imported_triangle_coverage()
+    var observed_bsp := int(audit["imported_bsp_triangles"])
+    var observed_placed := int(audit["imported_placed_mesh_triangles"])
+    var expected_bsp: Variant = audit["expected_bsp_triangles"]
+    var expected_placed: Variant = audit["expected_placed_mesh_triangles"]
+    var body := (
+        "DX2Ed actual Godot Mesh buffer audit (read-only)" +
+        "\nSource map: " + current_source_map_name +
+        "\nBSP: %d nodes / %d triangles (cached export: %s)" % [
+            int(audit["imported_bsp_nodes"]), observed_bsp, str(expected_bsp)] +
+        "\nPlaced meshes: %d nodes / %d triangles (cached export: %s)" % [
+            int(audit["imported_placed_mesh_nodes"]), observed_placed, str(expected_placed)] +
+        "\nTriangle parity: BSP %s | placed meshes %s" % [
+            "MATCH" if audit["bsp_count_matches_export"] else "NOT VERIFIED / MISMATCH",
+            "MATCH" if audit["placed_count_matches_export"] else "NOT VERIFIED / MISMATCH"] +
+        "\nMalformed triangle surfaces: " + str(audit["invalid_triangle_surfaces"]) +
+        "\nEmpty imported mesh nodes: " + str(audit["empty_mesh_nodes"]) +
+        "\nNearby imported nodes (up to 30): " + str(audit["near_selected_aabb_within_1_5m"]) +
+        "\n\nAABB proximity is approximate. Counts reflect imported Godot buffers, not GPU visibility or retail game fidelity."
+    )
+    if geometry_audit_dialog != null:
+        geometry_audit_dialog.dialog_text = body
+        geometry_audit_dialog.popup_centered(Vector2i(790, 440))
+    DisplayServer.clipboard_set(JSON.stringify(audit, "  "))
+    status_label.text = "Copied Godot geometry coverage audit. BSP: %d, placed: %d triangles." % [observed_bsp, observed_placed]
+
 
 func _mesh_world_aabb(instance: MeshInstance3D) -> AABB:
     var local := instance.get_aabb()
