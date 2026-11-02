@@ -164,6 +164,33 @@ func _run() -> void:
     if not viewer.actors_by_name.has("StaticMeshActor__1"):
         _fail("demo actor metadata not linked")
         return
+    # WTO missing-wall triage: isolate BSP and placed meshes without
+    # reloading a map, changing its GLB, or altering any actor transform.
+    var actor_mesh: MeshInstance3D = viewer.meshes_by_actor["StaticMeshActor__1"]
+    var source_transform: Transform3D = actor_mesh.global_transform
+    var bsp_probe := MeshInstance3D.new()
+    bsp_probe.name = "BSP_998"
+    bsp_probe.mesh = BoxMesh.new()
+    viewer.world_root.add_child(bsp_probe)
+    viewer.all_mesh_instances.append(bsp_probe)
+    viewer._set_bsp_preview_visible(false)
+    if bsp_probe.visible or not actor_mesh.visible:
+        _fail("Hiding BSP must keep placed actor meshes visible")
+        return
+    viewer._set_bsp_preview_visible(true)
+    viewer._set_actor_mesh_preview_visible(false)
+    if actor_mesh.visible or not bsp_probe.visible:
+        _fail("Hiding placed meshes must preserve BSP visibility")
+        return
+    viewer._set_actor_mesh_preview_visible(true)
+    if not actor_mesh.visible or not bsp_probe.visible:
+        _fail("Restoring geometry filters must restore all original nodes")
+        return
+    if not actor_mesh.global_transform.is_equal_approx(source_transform):
+        _fail("Geometry layer filter must never modify source actor transforms")
+        return
+    viewer.all_mesh_instances.erase(bsp_probe)
+    bsp_probe.queue_free()
     # A small Gamesys fixture proves typed property overrides remain separate
     # from original map metadata and round-trip through undo and sidecars.
     var typed_actor: Dictionary = viewer.actors_by_name["StaticMeshActor__1"]
