@@ -78,6 +78,9 @@ var gmp_save_as_dialog: FileDialog
 var native_clone_dialog: FileDialog
 var native_clone_confirmation: ConfirmationDialog
 var native_clone_pending: Dictionary = {}
+var native_multi_dialog: FileDialog
+var native_multi_confirmation: ConfirmationDialog
+var native_multi_pending: Dictionary = {}
 var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
 var native_export_target := ""
@@ -309,6 +312,11 @@ func _make_ui() -> void:
     native_clone_button.tooltip_text = "Export exactly ONE translated duplicate of an original StaticMeshActor. Isolated GMP only; game folder writes refused."
     native_clone_button.pressed.connect(_open_native_clone_dialog)
     prop_bar.add_child(native_clone_button)
+    var native_multi_button := Button.new()
+    native_multi_button.text = "Experimental Multi Duplicate Save As..."
+    native_multi_button.tooltip_text = "Save 2 to 8 translated preview StaticMeshActor copies in ONE isolated GMP. No game installation writes."
+    native_multi_button.pressed.connect(_open_native_multi_dialog)
+    prop_bar.add_child(native_multi_button)
     prop_edit_step = SpinBox.new()
     prop_edit_step.min_value = 0.05
     prop_edit_step.max_value = 10.0
@@ -765,6 +773,16 @@ func _make_ui() -> void:
     native_clone_confirmation.title = "Confirm isolated DX2 StaticMeshActor duplication"
     native_clone_confirmation.confirmed.connect(_execute_native_clone_export)
     add_child(native_clone_confirmation)
+    native_multi_dialog = FileDialog.new()
+    native_multi_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_multi_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    native_multi_dialog.filters = PackedStringArray(["*.gmp ; Experimental 2..8 native StaticMeshActor clones"])
+    native_multi_dialog.file_selected.connect(_stage_native_multi_export)
+    add_child(native_multi_dialog)
+    native_multi_confirmation = ConfirmationDialog.new()
+    native_multi_confirmation.title = "Confirm 2..8 experimental static prop clones"
+    native_multi_confirmation.confirmed.connect(_execute_native_multi_export)
+    add_child(native_multi_confirmation)
     source_gamesys_light_dialog = FileDialog.new()
     source_gamesys_light_dialog.access = FileDialog.ACCESS_FILESYSTEM
     source_gamesys_light_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -1165,6 +1183,7 @@ func _clear_current_scene() -> void:
     draft_prop_sources.clear()
     draft_brush_specs.clear()
     native_clone_pending.clear()
+    native_multi_pending.clear()
     next_prop_copy_id = 1
     undo_stack.clear()
     redo_stack.clear()
@@ -3785,6 +3804,177 @@ func _native_clone_export_finished(code: int, response: String) -> void:
         )
         return
     status_label.text = "Native clone Save As refused: " + _native_clone_error_reason(response)
+
+
+## Experimental multiple static props: source-bound, translation-only.
+## Kept separate from existing-actor Save As and one-prop path.
+func _native_multi_clone_draft_plan() -> Array:
+    var rows := []
+    if (scene_root == null or draft_prop_copies.size() < 2
+        or draft_prop_copies.size() > 8 or not property_overrides.is_empty()
+        or not draft_brush_specs.is_empty()
+        or not draft_template_provenance.is_empty()):
+        return rows
+    for name in original_mesh_transforms:
+        if meshes_by_actor.has(name):
+            var original_node: MeshInstance3D = meshes_by_actor[name]
+            if (is_instance_valid(original_node)
+                and not original_node.global_transform.is_equal_approx(original_mesh_transforms[name])):
+                return []
+    var keys := draft_prop_copies.keys()
+    keys.sort()
+    for name in keys:
+        var node: MeshInstance3D = draft_prop_copies[name]
+        var original_name := str(draft_prop_sources.get(name, ""))
+        if (not is_instance_valid(node) or not actors_by_name.has(original_name)
+            or not meshes_by_actor.has(original_name)
+            or not original_mesh_transforms.has(original_name)):
+            return []
+        var actor: Dictionary = actors_by_name[original_name]
+        if (str(actor.get("class", "")) != "StaticMeshActor"
+            or int(actor.get("export", -1)) < 1):
+            return []
+        var base_pose: Transform3D = original_mesh_transforms[original_name]
+        if not node.global_transform.basis.is_equal_approx(base_pose.basis):
+            return []
+        var shift := node.global_position - base_pose.origin
+        if not shift.is_finite() or shift.length_squared() <= 0.00000001:
+            return []
+        var unreal := [
+            shift.x / NATIVE_CLONE_UNREAL_METRES,
+            shift.z / NATIVE_CLONE_UNREAL_METRES,
+            shift.y / NATIVE_CLONE_UNREAL_METRES
+        ]
+        for component in unreal:
+            if not is_finite(float(component)) or abs(float(component)) > 4096.0:
+                return []
+        rows.append({"actor": original_name, "export": int(actor["export"]), "delta": unreal})
+    return rows
+
+
+func _open_native_multi_dialog() -> void:
+    _finish_gizmo_drag()
+    native_multi_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Multi Duplicate refused: original map/hash unavailable or writer busy."
+        return
+    var plan := _native_multi_clone_draft_plan()
+    if plan.size() < 2:
+        status_label.text = "Multi Duplicate needs 2..8 moved original StaticMeshActor copies; no rotation, scaling, original moves or other edits."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_multi_clone_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Multi Duplicate Python writer is missing."
+        return
+    # Verify every source independently before requesting a filename.
+    var checker := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_clone_probe.py")
+    if not FileAccess.file_exists(checker):
+        status_label.text = "Native actor eligibility preflight is missing."
+        return
+    for row in plan:
+        var verdict := _native_clone_check_actor(checker, row)
+        if not verdict.get("eligible", false):
+            status_label.text = "Multi Duplicate blocked " + str(row["actor"]) + ": " + str(verdict.get("reason", "Unverified source actor"))
+            return
+    native_multi_dialog.current_file = last_gmp_path.get_file()
+    native_multi_dialog.popup_centered_ratio(0.75)
+
+
+func _stage_native_multi_export(destination: String) -> void:
+    native_multi_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Multi Duplicate refused: original map changed."
+        return
+    var rows := _native_multi_clone_draft_plan()
+    if (rows.size() < 2
+        or destination.get_file().to_lower() != last_gmp_path.get_file().to_lower()):
+        status_label.text = "Multi Duplicate refused: invalid preview copies or output filename."
+        return
+    native_multi_pending = {
+        "copies": rows.duplicate(true), "source": last_gmp_path,
+        "source_sha256": source_gamesys_sha256, "destination": destination
+    }
+    native_multi_confirmation.dialog_text = (
+        "Create " + str(rows.size()) + " new StaticMeshActor exports in ONE GMP?"
+        + "\n\nOnly new actors receive normalized latent state and translated Location."
+        + "\nNo rotation/scaling/original actor changes."
+        + "\n\nIsolated output: " + destination
+        + "\n\nNo game installation is modified automatically."
+        + "\nThe original map remains unchanged and each clone is independently verified."
+    )
+    native_multi_confirmation.popup_centered(Vector2i(730, 340))
+
+
+func _execute_native_multi_export() -> void:
+    if native_multi_pending.is_empty() or not _native_clone_source_ready():
+        native_multi_pending.clear()
+        status_label.text = "Multi Duplicate refused: source or writer state changed."
+        return
+    var frozen := native_multi_pending.duplicate(true)
+    native_multi_pending.clear()
+    if (str(frozen["source"]) != last_gmp_path
+        or str(frozen["source_sha256"]) != source_gamesys_sha256
+        or _native_multi_clone_draft_plan() != frozen["copies"]):
+        status_label.text = "Multi Duplicate refused: map or preview copies changed during confirmation."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_multi_clone_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Multi Duplicate script unavailable."
+        return
+    var plan_path := OS.get_user_data_dir().path_join("native_multi_clone_plan.json")
+    var plan_file := FileAccess.open(plan_path, FileAccess.WRITE)
+    if plan_file == null:
+        status_label.text = "Multi Duplicate could not write private temporary plan."
+        return
+    plan_file.store_string(JSON.stringify({
+        "schema": "DX2Ed-experimental-multi-prop-duplicate-v1",
+        "copies": frozen["copies"]
+    }))
+    plan_file.close()
+    frozen["plan_path"] = plan_path
+    native_export_thread = Thread.new()
+    var started := native_export_thread.start(_run_native_multi_export.bind(script, frozen))
+    if started != OK:
+        native_export_thread = null
+        status_label.text = "Multi Duplicate could not start Python worker."
+        return
+    status_label.text = "Verifying and writing " + str(frozen["copies"].size()) + " new static props into one isolated GMP..."
+
+
+func _run_native_multi_export(script: String, frozen: Dictionary) -> void:
+    var args := PackedStringArray([
+        script, str(frozen["source"]), "--source-sha256", str(frozen["source_sha256"]),
+        "--copies-json", str(frozen["plan_path"]), "--output", str(frozen["destination"])
+    ])
+    var output: Array = []
+    var status := OS.execute("python", args, output, true)
+    if status == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        status = OS.execute("py", pyargs, output, true)
+    call_deferred("_native_multi_export_finished", status, "\n".join(output), str(frozen["plan_path"]))
+
+
+func _native_multi_export_finished(code: int, response: String, plan_path: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    if FileAccess.file_exists(plan_path):
+        DirAccess.remove_absolute(plan_path)
+    var result: Variant = JSON.parse_string(response.strip_edges())
+    if (code == 0 and typeof(result) == TYPE_DICTIONARY
+        and result.get("schema") == "DX2Ed-experimental-multi-prop-duplicate-v1"
+        and result.get("status") == "isolated-GMP-created-runtime-unverified"
+        and typeof(result.get("copies", null)) == TYPE_ARRAY
+        and result["copies"].size() >= 2 and result["copies"].size() <= 8
+        and result.get("original_bytes_unchanged") == true
+        and int(result.get("new_export_count", -1)) - int(result.get("original_export_count", 0)) == result["copies"].size()
+        and int(result.get("level_actor_count_after", -1)) - int(result.get("level_actor_count_before", 0)) == result["copies"].size()):
+        status_label.text = "Multi Duplicate GMP saved: " + str(result.get("output_file", "")) + " | New static props: " + str(result["copies"].size()) + " | Runtime unverified."
+        return
+    status_label.text = "Multi Duplicate refused: " + _native_clone_error_reason(response)
+
 
 func _open_native_save_as_dialog() -> void:
     if scene_root == null or current_folder.is_empty():
