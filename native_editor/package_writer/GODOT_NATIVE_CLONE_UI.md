@@ -184,3 +184,20 @@ Next check on this precise clone: whether Alex is physically blocked by
 the new prop, and whether it remains after a fresh level re-entry. Keep
 the original game map verified and backed up; no game-derived GMP or
 private user screenshot is part of this commit.
+
+
+## Additional runtime check: v3 duplicated seat/bench blocks Alex (2026-11-02)
+
+After the user supplied the in-game screenshot of the v3 duplicated
+bench-like static mesh, they confirmed **"collision is alright / solid."**
+This is user-reported **working player collision** for that v3 clone.
+Combined with the image, the broader neutral-frame StaticMeshActor
+duplication path now has both visual placement and physical blocking
+observed in retail DX2. The precise active GMP checksum/export identity
+was not captured in this particular report, so preserve that qualification.
+
+This does **not** establish save/load persistence, level re-entry, correct
+collision on every mesh, scripted behavior or safe cloning of interactive
+archetypes. All 636 eligible original static actors passed source preflight,
+not in-game validation. Keep PR draft, preserve original backups, and
+prioritize a controlled multi-static-prop writer + Godot integration next.
