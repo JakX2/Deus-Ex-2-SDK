@@ -562,8 +562,9 @@ func _make_ui() -> void:
     rotation_lab_panel.add_child(rotation_lab_heading)
     rotation_lab_modes = OptionButton.new()
     for hypothesis in [
-        "Original export", "Yaw -90 degrees", "Yaw +90 degrees",
-        "Yaw 180 degrees", "Invert Pitch sign", "Invert Roll sign"
+        "Imported GLB (Auto Roll state)", "Yaw -90 degrees", "Yaw +90 degrees",
+        "Yaw 180 degrees", "Invert Pitch (source)", "UE2 Roll - (source)",
+        "Raw GMP Roll + (source)"
     ]:
         rotation_lab_modes.add_item(hypothesis)
     rotation_lab_panel.add_child(rotation_lab_modes)
@@ -1860,7 +1861,10 @@ func _ue_rotator_basis(values: Array) -> Basis:
 
 func _rotation_hypothesis_pose(name: String, mode: int) -> Transform3D:
     var original: Transform3D = original_mesh_transforms.get(name, Transform3D.IDENTITY)
-    if mode == 0 or mode < 0 or mode > 5:
+    # Mode 0 is the imported GLB orientation (which may ALREADY have
+    # Auto Roll applied). Modes 5 and 6 rebuild opposite sign conventions
+    # independently from the original GMP rotator, even with Auto Roll ON.
+    if mode == 0 or mode < 0 or mode > 6:
         return original
     var pose := original
     if mode <= 3:
@@ -1875,6 +1879,8 @@ func _rotation_hypothesis_pose(name: String, mode: int) -> Transform3D:
             corrected[0] = -float(corrected[0])
         if mode == 5:
             corrected[2] = -float(corrected[2])
+        # Mode 6 deliberately retains the raw source Roll. It makes the
+        # legacy convention testable without reimporting the entire map.
         var matrix := _ue_rotator_basis(corrected)
         var scale := original.basis.get_scale()
         pose.basis = Basis(matrix.x * scale.x, matrix.y * scale.y, matrix.z * scale.z)
@@ -1941,8 +1947,9 @@ func _rotation_evidence_text() -> String:
             float(raw[1])*360.0/65536.0,
             float(raw[2])*360.0/65536.0
         ]) if raw.size() == 3 else "GMP rotator unavailable",
-        "Original Godot basis: " + str(original.basis),
+        "Imported GLB basis (may include Auto Roll): " + str(original.basis),
         "Current preview basis: " + str(node.global_transform.basis),
+        "Modes UE2 Roll - and Raw GMP Roll + use the SOURCE rotator independently of Auto Roll.",
         "These tests keep the original position and source mesh unchanged.",
         "AABB proximity is NOT proof of correct orientation or collision.",
         ""
