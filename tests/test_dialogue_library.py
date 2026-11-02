@@ -14,7 +14,7 @@ from zipfile import ZipFile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "dialogue"))
 from dx2_dialogue_library import (
     SCHEMA, DRAFT_SCHEMA, cli, digest, index_source, load_source,
-    new_draft, preview_changes, write_distinct,
+    new_draft, preview_changes, render_html, write_distinct,
 )
 
 
@@ -160,6 +160,20 @@ class DialogueLibraryTests(unittest.TestCase):
                                   "--output",str(Path(folder)/"ConText.eng")]),1)
             with self.assertRaisesRegex(ValueError,"in-place"):
                 write_distinct(path,[path],b"corruption")
+
+    def test_searchable_html_safe_for_embedded_script_tags(self):
+        with TemporaryDirectory() as folder:
+            source = Path(folder) / "ConText.eng"
+            source.write_text('1\nAva: "</script><script>alert(1)</script>"\n')
+            doc = index_source(load_source(source))
+            html = render_html(doc)
+            self.assertEqual(html.count("</script>"), 2)
+            self.assertIn("\\u003c/script>", html)
+            self.assertIn("counts_by_speaker", html)
+            output = Path(folder) / "dialogue.html"
+            self.assertEqual(cli(["html",str(source),"--output",str(output)]),0)
+            self.assertIn("DX2Ed Dialogue Source Browser",output.read_text())
+            self.assertEqual(source.read_text(),'1\nAva: "</script><script>alert(1)</script>"\n')
 
     def test_default_utf8_is_strict_and_can_choose_legacy_encoding(self):
         with TemporaryDirectory() as folder:
