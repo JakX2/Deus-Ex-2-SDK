@@ -213,3 +213,36 @@ Verify the refreshed `scene.report.json` fields on WTO:
 **Do not treat this as a confirmed correction of the pictured wall gap.**
 The retail in-game image still needs comparison with the newly exported
 editor image, BSP-only view and placed-mesh-only view.
+
+### Godot-imported triangle coverage, beyond source counts
+
+DX2Ed now has an **Audit rendered geometry** button. It inspects the
+**actual Godot `Mesh.get_faces()` triangle data**, including Godot's
+imported GLB mesh resources, rather than trusting source/exporter counters.
+
+It compares `imported_bsp_triangles` and
+`imported_placed_mesh_triangles` separately against
+`scene.report.json` (`visible_bsp_triangles` and
+`rendered_static_mesh_triangles`, with the older source count as
+fallback). The read-only report includes invalid/empty imported meshes,
+and it is automatically copied as JSON to the clipboard.
+
+For the WTO Terminal wall case, first select
+`StaticMeshActor__119`, then use **Audit rendered geometry**. This
+adds up to 30 nearby imported BSP/placed mesh nodes within **1.5 metres
+of the selected actor's world AABB**, sorted by AABB gap. It reports
+per-node imported triangle counts to narrow the investigation.
+No scene geometry is deleted, transformed or rewritten by this action.
+
+When this build successfully reexports the original WTO GMP, the
+**expected** imported triangle counts are:
+`BSP = 1372` and `placed meshes = 44346`. These are expectations from
+original source data after hiding native BF; they are not yet measured
+on the user's machine. If the counts match but the screenshot differs,
+investigate world placement, visibility, shader preview and source BSP
+encoding rather than missing triangles in the GLB-to-Godot import.
+
+**Importantly:** `Mesh.get_faces()` is a CPU-side imported mesh
+representation, not a GPU draw-call audit or proof of retail-game
+pixel-level fidelity. The nearest-node table uses AABB distance, not
+polygon-to-polygon contact.
