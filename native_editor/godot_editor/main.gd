@@ -121,6 +121,11 @@ var environment_sound_button: Button
 var environment_sound_dialog: FileDialog
 var environment_sound_confirmation: ConfirmationDialog
 var environment_sound_pending: Dictionary = {}
+var environment_light_audit_button: Button
+var environment_light_preview_button: Button
+var environment_light_clear_button: Button
+var environment_light_audit_thread: Thread = null
+var environment_light_previews: Array[OmniLight3D] = []
 var loaded_actors_json_path: String = ""
 var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
@@ -208,6 +213,9 @@ func _exit_tree() -> void:
     if gameplay_thread != null:
         gameplay_thread.wait_to_finish()
         gameplay_thread = null
+    if environment_light_audit_thread != null:
+        environment_light_audit_thread.wait_to_finish()
+        environment_light_audit_thread = null
 
 
 func _ready() -> void:
@@ -590,6 +598,29 @@ func _make_ui() -> void:
     environment_details.custom_minimum_size.y = 200
     environment_details.text = "Import an original DX2 map to browse its native lights and audio zones. Read-only."
     environment_tab.add_child(environment_details)
+    environment_light_audit_button = Button.new()
+    environment_light_audit_button.text = "Audit original Light dependencies"
+    environment_light_audit_button.disabled = true
+    environment_light_audit_button.tooltip_text = (
+        "Read-only source GMP verification of Region.iLeaf, ZoneNumberLow, PhysicsVolume, "
+        + "Level and native state. Does not spawn a light."
+    )
+    environment_light_audit_button.pressed.connect(_start_environment_light_dependency_audit)
+    environment_tab.add_child(environment_light_audit_button)
+    environment_light_preview_button = Button.new()
+    environment_light_preview_button.text = "Preview selected Light at camera target"
+    environment_light_preview_button.disabled = true
+    environment_light_preview_button.tooltip_text = (
+        "Godot-only approximate light. Never serialized into DX2 GMP; source "
+        + "hue/brightness/radius are not calibrated to DX2 renderer units."
+    )
+    environment_light_preview_button.pressed.connect(_preview_selected_light_at_target)
+    environment_tab.add_child(environment_light_preview_button)
+    environment_light_clear_button = Button.new()
+    environment_light_clear_button.text = "Clear temporary Light previews"
+    environment_light_clear_button.disabled = true
+    environment_light_clear_button.pressed.connect(_clear_environment_light_previews)
+    environment_tab.add_child(environment_light_clear_button)
     var env_schema_note := Label.new()
     env_schema_note.text = "Experimental existing-zone sound edit (isolated GMP only)"
     env_schema_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1304,6 +1335,11 @@ func load_actors(path: String) -> void:
     status_label.text = "Loaded %d actors, %d meshes. Click a mesh or select an actor." % [actors.size(), mesh_count]
 
 func _clear_current_scene() -> void:
+    _clear_environment_light_previews()
+    if environment_light_audit_button != null:
+        environment_light_audit_button.disabled = true
+    if environment_light_preview_button != null:
+        environment_light_preview_button.disabled = true
     _restore_geometry_all_faces()
     _restore_geometry_isolation()
     _clear_selection()
@@ -1624,6 +1660,10 @@ func _environment_entity_selected(index: int) -> void:
     var actor: Dictionary = environment_visible[index]
     var kind := _environment_entity_kind(actor)
     select_actor(actor)
+    if environment_light_audit_button != null:
+        environment_light_audit_button.disabled = kind != "Light"
+    if environment_light_preview_button != null:
+        environment_light_preview_button.disabled = kind != "Light"
     if environment_details == null:
         return
     var rows: PackedStringArray = [
@@ -1639,7 +1679,15 @@ func _environment_entity_selected(index: int) -> void:
         rows.append("LightShape (GameSys 118): " + str(_environment_game_value(actor, 118)))
         rows.append("EmissiveScale (GameSys 1586): " + str(_environment_game_value(actor, 1586)))
         rows.append("bLightOn (GameSys 1487, explicit value only): " + str(_environment_game_value(actor, 1487)))
-        rows.append("To create a new light we must validate native Region/PhysicsVolume state.")
+        var native: Variant = actor.get("tagged", {})
+        if typeof(native) == TYPE_DICTIONARY:
+            rows.append("")
+            rows.append("Original PhysicsVolume: " + str(native.get("PhysicsVolume", "unknown")))
+            rows.append("Original Region: " + str(native.get("Region", "unavailable")))
+            rows.append("Original Level reference: " + str(native.get("Level", "unavailable")))
+            rows.append("bDynamicLight: " + str(native.get("bDynamicLight", "unavailable")))
+            rows.append("bSentSpawnNotification: " + str(native.get("bSentSpawnNotification", "unavailable")))
+        rows.append("New light placement BLOCKED: BSP point-to-leaf and native state must be reconstructed.")
     elif kind == "Ambient sound zone":
         rows.append("StreamSchema1 (GameSys 1287): " + str(_environment_game_value(actor, 1287)))
         rows.append("StreamSchema2 (GameSys 1286): " + str(_environment_game_value(actor, 1286)))
@@ -1652,6 +1700,161 @@ func _environment_entity_selected(index: int) -> void:
     environment_details.text = "\n".join(rows)
     _refresh_environment_sound_fields(actor)
 
+
+
+
+## Visual-only source-light visualization. Never a DX2 actor. Never attached
+## under imported scene_root or listed among native draft_prop_copies.
+func _preview_selected_light_at_target() -> void:
+    if selected_actor.get("class", "") != "Light" or world_root == null:
+        status_label.text = "Select an original native Light actor first."
+        return
+    if environment_light_previews.size() >= 8:
+        status_label.text = "Limit of 8 temporary editor-only Light previews reached. Clear previews."
+        return
+    var color_info: Variant = _environment_game_value(selected_actor, 116)
+    var shape: Variant = _environment_game_value(selected_actor, 118)
+    if typeof(color_info) != TYPE_DICTIONARY or typeof(shape) != TYPE_DICTIONARY:
+        status_label.text = "Missing original LightColor/LightShape. Visual preview refused."
+        return
+    var values := [color_info.get("LightHue", 0), color_info.get("LightSaturation", 0),
+        color_info.get("LightBrightness", 0), shape.get("LightRadius", 0)]
+    for value in values:
+        if typeof(value) != TYPE_INT and typeof(value) != TYPE_FLOAT:
+            status_label.text = "Original LightColor/LightShape contains unsupported values."
+            return
+        if not is_finite(float(value)) or float(value) < 0.0 or float(value) > 255.0:
+            status_label.text = "Original light values exceed source byte ranges."
+            return
+    if not camera_target.is_finite():
+        status_label.text = "Cannot place preview at invalid camera target."
+        return
+    var preview := OmniLight3D.new()
+    preview.name = "DX2EdPreviewOnly_Light_" + str(environment_light_previews.size() + 1)
+    preview.light_color = Color.from_hsv(
+        float(values[0]) / 255.0,
+        float(values[1]) / 255.0, 1.0)
+    preview.light_energy = clampf(float(values[2]) / 64.0, 0.05, 2.5)
+    # PREVIEW ONLY: No verified Unreal-unit to Godot intensity/range mapping.
+    preview.omni_range = clampf(float(values[3]) * 0.12, 0.5, 16.0)
+    preview.shadow_enabled = false
+    preview.set_meta("editor_only", true)
+    preview.set_meta("source_actor", str(selected_actor.get("name", "")))
+    world_root.add_child(preview)
+    preview.global_position = camera_target
+    environment_light_previews.append(preview)
+    if environment_light_clear_button != null:
+        environment_light_clear_button.disabled = false
+    status_label.text = (
+        "Editor-only light approximation at camera target from "
+        + str(selected_actor.get("name", ""))
+        + ". NO GMP actor or native light was created."
+    )
+
+
+func _clear_environment_light_previews() -> void:
+    for node in environment_light_previews:
+        if is_instance_valid(node):
+            node.queue_free()
+    environment_light_previews.clear()
+    if environment_light_clear_button != null:
+        environment_light_clear_button.disabled = true
+
+
+func _start_environment_light_dependency_audit() -> void:
+    var actor: Dictionary = selected_actor
+    if (actor.get("class", "") != "Light"
+        or int(actor.get("export", -1)) < 1
+        or environment_light_audit_thread != null
+        or not _native_clone_source_ready()):
+        status_label.text = "Light audit needs one original Light from an unchanged source-matched GMP."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_light_dependency_audit.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Native Light dependency audit backend not installed."
+        return
+    var source := last_gmp_path
+    var digest := source_gamesys_sha256
+    var expected_actor := str(actor.get("name", ""))
+    var expected_export := int(actor.get("export", -1))
+    environment_light_audit_thread = Thread.new()
+    var started := environment_light_audit_thread.start(
+        _run_environment_light_dependency_audit.bind(
+            script, source, digest, expected_export, expected_actor))
+    if started != OK:
+        environment_light_audit_thread = null
+        status_label.text = "Could not start read-only native Light dependency audit."
+        return
+    status_label.text = "Checking source Light, PhysicsVolume, Region and native state without writes..."
+
+
+func _run_environment_light_dependency_audit(script: String, source: String,
+        digest: String, actor_export: int, actor_name: String) -> void:
+    var args := PackedStringArray([
+        script, source, "--source-sha256", digest,
+        "--actor-export", str(actor_export)
+    ])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        code = OS.execute("py", pyargs, output, true)
+    call_deferred("_environment_light_dependency_audit_finished",
+        code, "\n".join(output), source, digest, actor_export, actor_name)
+
+
+func _environment_light_dependency_audit_finished(code: int, raw: String,
+        source: String, digest: String, actor_export: int, actor_name: String) -> void:
+    if environment_light_audit_thread != null:
+        environment_light_audit_thread.wait_to_finish()
+        environment_light_audit_thread = null
+    if (source != last_gmp_path or digest != source_gamesys_sha256
+        or not _native_clone_source_ready()
+        or int(selected_actor.get("export", -1)) != actor_export
+        or str(selected_actor.get("name", "")) != actor_name):
+        status_label.text = "Light audit discarded: source map or selected actor changed."
+        return
+    var doc: Variant = JSON.parse_string(raw.strip_edges())
+    if (code != 0 or typeof(doc) != TYPE_DICTIONARY
+        or doc.get("schema") != "DX2Ed-original-light-dependency-audit-v1"
+        or doc.get("status") != "read-only-source-verified"
+        or doc.get("source_sha256") != digest
+        or doc.get("source_map", "").to_lower() != last_gmp_path.get_file().to_lower()
+        or doc.get("source_modified") != false
+        or doc.get("native_light_spawn_enabled") != false
+        or typeof(doc.get("lights")) != TYPE_ARRAY
+        or doc["lights"].size() != 1):
+        status_label.text = "Light dependency audit refused: " + _native_clone_error_reason(raw)
+        return
+    var rec: Dictionary = doc["lights"][0]
+    if (str(rec.get("actor", "")) != actor_name
+        or int(rec.get("export", -1)) != actor_export
+        or rec.get("tagged_object_references_checked") != true
+        or rec.get("region_for_new_position_verified") != false):
+        status_label.text = "Light audit report did not match selected original actor."
+        return
+    var state: Dictionary = rec.get("state_frame", {})
+    var rows: PackedStringArray = [
+        "ORIGINAL LIGHT DEPENDENCY AUDIT | SOURCE VERIFIED",
+        "Light: " + actor_name + " (export " + str(actor_export) + ")",
+        "Original PhysicsVolume: " + str(rec.get("physics_volume", {})),
+        "Region.Zone: " + str(rec.get("region_zone", {})),
+        "Region.iLeaf: " + str(rec.get("region_leaf", "?")),
+        "Region.ZoneNumberLow: " + str(rec.get("region_zone_number_low", "?")),
+        "Original LevelInfo reference: " + str(rec.get("level", {})),
+        "Native frame: " + str(state),
+        "Original map Light actor count: " + str(doc.get("source_light_count", "?")),
+        "Distinct source zone numbers: " + str(doc.get("distinct_zone_numbers", [])),
+        "",
+        "Light creation remains BLOCKED. We do not know how to calculate",
+        "BSP leaf + zone for a new position, or initialize native state.",
+        "No original GMP or game asset was modified."
+    ]
+    if environment_details != null:
+        environment_details.text = "\n".join(rows)
+    status_label.text = "Original Light dependencies verified. New native Light creation correctly remains disabled."
 
 
 func _environment_sound_values(property_id: int) -> Array[String]:
