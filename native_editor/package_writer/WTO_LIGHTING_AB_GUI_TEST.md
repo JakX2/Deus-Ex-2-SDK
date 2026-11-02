@@ -1,3 +1,68 @@
+## A/B runtime result and root-cause finding (2026-11-02)
+
+The user ran both versions in *Invisible War* and supplied two
+screenshots inside the PEQUOD'S area of WTO Terminal:
+
+> "idk, I don't see any difference"
+
+**Observed result:** both modified maps render and allow the test,
+but **no convincing lighting change is visible** between the provided
+screenshots. The camera positions, HUD and moving NPCs differ slightly,
+so a quantitative same-pixel comparison is not justified. No crash
+was reported for either A/B screenshot.
+
+**Root cause of the unsuitable test property identified in original
+DX2 source:** `Engine.d2u` (the source-declared `Engine.Actor`
+property, ID 1586, `EmissiveScale`) carries this description:
+
+> "0.0 = not emissive, 1.0 = fully emissive. This only applies to
+> Flesh objects which don't have a light."
+
+We changed `EmissiveScale` on *ceiling-light fixture* archetypes,
+not on the documented *Flesh objects without a light*. That is a
+source-backed explanation for why the lighting A/B experiment was
+not expected to have a visible effect. It is a **test-target selection
+error**, not an observed serializer failure. The choice of an out-of-range
+`4.0` "bright" value was also outside the declaration's stated
+0.0-to-1.0 full-emissive interpretation. Do not present this A/B
+experiment as proof of GameSys visual effect.
+
+**Better original-property candidate, not yet tested:**
+`Engine.Actor.bLightOn` (property ID **1487**), declared as
+`bool` in the `Lighting` category, with source description:
+
+> "Whether a light is in the on state or not."
+
+Original WTO Terminal GMP contains four non-runtime, one-byte,
+existing `bLightOn = true` records for these `D_298` ceiling
+fixture exports:
+
+| Export | Actor | Raw payload offset | Original |
+|---:|---|---:|---|
+| 426 | `D_298__4` | 772889 | `01` |
+| 1989 | `D_298__12` | 1055306 | `01` |
+| 2027 | `D_298__2` | 1062475 | `01` |
+| 2046 | `D_298__14` | 1067038 | `01` |
+
+These are original `0x008005cf` one-byte bool blocks,
+runtime flag off. **The existing experimental numeric scalar writer
+supports only existing four-byte float32/int32 values** and must
+not be bypassed. An independent one-byte bool editing/parity gate
+and synthetic tests are prerequisites for any next GUI test. Even
+`bLightOn` does not guarantee a visible dynamic-light difference
+without game test because authored lighting may be precomputed.
+
+### Interpretation
+
+- The 11 A/B `EmissiveScale` fields were **serialized correctly**.
+- The screenshots do **not** establish the editor can control
+  in-game lamp brightness, which was the intended hypothesis.
+- The earlier one-field GMP load/stable exploration evidence remains.
+- Next candidate should be a semantically relevant source-defined
+  lighting property, with guarded binary tests before user-facing GUI.
+
+---
+
 # WTO Terminal: ceiling-light EmissiveScale A/B test (GUI only)
 
 **Status:** experimental test files prepared from the user's original
