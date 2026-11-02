@@ -1128,9 +1128,9 @@ func _imported_triangle_coverage() -> Dictionary:
             if node.mesh.surface_get_primitive_type(surface) != Mesh.PRIMITIVE_TRIANGLES:
                 other_primitives += 1
                 continue
-            var index_count := node.mesh.surface_get_array_index_len(surface)
-            var vertex_count := node.mesh.surface_get_array_len(surface)
-            var elements := index_count if index_count > 0 else vertex_count
+            var index_count: int = node.mesh.surface_get_array_index_len(surface)
+            var vertex_count: int = node.mesh.surface_get_array_len(surface)
+            var elements: int = index_count if index_count > 0 else vertex_count
             if elements % 3 != 0:
                 invalid_triangle_surfaces.append("%s / surface %d: %d indices/vertices" % [node.name, surface, elements])
             count += int(elements / 3)
