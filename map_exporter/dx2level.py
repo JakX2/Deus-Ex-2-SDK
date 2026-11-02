@@ -292,11 +292,16 @@ class Builder:
         skin=mesh.skins[skin_index]['materials'] if mesh.skins else []
         prim=[]
         for si,sec in enumerate(mesh.sections):
+            name=skin[si] if si<len(skin) else sec['name']
+            # T3SDK's reference mesh pipeline marks BF as non-rendering.
+            # DX2Ed already filters BF for BSP; do the same for placed meshes
+            # so opaque placeholder faces cannot hide adjacent real geometry.
+            if name.strip().casefold() == 'bf':
+                continue
             inds=mesh.indices[sec['first_index']:sec['first_index']+sec['index_count']]
             if not inds:continue
             inds=[inds[k+j] for k in range(0,len(inds),3) for j in (0,2,1)]
             accessor=self.acc(self.buf(struct.pack('<'+str(len(inds))+'H',*inds),34963),5123,len(inds),'SCALAR')
-            name=skin[si] if si<len(skin) else sec['name']
             alternate=None
             if self.alternate_skin_fallback and 'holo' not in name.casefold() and 'membrane' not in name.casefold():
                 if name.casefold() not in self.material_sources and name.casefold() not in self.texture_sources:
@@ -311,6 +316,9 @@ class Builder:
         if not prim:return None
         idx=len(self.doc['meshes']);self.doc['meshes'].append({'name':mesh.name,'primitives':prim,
                               'extras':{'bundle':source_bundle,'meshTriangles':sum(s['index_count']//3 for s in mesh.sections),
+                                        'DX2VisibleTriangles':sum(
+                                            s['index_count']//3 for i,s in enumerate(mesh.sections)
+                                            if (skin[i] if i < len(skin) else s['name']).strip().casefold() != 'bf'),
                                         'DX2SkinVariant':mesh.skins[skin_index]['name'] if mesh.skins else None}})
         return idx
     def bsp_block(self,block,index):
@@ -373,6 +381,7 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
                                               'DX2SourceMapName':pkg.path.name,
                                               'DX2UnitsToMetres':SCALE})
     unique_meshes={};actors_real=[];miss=[];empty_sections=[];triangles=0
+    suppressed_mesh_bf_triangles=0
     actor_names={actor["name"] for actor in actors}
     unknown=sorted(set(transform_overrides)-actor_names)
     if unknown:
@@ -398,6 +407,10 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
         m=resource['mesh'];triangles+=len(m.indices)//3
         requested_skin=actor_requested_skin(actor)
         skin_index,skin_name,skin_status=resolve_skin_variant(m,requested_skin)
+        section_skin=m.skins[skin_index]['materials'] if m.skins else []
+        suppressed_mesh_bf_triangles+=sum(
+            sec['index_count']//3 for si,sec in enumerate(m.sections)
+            if (section_skin[si] if si<len(section_skin) else sec['name']).strip().casefold()=='bf')
         if skin_status=='requested_skin_missing':
             missing_actor_skins.append({'actor':actor['name'],'export':actor['export'],
                 'mesh':name,'requested':requested_skin,'fallback_skin':skin_name,
@@ -459,7 +472,9 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
             material=materials[section_index] if section_index<len(materials) else section['name']
             detail=builder.material_diagnostics.get(material,{})
             selected['material_status'].append({
-                'name':material, 'resolution':detail.get('resolution','not_resolved')})
+                'name':material,
+                'resolution':('hidden_native_BF' if material.strip().casefold()=='bf'
+                              else detail.get('resolution','not_resolved'))})
     for i,block in enumerate(blocks):builder.bsp_block(block,i)
     builder.save(output)
     bsp_tris=sum(len(s['indices'])//3 for b in blocks for s in b['sections'] if s['material'].lower()!='bf')
@@ -492,7 +507,9 @@ def export_level(map_path,bundles,output,report,transform_overrides=None,alterna
          'bsp_export_coverage': bsp_coverage,
          'unique_placed_meshes':len(unique_meshes),
          'placed_mesh_triangles':triangles,'visible_bsp_triangles':bsp_tris,
-         'total_scene_triangles':triangles+bsp_tris,
+         'static_mesh_bf_hidden_triangles':suppressed_mesh_bf_triangles,
+         'rendered_static_mesh_triangles':triangles-suppressed_mesh_bf_triangles,
+         'total_scene_triangles':triangles-suppressed_mesh_bf_triangles+bsp_tris,
          'gltf_mesh_definitions':len(builder.doc['meshes']),
          'gltf_scene_nodes':len(builder.doc['nodes']),
          'gltf_materials':len(builder.doc['materials']),
