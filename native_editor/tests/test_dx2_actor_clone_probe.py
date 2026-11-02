@@ -37,7 +37,7 @@ def level_fixture(path: Path) -> bytes:
     level_name = w.name_index("Level")
     class_name = w.name_index("Class")
     w.imports.append(ImportEntry(0, class_name, 0, level_name, (b"", b"", b"")))
-    level_body = b"\0" * 13 + struct.pack("<II", 2, 2) + enc_index(2) + enc_index(1)
+    level_body = (b"\0" * 13 + struct.pack("<II", 3, 3)\n                  + enc_index(2) + enc_index(0) + enc_index(1))\n    # Zero is the synthetic placeholder for the builder slot. This is a\n    # parser-only fixture; the source prop is the third list entry.
     index = w.add_export(0, "MyLevel", level_body)
     assert index == 1
     w.exports[index].class_ref = -2
@@ -45,7 +45,7 @@ def level_fixture(path: Path) -> bytes:
     raw = w.write()
     path.write_bytes(raw)
     parsed = Package(path)
-    assert parsed.level_actors() == [2, 1]
+    assert parsed.level_actors() == [2, 0, 1]
     assert parsed.read_actor(parsed.exports[0]).tail == b""
     return raw
 
@@ -78,13 +78,13 @@ class ExperimentalSingleCloneTests(unittest.TestCase):
         self.assertEqual(report["new_export_count"], 3)
         self.assertEqual(report["source_location"], [100, 200, 300])
         self.assertEqual(report["new_location"], [200, 200, 300])
-        self.assertEqual(report["level_actor_count_after"], 3)
+        self.assertEqual(report["level_actor_count_after"], 4)
         self.assertEqual(self.source.read_bytes(), self.original)
         # Independently read candidate via vendored package parser.
         candidate = self.root / "memory-candidate.gmp"
         candidate.write_bytes(encoded)
         newer = Package(candidate)
-        self.assertEqual(newer.level_actors(), [2, 1, 3])
+        self.assertEqual(newer.level_actors(), [2, 0, 1, 3])
         self.assertEqual(newer.export_class(newer.exports[-1]), "StaticMeshActor")
         self.assertNotEqual(newer.exports[-1].name, newer.exports[0].name)
         self.assertEqual(newer.export_bytes(newer.exports[0]),
