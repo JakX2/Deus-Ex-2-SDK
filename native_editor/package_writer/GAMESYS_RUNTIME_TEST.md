@@ -1,11 +1,13 @@
 # DX2Ed: first runtime GameSys scalar test (separate DX2 installation)
 
-**Status (2026-11-02): FIRST USER-REPORTED SUCCESSFUL WTO TERMINAL LOAD.**
+**Status (2026-11-02): USER-REPORTED SUCCESSFUL WTO TERMINAL LOAD
+AND STABLE IN-LEVEL EXPLORATION.**
 The user reported that the no-command edited-GameSys test package
-worked and supplied a screenshot of a rendered WTO Terminal scene
-with HUD and NPCs. This is an encouraging runtime smoke result, not
-independent proof of the edited GMP's disk hash, changed property
-behavior, or repeatability. See
+worked, supplied a screenshot of a rendered WTO Terminal scene with
+HUD and NPCs, then confirmed they explored the level without crashes
+or instability. This is stronger runtime smoke evidence than an initial
+successful load, but it is not independent proof of the edited GMP's
+disk hash, a visible gameplay property change, or repeatability. See
 [USER_RUNTIME_REPORT_2026-11-02.md](USER_RUNTIME_REPORT_2026-11-02.md)
 for evidence boundaries and recommended confirmation checks.
 
