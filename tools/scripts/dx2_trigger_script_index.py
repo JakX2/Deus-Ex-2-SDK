@@ -225,7 +225,7 @@ h1{font-size:20px;margin:0 0 7px}small,.dim{color:#aec0d4}.desc{padding:10px 15p
 main{display:grid;grid-template-columns:minmax(265px,400px) minmax(350px,1fr);height:calc(100vh - 125px);max-width:1600px;margin:auto}
 section{border-right:1px solid #314358;min-width:0;display:flex;flex-direction:column}
 .controls{padding:12px;display:grid;gap:10px;background:#192839}
-input,select{background:#253a50;border:1px solid #4c6780;color:#ebf6ff;padding:9px;border-radius:6px;width:100%}
+input,select,button{background:#253a50;border:1px solid #4c6780;color:#ebf6ff;padding:9px;border-radius:6px;width:100%}button{cursor:pointer}
 .list{overflow:auto;flex:1}.entry{padding:11px 13px;border-bottom:1px solid #304157;cursor:pointer}
 .entry:hover,.entry.selected{background:#27445a}.entry strong{color:#92d9ff}
 .meta{color:#b2c8db;font-size:12px;margin-top:5px}.details{padding:19px;overflow:auto;flex:1}
@@ -238,13 +238,28 @@ code{font-size:12px;color:#b2e4ff}.notice{padding:12px;background:#1c3045;color:
 <small id="summary"></small></header><div class="desc">Read-only evidence: symbols occur in .tsd definitions. This is not a decoded event graph or an in-game script editor.</div>
 <main><section><div class="controls"><input id="query" placeholder="Search script, title or kTAT/kTCT symbol" aria-label="Search scripts">
 <select id="status"><option value="active">Active definitions</option><option value="all">All sources</option><option value="deleted">Deleted source history</option></select>
-<div class="dim" id="count"></div></div><div id="list" class="list"></div></section>
+<button id="actors-btn" type="button">Actor Script Indices (unresolved)</button><div class="dim" id="count"></div></div><div id="list" class="list"></div></section>
 <section><div class="details" id="details"><p class="dim">Select a source definition to inspect contained symbols.</p></div></section></main>
 <script id="src-data" type="application/json">__DATA__</script>
 <script>(function(){"use strict";
 const data=JSON.parse(document.getElementById("src-data").textContent),list=document.getElementById("list"),details=document.getElementById("details");
 const query=document.getElementById("query"),status=document.getElementById("status");
 let chosen=null;
+const actorRef=data.actor_script_references,actorsButton=document.getElementById("actors-btn");
+if(!actorRef){actorsButton.hidden=true;}else{
+actorsButton.textContent="Actor script index arrays ("+actorRef.actors_with_property_92+", unresolved)";
+actorsButton.addEventListener("click",function(){
+chosen=null;details.replaceChildren();
+details.appendChild(e("h2","Serialized actor script references"));
+details.appendChild(e("p","Source map: "+actorRef.source_map+" · SHA256: "+actorRef.source_map_sha256,"meta"));
+details.appendChild(e("p",actorRef.warning,"notice"));
+for(const ref of actorRef.actors.slice(0,150)){
+let box=e("div",undefined,"token");
+box.appendChild(e("strong",ref.actor+" / export "+ref.export+" / "+ref.class));
+box.appendChild(e("p",ref.status+": "+JSON.stringify(ref.serialized_indices||[])));
+details.appendChild(box);
+}drawList();});
+}
 document.getElementById("summary").textContent=data.definitions_count+" original .tsd source files · "+data.unique_symbols.condition.length+" condition symbols · "+data.unique_symbols.action.length+" action symbols · "+data.counts.active_source_definitions+" active source definitions";
 function e(tag,txt,cls){const n=document.createElement(tag);if(txt!==undefined)n.textContent=String(txt);if(cls)n.className=cls;return n;}
 function show(x){chosen=x;details.replaceChildren();
