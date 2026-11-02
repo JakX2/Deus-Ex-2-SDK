@@ -70,10 +70,10 @@ class OriginalDX2GroupedDefaultsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unknown multi-element"):
             self.scan(unknown)
         with self.assertRaisesRegex(ValueError, "outside verified bounds"):
-            self.scan(struct.pack("<II", 0x000803BF, 999999))
+            self.scan(struct.pack("<III", 0x000803BF, 999999, 1) + b"\x00")
 
     def test_refuses_unknown_trailing_bytes_and_incomplete_headers(self):
-        with self.assertRaisesRegex(ValueError, "Unparsed bytes"):
+        with self.assertRaisesRegex(ValueError, "Incomplete grouped GameSys identifier"):
             self.scan(_group(0x000803BF, [b"\x00"] * 29) + b"\x01")
         with self.assertRaisesRegex(ValueError, "Incomplete grouped"):
             self.scan(b"\x01\x02")
