@@ -215,6 +215,30 @@ def find_candidates(source: Path, source_sha256: str, limit: int = 200):
             "output_written": False}
 
 
+def check_actor(source: Path, *, source_sha256: str,
+                actor_export: int, actor_name: str) -> dict:
+    """Read-only preflight before a Godot Save As dialog appears.
+
+    The source identity is checked with both readers. This does not
+    guarantee the full duplicate will serialize, but rejects known
+    unsupported native/script state before asking for a destination.
+    """
+    source = _validate_input(Path(source))
+    source_sha256 = _pin(source_sha256)
+    raw = source.read_bytes()
+    if sha256(raw) != source_sha256:
+        raise ValueError("Original GMP SHA-256 mismatch; reopen the unchanged map")
+    pkg, dx2 = _parse_both(source, raw)
+    exp, location = _candidate(pkg, actor_export)
+    if (exp.name != actor_name
+            or dx2.exports[actor_export - 1]["name"] != actor_name):
+        raise ValueError("Actor/export identity no longer matches the original GMP")
+    return {"schema": SCHEMA, "status": "clone-source-eligible",
+            "source_sha256": source_sha256,
+            "actor": actor_name, "export": actor_export,
+            "source_location": location, "output_written": False}
+
+
 def write_isolated(source: Path, output: Path, **options):
     source = _validate_input(Path(source))
     output, manifest = _destination(source, Path(output))
@@ -247,6 +271,8 @@ def main(argv=None):
     p.add_argument("source", type=Path, help="Original user-owned DX2 GMP")
     p.add_argument("--source-sha256", required=True)
     p.add_argument("--list", action="store_true", help="Read-only candidate discovery")
+    p.add_argument("--check-actor", action="store_true",
+                   help="Read-only exact actor eligibility check for the Godot UI")
     p.add_argument("--actor-export", type=int)
     p.add_argument("--actor-name")
     p.add_argument("--dx", type=float, default=0.0)
@@ -254,20 +280,34 @@ def main(argv=None):
     p.add_argument("--dz", type=float, default=0.0)
     p.add_argument("--output", type=Path)
     a = p.parse_args(argv)
-    if a.list:
-        if a.output is not None:
-            p.error("--list does not accept --output")
-        result = find_candidates(a.source, a.source_sha256)
-    else:
-        if a.actor_export is None or not a.actor_name:
-            p.error("Supply original --actor-export and --actor-name")
-        opts = dict(source_sha256=a.source_sha256,
-                    actor_export=a.actor_export, actor_name=a.actor_name,
-                    delta=(a.dx, a.dy, a.dz))
-        if a.output is None:
-            result, _ = clone_in_memory(a.source, **opts)
+    if a.list and a.check_actor:
+        p.error("--list and --check-actor cannot be combined")
+    if (a.list or a.check_actor) and a.output is not None:
+        p.error("Read-only inspection does not accept --output")
+    if (not a.list and (a.actor_export is None or not a.actor_name)):
+        p.error("Supply original --actor-export and --actor-name")
+    try:
+        if a.list:
+            result = find_candidates(a.source, a.source_sha256)
+        elif a.check_actor:
+            result = check_actor(a.source, source_sha256=a.source_sha256,
+                                 actor_export=a.actor_export, actor_name=a.actor_name)
         else:
-            result = write_isolated(a.source, a.output, **opts)
+            opts = dict(source_sha256=a.source_sha256,
+                        actor_export=a.actor_export, actor_name=a.actor_name,
+                        delta=(a.dx, a.dy, a.dz))
+            if a.output is None:
+                result, _ = clone_in_memory(a.source, **opts)
+            else:
+                result = write_isolated(a.source, a.output, **opts)
+    except Exception as exc:
+        # A rejected user-selected prop is expected, not a Python traceback.
+        # Keep machine-readable errors so Godot can display the actual cause.
+        print(json.dumps({"schema": SCHEMA, "status": "refused",
+                          "reason": str(exc) or type(exc).__name__,
+                          "error_type": type(exc).__name__,
+                          "output_written": False}, indent=2))
+        return 2
     print(json.dumps(result, indent=2))
     return 0
 
