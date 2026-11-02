@@ -32,6 +32,7 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 from dx2_package_roundtrip import inspect_noop, _parse_both, _validate_input
+from upkg import Package as T3Package
 from dx2_gamesys_audit import scan_dx2_gamesys
 from dx2inspect import HAS_STACK
 from upkgwrite import ActorEdit, PackageWriter, first_difference
@@ -209,17 +210,17 @@ def save_verified_scalar_copy(
     if hashlib.sha256(modified).hexdigest() != report["reconstructed_sha256"]:
         raise ValueError("Modified GMP does not match previously dual-verified SHA-256")
 
-    # Revalidate binary metadata before any destination is opened.
-    temp_name_check = source
-    t3, dx2 = _parse_both(temp_name_check, modified)
-    exp = dx2.exports[actor_export - 1]
-    if exp["name"] != actor_name or len(t3.exports) != len(dx2.exports):
-        raise ValueError("Modified GMP changed actor export identity")
-    props, _ = scan_dx2_gamesys(dx2, exp)
-    matches = [p for p in props if p["property_id"] == property_id]
-    if (len(matches) != 1 or matches[0]["payload_offset"] != offset
-            or modified[offset:offset + 4] != after):
-        raise ValueError("Reparsed modified GameSys block no longer matches plan")
+    # The independent DX2 Package parser reads its original source PATH.
+    # Never point it at the retail source path with edited memory bytes.
+    # First validate the modified bytes via T3SDK; after writing a separate
+    # file, the native DX2 parser will validate the bytes AT THAT PATH.
+    revised = T3Package(source, data=modified)
+    original_t3 = T3Package(source, data=original)
+    if (revised.guid != original_t3.guid
+            or revised.names != original_t3.names
+            or len(revised.exports) != len(original_t3.exports)
+            or revised.exports[actor_export - 1].name != actor_name):
+        raise ValueError("Modified GMP changed original package identity")
 
     # A second read closes most races before touching the private output.
     if hashlib.sha256(source.read_bytes()).hexdigest() != source_sha256:
@@ -235,7 +236,14 @@ def save_verified_scalar_copy(
         if actual != modified:
             raise ValueError("Experimental GMP disk bytes differ from verified image")
         # Validate the saved copy with both readers and the native block scanner.
-        _parse_both(output, actual)
+        _, independently_saved = _parse_both(output, actual)
+        out_export = independently_saved.exports[actor_export - 1]
+        saved_blocks, _ = scan_dx2_gamesys(independently_saved, out_export)
+        saved_match = [p for p in saved_blocks if p["property_id"] == property_id]
+        if (out_export["name"] != actor_name or len(saved_match) != 1
+                or saved_match[0]["payload_offset"] != offset
+                or actual[offset:offset + 4] != after):
+            raise ValueError("Saved GMP failed independent GameSys block verification")
         report["status"] = "written-isolated-runtime-unverified"
         report["output"] = str(output)
         report["output_sha256"] = hashlib.sha256(actual).hexdigest()
