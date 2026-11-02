@@ -69,7 +69,7 @@ func _run() -> void:
     if viewer._direct_map_system_folder(isolated_dir.path_join("M1_Test.gmp")) != direct_system:
         _fail("Explicitly chosen valid DX2 System folder should support direct GMP")
         return
-    var previous_direct_system := viewer.chosen_direct_system_path
+    var previous_direct_system: String = str(viewer.chosen_direct_system_path)
     viewer._select_direct_system_folder(isolated_dir)
     if viewer.chosen_direct_system_path != previous_direct_system:
         _fail("Invalid source folder must not replace verified DX2 System selection")
