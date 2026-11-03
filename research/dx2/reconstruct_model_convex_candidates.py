@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reconstruct *candidate* convex brush corners from source-observed DX2 Model faces.
+"""Reconstruct *candidate* convex volume geometry from source-observed DX2 Model faces.
 
 Read-only. This derives vertices by intersecting existing planes; it does NOT
 decode stored native vertex XYZ, CSG, BSP, collision, or write any game map.
@@ -247,8 +247,9 @@ def audit_maps(paths, *, include_geometry=False):
         "totals": dict(counts), "maps": reports,
         "limitations": [
             "Derived intersections are not native stored vertex XYZ data.",
-            "Only convex watertight shapes matching native face counts and radii are emitted.",
+            "Only convex watertight volume shapes matching native face counts and radii are emitted.",
             "Stored Model bbox may use a different face-plane coordinate frame.",
+            "In the 19-map source corpus, these face-bearing Models are volume-owned; Brush-owned Models contain no such face records.",
             "Compound, disconnected or ambiguous solids are explicitly refused.",
             "No BSP, collision, Havok, CSG or GMP writing is implemented.",
         ],
