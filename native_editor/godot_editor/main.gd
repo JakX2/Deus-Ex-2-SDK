@@ -1751,6 +1751,237 @@ func _environment_entity_selected(index: int) -> void:
 
 
 
+## Source-authentic Light markers with Unity-like click selection and a
+## three-circle influence preview. No input to GMP writers or prop drafts.
+func _environment_light_original_position(actor: Dictionary) -> Variant:
+    if actor.get("class", "") != "Light":
+        return null
+    var original: Variant = actor.get("location", null)
+    if typeof(original) != TYPE_ARRAY or original.size() != 3:
+        return null
+    for value in original:
+        if (typeof(value) != TYPE_INT and typeof(value) != TYPE_FLOAT
+            or not is_finite(float(value))):
+            return null
+    return Vector3(float(original[0]), float(original[2]),
+        float(original[1])) * NATIVE_CLONE_UNREAL_METRES
+
+
+func _environment_light_preview_position(actor: Dictionary) -> Variant:
+    var source_name := str(actor.get("name", ""))
+    if environment_light_positions.has(source_name):
+        var preview: Variant = environment_light_positions[source_name]
+        if typeof(preview) == TYPE_VECTOR3 and preview.is_finite():
+            return preview
+    return _environment_light_original_position(actor)
+
+
+func _environment_light_proxy_selected() -> bool:
+    return (selected_actor.get("class", "") == "Light"
+        and selected_meshes.is_empty()
+        and environment_light_markers_root != null
+        and environment_light_markers_root.visible
+        and typeof(_environment_light_preview_position(selected_actor)) == TYPE_VECTOR3)
+
+
+func _environment_light_preview_radius(actor: Dictionary) -> float:
+    var shape: Variant = _environment_game_value(actor, 118)
+    if typeof(shape) != TYPE_DICTIONARY:
+        return 1.5
+    var original: Variant = shape.get("LightRadius", null)
+    if typeof(original) != TYPE_FLOAT and typeof(original) != TYPE_INT:
+        return 1.5
+    if not is_finite(float(original)):
+        return 1.5
+    # Explicitly an approximate Godot preview. UE native bounds are not
+    # calibrated to the Godot/SubViewport renderer's light falloff.
+    return clampf(float(original) * 0.12, 0.5, 16.0)
+
+
+func _light_sphere_wire_mesh(radius: float) -> ArrayMesh:
+    var verts := PackedVector3Array()
+    var steps := 64
+    for plane in range(3):
+        for segment in range(steps):
+            var a := TAU * float(segment) / float(steps)
+            var b := TAU * float(segment + 1) / float(steps)
+            var ax := cos(a) * radius
+            var ay := sin(a) * radius
+            var bx := cos(b) * radius
+            var by := sin(b) * radius
+            match plane:
+                0:
+                    verts.append(Vector3(ax, ay, 0))
+                    verts.append(Vector3(bx, by, 0))
+                1:
+                    verts.append(Vector3(0, ax, ay))
+                    verts.append(Vector3(0, bx, by))
+                _:
+                    verts.append(Vector3(ax, 0, ay))
+                    verts.append(Vector3(bx, 0, by))
+    var arrays := []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = verts
+    var mesh := ArrayMesh.new()
+    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, arrays)
+    return mesh
+
+
+func _clear_environment_light_markers() -> void:
+    environment_light_gizmo_drag = false
+    environment_light_positions.clear()
+    for marker in environment_light_markers.values():
+        if is_instance_valid(marker):
+            marker.queue_free()
+    environment_light_markers.clear()
+    if is_instance_valid(environment_light_radius):
+        environment_light_radius.mesh = null
+        environment_light_radius.visible = false
+    if environment_light_reset_button != null:
+        environment_light_reset_button.disabled = true
+
+
+func _rebuild_environment_light_markers() -> void:
+    _clear_environment_light_markers()
+    if not is_instance_valid(environment_light_markers_root):
+        return
+    var marker_mesh := SphereMesh.new()
+    marker_mesh.radius = 0.15
+    marker_mesh.height = 0.3
+    var material := StandardMaterial3D.new()
+    material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    material.albedo_color = Color(1.0, 0.77, 0.28, 1.0)
+    material.no_depth_test = true
+    material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    for actor in actors:
+        if typeof(actor) != TYPE_DICTIONARY or actor.get("class", "") != "Light":
+            continue
+        var at: Variant = _environment_light_original_position(actor)
+        if typeof(at) != TYPE_VECTOR3 or not at.is_finite():
+            continue
+        var name := str(actor.get("name", ""))
+        if name.is_empty() or environment_light_markers.has(name):
+            continue
+        var marker := MeshInstance3D.new()
+        marker.name = "SourceLightMarker_" + name
+        marker.mesh = marker_mesh
+        marker.material_override = material
+        marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        marker.set_meta("editor_only", true)
+        marker.set_meta("source_actor", name)
+        environment_light_markers_root.add_child(marker)
+        marker.global_position = at
+        environment_light_markers[name] = marker
+    _set_environment_light_markers_visible(
+        environment_light_show_markers == null
+        or environment_light_show_markers.button_pressed)
+
+
+func _set_environment_light_markers_visible(enabled: bool) -> void:
+    if is_instance_valid(environment_light_markers_root):
+        environment_light_markers_root.visible = enabled
+    _update_environment_light_selection()
+    _update_gizmo_pose()
+    if status_label != null:
+        status_label.text = (
+            "Original Light markers shown (editor-only). Click to select, W to move the visual proxy."
+            if enabled else "Original Light markers hidden; native GMP remains unchanged."
+        )
+
+
+func _update_environment_light_selection() -> void:
+    if not is_instance_valid(environment_light_radius):
+        return
+    environment_light_radius.visible = false
+    if environment_light_reset_button != null:
+        environment_light_reset_button.disabled = not environment_light_positions.has(
+            str(selected_actor.get("name", "")))
+    if environment_light_audit_button != null:
+        environment_light_audit_button.disabled = selected_actor.get("class", "") != "Light"
+    if environment_light_preview_button != null:
+        environment_light_preview_button.disabled = selected_actor.get("class", "") != "Light"
+    if not _environment_light_proxy_selected():
+        return
+    var position: Vector3 = _environment_light_preview_position(selected_actor)
+    environment_light_radius.mesh = _light_sphere_wire_mesh(
+        _environment_light_preview_radius(selected_actor))
+    environment_light_radius.global_position = position
+    environment_light_radius.visible = true
+
+
+func _set_environment_light_preview_position(actor: Dictionary, position: Vector3) -> void:
+    if actor.get("class", "") != "Light" or not position.is_finite():
+        return
+    var name := str(actor.get("name", ""))
+    if not environment_light_markers.has(name):
+        return
+    environment_light_positions[name] = position
+    var marker: MeshInstance3D = environment_light_markers[name]
+    if is_instance_valid(marker):
+        marker.global_position = position
+    _update_environment_light_selection()
+    _update_gizmo_pose()
+
+
+func _reset_selected_environment_light_position() -> void:
+    if selected_actor.get("class", "") != "Light":
+        return
+    var name := str(selected_actor.get("name", ""))
+    environment_light_positions.erase(name)
+    var source: Variant = _environment_light_original_position(selected_actor)
+    if typeof(source) == TYPE_VECTOR3 and environment_light_markers.has(name):
+        var marker: MeshInstance3D = environment_light_markers[name]
+        if is_instance_valid(marker):
+            marker.global_position = source
+    _update_environment_light_selection()
+    _update_gizmo_pose()
+    status_label.text = (
+        "Reset editor-only Light marker " + name
+        + " to original source Location. No GMP changes exist."
+    )
+
+
+func _pick_environment_light_marker(screen: Vector2) -> String:
+    if (not is_instance_valid(environment_light_markers_root)
+        or not environment_light_markers_root.visible
+        or not is_instance_valid(camera)):
+        return ""
+    var closest_pixels := 17.0
+    var nearest := ""
+    for name in environment_light_markers:
+        var marker: MeshInstance3D = environment_light_markers[name]
+        if (not is_instance_valid(marker) or not marker.is_visible_in_tree()
+            or camera.is_position_behind(marker.global_position)):
+            continue
+        var pixels: Vector2 = camera.unproject_position(marker.global_position)
+        var distance := pixels.distance_to(screen)
+        if distance < closest_pixels:
+            closest_pixels = distance
+            nearest = str(name)
+    return nearest
+
+
+func _select_environment_light_from_viewport(name: String) -> void:
+    if not actors_by_name.has(name):
+        return
+    var actor: Dictionary = actors_by_name[name]
+    if actor.get("class", "") != "Light":
+        return
+    if environment_filter != null and not environment_filter.text.is_empty():
+        environment_filter.clear()
+        _refresh_environment_entities()
+    for i in range(environment_visible.size()):
+        if str(environment_visible[i].get("name", "")) == name:
+            environment_list.select(i)
+            _environment_entity_selected(i)
+            status_label.text = (
+                "Selected original " + name + " in Scene. Drag W arrows for "
+                + "editor-only position preview; never a native GMP write."
+            )
+            return
+    select_actor(actor)
+
+
 ## Visual-only source-light visualization. Never a DX2 actor. Never attached
 ## under imported scene_root or listed among native draft_prop_copies.
 func _preview_selected_light_at_target() -> void:
