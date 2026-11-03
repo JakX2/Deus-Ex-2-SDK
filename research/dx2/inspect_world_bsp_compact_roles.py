@@ -74,6 +74,40 @@ def analyze_rows(rows: list[dict], *, include_nodes: bool = False) -> dict:
                     "node": i, "coplanar_node": coplanar,
                     "surface_a_candidate": fields[2], "surface_b_candidate": other[2]})
     spans.sort()
+    # A compact index can be unique and sparse (offset-like), unique and
+    # dense (per-record ordinal), or dense with repetition (shared-table ID).
+    # These categories are independent of any presumed engine member name.
+    index_shapes = {}
+    for field in (1, 2, 6, 7):
+        values = field_values[field]
+        nonnegative = [v for v in values if v >= 0]
+        unique = set(nonnegative)
+        maximum = max(unique) if unique else None
+        dense = (bool(unique) and min(unique) == 0
+                 and len(unique) == maximum + 1)
+        index_shapes[str(field)] = {
+            "nonnegative_occurrences": len(nonnegative),
+            "nonnegative_distinct": len(unique),
+            "duplicate_nonnegative_occurrences": len(nonnegative) - len(unique),
+            "negative_one_occurrences": values.count(-1),
+            "max_nonnegative": maximum,
+            "zero_based_dense": dense,
+            "zero_based_unique_dense": dense and len(nonnegative) == len(unique),
+            "unique_nonnegative": len(nonnegative) == len(unique),
+            "missing_zero_based_values": (
+                maximum + 1 - len(unique) if maximum is not None else None),
+        }
+    sorted_gaps = [spans[i+1][0] - spans[i][1]
+                   for i in range(len(spans)-1)]
+    if any(gap < 0 for gap in sorted_gaps):
+        counter["overlapping_sorted_neighbors"] = sum(
+            gap < 0 for gap in sorted_gaps)
+    counter["sorted_contiguous_neighbors"] = sum(
+        gap == 0 for gap in sorted_gaps)
+    counter["sorted_gapped_neighbors"] = sum(
+        gap > 0 for gap in sorted_gaps)
+    counter["sorted_gap_slots"] = sum(
+        gap for gap in sorted_gaps if gap > 0)
     covered = 0
     overlapping_slots = 0
     first = last = None
@@ -96,6 +130,7 @@ def analyze_rows(rows: list[dict], *, include_nodes: bool = False) -> dict:
     result = {
         "nodes": n,
         "candidate_slot_count": counter["candidate_vertex_slots"],
+        "index_shapes": index_shapes,
         "fields": {
             str(field): {
                 "min": min(values), "max": max(values),
@@ -113,6 +148,10 @@ def analyze_rows(rows: list[dict], *, include_nodes: bool = False) -> dict:
             "adjacent_exact_contiguous": counter["adjacent_candidate_vertex_spans_contiguous"],
             "union_slots": covered,
             "overlap_slot_count": overlapping_slots,
+            "all_nonnegative_spans_disjoint": overlapping_slots == 0,
+            "sorted_contiguous_neighbors": counter["sorted_contiguous_neighbors"],
+            "sorted_gapped_neighbors": counter["sorted_gapped_neighbors"],
+            "sorted_gap_slots": counter["sorted_gap_slots"],
             "max_end": end_max,
             "dense_zero_based_no_overlaps": (
                 len(spans) == n and covered == counter["candidate_vertex_slots"]
@@ -203,6 +242,25 @@ def audit_maps(paths, *, include_nodes: bool = False) -> dict:
             row["candidate_vertex_spans"]["adjacent_pairs"])
         totals["candidate_vertex_span_overlap_slots"] += (
             row["candidate_vertex_spans"]["overlap_slot_count"])
+        totals["maps_with_disjoint_candidate_vertex_spans"] += int(
+            row["candidate_vertex_spans"]["all_nonnegative_spans_disjoint"]
+            and row["candidate_vertex_spans"]["negative_starts"] == 0)
+        totals["sorted_vertex_span_contiguous_neighbors"] += (
+            row["candidate_vertex_spans"]["sorted_contiguous_neighbors"])
+        totals["sorted_vertex_span_gapped_neighbors"] += (
+            row["candidate_vertex_spans"]["sorted_gapped_neighbors"])
+        totals["sorted_vertex_span_gap_slots"] += (
+            row["candidate_vertex_spans"]["sorted_gap_slots"])
+        for field in (1, 2, 6, 7):
+            shape = row["index_shapes"][str(field)]
+            totals[f"field{field}_nonnegative_occurrences"] += (
+                shape["nonnegative_occurrences"])
+            totals[f"field{field}_unique_nonnegative_maps"] += int(
+                shape["unique_nonnegative"])
+            totals[f"field{field}_dense_nonnegative_maps"] += int(
+                shape["zero_based_dense"])
+            totals[f"field{field}_unique_dense_nonnegative_maps"] += int(
+                shape["zero_based_unique_dense"])
         totals["maps_dense_zero_based_candidate_vertex_pool"] += int(
             row["candidate_vertex_spans"]["dense_zero_based_no_overlaps"])
         totals["field5_coplanar_links"] += row["coplanar_candidate_surface"]["field5_links"]
@@ -222,6 +280,8 @@ def audit_maps(paths, *, include_nodes: bool = False) -> dict:
         "limitations": [
             "Historical Unreal FBspNode member names are hypotheses, not direct DX2 symbols.",
             "Vertex spans are candidate index ranges only; no XYZ vertex pool has been located.",
+            "Observed index uniqueness, zero-based density and gap patterns are not native field-name proofs.",
+            "An original-map corpus may contain valid gaps in first-vertex ranges; never reject a map for gaps alone.",
             "Same field2 on field5 coplanar links is correlational, not proof of surface ownership.",
             "Fields6/7 are profiled numerically without treating them as BSP child links.",
             "No writer, rebuilt CSG, PVS, rendering or collision is claimed.",
