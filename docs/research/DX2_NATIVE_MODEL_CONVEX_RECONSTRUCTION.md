@@ -93,6 +93,8 @@ python research/dx2/reconstruct_model_convex_candidates.py "C:\DX2\Content\DX2\M
 
 In the examined source map, export **957 (Model__60)** produces a **10-corner, 7-face** candidate solid. It can be opened in Blender as a diagnostic mesh, but it has no imported materials, actor placement or native collision. Don't mistake this OBJ for a map export that Invisible War can load.
 
+**Blender default (added after the original far-from-origin preview):** OBJ exports are now **bounding-box-centered and display-scaled by 0.01905** so imported geometry is near Blender's origin. This matches the separately tested centered Model__60 preview. The display scale is an editor convention, **not confirmed DX2 runtime metres**. For forensic comparisons requiring the original source-space XYZ values, add `--preview-raw-source-coordinates`. The source GMP, reconstructed hull and JSON provenance remain unchanged by either OBJ presentation mode.
+
 OBJ files are written with exclusive creation and can't overwrite source GMPs or existing previews. The CLI rejects unsupported models, corrupt plane data, and output paths inside the original game map directory.
 
 Synthetic, game-asset-free regression tests:
