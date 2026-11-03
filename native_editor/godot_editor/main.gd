@@ -591,9 +591,15 @@ func _make_ui() -> void:
     gameplay_details.text = "Open a GMP and its original TriggerScript.zip. No native script binding or NPC spawning yet."
     gameplay_tab.add_child(gameplay_details)
 
+    # The v10 visual properties extend the Environment inspector. Keep all
+    # previous source controls reachable on smaller Windows screens.
+    var environment_scroll := ScrollContainer.new()
+    environment_scroll.name = "Environment"
+    environment_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    left_tabs.add_child(environment_scroll)
     var environment_tab := VBoxContainer.new()
-    environment_tab.name = "Environment"
-    left_tabs.add_child(environment_tab)
+    environment_tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    environment_scroll.add_child(environment_tab)
     var environment_heading := Label.new()
     environment_heading.text = "Original light / ambient zone / particle entities | Read-only"
     environment_heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -604,6 +610,7 @@ func _make_ui() -> void:
     environment_tab.add_child(environment_filter)
     environment_list = ItemList.new()
     environment_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    environment_list.custom_minimum_size.y = 150
     environment_list.item_selected.connect(_environment_entity_selected)
     environment_tab.add_child(environment_list)
     var environment_locate := Button.new()
