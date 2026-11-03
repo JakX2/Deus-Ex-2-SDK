@@ -17,6 +17,8 @@ var asset_filter: LineEdit
 var asset_kind_filter: OptionButton
 var asset_list: ItemList
 var asset_details: Label
+var skeletal_zip_dialog: FileDialog
+var skeletal_inventory: Dictionary = {} # source-only .ski metadata, never native NPC body
 var asset_catalog: Dictionary = {}
 var assets_visible: Array = []
 var selected_asset: Dictionary = {}
@@ -107,6 +109,12 @@ var gameplay_filter: LineEdit
 var gameplay_list: ItemList
 var gameplay_details: TextEdit
 var gameplay_visible: Array = []
+# v12: source AI-layer locations, deliberately NOT reconstructed NPCs.
+# These editor-only capsules never enter the imported GLB or GMP state.
+var ai_proxies_root: Node3D
+var ai_proxies: Dictionary = {} # source actor name -> MeshInstance3D
+var ai_proxies_toggle: CheckBox
+var ai_proxies_count: Label
 # Original per-map light actors, ambient sound zones and particle emitters.
 # This tab never creates lights, changes sound schemas or writes game files.
 var environment_filter: LineEdit
@@ -374,6 +382,19 @@ func _make_ui() -> void:
     semi_lit_label = Label.new()
     semi_lit_label.text = ""
     zip_bar.add_child(semi_lit_label)
+    ai_proxies_toggle = CheckBox.new()
+    ai_proxies_toggle.text = "AI origins (capsule proxies)"
+    ai_proxies_toggle.tooltip_text = (
+        "Show source-verified property-82 AI-layer origins as translucent capsule guides. "
+        + "NOT NPC bodies, skeletons, AI simulation or native gameplay objects."
+    )
+    ai_proxies_toggle.button_pressed = false
+    ai_proxies_toggle.disabled = true
+    ai_proxies_toggle.toggled.connect(_set_ai_proxies_visible)
+    zip_bar.add_child(ai_proxies_toggle)
+    ai_proxies_count = Label.new()
+    ai_proxies_count.text = ""
+    zip_bar.add_child(ai_proxies_count)
     var zip_hint := Label.new()
     zip_hint.text = "  Select shared resources, optional System, then a mission ZIP"
     zip_bar.add_child(zip_hint)
@@ -507,7 +528,7 @@ func _make_ui() -> void:
     asset_filter.text_changed.connect(func(_text): _refresh_asset_list())
     assets_tab.add_child(asset_filter)
     asset_kind_filter = OptionButton.new()
-    for kind in ["All resources", "Static meshes", "Textures", "Materials", "Physics hulls", "TriggerScript", "Other"]:
+    for kind in ["All resources", "Static meshes", "Textures", "Materials", "Physics hulls", "TriggerScript", "Other", "Skeletal meshes", "Skeletal animations"]:
         asset_kind_filter.add_item(kind)
     asset_kind_filter.item_selected.connect(func(_index): _refresh_asset_list())
     assets_tab.add_child(asset_kind_filter)
@@ -519,6 +540,15 @@ func _make_ui() -> void:
     asset_details.text = "Import a DX2 mission to browse its IBD resources."
     asset_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     assets_tab.add_child(asset_details)
+    var skeletal_source_button := Button.new()
+    skeletal_source_button.text = "Open original SkeletalMeshes.zip (read-only)"
+    skeletal_source_button.tooltip_text = (
+        "Browse original .ski animation-set metadata for skeletal IBD assets. "
+        + "Does not render bodies, assign NPCs or write game files."
+    )
+    skeletal_source_button.pressed.connect(
+        func(): skeletal_zip_dialog.popup_centered_ratio(0.72))
+    assets_tab.add_child(skeletal_source_button)
     var place_resource := Button.new()
     place_resource.text = "Place preview mesh"
     place_resource.tooltip_text = "Place a cataloged static mesh as an editable draft; does not create native DX2 actors"
@@ -1141,6 +1171,12 @@ func _make_ui() -> void:
     gameplay_zip_dialog.filters = PackedStringArray(["*.zip ; Original TriggerScript definitions ZIP"])
     gameplay_zip_dialog.file_selected.connect(_open_original_gameplay_scripts)
     add_child(gameplay_zip_dialog)
+    skeletal_zip_dialog = FileDialog.new()
+    skeletal_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    skeletal_zip_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    skeletal_zip_dialog.filters = PackedStringArray(["*.zip ; Original DX2 SkeletalMeshes ZIP"])
+    skeletal_zip_dialog.file_selected.connect(_open_original_skeletal_zip)
+    add_child(skeletal_zip_dialog)
 
     shared_zip_dialog = FileDialog.new()
     shared_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -1407,6 +1443,11 @@ func _make_world() -> void:
     semi_lit_root.name = "DX2Ed_SemiLit_Source_Approximation_EDITOR_ONLY"
     semi_lit_root.set_meta("editor_only", true)
     world_root.add_child(semi_lit_root)
+    ai_proxies_root = Node3D.new()
+    ai_proxies_root.name = "DX2Ed_AI_Origins_EDITOR_ONLY"
+    ai_proxies_root.set_meta("editor_only", true)
+    ai_proxies_root.visible = false
+    world_root.add_child(ai_proxies_root)
     semi_lit_key_light = DirectionalLight3D.new()
     semi_lit_key_light.rotation_degrees = Vector3(-45, 25, 0)
     semi_lit_key_light.light_energy = 1.6
@@ -1488,6 +1529,7 @@ func load_actors(path: String) -> void:
     _refresh_actor_list()
     _refresh_environment_entities()
     _rebuild_environment_light_markers()
+    _rebuild_ai_proxies()
     if semi_lit_toggle != null:
         semi_lit_toggle.disabled = not _semi_lit_has_valid_source_lights()
     _refresh_semi_lit_scene()
@@ -1495,6 +1537,10 @@ func load_actors(path: String) -> void:
     status_label.text = "Loaded %d actors, %d meshes. Click a mesh or select an actor." % [actors.size(), mesh_count]
 
 func _clear_current_scene() -> void:
+    _clear_ai_proxies()
+    if ai_proxies_toggle != null:
+        ai_proxies_toggle.set_pressed_no_signal(false)
+        ai_proxies_toggle.disabled = true
     _set_semi_lit_enabled(false)
     if semi_lit_toggle != null:
         semi_lit_toggle.set_pressed_no_signal(false)
@@ -1614,6 +1660,101 @@ func _mesh_world_aabb(instance: MeshInstance3D) -> AABB:
     for i in range(1, 8):
         result = result.expand(instance.global_transform * local.get_endpoint(i))
     return result
+
+## Only source-verified AI-layer candidates receive editable-scene
+## ORIGIN GUIDES. An AI category is not evidence of a humanoid class,
+## skeletal asset, complete NPC or safe actor-spawning semantics.
+func _source_ai_position(actor: Dictionary) -> Variant:
+    if not _actor_on_original_ai_layer(actor):
+        return null
+    var position: Variant = actor.get("location", null)
+    if typeof(position) != TYPE_ARRAY or position.size() != 3:
+        return null
+    for component in position:
+        if (typeof(component) != TYPE_FLOAT and typeof(component) != TYPE_INT
+            or not is_finite(float(component))):
+            return null
+    return Vector3(float(position[0]),float(position[2]),float(position[1])) * NATIVE_CLONE_UNREAL_METRES
+
+
+func _clear_ai_proxies() -> void:
+    for marker in ai_proxies.values():
+        if is_instance_valid(marker):
+            marker.free()
+    ai_proxies.clear()
+    if ai_proxies_count != null:
+        ai_proxies_count.text = ""
+    if ai_proxies_root != null:
+        ai_proxies_root.visible = false
+
+
+func _rebuild_ai_proxies() -> void:
+    _clear_ai_proxies()
+    if not is_instance_valid(ai_proxies_root):
+        return
+    var capsule := CapsuleMesh.new()
+    capsule.radius = 0.28
+    capsule.height = 1.65
+    var material := StandardMaterial3D.new()
+    material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    material.albedo_color = Color(0.22, 0.94, 0.97, 0.27)
+    material.no_depth_test = true
+    material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    for actor in actors:
+        if typeof(actor) != TYPE_DICTIONARY:
+            continue
+        var position: Variant = _source_ai_position(actor)
+        if typeof(position) != TYPE_VECTOR3 or not position.is_finite():
+            continue
+        var name := str(actor.get("name", ""))
+        if name.is_empty() or ai_proxies.has(name):
+            continue
+        var marker := MeshInstance3D.new()
+        marker.name = "AI_SourceOrigin_" + name
+        marker.mesh = capsule
+        marker.material_override = material
+        marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        marker.set_meta("editor_only", true)
+        marker.set_meta("source_actor", name)
+        marker.set_meta("npc_body_decoded", false)
+        ai_proxies_root.add_child(marker)
+        marker.global_position = position
+        ai_proxies[name] = marker
+    if ai_proxies_toggle != null:
+        ai_proxies_toggle.disabled = ai_proxies.is_empty()
+    _set_ai_proxies_visible(
+        ai_proxies_toggle != null and ai_proxies_toggle.button_pressed)
+
+
+func _set_ai_proxies_visible(enabled: bool) -> void:
+    if ai_proxies_root != null:
+        ai_proxies_root.visible = enabled and not ai_proxies.is_empty()
+    if ai_proxies_count != null:
+        ai_proxies_count.text = (
+            " %d original AI origins (NOT bodies)" % ai_proxies.size()
+            if enabled and not ai_proxies.is_empty() else ""
+        )
+
+
+func _pick_ai_proxy_marker(screen: Vector2) -> String:
+    if (not is_instance_valid(ai_proxies_root) or not ai_proxies_root.visible
+        or not is_instance_valid(camera)):
+        return ""
+    var nearest := ""
+    var nearest_pixels := 19.0
+    for name in ai_proxies:
+        var marker: MeshInstance3D = ai_proxies[name]
+        if (not is_instance_valid(marker) or not marker.is_visible_in_tree()
+            or camera.is_position_behind(marker.global_position)):
+            continue
+        var projected: Vector2 = camera.unproject_position(marker.global_position)
+        var pixels := projected.distance_to(screen)
+        if pixels < nearest_pixels:
+            nearest_pixels = pixels
+            nearest = str(name)
+    return nearest
+
 
 ## Gameplay metadata is source-bound and strictly read-only.
 func _actor_on_original_ai_layer(actor: Dictionary) -> bool:
@@ -3246,6 +3387,63 @@ func _place_archetype_template() -> void:
     status_label.text = "Placed visual template for " + qualified + ". No native class spawned."
 
 
+## Original .ski metadata helps future skeletal assembly but contains
+## neither decoded vertices/bone weights nor verified actor-to-model links.
+func _skeletal_source_description(name: String) -> String:
+    var records: Variant = skeletal_inventory.get("records", [])
+    if typeof(records) != TYPE_ARRAY:
+        return "Open original SkeletalMeshes.zip to inspect .ski links."
+    for record in records:
+        if (typeof(record) == TYPE_DICTIONARY
+            and str(record.get("name", "")).to_lower() == name.to_lower()):
+            return (
+                "Original SKI version: " + str(record.get("version", "unknown"))
+                + "\nMatching .pro in ZIP: " + str(record.get("pro_present", false))
+                + "\nDeclared animation sets: " + str(record.get("animation_sets", []))
+                + "\nOriginal SKI offset: " + str(record.get("position", []))
+                + "\nOriginal SKI scale: " + str(record.get("scale", []))
+                + "\nActor-to-skeleton mapping NOT verified."
+            )
+    return "No matching .ski descriptor loaded (IBD asset may be bundled separately)."
+
+
+func _open_original_skeletal_zip(path: String) -> void:
+    if path.get_extension().to_lower() != "zip" or not FileAccess.file_exists(path):
+        status_label.text = "Choose an existing original SkeletalMeshes.zip."
+        return
+    var script := ProjectSettings.globalize_path(
+        "res://backend/dx2_skeletal_ski_inventory.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Read-only SKI metadata parser unavailable."
+        return
+    var args := PackedStringArray([script, path])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        output.clear()
+        code = OS.execute("py", PackedStringArray(["-3", script, path]), output, true)
+    var parsed: Variant = JSON.parse_string("\n".join(output))
+    if (code != 0 or typeof(parsed) != TYPE_DICTIONARY
+        or parsed.get("schema", "") != "DX2Ed-original-skeletal-ski-inventory-v1"
+        or parsed.get("read_only") != true
+        or parsed.get("npc_spawn_enabled") != false
+        or parsed.get("geometry_decoded") != false
+        or typeof(parsed.get("records", null)) != TYPE_ARRAY
+        or parsed["records"].size() > 2000):
+        skeletal_inventory.clear()
+        status_label.text = "Source-only skeletal metadata rejected; check original ZIP and Python 3."
+        return
+    skeletal_inventory = parsed
+    if not selected_asset.is_empty():
+        for index in range(assets_visible.size()):
+            if (str(assets_visible[index].get("name", "")) == str(selected_asset.get("name", ""))
+                and str(assets_visible[index].get("kind", "")) == str(selected_asset.get("kind", ""))):
+                _asset_selected(index)
+                break
+    status_label.text = ("Read %d original .ski descriptors (metadata only). "
+        + "No NPC geometry, animation or gameplay was imported.") % int(parsed.get("record_count", 0))
+
+
 func _load_asset_catalog(path: String) -> void:
     asset_catalog.clear()
     selected_asset.clear()
@@ -3277,7 +3475,9 @@ func _asset_kind_matches(kind: String) -> bool:
         3: return kind == "matlib"
         4: return kind == "physicshull"
         5: return kind == "triggerscriptdef"
-        _: return kind not in ["staticmesh", "texture", "matlib", "physicshull", "triggerscriptdef"]
+        7: return kind == "skeletalmesh"
+        8: return kind == "skeletalanim"
+        _: return kind not in ["staticmesh", "texture", "matlib", "physicshull", "triggerscriptdef", "skeletalmesh", "skeletalanim"]
 
 
 func _refresh_asset_list() -> void:
@@ -3319,6 +3519,7 @@ func _asset_selected(index: int) -> void:
     var native_candidate := _native_asset_source_for(name)
     if native_asset_place_button != null:
         native_asset_place_button.disabled = native_candidate.is_empty()
+    var skeletal := str(selected_asset.get("kind", "")) in ["skeletalmesh", "skeletalanim"]
     asset_details.text = (
         "Name: " + name +
         "\nKind: " + str(selected_asset.get("kind", "")) +
@@ -3330,7 +3531,11 @@ func _asset_selected(index: int) -> void:
             str(native_candidate.get("name", "?")) + " (export " + str(native_candidate.get("export", "?")) + ")"
             if not native_candidate.is_empty() else "Unavailable; only preview placement possible"
         ) +
-        "\nPlace preview = editor-only. Place native copy = uses verified original actor; isolated GMP export still required."
+        ("\nSKELETAL RESOURCE (source metadata only). "
+         + "Body bones, skin weights and animation are not decoded; "
+         + "static-mesh preview and native spawn are NOT supported.\n"
+         + _skeletal_source_description(name) if skeletal else
+         "\nPlace preview = editor-only. Place native copy = uses verified original actor; isolated GMP export still required.")
     )
 
 
@@ -4388,6 +4593,17 @@ func _refresh_inspector_panel() -> void:
     elif nodes.is_empty() and not selected_actor.is_empty():
         current_actor = selected_actor
     inspector_summary.text = _mesh_geometry_material_summary(current_actor, current_mesh)
+    if _actor_on_original_ai_layer(current_actor):
+        var tag: Variant = _environment_game_value(current_actor, 41)
+        var skin: Variant = _environment_game_value(current_actor, 1659)
+        inspector_summary.text += (
+            "\nOriginal SkeletalTag (41): "
+            + (str(tag) if tag != null else "not serialized on this actor")
+            + "\nOriginal MaterialSkin (1659): "
+            + (str(skin) if skin != null else "not serialized on this actor")
+            + "\nThese are per-actor observations only; inherited class defaults "
+            + "and skeletal rendering are not reconstructed."
+        )
     var eligible := _draft_selected_is_prop()
     inspector_transform_section.visible = eligible
     _refresh_actor_property_editor()
@@ -6383,6 +6599,14 @@ func _pick_actor(additive: bool = false) -> void:
         var light_name := _pick_environment_light_marker(screen)
         if not light_name.is_empty():
             _select_environment_light_from_viewport(light_name)
+            return
+        var ai_name := _pick_ai_proxy_marker(screen)
+        if not ai_name.is_empty() and actors_by_name.has(ai_name):
+            select_actor(actors_by_name[ai_name])
+            status_label.text = (
+                "Selected original AI-layer candidate " + ai_name
+                + ". Source position only; no NPC body or native spawn."
+            )
             return
     # AABB is a broad-phase filter only. Actual visible triangles decide the pick:
     # a huge BSP box must not swallow a smaller prop, nor select an empty area.
