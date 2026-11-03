@@ -189,6 +189,20 @@ func _run() -> void:
         "location":[0,0,64],"game_properties":[]
     }
     viewer.actors = [light_fixture, zone_fixture, particle_fixture, second_zone_fixture]
+    viewer.actors_by_name["Light__7"] = light_fixture
+    viewer._rebuild_environment_light_markers()
+    if viewer.environment_light_markers.size() != 1:
+        _fail("Read-only Light source marker should exist for original positioned Light")
+        return
+    var original_light_position: Vector3 = Vector3(40,300,20) * float(viewer.NATIVE_CLONE_UNREAL_METRES)
+    var original_light_marker: MeshInstance3D = viewer.environment_light_markers["Light__7"]
+    if (not is_instance_valid(original_light_marker)
+        or original_light_marker.get_parent() != viewer.environment_light_markers_root
+        or not original_light_marker.get_meta("editor_only", false)
+        or original_light_marker.global_position.distance_to(original_light_position) > 0.00001
+        or viewer.all_mesh_instances.has(original_light_marker)):
+        _fail("Source light handle must be positioned from Unreal XYZ and excluded from native meshes")
+        return
     viewer._refresh_environment_entities()
     if viewer.environment_list.item_count != 4 or viewer.environment_visible.size() != 4:
         _fail("Environment must list real lights, ambient zones and particle emitters separately")
@@ -208,6 +222,42 @@ func _run() -> void:
         _fail("Native light actor inspector should display first-party DX2 property names")
         return
     viewer.focus_selected()
+    if (not viewer.environment_light_radius.visible
+        or viewer.environment_light_radius.mesh == null
+        or viewer.environment_light_radius.mesh.surface_get_primitive_type(0) != Mesh.PRIMITIVE_LINES
+        or not viewer.gizmo_root.visible
+        or viewer.gizmo_handles.size() != 3):
+        _fail("Selecting original Light must show Unity-style radius wire sphere and three-axis gizmo")
+        return
+    var marker_pixels: Vector2 = viewer.camera.unproject_position(original_light_marker.global_position)
+    if viewer._pick_environment_light_marker(marker_pixels) != "Light__7":
+        _fail("Source Light should be selectable by clicking its projected screen marker")
+        return
+    viewer._set_environment_light_markers_visible(false)
+    if (viewer._pick_environment_light_marker(marker_pixels) != ""
+        or viewer.environment_light_radius.visible
+        or viewer.gizmo_root.visible):
+        _fail("Hidden Light markers must not be viewport-pickable or show edit gizmos")
+        return
+    viewer._set_environment_light_markers_visible(true)
+    var preview_offset := original_light_position + Vector3(2.0, 0.0, 0.0)
+    viewer._set_environment_light_preview_position(light_fixture, preview_offset)
+    if (not viewer.environment_light_positions.has("Light__7")
+        or original_light_marker.global_position.distance_to(preview_offset) > 0.00001
+        or viewer.environment_light_radius.global_position.distance_to(preview_offset) > 0.00001
+        or viewer.gizmo_root.global_position.distance_to(preview_offset) > 0.00001
+        or viewer.environment_light_reset_button.disabled
+        or light_fixture["location"] != [40,20,300]
+        or not viewer.draft_prop_copies.is_empty()
+        or not viewer.property_overrides.is_empty()):
+        _fail("Dragging a light proxy must move gizmo + radius only, never source actor or GMP drafts")
+        return
+    viewer._reset_selected_environment_light_position()
+    if (not viewer.environment_light_positions.is_empty()
+        or original_light_marker.global_position.distance_to(original_light_position) > 0.00001
+        or not viewer.environment_light_reset_button.disabled):
+        _fail("Light visual position reset must restore original actor coordinates without GMP changes")
+        return
     viewer._preview_selected_light_at_target()
     if viewer.environment_light_previews.size() != 1:
         _fail("Source Light should create one visual-only Godot preview without native actor")
@@ -258,8 +308,10 @@ func _run() -> void:
     if not viewer.draft_prop_copies.is_empty() or not viewer.property_overrides.is_empty():
         _fail("Read-only Environment browser must not stage map edits")
         return
+    viewer._clear_environment_light_markers()
     viewer.actors = []
     viewer.selected_actor = {}
+    viewer.actors_by_name.erase("Light__7")
     viewer._refresh_environment_entities()
 
     # Editor categories are class hints, not a substitute for decoded physics.
