@@ -199,6 +199,18 @@ func _run() -> void:
         _fail("Skeletal animations must be separately filterable in Assets")
         return
     viewer.asset_kind_filter.select(0)
+    viewer.skeletal_inventory = {
+        "schema":"DX2Ed-original-skeletal-ski-inventory-v1",
+        "read_only":true,"npc_spawn_enabled":false,"geometry_decoded":false,
+        "records":[{"name":"generic_male","version":"v5","pro_present":true,
+            "animation_sets":["wto"],"position":[0,0,0],"scale":[1,1,1]}]
+    }
+    if (not viewer._skeletal_source_description("generic_male").contains("wto")
+        or not viewer._skeletal_source_description("generic_male").contains(
+            "Actor-to-skeleton mapping NOT verified.")):
+        _fail("Loaded original SKI metadata must expose source animation sets without NPC claims")
+        return
+    viewer.skeletal_inventory.clear()
     viewer._inspect_selected_actor_scripts()
     if (not viewer.gameplay_details.text.contains("432")
         or not viewer.gameplay_details.text.contains("NOT verified TS_")):
