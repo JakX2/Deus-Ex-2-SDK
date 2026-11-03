@@ -96,18 +96,23 @@ def _diff_exports(source: Package, cooked: Package) -> dict:
     }
 
 
-def _flesh_bsp(pkg: Package) -> tuple[dict, Counter[str]]:
+def _flesh_bsp(pkg: Package) -> tuple[dict, Counter[str], list[tuple[int, int, str]]]:
     level = next(e for e in pkg.exports if pkg.class_name(e) == "Level" and e["size"] > 0)
     raw = pkg.payload(level)
     blocks = find_bsp(pkg)
     fingerprints: Counter[str] = Counter()
+    spans: list[tuple[int, int, str]] = []
     materials: Counter[str] = Counter()
     triangles = 0
+    last_end = 0
     for b in blocks:
         start, end = int(b["offset"]), int(b["end"])
-        if not 0 <= start < end <= len(raw):
-            raise ValueError("Validated BSP decoder returned an invalid Level-relative byte range")
-        fingerprints[_sha(raw[start:end])] += 1
+        if not last_end <= start < end <= len(raw):
+            raise ValueError("Validated BSP decoder returned overlapping or invalid Level-relative ranges")
+        last_end = end
+        digest = _sha(raw[start:end])
+        fingerprints[digest] += 1
+        spans.append((start, end, digest))
         for sec in b["sections"]:
             n = len(sec["indices"]) // 3
             triangles += n
@@ -119,7 +124,76 @@ def _flesh_bsp(pkg: Package) -> tuple[dict, Counter[str]]:
         "material_section_count": sum(len(b["sections"]) for b in blocks),
         "triangle_count_by_material": dict(sorted(materials.items())),
         "unique_render_block_payload_sha256": len(fingerprints),
-    }, fingerprints
+    }, fingerprints, spans
+
+
+def _common_prefix_length(a: bytes, b: bytes) -> int:
+    """Exact offset-aligned common prefix, not a heuristic binary diff."""
+    n = min(len(a), len(b))
+    for i in range(n):
+        if a[i] != b[i]:
+            return i
+    return n
+
+
+def _level_nonrender_regions(
+    src_level: bytes, src_spans: list[tuple[int, int, str]],
+    dst_level: bytes, dst_spans: list[tuple[int, int, str]],
+) -> dict:
+    """Compare only bytes outside validated, ordered Flesh render blocks.
+
+    Never infer native semantics from unknown bytes. For re-ordered, changed
+    or missing render blocks, fail closed instead of misaligning opaque data.
+    The caller is responsible for validating the spans via _flesh_bsp.
+    """
+    if not src_spans or not dst_spans:
+        return {"status": "unavailable_no_render_anchors",
+                "render_block_order_aligned": False, "regions": []}
+    if [s[2] for s in src_spans] != [s[2] for s in dst_spans]:
+        return {"status": "unavailable_render_blocks_changed_or_reordered",
+                "render_block_order_aligned": False, "regions": []}
+    def regions(level: bytes, spans: list[tuple[int, int, str]]) -> list[tuple[int, int, bytes]]:
+        cuts: list[tuple[int, int, bytes]] = []
+        start = 0
+        for block_start, block_end, _ in spans:
+            cuts.append((start, block_start, level[start:block_start]))
+            start = block_end
+        cuts.append((start, len(level), level[start:]))
+        return cuts
+
+    before = regions(src_level, src_spans)
+    after = regions(dst_level, dst_spans)
+    assert len(before) == len(after)
+    result = []
+    for i, (source, cooked) in enumerate(zip(before, after)):
+        src_start, src_end, src_data = source
+        dst_start, dst_end, dst_data = cooked
+        shared = _common_prefix_length(src_data, dst_data)
+        src_divergence = src_data[shared:]
+        dst_divergence = dst_data[shared:]
+        label = ("before_first_render_block" if i == 0 else
+                 "after_last_render_block" if i == len(before) - 1 else
+                 f"between_render_blocks_{i}_{i+1}")
+        result.append({
+            "region": label,
+            "source_level_start": src_start, "source_level_end": src_end,
+            "cooked_level_start": dst_start, "cooked_level_end": dst_end,
+            "source_bytes": len(src_data), "cooked_bytes": len(dst_data),
+            "cooked_minus_source_bytes": len(dst_data) - len(src_data),
+            "whole_region_equal": src_data == dst_data,
+            "aligned_common_prefix_bytes": shared,
+            "source_divergent_bytes": len(src_divergence),
+            "cooked_divergent_bytes": len(dst_divergence),
+            "source_divergent_sha256": _sha(src_divergence),
+            "cooked_divergent_sha256": _sha(dst_divergence),
+        })
+    return {
+        "status": "aligned_by_ordered_byte_identical_render_blocks",
+        "render_block_order_aligned": True,
+        "regions": result,
+        "unknown_native_sections_parsed": False,
+        "collision_visibility_lighting_inferred": False,
+    }
 
 
 def audit_pair(source_path: Path, cooked_path: Path) -> dict:
@@ -134,14 +208,18 @@ def audit_pair(source_path: Path, cooked_path: Path) -> dict:
     dst, dst_info = _package(cooked_path)
     if src.version != dst.version or src.licensee != dst.licensee:
         raise ValueError("Package version/licensee mismatch; not a same-branch source/cooked pair")
-    src_bsp, src_hashes = _flesh_bsp(src)
-    dst_bsp, dst_hashes = _flesh_bsp(dst)
+    src_bsp, src_hashes, src_spans = _flesh_bsp(src)
+    dst_bsp, dst_hashes, dst_spans = _flesh_bsp(dst)
+    source_level = src.payload(next(e for e in src.exports if src.class_name(e) == "Level" and e["size"] > 0))
+    cooked_level = dst.payload(next(e for e in dst.exports if dst.class_name(e) == "Level" and e["size"] > 0))
+    nonrender = _level_nonrender_regions(source_level, src_spans, cooked_level, dst_spans)
     common = src_hashes & dst_hashes  # multiset: repeat block digests matter
     return {
         "schema": SCHEMA, "read_only": True,
         "native_compiler_executed": False, "game_runtime_verified": False,
         "source": src_info, "cooked": dst_info,
         "exports": _diff_exports(src, dst),
+        "level_nonrender_regions": nonrender,
         "bsp": {
             "source": src_bsp, "cooked": dst_bsp,
             "byte_identical_render_blocks": sum(common.values()),
@@ -154,6 +232,7 @@ def audit_pair(source_path: Path, cooked_path: Path) -> dict:
             "Exports matched only when class+name is unique in both packages.",
             "Changed serialized payloads may reflect reference or offset rewrites, not semantic changes.",
             "Matching visible render blocks do NOT prove collision, Havok, lighting, portal or navigation equality.",
+            "Level non-render sections are opaque; byte deltas are not attributed to collision, lighting or PVS.",
             "T3Ed was not executed and no fresh level was compiled.",
         ],
     }
@@ -221,6 +300,13 @@ def main(argv: list[str] | None = None) -> int:
                     "byte_identical_bsp_blocks": sum(item["bsp"]["byte_identical_render_blocks"] for item in items),
                     "source_only_polys": sum(item["exports"]["source_only_exports_by_class"].get("Polys", 0) for item in items),
                     "changed_level_exports": sum(item["exports"]["changed_payloads_by_class"].get("Level", 0) for item in items),
+                    "ordered_render_blocks_aligned_pairs": sum(
+                        item["level_nonrender_regions"]["render_block_order_aligned"] for item in items),
+                    "post_render_cooked_divergence_fingerprints": dict(sorted(Counter(
+                        item["level_nonrender_regions"]["regions"][-1]["cooked_divergent_sha256"]
+                        for item in items
+                        if item["level_nonrender_regions"]["render_block_order_aligned"]
+                    ).items())),
                 },
             }
         if args.report:

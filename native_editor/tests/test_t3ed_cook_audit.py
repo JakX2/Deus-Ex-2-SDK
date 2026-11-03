@@ -142,6 +142,54 @@ class CookAuditTests(unittest.TestCase):
         self.assertEqual(self.src.read_bytes(), b"source private synthetic identity")
         self.assertEqual(self.dst.read_bytes(), b"cooked private synthetic identity")
 
+    def test_nonrender_segmentation_uses_exact_render_anchors(self):
+        # Two immutable render payloads, one immutable 4-byte inter-block gap.
+        # The cooked Level can contain a differently-sized prefix and trailer.
+        left = b"HEADER" + b"R1R1" + b"SIZE" + b"R2R2" + b"UNCHANGED" + b"old"
+        right = b"HEADER++" + b"R1R1" + b"SIZE" + b"R2R2" + b"UNCHANGED" + b"new-build-data"
+        sha1 = tool._sha(b"R1R1")
+        sha2 = tool._sha(b"R2R2")
+        src_spans = [(6, 10, sha1), (14, 18, sha2)]
+        cooked_spans = [(8, 12, sha1), (16, 20, sha2)]
+        report = tool._level_nonrender_regions(left, src_spans, right, cooked_spans)
+        self.assertTrue(report["render_block_order_aligned"])
+        self.assertFalse(report["unknown_native_sections_parsed"])
+        self.assertFalse(report["collision_visibility_lighting_inferred"])
+        start, middle, end = report["regions"]
+        self.assertEqual(start["region"], "before_first_render_block")
+        self.assertEqual(start["cooked_minus_source_bytes"], 2)
+        self.assertEqual(start["aligned_common_prefix_bytes"], 6)
+        self.assertTrue(middle["whole_region_equal"])
+        self.assertEqual(middle["source_bytes"], 4)
+        self.assertEqual(middle["aligned_common_prefix_bytes"], 4)
+        self.assertEqual(end["region"], "after_last_render_block")
+        self.assertEqual(end["aligned_common_prefix_bytes"], len(b"UNCHANGED"))
+        self.assertEqual(end["source_divergent_bytes"], len(b"old"))
+        self.assertEqual(end["cooked_divergent_bytes"], len(b"new-build-data"))
+        self.assertEqual(end["cooked_divergent_sha256"], tool._sha(b"new-build-data"))
+        self.assertNotIn("new-build-data", json.dumps(report))
+
+    def test_nonrender_analysis_fails_closed_when_render_blocks_change(self):
+        left = b"headerAAAAtail"
+        right = b"headerBBBBtail"
+        src = [(6, 10, tool._sha(b"AAAA"))]
+        dst = [(6, 10, tool._sha(b"BBBB"))]
+        report = tool._level_nonrender_regions(left, src, right, dst)
+        self.assertFalse(report["render_block_order_aligned"])
+        self.assertEqual(report["status"], "unavailable_render_blocks_changed_or_reordered")
+        self.assertEqual(report["regions"], [])
+        absent = tool._level_nonrender_regions(left, [], right, [])
+        self.assertEqual(absent["status"], "unavailable_no_render_anchors")
+
+    def test_nonrender_analysis_reports_full_region_equality(self):
+        source = b"PREFIX" + b"RENDER" + b"suffix" 
+        cooked = source
+        span = [(6, 12, tool._sha(b"RENDER"))]
+        report = tool._level_nonrender_regions(source, span, cooked, span)
+        self.assertTrue(all(x["whole_region_equal"] for x in report["regions"]))
+        self.assertTrue(all(x["source_divergent_bytes"] == 0 for x in report["regions"]))
+        self.assertTrue(all(x["cooked_minus_source_bytes"] == 0 for x in report["regions"]))
+
     def test_case_collisions_rejected(self):
         (self.map_dir / "tutorial3.UNR").write_bytes(b"case collision")
         with self.assertRaisesRegex(ValueError, "Duplicate case-insensitive"):
