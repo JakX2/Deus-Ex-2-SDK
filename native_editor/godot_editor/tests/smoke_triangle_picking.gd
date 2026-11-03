@@ -310,6 +310,9 @@ func _run() -> void:
     # The v11 32-light limit must now be configurable without a native edit.
     var lighting_original_properties: Variant = light_fixture["game_properties"].duplicate(true)
     var source_light_markers: Array[MeshInstance3D] = []
+    var fixture_marker_mesh := SphereMesh.new()
+    fixture_marker_mesh.radius = 0.08
+    fixture_marker_mesh.height = 0.16
     for i in range(40):
         var additional_actor: Dictionary = light_fixture.duplicate(true)
         var additional_name := "Light__v13_fixture_" + str(i)
@@ -318,6 +321,7 @@ func _run() -> void:
         viewer.actors.append(additional_actor)
         var additional_marker := MeshInstance3D.new()
         additional_marker.name = "DX2Ed_source_marker_" + additional_name
+        additional_marker.mesh = fixture_marker_mesh
         additional_marker.set_meta("editor_only", true)
         viewer.environment_light_markers_root.add_child(additional_marker)
         additional_marker.global_position = (Vector3(40 + i, 300, 20)
@@ -343,7 +347,9 @@ func _run() -> void:
         or viewer.semi_lit_last_source_stats.get("missing_data") != 1
         or not viewer.lighting_diagnostics.text.contains("Excluded by chosen limit: 9")
         or viewer.lighting_ambient_control.value != 0.38):
-        _fail("Default semi-lit must show 32/41 valid nodes and explain excluded Light actors")
+        _fail("Default semi-lit 32/41 diagnostics mismatch: "
+            + JSON.stringify(viewer.semi_lit_last_source_stats)
+            + " ambient_control=" + str(viewer.lighting_ambient_control.value))
         return
     viewer.lighting_limit_select.select(4) # All source lights, bounded by 256
     viewer.lighting_ambient_control.set_value_no_signal(0.65)
