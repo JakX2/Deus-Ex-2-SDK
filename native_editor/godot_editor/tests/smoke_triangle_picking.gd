@@ -243,8 +243,8 @@ func _run() -> void:
     # v10 preview color/range/energy are isolated editor-only values.
     # They must neither mutate original GameSys fields nor stage a GMP edit.
     if (viewer.environment_light_color_control.disabled
-        or viewer.environment_light_radius_control.disabled
-        or viewer.environment_light_energy_control.disabled
+        or not viewer.environment_light_radius_control.editable
+        or not viewer.environment_light_energy_control.editable
         or viewer.environment_light_live_toggle.disabled):
         _fail("Selected source Light should enable v10 visual inspector controls")
         return
@@ -331,7 +331,7 @@ func _run() -> void:
         return
     viewer._environment_entity_selected(1)
     if (is_instance_valid(viewer.environment_light_live_node)
-        or not viewer.environment_light_radius_control.disabled
+        or viewer.environment_light_radius_control.editable
         or not viewer.environment_light_visual_reset_button.disabled):
         _fail("Changing selection to sound zone must clear live light and lock light controls")
         return
