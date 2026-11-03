@@ -117,7 +117,9 @@ func _run() -> void:
     # Original AI layer is only a discoverable candidate marker.
     var ai_fixture := {"name":"D_527__0", "class":"D_527", "export":5,
         "location":[1,2,3],
-        "game_properties":[{"id":82,"value":"AI"}],
+        "game_properties":[{"id":82,"value":"AI"},
+            {"id":41,"value":"generic_male"},
+            {"id":1659,"value":"WTO_guard"}],
         "trigger_script_serialized":{"items":[432,424],"interpretation":"index"}}
     if not viewer._actor_on_original_ai_layer(ai_fixture):
         _fail("Original source AI layer should be discoverable")
@@ -146,6 +148,12 @@ func _run() -> void:
         _fail("Read-only original TriggerScript browser list/details")
         return
     viewer.selected_actor = ai_fixture
+    viewer._refresh_inspector_panel()
+    if (not viewer.inspector_summary.text.contains("Original SkeletalTag (41): generic_male")
+        or not viewer.inspector_summary.text.contains("Original MaterialSkin (1659): WTO_guard")
+        or not viewer.inspector_summary.text.contains("inherited class defaults")):
+        _fail("Original AI actor render fields must be visible without guessed inherited defaults")
+        return
     viewer.focus_selected()
     var expected_ai_focus: Vector3 = Vector3(1.0, 3.0, 2.0) * float(viewer.NATIVE_CLONE_UNREAL_METRES)
     if viewer.camera_target.distance_to(expected_ai_focus) > 0.0001:
