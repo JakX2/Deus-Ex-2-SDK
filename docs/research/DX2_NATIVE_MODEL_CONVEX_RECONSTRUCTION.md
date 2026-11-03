@@ -76,8 +76,10 @@ The failure causes may involve nonconvex/compound solids, different coordinate c
 Use original **user-owned** GMP files from your own installation, and write reports outside the game folder:
 
 ```powershell
-python research/dx2/reconstruct_model_convex_candidates.py "C:\DX2\Content\DX2\Maps\M1_Seattle_Club.gmp" "C:\DX2\Content\DX2\Maps\M1_Seattle_hub.gmp" --report "C:\DX2_Research_Reports\convex_hulls.json" --include-geometry
+python research/dx2/reconstruct_model_convex_candidates.py "C:\DX2\Content\DX2\Maps\M1_Seattle_Club.gmp" "C:\DX2\Content\DX2\Maps\M1_Seattle_hub.gmp" --report "C:\DX2_Research_Reports\convex_hulls.json" --include-geometry --include-owners
 ```
+
+Use `--include-owners` to cross-reference the independent DX2 Level actor/GameSys45 ownership audit for each face-bearing Model. This is slower because it reopens the source GMP to decode its actor property links, but provides reproducible owner classes rather than relying on filenames or heuristics.
 
 Default JSON output reports only summary information and failures. `--include-geometry` includes candidate corner coordinates and ordered polygon indices. Original GMPs are never modified.
 
