@@ -155,8 +155,26 @@ var environment_light_live_node: OmniLight3D
 var environment_light_controls_syncing := false
 # v11 scene-wide source Light approximations in a bounded, read-only render mode.
 # No baked DX2 lighting, shadow maps or native Light writers are implied.
-const SEMI_LIT_MAX_LOCAL_LIGHTS := 32
+const SEMI_LIT_DEFAULT_LIGHT_LIMIT := 32
+const SEMI_LIT_SAFE_HARD_CAP := 256
+const SEMI_LIT_DEFAULT_AMBIENT := 0.38
+const SEMI_LIT_DEFAULT_KEY_LIGHT := 0.18
 var semi_lit_enabled := false
+# v13. All values stay editor-only and NEVER feed GameSys/GMP draft writers.
+# Limit 0 = every valid source light, up to the renderer safety cap.
+var semi_lit_light_limit := SEMI_LIT_DEFAULT_LIGHT_LIMIT
+var semi_lit_ambient := SEMI_LIT_DEFAULT_AMBIENT
+var semi_lit_radius_multiplier := 1.0
+var semi_lit_energy_multiplier := 1.0
+var lighting_dialog: AcceptDialog
+var lighting_preset_select: OptionButton
+var lighting_limit_select: OptionButton
+var lighting_ambient_control: SpinBox
+var lighting_radius_control: SpinBox
+var lighting_energy_control: SpinBox
+var lighting_diagnostics: Label
+var lighting_controls_syncing := false
+var semi_lit_last_source_stats: Dictionary = {}
 var semi_lit_toggle: CheckBox
 var semi_lit_label: Label
 var semi_lit_key_light: DirectionalLight3D
@@ -374,14 +392,23 @@ func _make_ui() -> void:
     semi_lit_toggle.button_pressed = false
     semi_lit_toggle.disabled = true
     semi_lit_toggle.tooltip_text = (
-        "Approximate Godot lighting from nearby original DX2 Light actors. "
-        + "Max 32 nonshadowing lights. No DX2 lightmaps or runtime/baked lighting."
+        "Approximate Godot lighting from original DX2 Light actors. "
+        + "Default 32 nearby, configurable up to all source lights (safe cap 256). "
+        + "No DX2 lightmaps or baked lighting."
     )
     semi_lit_toggle.toggled.connect(_set_semi_lit_enabled)
     zip_bar.add_child(semi_lit_toggle)
     semi_lit_label = Label.new()
     semi_lit_label.text = ""
     zip_bar.add_child(semi_lit_label)
+    var lighting_button := Button.new()
+    lighting_button.text = "Lighting..."
+    lighting_button.tooltip_text = (
+        "Preview light count, ambient light, range and brightness; "
+        + "see why some source Lights are skipped. No native map edits."
+    )
+    lighting_button.pressed.connect(func(): lighting_dialog.popup_centered())
+    zip_bar.add_child(lighting_button)
     ai_proxies_toggle = CheckBox.new()
     ai_proxies_toggle.text = "AI origins (capsule proxies)"
     ai_proxies_toggle.tooltip_text = (
@@ -1171,6 +1198,7 @@ func _make_ui() -> void:
     gameplay_zip_dialog.filters = PackedStringArray(["*.zip ; Original TriggerScript definitions ZIP"])
     gameplay_zip_dialog.file_selected.connect(_open_original_gameplay_scripts)
     add_child(gameplay_zip_dialog)
+    _make_lighting_dialog()
     skeletal_zip_dialog = FileDialog.new()
     skeletal_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
     skeletal_zip_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -1405,6 +1433,160 @@ func _backend_finished(code: int, output: String) -> void:
         message = "Python not available. Install Python 3 and ensure python or py is on PATH."
     status_label.text = "Could not open DX2 map: " + message
     push_warning("DX2Ed map importer: " + message)
+
+## Popup is intentionally separate from the already crowded source toolbar.
+## OptionButton IDs are the exact bounded preview light-node budgets.
+func _make_lighting_dialog() -> void:
+    lighting_dialog = AcceptDialog.new()
+    lighting_dialog.title = "DX2Ed Lighting | PREVIEW ONLY"
+    lighting_dialog.min_size = Vector2i(440, 395)
+    add_child(lighting_dialog)
+    var panel := VBoxContainer.new()
+    panel.custom_minimum_size = Vector2(405, 340)
+    lighting_dialog.add_child(panel)
+    var heading := Label.new()
+    heading.text = (
+        "Godot approximation, NOT original DX2 lightmaps / shadows / PVS.\n"
+        + "These controls do not edit Light actors or native GMP files."
+    )
+    heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    panel.add_child(heading)
+    var preset_row := HBoxContainer.new()
+    var preset_label := Label.new()
+    preset_label.text = "Preset"
+    preset_label.custom_minimum_size.x = 150.0
+    preset_row.add_child(preset_label)
+    lighting_preset_select = OptionButton.new()
+    lighting_preset_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    for preset in ["Editor (fully lit)", "Semi-lit (v11)", "Brighter", "Dark", "Custom"]:
+        lighting_preset_select.add_item(preset)
+    lighting_preset_select.select(0)
+    lighting_preset_select.item_selected.connect(_select_lighting_preset)
+    preset_row.add_child(lighting_preset_select)
+    panel.add_child(preset_row)
+    var limit_row := HBoxContainer.new()
+    var limit_label := Label.new()
+    limit_label.text = "Source light nodes"
+    limit_label.custom_minimum_size.x = 150.0
+    limit_row.add_child(limit_label)
+    lighting_limit_select = OptionButton.new()
+    lighting_limit_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    for budget in [8, 16, 32, 64]:
+        lighting_limit_select.add_item(str(budget), budget)
+    lighting_limit_select.add_item("All (safety max 256)", 0)
+    lighting_limit_select.select(2)
+    lighting_limit_select.item_selected.connect(func(_index): _lighting_manual_change())
+    limit_row.add_child(lighting_limit_select)
+    panel.add_child(limit_row)
+    for spec in [
+        ["Ambient energy", "ambient", 0.0, 2.0, 0.05, SEMI_LIT_DEFAULT_AMBIENT],
+        ["Source radius multiplier", "radius", 0.25, 4.0, 0.05, 1.0],
+        ["Source brightness multiplier", "energy", 0.1, 4.0, 0.05, 1.0]
+    ]:
+        var line := HBoxContainer.new()
+        var name := Label.new()
+        name.text = str(spec[0])
+        name.custom_minimum_size.x = 215
+        line.add_child(name)
+        var spin := SpinBox.new()
+        spin.min_value = float(spec[2])
+        spin.max_value = float(spec[3])
+        spin.step = float(spec[4])
+        spin.value = float(spec[5])
+        spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        spin.value_changed.connect(func(_value): _lighting_manual_change())
+        line.add_child(spin)
+        panel.add_child(line)
+        match str(spec[1]):
+            "ambient": lighting_ambient_control = spin
+            "radius": lighting_radius_control = spin
+            "energy": lighting_energy_control = spin
+    lighting_diagnostics = Label.new()
+    lighting_diagnostics.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    lighting_diagnostics.text = "Open an original map with source Light actors to view diagnostics."
+    panel.add_child(lighting_diagnostics)
+
+
+func _sync_lighting_panel_controls() -> void:
+    if lighting_preset_select == null:
+        return
+    lighting_controls_syncing = true
+    var wanted_id := semi_lit_light_limit
+    for i in range(lighting_limit_select.item_count):
+        if lighting_limit_select.get_item_id(i) == wanted_id:
+            lighting_limit_select.select(i)
+            break
+    lighting_ambient_control.set_value_no_signal(semi_lit_ambient)
+    lighting_radius_control.set_value_no_signal(semi_lit_radius_multiplier)
+    lighting_energy_control.set_value_no_signal(semi_lit_energy_multiplier)
+    lighting_controls_syncing = false
+
+
+func _select_lighting_preset(index: int) -> void:
+    if lighting_controls_syncing:
+        return
+    match index:
+        0:
+            _set_semi_lit_enabled(false)
+            if semi_lit_toggle != null:
+                semi_lit_toggle.set_pressed_no_signal(false)
+            _update_environment_light_selection()
+            return
+        1:
+            semi_lit_light_limit = SEMI_LIT_DEFAULT_LIGHT_LIMIT
+            semi_lit_ambient = SEMI_LIT_DEFAULT_AMBIENT
+            semi_lit_radius_multiplier = 1.0
+            semi_lit_energy_multiplier = 1.0
+        2:
+            semi_lit_light_limit = 0
+            semi_lit_ambient = 0.60
+            semi_lit_radius_multiplier = 1.50
+            semi_lit_energy_multiplier = 1.20
+        3:
+            semi_lit_light_limit = 32
+            semi_lit_ambient = 0.15
+            semi_lit_radius_multiplier = 0.85
+            semi_lit_energy_multiplier = 0.85
+        4:
+            pass
+        _:
+            return
+    _sync_lighting_panel_controls()
+    _set_semi_lit_enabled(true)
+    if semi_lit_toggle != null:
+        semi_lit_toggle.set_pressed_no_signal(semi_lit_enabled)
+    _update_environment_light_selection()
+
+
+func _lighting_manual_change() -> void:
+    if lighting_controls_syncing or lighting_limit_select == null:
+        return
+    semi_lit_light_limit = lighting_limit_select.get_selected_id()
+    semi_lit_ambient = clampf(float(lighting_ambient_control.value), 0.0, 2.0)
+    semi_lit_radius_multiplier = clampf(float(lighting_radius_control.value), 0.25, 4.0)
+    semi_lit_energy_multiplier = clampf(float(lighting_energy_control.value), 0.1, 4.0)
+    lighting_controls_syncing = true
+    lighting_preset_select.select(4) # Custom, without initiating preset reset
+    lighting_controls_syncing = false
+    _set_semi_lit_enabled(true)
+    if semi_lit_toggle != null:
+        semi_lit_toggle.set_pressed_no_signal(semi_lit_enabled)
+    _update_environment_light_selection()
+
+
+func _semi_lit_active_budget() -> int:
+    return SEMI_LIT_SAFE_HARD_CAP if semi_lit_light_limit == 0 else (
+        mini(semi_lit_light_limit, SEMI_LIT_SAFE_HARD_CAP))
+
+
+func _apply_semi_lit_global_tone() -> void:
+    if is_instance_valid(semi_lit_key_light):
+        semi_lit_key_light.light_energy = (
+            SEMI_LIT_DEFAULT_KEY_LIGHT if semi_lit_enabled else 1.6)
+    if semi_lit_world_environment != null:
+        semi_lit_world_environment.ambient_light_energy = (
+            semi_lit_ambient if semi_lit_enabled else 1.1)
+
 
 func _make_world() -> void:
     world_view = SubViewport.new()
@@ -2199,10 +2381,12 @@ func _set_semi_lit_enabled(enabled: bool) -> void:
             status_label.text = "Semi-lit requires original positioned Lights with readable LightColor and LightShape."
     else:
         semi_lit_enabled = enabled
-    if is_instance_valid(semi_lit_key_light):
-        semi_lit_key_light.light_energy = 0.18 if semi_lit_enabled else 1.6
-    if semi_lit_world_environment != null:
-        semi_lit_world_environment.ambient_light_energy = 0.38 if semi_lit_enabled else 1.1
+    _apply_semi_lit_global_tone()
+    if lighting_preset_select != null and not lighting_controls_syncing:
+        if not semi_lit_enabled:
+            lighting_preset_select.select(0)
+        elif lighting_preset_select.selected == 0:
+            lighting_preset_select.select(1)
     semi_lit_last_camera_position = Vector3(INF, INF, INF)
     _refresh_semi_lit_scene()
     _sync_environment_light_live_node()
@@ -2218,8 +2402,14 @@ func _clear_semi_lit_nodes() -> void:
         if is_instance_valid(light):
             light.free()
     semi_lit_nodes.clear()
+    semi_lit_last_source_stats.clear()
     if semi_lit_label != null:
         semi_lit_label.text = ""
+    if lighting_diagnostics != null:
+        lighting_diagnostics.text = (
+            "Semi-lit is OFF; ordinary Godot editor lighting is restored.\n"
+            + "Enable Semi-lit to count eligible original map Light actors."
+        )
 
 
 func _refresh_semi_lit_scene() -> void:
@@ -2227,29 +2417,37 @@ func _refresh_semi_lit_scene() -> void:
         _clear_semi_lit_nodes()
         return
     var ranked: Array[Dictionary] = []
+    var source_light_total := 0
+    var explicitly_off := 0
+    var missing_source_data := 0
     var eye := camera.global_position if is_instance_valid(camera) else Vector3.ZERO
     for actor in actors:
         if typeof(actor) != TYPE_DICTIONARY or actor.get("class", "") != "Light":
             continue
-        # Explicitly authored OFF is respected. An absent property must
-        # not be interpreted as either native-on or native-off evidence.
+        source_light_total += 1
+        # Only an explicitly authored false bLightOn is known to be OFF.
         if _environment_game_value(actor, 1487) == false:
+            explicitly_off += 1
             continue
         var position: Variant = _environment_light_preview_position(actor)
         var settings: Dictionary = _environment_light_visual_values(actor)
-        if typeof(position) != TYPE_VECTOR3 or settings.is_empty():
-            continue
         var name := str(actor.get("name", ""))
-        if name.is_empty() or not environment_light_markers.has(name):
+        if (typeof(position) != TYPE_VECTOR3 or not position.is_finite()
+            or settings.is_empty() or name.is_empty()
+            or not environment_light_markers.has(name)):
+            missing_source_data += 1
             continue
         ranked.append({
             "name": name, "position": position, "settings": settings,
             "distance2": eye.distance_squared_to(position)
         })
     ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+        if abs(float(a["distance2"]) - float(b["distance2"])) <= 0.000001:
+            return str(a["name"]) < str(b["name"])
         return float(a["distance2"]) < float(b["distance2"]))
     var wanted := {}
-    var count := mini(ranked.size(), SEMI_LIT_MAX_LOCAL_LIGHTS)
+    var budget := _semi_lit_active_budget()
+    var count := mini(ranked.size(), budget)
     for index in range(count):
         var info: Dictionary = ranked[index]
         var name: String = str(info["name"])
@@ -2265,8 +2463,12 @@ func _refresh_semi_lit_scene() -> void:
             semi_lit_nodes[name] = node
         node.global_position = info["position"]
         node.light_color = info["settings"]["color"]
-        node.omni_range = float(info["settings"]["range"])
-        node.light_energy = float(info["settings"]["energy"])
+        node.omni_range = clampf(
+            float(info["settings"]["range"]) * semi_lit_radius_multiplier,
+            0.125, 64.0)
+        node.light_energy = clampf(
+            float(info["settings"]["energy"]) * semi_lit_energy_multiplier,
+            0.005, 10.0)
     for name in semi_lit_nodes.keys():
         if not wanted.has(name):
             var stale: OmniLight3D = semi_lit_nodes[name]
@@ -2274,8 +2476,26 @@ func _refresh_semi_lit_scene() -> void:
                 stale.free()
             semi_lit_nodes.erase(name)
     semi_lit_last_camera_position = eye
+    var capped := maxi(0, ranked.size() - count)
+    semi_lit_last_source_stats = {
+        "total": source_light_total, "eligible": ranked.size(),
+        "active": count, "capped": capped, "explicit_off": explicitly_off,
+        "missing_data": missing_source_data
+    }
     if semi_lit_label != null:
-        semi_lit_label.text = " %d/%d source lights (approx.)" % [count, ranked.size()]
+        semi_lit_label.text = (
+            " %d/%d eligible source light nodes | %d limited"
+            % [count, ranked.size(), capped]
+        )
+    if lighting_diagnostics != null:
+        lighting_diagnostics.text = (
+            "Original Light actors: %d\nEligible source lights: %d\n"
+            + "Godot light nodes: %d\nExcluded by chosen limit: %d\n"
+            + "Explicit bLightOn=false: %d\nMissing/invalid source data: %d\n"
+            + "Godot Compatibility still limits lights affecting individual meshes; "
+            + "these nodes do not recreate DX2 occlusion, shadows, or lightmaps."
+        ) % [source_light_total, ranked.size(), count, capped,
+            explicitly_off, missing_source_data]
 
 
 func _refresh_semi_lit_actor(actor: Dictionary) -> void:
@@ -2293,8 +2513,10 @@ func _refresh_semi_lit_actor(actor: Dictionary) -> void:
         return
     node.global_position = pos
     node.light_color = values["color"]
-    node.omni_range = float(values["range"])
-    node.light_energy = float(values["energy"])
+    node.omni_range = clampf(float(values["range"]) * semi_lit_radius_multiplier,
+        0.125, 64.0)
+    node.light_energy = clampf(float(values["energy"]) * semi_lit_energy_multiplier,
+        0.005, 10.0)
 
 
 func _clear_environment_light_live_node() -> void:
@@ -2444,6 +2666,8 @@ func _update_environment_light_selection() -> void:
     var appearance := _environment_light_visual_values(selected_actor)
     var radius := (float(appearance.get("range", 1.5))
         if not appearance.is_empty() else _environment_light_preview_radius(selected_actor))
+    if semi_lit_enabled:
+        radius = clampf(radius * semi_lit_radius_multiplier, 0.125, 64.0)
     environment_light_radius.mesh = _light_sphere_wire_mesh(radius)
     environment_light_radius.global_position = position
     environment_light_radius.visible = true
