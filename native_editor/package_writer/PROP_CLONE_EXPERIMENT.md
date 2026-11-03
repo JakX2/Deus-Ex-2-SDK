@@ -1,0 +1,161 @@
+# DX2Ed: native StaticMeshActor duplication (experimental)
+
+**Status:** source-only prototype on draft PR #5. Synthetic asset-free
+package tests have passed. A newly appended retail DX2 actor has NOT yet
+been verified in-game. The code deliberately does not write into game
+installations, does not redistribute GMPs, and does not enable the Godot
+visual duplication button as a native writer yet.
+
+## What this does
+
+Clone one existing, locally authored `StaticMeshActor` of the current GMP:
+- verifies source SHA-256, original actor name and one-based export index;
+- requires the actor to be present exactly once in the Level actor list
+  beyond the first two protected entries;
+- permits only source-verified retail StaticMeshActor state sentinels
+  (node=-2, state_node=-2, probe mask all ones, latent=0, offset=-1),
+  no links, and a zero-length or four-byte all-zero tail; refuses other state,
+  opaque nonzero native tails, missing tagged Location and abnormal coordinates;
+- copies the existing export's original data and class identity;
+- appends one uniquely named export and adds it once to the Level actor list;
+- edits only the clone's existing tagged FVector Location, in **Unreal units**;
+- independently reparses resulting GMP and checks every pre-existing export
+  except the Level is byte-identical, plus T3SDK package integrity checks;
+- writes only to a separate output directory with same GMP filename,
+  exclusive creation, and a SHA-256 manifest.
+
+This does **not** build BSP, modify collision, update navmeshes, write IBD
+resources, create new mesh definitions, or guarantee saved-game persistence.
+Keep the real retail GMP original intact.
+
+## First use
+
+Extract the source-only archive while preserving its folders, or run from
+the full repository checkout. Requires Python 3.11+. Original retail file
+is supplied by the owner and is NOT bundled.
+
+From the unpacked bundle's root, first list conservative candidate props:
+
+```powershell
+python native_editor/package_writer/dx2_actor_clone_probe.py "C:\GOG Games\Deus Ex - Invisible War\Content\DX2\Maps\M1_Seattle_Hub_WTOterminal.gmp" --source-sha256 a6c68dd8b7b8ea0b1ee27dac4b5d18a57251297feb2f8ccb9f1bc40e317e17aa --list
+```
+
+Pick an `actor` and `export` from the returned read-only candidate list.
+The following is a **template** only; replace placeholders with the
+literal export number and name emitted by `--list`:
+
+```powershell
+python native_editor/package_writer/dx2_actor_clone_probe.py "C:\GOG Games\Deus Ex - Invisible War\Content\DX2\Maps\M1_Seattle_Hub_WTOterminal.gmp" --source-sha256 a6c68dd8b7b8ea0b1ee27dac4b5d18a57251297feb2f8ccb9f1bc40e317e17aa --actor-export EXPORT_NUMBER --actor-name ACTOR_NAME --dx 100 --dy 0 --dz 0
+```
+
+That second command is **in-memory only**; verify the reported
+`new_export_count` and `level_actor_count_after`. Then, only when the
+report passes, append e.g.
+`--output "C:\DX2EdResearch\M1_Seattle_Hub_WTOterminal.gmp"`.
+The output directory must not be inside any Content/DX2/Maps game directory;
+the output file and manifest must not already exist.
+
+To test in-game later, manually back up the original GMP and confirm with
+Process Monitor that DX2 actually **reads the modified map** in the intended
+installation. Test from a fresh level entry and restore original afterward.
+The prior test-build incident showed that an EXE's install path alone does
+not prove which map it loads.
+
+**Do not merge** this research prototype merely because synthetic CI passes.
+Before integrating the Godot Duplicate button, verify a single copied static
+prop at the correct position in the game, its collision, saved-game behavior,
+and clean original-map restoration. Cloning actors that reference specific
+object links or scripts is still explicitly blocked.
+
+
+## Real original WTO Terminal GMP research result (2026-11-02)
+
+After downloading the original map from the user's connected project files,
+the **private offline prototype was executed against the exact original**
+`M1_Seattle_Hub_WTOterminal.gmp` (1,112,716 bytes; SHA
+`a6c68dd8b7b8ea0b1ee27dac4b5d18a57251297feb2f8ccb9f1bc40e317e17aa`).
+
+This source contains 636 native StaticMeshActor exports. The initial
+over-conservative check correctly refused all of them: every one had a
+four-byte zero native tail and a distinctive UE/Flesh state-frame sentinel.
+Further read-only analysis established that 82 source actors share a
+conservative, fully decoded neutral sentinel
+(`node=-2, state_node=-2, probe=0xffffffffffffffff, latent=0, offset=-1`),
+have no object links, and contain only a four-byte all-zero tail.
+**No arbitrary nonzero state or opaque tails are accepted.**
+
+A specific existing static table resource was selected:
+
+- Original actor: `StaticMeshActor__611`, export **907**.
+- Original `ObjectMesh.Name`: **`FO_table_hitech3`**.
+- Original Location: **(-384, 160, 240)** Unreal units.
+- New duplicate: `StaticMeshActor__1409`, export **2090**.
+- New Location: **(-234, 160, 240)** (+150 X).
+- Original export count 2089; candidate 2090.
+- Original Level actor list count 1058; candidate 1059.
+- Candidate GMP size **1,112,967 bytes**.
+- Candidate SHA-256
+  `90d65a0f4be4e008f448a1c30b6d21ec7177f0e5cb48bff642f1aaaabfb20a3b`.
+
+The actual source was left byte-identical. The **new candidate passed**
+the T3SDK parser/writer patched-package verifier and the SDK's independent
+DX2 package parser, and all existing exports except the Level list remained
+byte-identical. A **private-only test bundle** was prepared with a Windows
+install/restore GUI, hash-verified candidate, and original-backup logic.
+No proprietary map binary was committed.
+
+**Runtime status remains unverified:** the additional table may not be
+rendered or may have collision, persistence, initialization or ownership
+issues. Next gate is a controlled fresh WTO Terminal entry using the
+Process-Monitor-verified active installation, gameplay screenshot, exit,
+and original-map restore. No general actor duplication should be exposed
+in Godot until this succeeds.
+
+
+## First user-reported in-game result: duplicated table visible (2026-11-02)
+
+The user launched the modified retail DX2 WTO Terminal map and supplied a
+gameplay screenshot, saying **"here it is!"**. The scene visibly contains
+two large round high-tech tables in the PEQUOD'S seating area, including
+a foreground table consistent with the extra exported
+`FO_table_hitech3` / `StaticMeshActor__1409` from the experimental
+one-actor clone. Other furniture and NPCs are still rendered.
+
+**Evidence tier:** user-reported and screenshot-supported **successful
+visual placement of an additional StaticMeshActor** in a loaded map.
+The file produced offline had already passed exact export-table and Level
+actor-list reparse/byte-preservation checks. The screenshot alone does
+not independently identify the running GMP SHA or prove collision,
+object interaction, save/reload persistence, physics or long-session
+stability. Those remain open gates.
+
+**Implications:** the strict clone writer can proceed from binary research
+to *experimental native Godot UI integration*, gated to qualifying
+original source actors. Keep creation of non-StaticMeshActor entities,
+new meshes, BSP, navigation or GameSys references disabled. Before
+exposing general use, validate physical collision, level re-entry,
+save/load behavior, and clean original-map restoration, preferably with
+the source and output GMP hashes captured alongside runtime testing.
+Do not redistribute the user's game screenshot or modified proprietary GMP.
+
+
+## Additional runtime observation: duplicated table has player collision (2026-11-02)
+
+Following the screenshot showing the new table, the user reports:
+**"it has the collision n everything / Alex is blocked"**.
+
+This is direct user-reported gameplay evidence that player character
+Alex is physically blocked by the newly duplicated high-tech table in WTO
+Terminal. Combined with the earlier screenshot, the one-actor test now has
+**visual placement and player collision confirmed by user observation**.
+The original source and created candidate were previously package-reparsed
+and original-export preserving; their runtime candidate checksum was not
+independently captured in the new collision report.
+
+The user has not yet reported save/reload, level transition/re-entry,
+collision response for other actor classes, navigation, physics manipulation
+or scripted behavior. Do not generalize this result to arbitrary GameSys
+archetypes, complex interactive actors, BSP/IBD reconstruction or native
+spawning in all maps. The next practical validation is a fresh level
+re-entry and save/load test, followed by opt-in gated Godot Duplicate UI
+integration for eligible existing StaticMeshActor sources.

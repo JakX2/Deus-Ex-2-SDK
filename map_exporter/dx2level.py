@@ -28,6 +28,23 @@ from dx2textures import parse_material,parse_texture,to_png
 # mesh bounds and nearby BSP blocks. Do not extrapolate to other maps or actors.
 CLUB_STAIR_MESHES = frozenset({'1hub_club-stair-12ft', '1hub_penthouseb1_stair1'})
 
+# Source-verified WTO window material: a DXT3 RGBA chain-link glass mask.
+# The original alpha ranges from 0 to 204, and the material also uses
+# env_noise_01. glTF cannot recreate the native cubemap shader, but dropping
+# the alpha makes overlapping window panes fully opaque and hides real props.
+# This is a *preview-only* approximation, not a game asset rewrite.
+TRANSLUCENT_GLASS_DIFFUSES = {
+    'gen_glassunbreakablea01': 'gen_glass-unbreakablej01',
+}
+
+
+def preview_uses_glass_alpha(material_name, diffuse_name):
+    """Restrict alpha blending to independently confirmed DX2 glass pairs."""
+    return (str(material_name).casefold() in TRANSLUCENT_GLASS_DIFFUSES
+            and str(diffuse_name).casefold() ==
+            TRANSLUCENT_GLASS_DIFFUSES[str(material_name).casefold()])
+
+
 
 def preview_roll_sign(map_name, mesh_name, enabled=False):
     """Return -1 only for the two confirmed Seattle Club stair mesh types.
@@ -270,6 +287,19 @@ class Builder:
                 entry['pbrMetallicRoughness']['baseColorTexture']={'index':imageid}
                 self.texture_success.add(name)
                 diagnostic['resolution']='textured_alternate_skin' if original_missing and alternate else 'textured_diffuse'
+                # Native DX2 glass contains source-authored diffuse alpha even
+                # though its material shader also needs a cubemap stage. The
+                # default opaque glTF material hides other meshes behind it.
+                # Use only exact source-verified material/diffuse pairs here,
+                # not every DXT3 texture, and preserve their original alpha.
+                if preview_uses_glass_alpha(md['name'] if md else name, diffuse):
+                    entry['alphaMode']='BLEND'
+                    entry['doubleSided']=True
+                    entry['extras']={**entry.get('extras', {}),
+                        'DX2ShaderApproximation':'DX2 glass diffuse alpha retained; native cubemap unavailable',
+                        'DX2OriginalStages':md['stages'] if md else []}
+                    self.shader_approximations.add(name)
+                    diagnostic['resolution']='translucent_glass_alpha'
                 # Do not globally enable blend merely from texture storage format:
                 # DX2 native material flags determine blending behavior.
             else:self.texture_missing.add(name)

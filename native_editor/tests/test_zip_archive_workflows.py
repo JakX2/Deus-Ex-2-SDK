@@ -54,7 +54,10 @@ class ZipWorkflowTests(unittest.TestCase):
         self.assertIn('func _zip_stage_finished(', script)
         self.assertIn('open_gmp(map_path)', script)
         self.assertIn('["--system", system_path]', script)
-        self.assertIn('chosen_system_path = ""', script)
+        # Direct GMP import must not inherit a stale ZIP-stage System path;
+        # it now discovers a verified retail sibling or explicit folder.
+        self.assertIn('chosen_system_path = _direct_map_system_folder(path)', script)
+        self.assertIn('func _dx2_system_folder_valid(', script)
 
     def test_autodetect_seattle_hub_zip(self):
         with ZipFile(self.club, "w") as z:

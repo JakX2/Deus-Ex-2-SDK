@@ -22,11 +22,14 @@ from dx2_map_exporter import list_levels, choose_bundles, run_export
 from dx2_actor_explorer import actor_records
 from dx2_asset_catalog import catalog_from_paths
 from dx2_archetype_catalog import catalog_for_map
+from dx2_gamesys_inspector_sidecar import build_inspector_sidecar
 from dx2placement import analyze_mesh_placement, summarize_placement, add_world_transform_evidence
 from dx2level import actor_matrix, load_resource_index
 from dx2bundles import parse_mesh
 
-CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.6-actor-skins-v1'
+# Updated preview shader behavior: source-alpha glass needs a fresh GLB,
+# not reuse a cache keyed only by original GMP and IBD hashes.
+CACHE_VERSION = 'DX2Ed-Native-map-cache-v0.2.7-wto-glass-alpha-v1'
 
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
@@ -149,6 +152,42 @@ def enrich_placement_report(actors: list[dict], bundles: list[Path], report: dic
     return changed
 
 
+def ensure_source_gamesys_sidecar(
+    map_path: Path, actor_json: Path, system_path: Path | None, output: Path,
+    *, force: bool = False
+) -> dict:
+    """Optional read-only enhancement. An incomplete audit must not break
+    existing GMP rendering, caches, draft serialization, or Auto Roll.
+    """
+    if system_path is None:
+        return {'status': 'not_requested', 'read_only': True}
+    if output.exists() and not force:
+        try:
+            doc = json.loads(output.read_text(encoding='utf8'))
+            if (doc.get('schema') == 'DX2Ed-gamesys-inspector-sidecar-v1'
+                and doc.get('read_only') is True
+                and doc.get('source_sha256') == sha256(map_path)
+                and doc.get('source_map', '').casefold() == map_path.name.casefold()):
+                return {'status': 'cached', 'read_only': True,
+                        'actors': doc.get('matched_scene_actors', 0),
+                        'archetypes': len(doc.get('archetypes', []))}
+        except (OSError, ValueError, TypeError):
+            pass
+    # The output lives in DX2Ed's private cache, not the retail directory.
+    # On forced imports, remove the older cache-side sidecar only.
+    if output.exists():
+        output.unlink()
+    try:
+        doc = build_inspector_sidecar(map_path, actor_json, system_path, output)
+        return {'status': 'verified', 'read_only': True,
+                'actors': doc['matched_scene_actors'],
+                'archetypes': len(doc['archetypes'])}
+    except (OSError, ValueError, TypeError, IndexError, KeyError) as error:
+        output.unlink(missing_ok=True)
+        return {'status': 'unavailable', 'read_only': True,
+                'reason': str(error)[:300]}
+
+
 def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | None = None,
           system_path: Path | None = None, force: bool = False,
           preview_club_stairs: bool = False, preview_auto_roll: bool = False) -> dict:
@@ -169,6 +208,7 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
     report_json = folder / 'scene.report.json'
     assets_json = folder / 'assets.json'
     archetypes_json = folder / 'archetypes.json'
+    gamesys_inspector_json = folder / 'gamesys_inspector.json'
     manifest_path = folder / 'source_manifest.json'
     if not force and all(p.is_file() for p in (glb, actor_json, assets_json, report_json, manifest_path)):
         try:
@@ -188,6 +228,8 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
                     archetypes_json.write_text(
                         json.dumps(catalog_for_map(actors_doc['actors'], system_path), ensure_ascii=True),
                         encoding='utf8')
+                source_gamesys_status = ensure_source_gamesys_sidecar(
+                    map_path, actor_json, system_path, gamesys_inspector_json)
                 cached_report = json.loads(report_json.read_text(encoding='utf8'))
                 had_audit = isinstance(cached_report.get('placement_actor_details'), list)
                 if enrich_placement_report(actors_doc['actors'], bundles, cached_report):
@@ -198,6 +240,8 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
                         'glb': str(glb), 'actors_json': str(actor_json),
                         'assets_json': str(assets_json),
                         'archetypes_json': str(archetypes_json),
+                        'gamesys_inspector_json': str(gamesys_inspector_json) if gamesys_inspector_json.is_file() else None,
+                        'gamesys_inspector_status': source_gamesys_status,
                         'map': map_path.name, 'actors': len(actors_doc['actors']),
                         'auto_roll': bool(preview_auto_roll),
                         'auto_roll_count': len(cached_report.get('auto_roll_preview_corrections', []))}
@@ -242,6 +286,9 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
         assets_json.write_text(json.dumps(asset_doc, ensure_ascii=True), encoding='utf8')
         archetypes_json.write_text(json.dumps(
             catalog_for_map(actors, system_path), ensure_ascii=True), encoding='utf8')
+        source_gamesys_status = ensure_source_gamesys_sidecar(
+            map_path, actor_json, system_path, gamesys_inspector_json, force=force)
+        report['gamesys_inspector_status'] = source_gamesys_status
         report_json.write_text(json.dumps(report, indent=2), encoding='utf8')
         manifest_path.write_text(json.dumps({'version': CACHE_VERSION, 'key': key,
                                              'sources': source_hashes,
@@ -257,6 +304,8 @@ def build(map_path: Path, output_root: Path, *, manual_bundles: list[Path] | Non
             'glb': str(glb), 'actors_json': str(actor_json),
             'assets_json': str(assets_json),
             'archetypes_json': str(archetypes_json),
+            'gamesys_inspector_json': str(gamesys_inspector_json) if gamesys_inspector_json.is_file() else None,
+            'gamesys_inspector_status': source_gamesys_status,
             'map': map_path.name, 'actors': len(actors),
             'auto_roll': bool(preview_auto_roll),
             'auto_roll_count': len(report.get('auto_roll_preview_corrections', [])),

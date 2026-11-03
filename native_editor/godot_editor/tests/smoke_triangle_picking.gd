@@ -41,6 +41,59 @@ func _run() -> void:
         _fail("Original source/material diagnostics need a readable minimum height")
         return
 
+    # A rejected user-selected native actor must display the actual error,
+    # never the first generic "Traceback" line from a Python exception.
+    var rejected_json := '{"schema":"DX2Ed-experimental-native-prop-duplicate-v1","status":"refused","reason":"Source actor has active native/script state"}'
+    if viewer._native_clone_error_reason(rejected_json) != "Source actor has active native/script state":
+        _fail("Native clone writer JSON refusal did not show original source-state reason")
+        return
+    if viewer._native_clone_error_reason("Traceback (most recent call last):\nValueError: source actor blocked") != "ValueError: source actor blocked":
+        _fail("Native clone fallback should surface the last Python exception line")
+        return
+
+    # A direct .gmp import must discover the original retail System/ folder,
+    # otherwise the read-only GameSys audit and light Boolean path stay hidden.
+    var direct_root := ProjectSettings.globalize_path("user://dx2_system_discovery_smoke")
+    var direct_system := direct_root.path_join("System")
+    var direct_maps := direct_root.path_join("Content/DX2/Maps")
+    if DirAccess.make_dir_recursive_absolute(direct_system) != OK or DirAccess.make_dir_recursive_absolute(direct_maps) != OK:
+        _fail("Could not prepare direct-import System fixture")
+        return
+    for filename in ["Engine.d2u", "DX2Gamesys.d2u"]:
+        var source_fixture := FileAccess.open(direct_system.path_join(filename), FileAccess.WRITE)
+        if source_fixture == null:
+            _fail("Could not create System source fixture")
+            return
+        source_fixture.store_string("synthetic original system source")
+        source_fixture.close()
+    var demo_gmp := direct_maps.path_join("M1_Test.gmp")
+    if viewer._direct_map_system_folder(demo_gmp) != direct_system:
+        _fail("Standard retail map location should discover sibling System folder")
+        return
+    var isolated_dir := direct_root.path_join("Research")
+    DirAccess.make_dir_recursive_absolute(isolated_dir)
+    if viewer._direct_map_system_folder(isolated_dir.path_join("M1_Test.gmp")) != "":
+        _fail("A non-standard map folder must not inherit an unrelated stale System")
+        return
+    viewer._select_direct_system_folder(direct_system)
+    if viewer._direct_map_system_folder(isolated_dir.path_join("M1_Test.gmp")) != direct_system:
+        _fail("Explicitly chosen valid DX2 System folder should support direct GMP")
+        return
+    var previous_direct_system: String = str(viewer.chosen_direct_system_path)
+    viewer._select_direct_system_folder(isolated_dir)
+    if viewer.chosen_direct_system_path != previous_direct_system:
+        _fail("Invalid source folder must not replace verified DX2 System selection")
+        return
+    viewer.chosen_direct_system_path = ""
+    for filename in ["Engine.d2u", "DX2Gamesys.d2u"]:
+        DirAccess.remove_absolute(direct_system.path_join(filename))
+    DirAccess.remove_absolute(direct_system)
+    DirAccess.remove_absolute(direct_maps)
+    DirAccess.remove_absolute(direct_root.path_join("Content/DX2"))
+    DirAccess.remove_absolute(direct_root.path_join("Content"))
+    DirAccess.remove_absolute(isolated_dir)
+    DirAccess.remove_absolute(direct_root)
+
     # Automatic roll correction is reversible at import and never a GMP edit.
     if not viewer.preview_auto_roll:
         _fail("Auto Roll preview should be enabled for new imports")
@@ -60,6 +113,206 @@ func _run() -> void:
     if not shown.contains("Auto Roll: inverted source roll"):
         _fail("Auto Roll candidate must be identifiable in the Inspector")
         return
+
+    # Original AI layer is only a discoverable candidate marker.
+    var ai_fixture := {"name":"D_527__0", "class":"D_527", "export":5,
+        "location":[1,2,3],
+        "game_properties":[{"id":82,"value":"AI"}],
+        "trigger_script_serialized":{"items":[432,424],"interpretation":"index"}}
+    if not viewer._actor_on_original_ai_layer(ai_fixture):
+        _fail("Original source AI layer should be discoverable")
+        return
+    if viewer._actor_on_original_ai_layer({"game_properties":[{"id":82,"value":"Staticmeshes"}]}):
+        _fail("Other editor layers must not be treated as AI/NPC")
+        return
+    viewer.category_filter.select(9)
+    if not viewer._category_visible("Gameplay / other", ai_fixture):
+        _fail("AI actor filter must admit source-marked AI candidate")
+        return
+    viewer.category_filter.select(0)
+    viewer.gameplay_catalog = {
+        "script_definitions": [
+            {"id":"TestLight", "title":"Test Only", "format":"1FFE2FST",
+             "archive_member":"Defs/TestLight.tsd",
+             "actions":["kTAT_LinkedPropertySet"],
+             "conditions":["kTCT_ReceivePropagateMsgLink"]}
+        ]
+    }
+    viewer._refresh_gameplay_script_list()
+    if (viewer.gameplay_visible.size() != 1
+        or viewer.gameplay_list.item_count != 1
+        or not viewer.gameplay_details.text.contains("kTAT_LinkedPropertySet")
+        or not viewer.gameplay_details.text.contains("Not bound to a specific map actor")):
+        _fail("Read-only original TriggerScript browser list/details")
+        return
+    viewer.selected_actor = ai_fixture
+    viewer.focus_selected()
+    var expected_ai_focus: Vector3 = Vector3(1.0, 3.0, 2.0) * float(viewer.NATIVE_CLONE_UNREAL_METRES)
+    if viewer.camera_target.distance_to(expected_ai_focus) > 0.0001:
+        _fail("Original AI-layer candidates without meshes must be focusable from source XYZ")
+        return
+    viewer._inspect_selected_actor_scripts()
+    if (not viewer.gameplay_details.text.contains("432")
+        or not viewer.gameplay_details.text.contains("NOT verified TS_")):
+        _fail("Actor raw script indices must remain explicitly unbound")
+        return
+    viewer.selected_actor = {}
+    viewer.gameplay_catalog.clear()
+    viewer._refresh_gameplay_script_list()
+
+    # First-party source-backed environment actors are not interchangeable.
+    # DX2 ZoneProperties own sound schema strings, while Emitter is a particle
+    # class and Light carries LightColor/LightShape GameSys structs.
+    var light_fixture := {
+        "name":"Light__7","class":"Light","export":21,"location":[40,20,300],
+        "game_properties":[
+            {"id":116,"value":{"LightBrightness":24,"LightHue":150}},
+            {"id":118,"value":{"LightRadius":48}},
+            {"id":1586,"value":0.1}]
+    }
+    var zone_fixture := {
+        "name":"ZoneProperties__3","class":"ZoneProperties","export":22,
+        "location":[64,80,200],"game_properties":[
+            {"id":1287,"value":"SeattleWTOTerminal"},
+            {"id":1286,"value":"HubWTO_SmallRooms"},
+            {"id":1467,"value":"HubWTO_RandomInAdj"}]
+    }
+    var second_zone_fixture := {
+        "name":"ZoneProperties__4","class":"ZoneProperties","export":24,
+        "location":[80,80,200],"game_properties":[
+            {"id":1287,"value":"SeattleWTOTerminal"},
+            {"id":1286,"value":"HubWTO_LargeRooms"},
+            {"id":1467,"value":"HubWTO_FlybyInside"}]
+    }
+    var particle_fixture := {
+        "name":"Emitter__0","class":"Emitter","export":23,
+        "location":[0,0,64],"game_properties":[]
+    }
+    viewer.actors = [light_fixture, zone_fixture, particle_fixture, second_zone_fixture]
+    viewer.actors_by_name["Light__7"] = light_fixture
+    viewer._rebuild_environment_light_markers()
+    if viewer.environment_light_markers.size() != 1:
+        _fail("Read-only Light source marker should exist for original positioned Light")
+        return
+    var original_light_position: Vector3 = Vector3(40,300,20) * float(viewer.NATIVE_CLONE_UNREAL_METRES)
+    var original_light_marker: MeshInstance3D = viewer.environment_light_markers["Light__7"]
+    if (not is_instance_valid(original_light_marker)
+        or original_light_marker.get_parent() != viewer.environment_light_markers_root
+        or not original_light_marker.get_meta("editor_only", false)
+        or original_light_marker.global_position.distance_to(original_light_position) > 0.00001
+        or viewer.all_mesh_instances.has(original_light_marker)):
+        _fail("Source light handle must be positioned from Unreal XYZ and excluded from native meshes")
+        return
+    viewer._refresh_environment_entities()
+    if viewer.environment_list.item_count != 4 or viewer.environment_visible.size() != 4:
+        _fail("Environment must list real lights, ambient zones and particle emitters separately")
+        return
+    viewer.environment_filter.text = "HubWTO_SmallRooms"
+    viewer._refresh_environment_entities()
+    if (viewer.environment_visible.size() != 1
+        or str(viewer.environment_visible[0]["class"]) != "ZoneProperties"):
+        _fail("Environment search must include original ambient sound schema values")
+        return
+    viewer.environment_filter.text = ""
+    viewer._refresh_environment_entities()
+    viewer._environment_entity_selected(0)
+    if (not viewer.environment_details.text.contains("LightColor (GameSys 116)")
+        or not viewer.environment_details.text.contains("LightShape (GameSys 118)")
+        or str(viewer.selected_actor.get("name", "")) != "Light__7"):
+        _fail("Native light actor inspector should display first-party DX2 property names")
+        return
+    viewer.focus_selected()
+    if (not viewer.environment_light_radius.visible
+        or viewer.environment_light_radius.mesh == null
+        or viewer.environment_light_radius.mesh.surface_get_primitive_type(0) != Mesh.PRIMITIVE_LINES
+        or not viewer.gizmo_root.visible
+        or viewer.gizmo_handles.size() != 3):
+        _fail("Selecting original Light must show Unity-style radius wire sphere and three-axis gizmo")
+        return
+    var marker_pixels: Vector2 = viewer.camera.unproject_position(original_light_marker.global_position)
+    if viewer._pick_environment_light_marker(marker_pixels) != "Light__7":
+        _fail("Source Light should be selectable by clicking its projected screen marker")
+        return
+    viewer._set_environment_light_markers_visible(false)
+    if (viewer._pick_environment_light_marker(marker_pixels) != ""
+        or viewer.environment_light_radius.visible
+        or viewer.gizmo_root.visible):
+        _fail("Hidden Light markers must not be viewport-pickable or show edit gizmos")
+        return
+    viewer._set_environment_light_markers_visible(true)
+    var preview_offset := original_light_position + Vector3(2.0, 0.0, 0.0)
+    viewer._set_environment_light_preview_position(light_fixture, preview_offset)
+    if (not viewer.environment_light_positions.has("Light__7")
+        or original_light_marker.global_position.distance_to(preview_offset) > 0.00001
+        or viewer.environment_light_radius.global_position.distance_to(preview_offset) > 0.00001
+        or viewer.gizmo_root.global_position.distance_to(preview_offset) > 0.00001
+        or viewer.environment_light_reset_button.disabled
+        or light_fixture["location"] != [40,20,300]
+        or not viewer.draft_prop_copies.is_empty()
+        or not viewer.property_overrides.is_empty()):
+        _fail("Dragging a light proxy must move gizmo + radius only, never source actor or GMP drafts")
+        return
+    viewer._reset_selected_environment_light_position()
+    if (not viewer.environment_light_positions.is_empty()
+        or original_light_marker.global_position.distance_to(original_light_position) > 0.00001
+        or not viewer.environment_light_reset_button.disabled):
+        _fail("Light visual position reset must restore original actor coordinates without GMP changes")
+        return
+    viewer._preview_selected_light_at_target()
+    if viewer.environment_light_previews.size() != 1:
+        _fail("Source Light should create one visual-only Godot preview without native actor")
+        return
+    var light_preview: OmniLight3D = viewer.environment_light_previews[0]
+    if (not is_instance_valid(light_preview)
+        or not light_preview.get_meta("editor_only", false)
+        or str(light_preview.get_meta("source_actor", "")) != "Light__7"
+        or light_preview.get_parent() != viewer.world_root
+        or light_preview.global_position.distance_to(viewer.camera_target) > 0.00001
+        or not viewer.draft_prop_copies.is_empty()
+        or not viewer.property_overrides.is_empty()
+        or viewer.environment_light_clear_button.disabled):
+        _fail("Editor-only Light preview must stay out of imported GLB and GMP draft state")
+        return
+    viewer._clear_environment_light_previews()
+    if (not viewer.environment_light_previews.is_empty()
+        or not viewer.environment_light_clear_button.disabled):
+        _fail("Light preview clear should be reversible and remove editor-only lights")
+        return
+    var light_focus: Vector3 = Vector3(40,300,20) * float(viewer.NATIVE_CLONE_UNREAL_METRES)
+    if viewer.camera_target.distance_to(light_focus) > 0.0001:
+        _fail("Native light entity without rendered mesh should focus source XYZ")
+        return
+    viewer._environment_entity_selected(1)
+    if (not viewer.environment_details.text.contains("HubWTO_RandomInAdj")
+        or not viewer.environment_details.text.contains("StreamSchema1 (GameSys 1287)")
+        or not viewer.environment_details.text.contains("NonStreamSchema1 (GameSys 1467)")):
+        _fail("Original ZoneProperties should expose exact source sound schema strings")
+        return
+    var sound_plan: Dictionary = viewer._environment_sound_plan()
+    if (viewer.environment_sound_field.disabled
+        or viewer.environment_sound_schema.disabled
+        or viewer.environment_sound_button.disabled
+        or sound_plan.is_empty()
+        or not int(sound_plan.get("property_id", -1)) in [1286,1467]
+        or sound_plan.get("expect") == sound_plan.get("replace")
+        or sound_plan.get("actor") != "ZoneProperties__3"):
+        _fail("Experimental sound zone Save As should only select original cross-verified schema values")
+        return
+    viewer._environment_entity_selected(2)
+    if not viewer._environment_sound_plan().is_empty() or not viewer.environment_sound_button.disabled:
+        _fail("Particle emitters must never allow native sound schema editing")
+        return
+    if not viewer.environment_details.text.to_lower().contains("not sound"):
+        _fail("Particle Emitter must never be mislabeled as an audio sound entity")
+        return
+    if not viewer.draft_prop_copies.is_empty() or not viewer.property_overrides.is_empty():
+        _fail("Read-only Environment browser must not stage map edits")
+        return
+    viewer._clear_environment_light_markers()
+    viewer.actors = []
+    viewer.selected_actor = {}
+    viewer.actors_by_name.erase("Light__7")
+    viewer._refresh_environment_entities()
 
     # Editor categories are class hints, not a substitute for decoded physics.
     if viewer._actor_category({"class":"StaticMeshActor"}) != "Static mesh":
@@ -315,25 +568,84 @@ func _run() -> void:
     # Catalog UI includes resources not already placed in the scene.
     viewer.asset_catalog = {"schema":"DX2Ed-asset-catalog-v1", "assets":[
         {"name":"SyntheticStair","kind":"staticmesh","bundle":"fictional.ibd","resource_index":1,"bytes":128},
-        {"name":"UnusedMesh","kind":"staticmesh","bundle":"fictional.ibd","resource_index":2,"bytes":64}]}
+        {"name":"UnusedMesh","kind":"staticmesh","bundle":"fictional.ibd","resource_index":2,"bytes":64},
+        {"name":"OriginalDemoCube","kind":"staticmesh","bundle":"fixture.ibd","resource_index":3,"bytes":256}]}
     viewer._refresh_asset_list()
-    if viewer.asset_list.item_count != 2:
+    if viewer.asset_list.item_count != 3:
         _fail("T3Ed-like asset browser should list both placed and unplaced resources")
         return
     viewer._asset_selected(1)
     if not viewer.asset_details.text.contains("UnusedMesh"):
         _fail("Asset Browser should show source provenance and resource metadata")
         return
-    if viewer._placed_instances_for_asset("UnusedMesh").size() != 0:
-        _fail("An unplaced resource must not be confused with an actor")
+    if (viewer._placed_instances_for_asset("UnusedMesh").size() != 0
+        or not viewer._native_asset_source_for("UnusedMesh").is_empty()
+        or not viewer.native_asset_place_button.disabled):
+        _fail("Unplaced IBD mesh cannot be misrepresented as a native placeable actor")
         return
     viewer._asset_selected(0)
     if viewer._placed_instances_for_asset("SyntheticStair").size() != 0:
-        _fail("Fixture uses only TestMesh name; unexpected match")
+        _fail("Fixture source name does not match scene; unexpected match")
+        return
+    viewer._asset_selected(2)
+    var linked_source: Dictionary = viewer._native_asset_source_for("OriginalDemoCube")
+    if (str(linked_source.get("name", "")) != "StaticMeshActor__1"
+        or int(linked_source.get("export", -1)) != 1
+        or viewer.native_asset_place_button.disabled
+        or not viewer.asset_details.text.contains("Native reuse source: StaticMeshActor__1")):
+        _fail("Asset native placement must choose existing original actor by matching IBD mesh")
+        return
+    var base_pose: Transform3D = viewer.original_mesh_transforms["StaticMeshActor__1"]
+    var camera_pose: Transform3D = viewer._native_asset_target_pose(
+        "StaticMeshActor__1", base_pose.origin + Vector3(0.75, 0.0, 0.0))
+    if (camera_pose.origin.distance_to(base_pose.origin + Vector3(0.75, 0.0, 0.0)) > 0.00001
+        or not camera_pose.basis.is_equal_approx(base_pose.basis)):
+        _fail("Asset native placement must retain original actor rotation and valid camera placement")
+        return
+    var far_pose: Transform3D = viewer._native_asset_target_pose(
+        "StaticMeshActor__1", base_pose.origin + Vector3(1000, 0, 0))
+    if (far_pose.origin.distance_to(base_pose.origin + Vector3(1, 0, 0)) > 0.00001
+        or not far_pose.basis.is_equal_approx(base_pose.basis)):
+        _fail("Out-of-range native placement must keep source basis and stay within supported translation")
+        return
+    var none_pose: Transform3D = viewer._native_asset_target_pose("StaticMeshActor__1", base_pose.origin)
+    if none_pose.origin == base_pose.origin:
+        _fail("Native placement cannot create a zero-delta clone at source location")
         return
     var original: MeshInstance3D = viewer.selected_mesh
     if not is_instance_valid(original):
         _fail("demo actor has no mesh")
+        return
+    # Source-only diagnostic for WTO frame visibility: do NOT edit original
+    # GLB material resources, any game files, or the draft transform history.
+    var other_geom: MeshInstance3D = viewer.meshes_by_actor["StaticMeshActor__2"]
+    var other_was_visible := other_geom.visible
+    var previous_override: Material = original.material_override
+    var original_pos: Vector3 = original.global_position
+    viewer._toggle_geometry_isolation()
+    if (viewer.geometry_isolation_visibility.is_empty()
+        or not original.visible or other_geom.visible
+        or viewer.geometry_isolation_button.text != "Restore visibility"):
+        _fail("Isolate selected must hide another mesh without modifying source geometry")
+        return
+    viewer._toggle_geometry_all_faces()
+    if (not is_instance_valid(viewer.geometry_all_faces_target)
+        or not original.material_override is StandardMaterial3D
+        or original.material_override.cull_mode != BaseMaterial3D.CULL_DISABLED
+        or viewer.geometry_all_faces_button.text != "Restore materials"):
+        _fail("Inspect both faces must apply per-instance reversible no-cull preview")
+        return
+    if other_geom.material_override != null:
+        _fail("Inspect both faces must not modify the other actor material")
+        return
+    viewer._toggle_geometry_all_faces()
+    viewer._toggle_geometry_isolation()
+    if (original.material_override != previous_override or
+        other_geom.visible != other_was_visible or
+        not viewer.geometry_isolation_visibility.is_empty() or
+        is_instance_valid(viewer.geometry_all_faces_target) or
+        original.global_position != original_pos):
+        _fail("Restoring geometry diagnostics must preserve materials, visibility and pose")
         return
     var before := original.global_position
     # Source rotator 16384 = 90 degrees. Axis remapping must match exporter.
@@ -432,8 +744,69 @@ func _run() -> void:
         _fail("Redo should recreate the duplicate under its original name")
         return
     var preview: MeshInstance3D = viewer.selected_mesh
+    # Preview duplication can become ONE native actor only after a pure
+    # translation; no mutations to the original pose or unrelated drafts.
+    if not viewer._native_clone_draft_plan().is_empty():
+        _fail("An unmoved duplicate must not be writable as a native actor")
+        return
+    viewer._move_selected_prop(Vector3.RIGHT)
+    var native_plan: Dictionary = viewer._native_clone_draft_plan()
+    if native_plan.is_empty():
+        _fail("Moved original StaticMeshActor preview should pass native clone gate")
+        return
+    if (native_plan.get("actor") != "StaticMeshActor__1"
+        or int(native_plan.get("export", -1)) != int(viewer.actors_by_name["StaticMeshActor__1"]["export"])
+        or abs(float(native_plan["delta"][0]) - 0.25 / viewer.NATIVE_CLONE_UNREAL_METRES) > 0.01
+        or abs(float(native_plan["delta"][1])) > 0.01
+        or abs(float(native_plan["delta"][2])) > 0.01):
+        _fail("Native clone must use the original export and transform Godot X to Unreal X")
+        return
+    # Multi Duplicate must collect 2 different original sources using
+    # the same original-transform gate and UE/Godot axis conversion.
+    var synthetic_copy = viewer._new_draft_copy(
+        "StaticMeshActor__2", "DraftProp_998",
+        viewer.original_mesh_transforms["StaticMeshActor__2"])
+    if not is_instance_valid(synthetic_copy):
+        _fail("Could not create second synthetic preview duplicate")
+        return
+    synthetic_copy.global_position += Vector3(0.0, 0.0, 0.5)
+    var multiple: Array = viewer._native_multi_clone_draft_plan()
+    if (multiple.size() != 2 or multiple[0]["actor"] != "StaticMeshActor__1"
+        or multiple[1]["actor"] != "StaticMeshActor__2"
+        or abs(float(multiple[1]["delta"][1]) - 0.5 / viewer.NATIVE_CLONE_UNREAL_METRES) > 0.01):
+        _fail("Multi Duplicate plan must retain both unique source actors and UE Y translation")
+        return
+    synthetic_copy.rotate_y(0.25)
+    if not viewer._native_multi_clone_draft_plan().is_empty():
+        _fail("Multi Duplicate must reject an unverified rotated prop")
+        return
+    viewer.all_mesh_instances.erase(synthetic_copy)
+    viewer.draft_prop_copies.erase("DraftProp_998")
+    viewer.draft_prop_sources.erase("DraftProp_998")
+    synthetic_copy.free()
+    if not viewer._native_multi_clone_draft_plan().is_empty():
+        _fail("Multi Duplicate must reject a single copy")
+        return
     viewer._move_selected_prop(Vector3.UP)
+    native_plan = viewer._native_clone_draft_plan()
+    if (native_plan.is_empty()
+        or abs(float(native_plan["delta"][2]) - 0.25 / viewer.NATIVE_CLONE_UNREAL_METRES) > 0.01):
+        _fail("Native clone must translate Godot Y to Unreal Z")
+        return
+    viewer.property_overrides["StaticMeshActor__1"] = {"1": 2}
+    if not viewer._native_clone_draft_plan().is_empty():
+        _fail("Native clone may not silently ignore unrelated draft property edits")
+        return
+    viewer.property_overrides.clear()
+    preview.scale *= 1.1
+    if not viewer._native_clone_draft_plan().is_empty():
+        _fail("Native clone may not serialize unverified rotation/scale changes")
+        return
+    preview.scale /= 1.1
     viewer._rotate_selected_prop(15.0)
+    if not viewer._native_clone_draft_plan().is_empty():
+        _fail("Native clone must reject preview rotation")
+        return
     viewer._save_prop_draft()
     if not FileAccess.file_exists(viewer._draft_file_path()):
         _fail("draft sidecar was not saved")
@@ -676,6 +1049,143 @@ func _run() -> void:
     if not diagnosis.contains("Exported skin: Tan Stones") or not diagnosis.contains("Skin material: SyntheticTan | missing_diffuse_texture"):
         _fail("skin diagnostics should show exact missing texture status")
         return
+
+    # A separate original GameSys source sidecar enriches the Inspector.
+    # Its values NEVER become draft edits, GameSys native writes or spawn actions.
+    if viewer.source_gamesys_panel == null or viewer.source_archetype_list == null:
+        _fail("Source GameSys inspector and recovered archetype tab must exist")
+        return
+    viewer._clear_selection()
+    viewer.current_source_map_name = "M1_Fixture.gmp"
+    viewer.source_gamesys_sha256 = "a".repeat(64)
+    var original_gamesys_fixture := {
+        "schema": "DX2Ed-gamesys-inspector-sidecar-v1",
+        "read_only": true,
+        "native_game_editing_enabled": false,
+        "source_map": "M1_Fixture.gmp",
+        "source_sha256": "a".repeat(64),
+        "actors": {str(source_export): {
+            "name": "StaticMeshActor__1",
+            "export": source_export,
+            "properties": [{
+                "id": 92, "name": "TriggerScripts",
+                "declared_type": "array<name>", "declared_in": "Engine.Actor",
+                "source_value": {"items": [71, 72], "interpretation": "index"},
+                "encoding": "array", "encoded_id": 67108956,
+                "payload_offset": 432, "payload_bytes": 3,
+                "source_payload_sha256": "deadbeef"
+            }]
+        }},
+        "archetypes": [{
+            "class": "D_1179", "display_name": "BotBasicVuln",
+            "parent": "D_1198", "source_ancestry": ["D_1179", "D_1198"],
+            "inheritance_complete": true, "recovered_dx2_layout": true,
+            "local_property_count": 1,
+            "local_defaults": [{
+                "property_id": 959, "source_declared_name": "VulnerabilityArray",
+                "source_declared_type": "array<struct>", "element_count": 29,
+                "elements": [{"element_index": 1,
+                    "typed_fields": [{"name": "Vulnerability", "value": 1.0}]}]
+            }]
+        }]
+    }
+    var gamesys_smoke_path := ProjectSettings.globalize_path("user://gamesys_sidecar_smoke.json")
+    var gamesys_smoke_file := FileAccess.open(gamesys_smoke_path, FileAccess.WRITE)
+    if gamesys_smoke_file == null:
+        _fail("Unable to write private GameSys smoke fixture")
+        return
+    gamesys_smoke_file.store_string(JSON.stringify(original_gamesys_fixture))
+    gamesys_smoke_file.close()
+    viewer._load_source_gamesys_catalog(gamesys_smoke_path)
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    if not viewer.source_gamesys_panel.visible or viewer.source_gamesys_list.item_count != 1:
+        _fail("Verified GameSys actor fields did not reach the read-only Inspector")
+        return
+    viewer._source_gamesys_selected(0)
+    if not viewer.source_gamesys_details.text.contains("array<name>") or not viewer.source_gamesys_details.text.contains("Payload offset: 0x1b0"):
+        _fail("GameSys Inspector did not show type and original native byte offset")
+        return
+    if viewer.source_archetype_list.item_count != 1:
+        _fail("Verified original DX2 archetype did not reach source browser")
+        return
+    viewer._source_archetype_selected(0)
+    if not viewer.source_archetype_details.text.contains("BotBasicVuln") or not viewer.source_archetype_details.text.contains("Vulnerability"):
+        _fail("Recovered grouped vulnerability fields are missing from GameSys tab")
+        return
+    if viewer._capture_edit_state()["property_edits"] != {}:
+        _fail("Reading native GameSys fields must never create draft property edits")
+        return
+    # The only conditional GameSys writer affordance is a source-verified
+    # authored Boolean #1487. Scripts, other types and runtime bits stay locked.
+    if viewer.source_gamesys_light_button == null or viewer.source_gamesys_light_button.visible:
+        _fail("Non-Boolean GameSys source may not offer native light Save As")
+        return
+    var light_record := {
+        "id": 1487, "name": "bLightOn",
+        "declared_type": "bool", "declared_in": "Engine.Actor",
+        "source_value": true, "encoding": "bool",
+        "encoded_id": (128 << 16) | 1487,
+        "payload_offset": 470, "payload_bytes": 1,
+        "source_payload_sha256": "aa".repeat(32)
+    }
+    original_gamesys_fixture["actors"][str(source_export)]["properties"].append(light_record)
+    var new_file := FileAccess.open(gamesys_smoke_path, FileAccess.WRITE)
+    new_file.store_string(JSON.stringify(original_gamesys_fixture))
+    new_file.close()
+    viewer._load_source_gamesys_catalog(gamesys_smoke_path)
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    viewer._source_gamesys_selected(1)
+    var light_context: Dictionary = viewer._selected_source_light_bool_context()
+    if (not viewer.source_gamesys_light_button.visible
+        or int(light_context.get("property_id", -1)) != 1487
+        or light_context.get("expected") != true
+        or str(light_context.get("actor", "")) != "StaticMeshActor__1"
+        or viewer._capture_edit_state()["property_edits"] != {}):
+        _fail("Verified authored bLightOn must allow only an isolated test; no draft edits")
+        return
+    viewer._source_gamesys_selected(0)
+    if viewer.source_gamesys_light_button.visible:
+        _fail("Switching from bLightOn to TriggerScripts must hide the light writer")
+        return
+    viewer._source_gamesys_selected(1)
+    original_gamesys_fixture["actors"][str(source_export)]["properties"][1]["encoded_id"] |= (0x4000 << 16)
+    var runtime_file := FileAccess.open(gamesys_smoke_path, FileAccess.WRITE)
+    runtime_file.store_string(JSON.stringify(original_gamesys_fixture))
+    runtime_file.close()
+    viewer._load_source_gamesys_catalog(gamesys_smoke_path)
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    viewer._source_gamesys_selected(1)
+    if viewer.source_gamesys_light_button.visible or not viewer._selected_source_light_bool_context().is_empty():
+        _fail("Runtime-flagged bLightOn must never expose native Save As")
+        return
+    original_gamesys_fixture["actors"][str(source_export)]["properties"][1]["encoded_id"] = (128 << 16) | 1487
+    original_gamesys_fixture["actors"][str(source_export)]["properties"][1]["encoding"] = "byte"
+    var byte_file := FileAccess.open(gamesys_smoke_path, FileAccess.WRITE)
+    byte_file.store_string(JSON.stringify(original_gamesys_fixture))
+    byte_file.close()
+    viewer._load_source_gamesys_catalog(gamesys_smoke_path)
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    viewer._source_gamesys_selected(1)
+    if viewer.source_gamesys_light_button.visible:
+        _fail("One-byte non-Boolean GameSys fields must not offer bLightOn editing")
+        return
+    original_gamesys_fixture["actors"][str(source_export)]["properties"][1]["encoding"] = "bool"
+    original_gamesys_fixture["actors"][str(source_export)]["properties"][1]["source_value"] = 1
+    var int_file := FileAccess.open(gamesys_smoke_path, FileAccess.WRITE)
+    int_file.store_string(JSON.stringify(original_gamesys_fixture))
+    int_file.close()
+    viewer._load_source_gamesys_catalog(gamesys_smoke_path)
+    viewer.select_actor(viewer.actors_by_name["StaticMeshActor__1"])
+    viewer._source_gamesys_selected(1)
+    if viewer.source_gamesys_light_button.visible:
+        _fail("Non-Boolean source values must never be coerced into light edits")
+        return
+    viewer.source_gamesys_sha256 = "b".repeat(64)
+    viewer._load_source_gamesys_catalog(gamesys_smoke_path)
+    if not viewer.source_gamesys_catalog.is_empty() or viewer.source_gamesys_panel.visible:
+        _fail("Mismatched source SHA must hide stale GameSys Inspector data")
+        return
+    DirAccess.remove_absolute(gamesys_smoke_path)
 
     print("DX2Ed triangle picking smoke: PASS (faces, transforms, sparse AABB, actor schema)")
     quit(0)

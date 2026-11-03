@@ -26,8 +26,28 @@ var archetype_filter: LineEdit
 var archetype_list: ItemList
 var archetype_details: Label
 var selected_archetype: Dictionary = {}
+# Optional source-hash-bound original DX2 GameSys research sidecar.
+# Kept separate from class templates, draft properties and native Save As.
+var source_gamesys_catalog: Dictionary = {}
+var source_gamesys_sha256 := ""
+var source_gamesys_panel: VBoxContainer
+var source_gamesys_filter: LineEdit
+var source_gamesys_list: ItemList
+var source_gamesys_details: Label
+var source_gamesys_visible: Array = []
+var source_gamesys_current_export := -1
+var source_gamesys_selected_field: Dictionary = {}
+var source_gamesys_light_button: Button
+var source_gamesys_light_dialog: FileDialog
+var source_gamesys_light_confirmation: ConfirmationDialog
+var source_gamesys_light_pending: Dictionary = {}
+var source_archetype_filter: LineEdit
+var source_archetype_list: ItemList
+var source_archetype_details: TextEdit
+var source_archetype_visible: Array = []
 var draft_template_provenance: Dictionary = {} # draft name -> qualified class + template export
 var asset_mesh_resources: Dictionary = {}
+var native_asset_place_button: Button
 var asset_thread: Thread = null
 var asset_pending_name := ""
 var asset_pending_folder := ""
@@ -56,6 +76,12 @@ var glb_dialog: FileDialog
 var json_dialog: FileDialog
 var gmp_dialog: FileDialog
 var gmp_save_as_dialog: FileDialog
+var native_clone_dialog: FileDialog
+var native_clone_confirmation: ConfirmationDialog
+var native_clone_pending: Dictionary = {}
+var native_multi_dialog: FileDialog
+var native_multi_confirmation: ConfirmationDialog
+var native_multi_pending: Dictionary = {}
 var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
 var native_export_target := ""
@@ -64,6 +90,8 @@ var bundle_dialog: FileDialog
 var club_zip_dialog: FileDialog
 var shared_zip_dialog: FileDialog
 var system_zip_dialog: FileDialog
+var direct_system_dialog: FileDialog
+var chosen_direct_system_path := ""
 var chosen_ibd: String = ""
 var chosen_shared_zip: String = ""
 var chosen_system_zip: String = ""
@@ -71,6 +99,43 @@ var chosen_system_path: String = ""
 var preview_club_stairs := false
 var preview_auto_roll := true # GLB visualization hypothesis; never retail GMP
 var last_gmp_path: String = ""
+# Original source-only TriggerScript/AI browser; native spawn disabled.
+var gameplay_zip_dialog: FileDialog
+var gameplay_thread: Thread = null
+var gameplay_catalog: Dictionary = {}
+var gameplay_filter: LineEdit
+var gameplay_list: ItemList
+var gameplay_details: TextEdit
+var gameplay_visible: Array = []
+# Original per-map light actors, ambient sound zones and particle emitters.
+# This tab never creates lights, changes sound schemas or writes game files.
+var environment_filter: LineEdit
+var environment_list: ItemList
+var environment_details: TextEdit
+var environment_visible: Array = []
+# Explicitly opt-in isolated native editing for existing ZoneProperties
+# schema strings. Never a new point sound actor or a direct game-folder write.
+var environment_sound_field: OptionButton
+var environment_sound_schema: OptionButton
+var environment_sound_button: Button
+var environment_sound_dialog: FileDialog
+var environment_sound_confirmation: ConfirmationDialog
+var environment_sound_pending: Dictionary = {}
+var environment_light_audit_button: Button
+var environment_light_preview_button: Button
+var environment_light_clear_button: Button
+var environment_light_audit_thread: Thread = null
+var environment_light_previews: Array[OmniLight3D] = []
+# Unity-style source Light selection is editor-only. Never a native
+# actor transform, prop draft, or input to any GMP writer.
+var environment_light_markers_root: Node3D
+var environment_light_markers: Dictionary = {} # source actor name -> MeshInstance3D
+var environment_light_positions: Dictionary = {} # changed visual-only positions
+var environment_light_radius: MeshInstance3D
+var environment_light_show_markers: CheckBox
+var environment_light_reset_button: Button
+var environment_light_gizmo_drag := false
+var loaded_actors_json_path: String = ""
 var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
 var draft_prop_copies: Dictionary = {}
@@ -99,6 +164,14 @@ var visible_actors: Array = []
 var actors_by_name: Dictionary = {}
 var meshes_by_actor: Dictionary = {}
 var all_mesh_instances: Array[MeshInstance3D] = []
+# Read-only preview diagnostics: never mutate source GMP, shared GLB mesh or
+# material resources. Stored per-node state is restored on toggle/import.
+var geometry_isolation_visibility: Dictionary = {}
+var geometry_isolation_target: MeshInstance3D
+var geometry_all_faces_target: MeshInstance3D
+var geometry_all_faces_previous_override: Material
+var geometry_isolation_button: Button
+var geometry_all_faces_button: Button
 # Faces are shared by instances of the same imported mesh; cache per mesh resource.
 var pick_faces_by_mesh: Dictionary = {}
 var selected_diagnostic: String = ""
@@ -146,6 +219,12 @@ func _exit_tree() -> void:
     if native_export_thread != null:
         native_export_thread.wait_to_finish()
         native_export_thread = null
+    if gameplay_thread != null:
+        gameplay_thread.wait_to_finish()
+        gameplay_thread = null
+    if environment_light_audit_thread != null:
+        environment_light_audit_thread.wait_to_finish()
+        environment_light_audit_thread = null
 
 
 func _ready() -> void:
@@ -196,6 +275,11 @@ func _make_ui() -> void:
     save_gmp_btn.tooltip_text = "Translation-only existing static mesh actors; separate folder; not game-tested"
     save_gmp_btn.pressed.connect(_open_native_save_as_dialog)
     toolbar.add_child(save_gmp_btn)
+    var direct_system_btn := Button.new()
+    direct_system_btn.text = "DX2 System folder..."
+    direct_system_btn.tooltip_text = "Optional original System folder for direct .gmp imports. Unlocks source-verified read-only GameSys data, not general editing."
+    direct_system_btn.pressed.connect(func(): direct_system_dialog.popup_centered_ratio(0.72))
+    toolbar.add_child(direct_system_btn)
     var load_btn := Button.new()
     load_btn.text = "Open exported GLB"
     load_btn.pressed.connect(func(): glb_dialog.popup_centered_ratio(0.72))
@@ -275,6 +359,16 @@ func _make_ui() -> void:
     duplicate_button.tooltip_text = "Clone selected rendered prop in the viewer. Does not write the GMP."
     duplicate_button.pressed.connect(_duplicate_selected_prop)
     prop_bar.add_child(duplicate_button)
+    var native_clone_button := Button.new()
+    native_clone_button.text = "Experimental native Duplicate Save As..."
+    native_clone_button.tooltip_text = "Export exactly ONE translated duplicate of an original StaticMeshActor. Isolated GMP only; game folder writes refused."
+    native_clone_button.pressed.connect(_open_native_clone_dialog)
+    prop_bar.add_child(native_clone_button)
+    var native_multi_button := Button.new()
+    native_multi_button.text = "Experimental Multi Duplicate Save As..."
+    native_multi_button.tooltip_text = "Save 2 to 8 translated preview StaticMeshActor copies in ONE isolated GMP. No game installation writes."
+    native_multi_button.pressed.connect(_open_native_multi_dialog)
+    prop_bar.add_child(native_multi_button)
     prop_edit_step = SpinBox.new()
     prop_edit_step.min_value = 0.05
     prop_edit_step.max_value = 10.0
@@ -346,7 +440,7 @@ func _make_ui() -> void:
     for choice in [
         "All actors", "Static meshes", "Brushes", "Lights",
         "Volumes / triggers", "Item candidates", "Physics candidates",
-        "Gameplay / other", "Review mesh placement"
+        "Gameplay / other", "Review mesh placement", "Original AI layer (NPC candidates)"
     ]:
         category_filter.add_item(choice)
     category_filter.selected = 0
@@ -391,6 +485,15 @@ func _make_ui() -> void:
     place_resource.tooltip_text = "Place a cataloged static mesh as an editable draft; does not create native DX2 actors"
     place_resource.pressed.connect(_place_selected_asset)
     assets_tab.add_child(place_resource)
+    native_asset_place_button = Button.new()
+    native_asset_place_button.text = "Place native copy (placed mesh)"
+    native_asset_place_button.tooltip_text = (
+        "Creates a saveable static prop draft using an original actor of the selected IBD mesh. "
+        + "Only for resources already placed as valid StaticMeshActor in THIS map; source preflight required."
+    )
+    native_asset_place_button.disabled = true
+    native_asset_place_button.pressed.connect(_place_asset_as_native_copy)
+    assets_tab.add_child(native_asset_place_button)
     var focus_resource := Button.new()
     focus_resource.text = "Find placed instance"
     focus_resource.pressed.connect(_focus_asset_instance)
@@ -424,6 +527,142 @@ func _make_ui() -> void:
     place_template.tooltip_text = "Visual copy of an existing actor, not native Gamesys spawning"
     place_template.pressed.connect(_place_archetype_template)
     class_tab.add_child(place_template)
+    var gamesys_tab := VBoxContainer.new()
+    gamesys_tab.name = "GameSys"
+    left_tabs.add_child(gamesys_tab)
+    var gamesys_tab_header := Label.new()
+    gamesys_tab_header.text = "Original DX2Gamesys archetypes | Read-only"
+    gamesys_tab.add_child(gamesys_tab_header)
+    source_archetype_filter = LineEdit.new()
+    source_archetype_filter.placeholder_text = "Search D_* class, display or parent..."
+    source_archetype_filter.text_changed.connect(func(_q): _refresh_source_archetype_list())
+    gamesys_tab.add_child(source_archetype_filter)
+    source_archetype_list = ItemList.new()
+    source_archetype_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    source_archetype_list.item_selected.connect(_source_archetype_selected)
+    gamesys_tab.add_child(source_archetype_list)
+    source_archetype_details = TextEdit.new()
+    source_archetype_details.editable = false
+    source_archetype_details.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+    source_archetype_details.custom_minimum_size.y = 210
+    source_archetype_details.text = "Import an original map with its System folder to browse the source archetypes. No native actor spawning."
+    gamesys_tab.add_child(source_archetype_details)
+
+    # These original .tsd definitions are source evidence, NOT an actor
+    # script binding nor an executable gameplay compiler.
+    var gameplay_tab := VBoxContainer.new()
+    gameplay_tab.name = "Scripts"
+    left_tabs.add_child(gameplay_tab)
+    var scripts_note := Label.new()
+    scripts_note.text = "Original TriggerScripts and AI actors | Read-only"
+    gameplay_tab.add_child(scripts_note)
+    var open_gameplay_scripts := Button.new()
+    open_gameplay_scripts.text = "Open original TriggerScript.zip..."
+    open_gameplay_scripts.tooltip_text = "Inspect original Defs/*.tsd. Neither game scripts nor GMPs are changed."
+    open_gameplay_scripts.pressed.connect(func(): gameplay_zip_dialog.popup_centered_ratio(0.7))
+    gameplay_tab.add_child(open_gameplay_scripts)
+    gameplay_filter = LineEdit.new()
+    gameplay_filter.placeholder_text = "Search original script ID, title or action..."
+    gameplay_filter.text_changed.connect(func(_q): _refresh_gameplay_script_list())
+    gameplay_tab.add_child(gameplay_filter)
+    gameplay_list = ItemList.new()
+    gameplay_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    gameplay_list.item_selected.connect(_gameplay_script_selected)
+    gameplay_tab.add_child(gameplay_list)
+    var actor_script_button := Button.new()
+    actor_script_button.text = "Inspect selected actor script fields"
+    actor_script_button.tooltip_text = "Raw serialized indices are NOT verified TS_ script IDs."
+    actor_script_button.pressed.connect(_inspect_selected_actor_scripts)
+    gameplay_tab.add_child(actor_script_button)
+    gameplay_details = TextEdit.new()
+    gameplay_details.editable = false
+    gameplay_details.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+    gameplay_details.custom_minimum_size.y = 180
+    gameplay_details.text = "Open a GMP and its original TriggerScript.zip. No native script binding or NPC spawning yet."
+    gameplay_tab.add_child(gameplay_details)
+
+    var environment_tab := VBoxContainer.new()
+    environment_tab.name = "Environment"
+    left_tabs.add_child(environment_tab)
+    var environment_heading := Label.new()
+    environment_heading.text = "Original light / ambient zone / particle entities | Read-only"
+    environment_heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    environment_tab.add_child(environment_heading)
+    environment_filter = LineEdit.new()
+    environment_filter.placeholder_text = "Search lights, zone schemas and particles..."
+    environment_filter.text_changed.connect(func(_filter): _refresh_environment_entities())
+    environment_tab.add_child(environment_filter)
+    environment_list = ItemList.new()
+    environment_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    environment_list.item_selected.connect(_environment_entity_selected)
+    environment_tab.add_child(environment_list)
+    var environment_locate := Button.new()
+    environment_locate.text = "Locate selected source entity (F)"
+    environment_locate.tooltip_text = "Focus original actor Location. No runtime entity is spawned."
+    environment_locate.pressed.connect(func(): focus_selected())
+    environment_tab.add_child(environment_locate)
+    environment_details = TextEdit.new()
+    environment_details.editable = false
+    environment_details.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+    environment_details.custom_minimum_size.y = 200
+    environment_details.text = "Import an original DX2 map to browse its native lights and audio zones. Read-only."
+    environment_tab.add_child(environment_details)
+    environment_light_show_markers = CheckBox.new()
+    environment_light_show_markers.text = "Show clickable Light markers in Scene"
+    environment_light_show_markers.button_pressed = true
+    environment_light_show_markers.tooltip_text = "Original Light locations. Click a marker to select; W to move its preview-only gizmo."
+    environment_light_show_markers.toggled.connect(_set_environment_light_markers_visible)
+    environment_tab.add_child(environment_light_show_markers)
+    environment_light_reset_button = Button.new()
+    environment_light_reset_button.text = "Reset selected Light gizmo preview"
+    environment_light_reset_button.disabled = true
+    environment_light_reset_button.pressed.connect(_reset_selected_environment_light_position)
+    environment_tab.add_child(environment_light_reset_button)
+    environment_light_audit_button = Button.new()
+    environment_light_audit_button.text = "Audit original Light dependencies"
+    environment_light_audit_button.disabled = true
+    environment_light_audit_button.tooltip_text = (
+        "Read-only source GMP verification of Region.iLeaf, ZoneNumberLow, PhysicsVolume, "
+        + "Level and native state. Does not spawn a light."
+    )
+    environment_light_audit_button.pressed.connect(_start_environment_light_dependency_audit)
+    environment_tab.add_child(environment_light_audit_button)
+    environment_light_preview_button = Button.new()
+    environment_light_preview_button.text = "Preview selected Light at camera target"
+    environment_light_preview_button.disabled = true
+    environment_light_preview_button.tooltip_text = (
+        "Godot-only approximate light. Never serialized into DX2 GMP; source "
+        + "hue/brightness/radius are not calibrated to DX2 renderer units."
+    )
+    environment_light_preview_button.pressed.connect(_preview_selected_light_at_target)
+    environment_tab.add_child(environment_light_preview_button)
+    environment_light_clear_button = Button.new()
+    environment_light_clear_button.text = "Clear temporary Light previews"
+    environment_light_clear_button.disabled = true
+    environment_light_clear_button.pressed.connect(_clear_environment_light_previews)
+    environment_tab.add_child(environment_light_clear_button)
+    var env_schema_note := Label.new()
+    env_schema_note.text = "Experimental existing-zone sound edit (isolated GMP only)"
+    env_schema_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    environment_tab.add_child(env_schema_note)
+    environment_sound_field = OptionButton.new()
+    environment_sound_field.disabled = true
+    environment_sound_field.item_selected.connect(func(_index): _refresh_environment_sound_replacements())
+    environment_tab.add_child(environment_sound_field)
+    environment_sound_schema = OptionButton.new()
+    environment_sound_schema.disabled = true
+    environment_sound_schema.tooltip_text = "Only names already authored for this exact field in the original map can be selected."
+    environment_tab.add_child(environment_sound_schema)
+    environment_sound_button = Button.new()
+    environment_sound_button.text = "Experimental Zone Sound Save As..."
+    environment_sound_button.disabled = true
+    environment_sound_button.tooltip_text = (
+        "Replaces one existing ZoneProperties sound string with another source-observed schema. "
+        + "No new emitter; original GMP remains untouched."
+    )
+    environment_sound_button.pressed.connect(_open_environment_sound_dialog)
+    environment_tab.add_child(environment_sound_button)
+
     var brushes_tab := VBoxContainer.new()
     brushes_tab.name = "Brushes"
     left_tabs.add_child(brushes_tab)
@@ -532,6 +771,18 @@ func _make_ui() -> void:
     copy_placement.tooltip_text = "Copy GMP vs IBD vs mesh vertex bounds and original pivot information"
     copy_placement.pressed.connect(_copy_placement_evidence)
     inspector_pane.add_child(copy_placement)
+    var geometry_debug_row := HFlowContainer.new()
+    inspector_pane.add_child(geometry_debug_row)
+    geometry_isolation_button = Button.new()
+    geometry_isolation_button.text = "Isolate selected"
+    geometry_isolation_button.tooltip_text = "Reversible inspection: hide other rendered meshes including glass, without changing their materials or game files."
+    geometry_isolation_button.pressed.connect(_toggle_geometry_isolation)
+    geometry_debug_row.add_child(geometry_isolation_button)
+    geometry_all_faces_button = Button.new()
+    geometry_all_faces_button.text = "Inspect both faces"
+    geometry_all_faces_button.tooltip_text = "Reversible: render only the selected mesh unshaded with backface culling OFF. Never changes source or shared GLB materials."
+    geometry_all_faces_button.pressed.connect(_toggle_geometry_all_faces)
+    geometry_debug_row.add_child(geometry_all_faces_button)
     inspector_transform_section = VBoxContainer.new()
     inspector_pane.add_child(inspector_transform_section)
     var inspector_transform_heading := Label.new()
@@ -614,6 +865,31 @@ func _make_ui() -> void:
     property_scroll.add_child(property_editor_rows)
     property_editor_panel.visible = false
 
+    source_gamesys_panel = VBoxContainer.new()
+    source_gamesys_panel.visible = false
+    inspector_pane.add_child(source_gamesys_panel)
+    var source_gamesys_heading := Label.new()
+    source_gamesys_heading.text = "Original GameSys | Verified read-only data"
+    source_gamesys_panel.add_child(source_gamesys_heading)
+    source_gamesys_filter = LineEdit.new()
+    source_gamesys_filter.placeholder_text = "Filter original property ID, name or type..."
+    source_gamesys_filter.text_changed.connect(func(_q): _refresh_source_gamesys_inspector())
+    source_gamesys_panel.add_child(source_gamesys_filter)
+    source_gamesys_list = ItemList.new()
+    source_gamesys_list.custom_minimum_size.y = 150
+    source_gamesys_list.item_selected.connect(_source_gamesys_selected)
+    source_gamesys_panel.add_child(source_gamesys_list)
+    source_gamesys_details = Label.new()
+    source_gamesys_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    source_gamesys_panel.add_child(source_gamesys_details)
+    # Deliberately separate from normal GMP Save As and draft-property editing.
+    source_gamesys_light_button = Button.new()
+    source_gamesys_light_button.text = "Experimental light Boolean Save As..."
+    source_gamesys_light_button.tooltip_text = "Isolated copy of ONE verified original bLightOn byte; never writes into retail Maps."
+    source_gamesys_light_button.visible = false
+    source_gamesys_light_button.pressed.connect(_open_source_light_bool_dialog)
+    source_gamesys_panel.add_child(source_gamesys_light_button)
+
     brush_inspector_panel = VBoxContainer.new()
     brush_inspector_panel.visible = false
     inspector_pane.add_child(brush_inspector_panel)
@@ -664,12 +940,57 @@ func _make_ui() -> void:
     gmp_dialog.filters = PackedStringArray(["*.gmp ; Deus Ex Invisible War map"])
     gmp_dialog.file_selected.connect(_open_gmp_file)
     add_child(gmp_dialog)
+    direct_system_dialog = FileDialog.new()
+    direct_system_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    direct_system_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+    direct_system_dialog.dir_selected.connect(_select_direct_system_folder)
+    add_child(direct_system_dialog)
     gmp_save_as_dialog = FileDialog.new()
     gmp_save_as_dialog.access = FileDialog.ACCESS_FILESYSTEM
     gmp_save_as_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
     gmp_save_as_dialog.filters = PackedStringArray(["*.gmp ; Experimental location-only DX2 GMP"])
     gmp_save_as_dialog.file_selected.connect(_export_native_gmp_copy)
     add_child(gmp_save_as_dialog)
+    native_clone_dialog = FileDialog.new()
+    native_clone_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_clone_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    native_clone_dialog.filters = PackedStringArray(["*.gmp ; Experimental ONE native StaticMeshActor clone GMP"])
+    native_clone_dialog.file_selected.connect(_stage_native_clone_export)
+    add_child(native_clone_dialog)
+    native_clone_confirmation = ConfirmationDialog.new()
+    native_clone_confirmation.title = "Confirm isolated DX2 StaticMeshActor duplication"
+    native_clone_confirmation.confirmed.connect(_execute_native_clone_export)
+    add_child(native_clone_confirmation)
+    native_multi_dialog = FileDialog.new()
+    native_multi_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_multi_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    native_multi_dialog.filters = PackedStringArray(["*.gmp ; Experimental 2..8 native StaticMeshActor clones"])
+    native_multi_dialog.file_selected.connect(_stage_native_multi_export)
+    add_child(native_multi_dialog)
+    native_multi_confirmation = ConfirmationDialog.new()
+    native_multi_confirmation.title = "Confirm 2..8 experimental static prop clones"
+    native_multi_confirmation.confirmed.connect(_execute_native_multi_export)
+    add_child(native_multi_confirmation)
+    environment_sound_dialog = FileDialog.new()
+    environment_sound_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    environment_sound_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    environment_sound_dialog.filters = PackedStringArray(["*.gmp ; Experimental original ZoneProperties sound edit"])
+    environment_sound_dialog.file_selected.connect(_stage_environment_sound_export)
+    add_child(environment_sound_dialog)
+    environment_sound_confirmation = ConfirmationDialog.new()
+    environment_sound_confirmation.title = "Confirm isolated existing sound-zone schema edit"
+    environment_sound_confirmation.confirmed.connect(_execute_environment_sound_export)
+    add_child(environment_sound_confirmation)
+    source_gamesys_light_dialog = FileDialog.new()
+    source_gamesys_light_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    source_gamesys_light_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    source_gamesys_light_dialog.filters = PackedStringArray(["*.gmp ; Experimental single-light DX2 GMP"])
+    source_gamesys_light_dialog.file_selected.connect(_stage_source_light_bool_export)
+    add_child(source_gamesys_light_dialog)
+    source_gamesys_light_confirmation = ConfirmationDialog.new()
+    source_gamesys_light_confirmation.title = "Confirm isolated light Boolean test"
+    source_gamesys_light_confirmation.confirmed.connect(_execute_source_light_bool_export)
+    add_child(source_gamesys_light_confirmation)
     gmp_verify_dialog = FileDialog.new()
     gmp_verify_dialog.access = FileDialog.ACCESS_FILESYSTEM
     gmp_verify_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -698,6 +1019,12 @@ func _make_ui() -> void:
     json_dialog.filters = PackedStringArray(["*.json ; DX2Ed actor metadata"])
     json_dialog.file_selected.connect(load_actors)
     add_child(json_dialog)
+    gameplay_zip_dialog = FileDialog.new()
+    gameplay_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    gameplay_zip_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    gameplay_zip_dialog.filters = PackedStringArray(["*.zip ; Original TriggerScript definitions ZIP"])
+    gameplay_zip_dialog.file_selected.connect(_open_original_gameplay_scripts)
+    add_child(gameplay_zip_dialog)
 
     shared_zip_dialog = FileDialog.new()
     shared_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -722,10 +1049,41 @@ func _select_ibd(path: String) -> void:
     chosen_ibd = path
     status_label.text = "Optional IBD selected: " + path.get_file()
 
+func _dx2_system_folder_valid(folder: String) -> bool:
+    if folder.is_empty():
+        return false
+    return (FileAccess.file_exists(folder.path_join("Engine.d2u"))
+        and FileAccess.file_exists(folder.path_join("DX2Gamesys.d2u")))
+
+
+func _direct_map_system_folder(map_path: String) -> String:
+    # Standard retail layout: <install>/Content/DX2/Maps/<map>.gmp,
+    # with <install>/System/Engine.d2u and DX2Gamesys.d2u.
+    var maps_dir := map_path.get_base_dir()
+    if (maps_dir.get_file().to_lower() == "maps"
+        and maps_dir.get_base_dir().get_file().to_lower() == "dx2"
+        and maps_dir.get_base_dir().get_base_dir().get_file().to_lower() == "content"):
+        var install_root := maps_dir.get_base_dir().get_base_dir().get_base_dir()
+        var auto_system := install_root.path_join("System")
+        if _dx2_system_folder_valid(auto_system):
+            return auto_system
+    if _dx2_system_folder_valid(chosen_direct_system_path):
+        return chosen_direct_system_path
+    return ""
+
+
+func _select_direct_system_folder(path: String) -> void:
+    if not _dx2_system_folder_valid(path):
+        status_label.text = "System folder refused: Engine.d2u and DX2Gamesys.d2u are both required."
+        return
+    chosen_direct_system_path = path
+    status_label.text = "Original DX2 System selected. Reopen the GMP to refresh GameSys audit: " + path
+
+
 func _open_gmp_file(path: String) -> void:
-    # Direct GMP load should not accidentally reuse a System path from a
-    # previous ZIP staging session.
-    chosen_system_path = ""
+    # Do not reuse ZIP-staged System data across unrelated direct map imports.
+    # Prefer the exact installed System sibling; otherwise a deliberately chosen folder.
+    chosen_system_path = _direct_map_system_folder(path)
     open_gmp(path)
 
 func _set_auto_roll_preview(enabled: bool) -> void:
@@ -913,6 +1271,22 @@ func _make_world() -> void:
     gizmo_root.name = "EditorGizmo"
     world_root.add_child(gizmo_root)
     _create_transform_gizmo()
+    environment_light_markers_root = Node3D.new()
+    environment_light_markers_root.name = "DX2Ed_Original_Light_Markers_EDITOR_ONLY"
+    environment_light_markers_root.set_meta("editor_only", true)
+    world_root.add_child(environment_light_markers_root)
+    environment_light_radius = MeshInstance3D.new()
+    environment_light_radius.name = "DX2Ed_Selected_Light_Radius_EDITOR_ONLY"
+    environment_light_radius.set_meta("editor_only", true)
+    var radius_material := StandardMaterial3D.new()
+    radius_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    radius_material.albedo_color = Color(1.0, 0.85, 0.25, 0.78)
+    radius_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    radius_material.no_depth_test = true
+    radius_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    environment_light_radius.material_override = radius_material
+    environment_light_radius.visible = false
+    environment_light_markers_root.add_child(environment_light_radius)
     var light := DirectionalLight3D.new()
     light.rotation_degrees = Vector3(-45, 25, 0)
     light.light_energy = 1.6
@@ -983,21 +1357,50 @@ func load_actors(path: String) -> void:
         status_label.text = "Invalid actor JSON: " + path
         return
     actors = result["actors"]
+    loaded_actors_json_path = path
     var metadata: Variant = result.get("meta", {})
     current_source_map_name = str(metadata.get("source_map", "")) if typeof(metadata) == TYPE_DICTIONARY else ""
+    source_gamesys_sha256 = str(metadata.get("source_sha256", metadata.get("map_sha256", ""))) if typeof(metadata) == TYPE_DICTIONARY else ""
     actors_by_name.clear()
     for actor in actors:
         if typeof(actor) == TYPE_DICTIONARY and actor.has("name"):
             actors_by_name[str(actor["name"])] = actor
     _refresh_actor_list()
+    _refresh_environment_entities()
+    _rebuild_environment_light_markers()
+    _load_source_gamesys_catalog(path.get_base_dir().path_join("gamesys_inspector.json"))
     status_label.text = "Loaded %d actors, %d meshes. Click a mesh or select an actor." % [actors.size(), mesh_count]
 
 func _clear_current_scene() -> void:
+    _clear_environment_light_markers()
+    _clear_environment_light_previews()
+    if environment_light_audit_button != null:
+        environment_light_audit_button.disabled = true
+    if environment_light_preview_button != null:
+        environment_light_preview_button.disabled = true
+    if environment_light_reset_button != null:
+        environment_light_reset_button.disabled = true
+    _restore_geometry_all_faces()
+    _restore_geometry_isolation()
     _clear_selection()
     asset_catalog.clear()
     selected_asset.clear()
+    if native_asset_place_button != null:
+        native_asset_place_button.disabled = true
     archetype_catalog.clear()
     selected_archetype.clear()
+    source_gamesys_catalog.clear()
+    source_gamesys_sha256 = ""
+    source_gamesys_visible.clear()
+    source_gamesys_current_export = -1
+    source_gamesys_selected_field.clear()
+    source_gamesys_light_pending.clear()
+    if source_gamesys_light_button != null:
+        source_gamesys_light_button.visible = false
+    source_archetype_visible.clear()
+    if source_gamesys_panel != null:
+        source_gamesys_panel.visible = false
+    _refresh_source_archetype_list()
     draft_template_provenance.clear()
     _refresh_archetype_list()
     asset_mesh_resources.clear()
@@ -1006,6 +1409,27 @@ func _clear_current_scene() -> void:
     _refresh_asset_list()
     actors.clear()
     actors_by_name.clear()
+    environment_visible.clear()
+    environment_sound_pending.clear()
+    if environment_sound_field != null:
+        environment_sound_field.clear()
+        environment_sound_field.disabled = true
+    if environment_sound_schema != null:
+        environment_sound_schema.clear()
+        environment_sound_schema.disabled = true
+    if environment_sound_button != null:
+        environment_sound_button.disabled = true
+    if environment_list != null:
+        environment_list.clear()
+    if environment_details != null:
+        environment_details.text = "Import a source map to inspect light and sound entities."
+    loaded_actors_json_path = ""
+    gameplay_catalog.clear()
+    gameplay_visible.clear()
+    if gameplay_list != null:
+        gameplay_list.clear()
+    if gameplay_details != null:
+        gameplay_details.text = "Open a source-matched original GMP and TriggerScript.zip."
     meshes_by_actor.clear()
     current_source_map_name = ""
     original_mesh_transforms.clear()
@@ -1014,6 +1438,8 @@ func _clear_current_scene() -> void:
     draft_prop_copies.clear()
     draft_prop_sources.clear()
     draft_brush_specs.clear()
+    native_clone_pending.clear()
+    native_multi_pending.clear()
     next_prop_copy_id = 1
     undo_stack.clear()
     redo_stack.clear()
@@ -1061,6 +1487,876 @@ func _mesh_world_aabb(instance: MeshInstance3D) -> AABB:
         result = result.expand(instance.global_transform * local.get_endpoint(i))
     return result
 
+## Gameplay metadata is source-bound and strictly read-only.
+func _actor_on_original_ai_layer(actor: Dictionary) -> bool:
+    var props: Variant = actor.get("game_properties", [])
+    if typeof(props) != TYPE_ARRAY:
+        return false
+    for prop in props:
+        if (typeof(prop) == TYPE_DICTIONARY
+            and int(prop.get("id", -1)) == 82
+            and prop.get("value", "") == "AI"):
+            return true
+    return false
+
+
+func _open_original_gameplay_scripts(zip_path: String) -> void:
+    if (gameplay_thread != null or build_thread != null
+        or last_gmp_path.is_empty() or loaded_actors_json_path.is_empty()
+        or not FileAccess.file_exists(last_gmp_path)
+        or not FileAccess.file_exists(loaded_actors_json_path)
+        or FileAccess.get_sha256(last_gmp_path) != source_gamesys_sha256):
+        status_label.text = "Script browser refused: import an unchanged original GMP first."
+        return
+    var script := ProjectSettings.globalize_path("res://backend/dx2_gameplay_catalog.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Original gameplay catalog backend missing."
+        return
+    var target := OS.get_user_data_dir().path_join("original_gameplay_catalog.json")
+    gameplay_thread = Thread.new()
+    var err := gameplay_thread.start(_run_original_gameplay_scripts.bind(
+        script, last_gmp_path, loaded_actors_json_path, zip_path, target))
+    if err != OK:
+        gameplay_thread = null
+        status_label.text = "Could not start original TriggerScript browser."
+        return
+    status_label.text = "Reading original compiled TriggerScripts and AI actor metadata..."
+
+
+func _run_original_gameplay_scripts(script: String, map_file: String,
+        actors_file: String, archive: String, target: String) -> void:
+    var args := PackedStringArray([
+        script, "--map", map_file, "--actors", actors_file,
+        "--scripts", archive, "--output", target
+    ])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        code = OS.execute("py", pyargs, output, true)
+    call_deferred("_original_gameplay_scripts_finished", code, "\n".join(output))
+
+
+func _original_gameplay_scripts_finished(code: int, response: String) -> void:
+    if gameplay_thread != null:
+        gameplay_thread.wait_to_finish()
+        gameplay_thread = null
+    var answer: Variant = JSON.parse_string(response.strip_edges())
+    if (code != 0 or typeof(answer) != TYPE_DICTIONARY
+        or answer.get("status") != "ok"
+        or answer.get("schema") != "DX2Ed-original-gameplay-catalog-v1"):
+        status_label.text = "Original gameplay browse refused: " + response.strip_edges().substr(0, 400)
+        return
+    var file := str(answer.get("output", ""))
+    if not FileAccess.file_exists(file):
+        status_label.text = "Gameplay browser did not save its private report."
+        return
+    var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(file))
+    if (typeof(doc) != TYPE_DICTIONARY
+        or doc.get("schema") != "DX2Ed-original-gameplay-catalog-v1"
+        or doc.get("read_only") != true
+        or doc.get("bindings_verified") != false
+        or doc.get("spawn_enabled") != false
+        or doc.get("map_sha256") != source_gamesys_sha256
+        or typeof(doc.get("script_definitions")) != TYPE_ARRAY):
+        status_label.text = "Original gameplay catalog identity failed validation."
+        return
+    gameplay_catalog = doc
+    _refresh_gameplay_script_list()
+    var counts: Dictionary = doc.get("counts", {})
+    status_label.text = (
+        "Read-only gameplay: " + str(counts.get("scripts", 0))
+        + " original scripts, " + str(counts.get("ai_candidates", 0))
+        + " AI-layer candidates, " + str(counts.get("raw_script_fields", 0))
+        + " raw script fields. No gameplay writes enabled."
+    )
+
+
+func _refresh_gameplay_script_list() -> void:
+    if gameplay_list == null:
+        return
+    gameplay_list.clear()
+    gameplay_visible.clear()
+    var query := gameplay_filter.text.strip_edges().to_lower()
+    for script in gameplay_catalog.get("script_definitions", []):
+        if typeof(script) != TYPE_DICTIONARY:
+            continue
+        var searchable := str(script.get("id", "")) + " " + str(script.get("title", ""))
+        for action in script.get("actions", []):
+            searchable += " " + str(action)
+        for condition in script.get("conditions", []):
+            searchable += " " + str(condition)
+        if not query.is_empty() and query not in searchable.to_lower():
+            continue
+        gameplay_visible.append(script)
+        gameplay_list.add_item(str(script.get("id", "?")) + " | " + str(script.get("title", "")))
+    if not gameplay_visible.is_empty():
+        gameplay_list.select(0)
+        _gameplay_script_selected(0)
+
+
+func _gameplay_script_selected(index: int) -> void:
+    if index < 0 or index >= gameplay_visible.size() or gameplay_details == null:
+        return
+    var script: Dictionary = gameplay_visible[index]
+    var lines: PackedStringArray = [
+        "ORIGINAL COMPILED TRIGGERSCRIPT | READ ONLY",
+        "ID: " + str(script.get("id", "")),
+        "Description: " + str(script.get("title", "")),
+        "Source: " + str(script.get("archive_member", "")),
+        "Format: " + str(script.get("format", "")), "",
+        "Conditions (original symbols):"
+    ]
+    for condition in script.get("conditions", []):
+        lines.append("  " + str(condition))
+    lines.append("Actions (original symbols):")
+    for action in script.get("actions", []):
+        lines.append("  " + str(action))
+    lines.append("")
+    lines.append("Not bound to a specific map actor. No executable edits.")
+    gameplay_details.text = "\n".join(lines)
+
+
+func _inspect_selected_actor_scripts() -> void:
+    if gameplay_details == null:
+        return
+    var actor: Dictionary = selected_actor
+    if is_instance_valid(selected_mesh) and actors_by_name.has(str(selected_mesh.name)):
+        actor = actors_by_name[str(selected_mesh.name)]
+    if actor.is_empty():
+        gameplay_details.text = "First select an original actor in the Hierarchy."
+        return
+    var raw: Variant = actor.get("trigger_script_serialized", null)
+    gameplay_details.text = (
+        "Original actor: " + str(actor.get("name", "?"))
+        + "\nClass: " + str(actor.get("class", "?"))
+        + "\nExport: " + str(actor.get("export", "?"))
+        + "\nOriginal AI layer: " + str(_actor_on_original_ai_layer(actor))
+        + "\nSerialized TriggerScript data: " + JSON.stringify(raw, "  ")
+        + "\n\nRaw integer indices are NOT verified TS_ IDs."
+        + "\nNo NPC spawning or script assignment is enabled."
+    )
+
+
+
+## These property IDs and names are verified against the original
+## DX2 System/Engine.d2u and Gamesys declarations. A stream schema is
+## a ZONE-level sound setting, not a positionable AmbientSound actor.
+func _environment_entity_kind(actor: Dictionary) -> String:
+    match str(actor.get("class", "")):
+        "Light":
+            return "Light"
+        "ZoneProperties":
+            return "Ambient sound zone"
+        "Emitter":
+            return "Particle emitter (NOT sound)"
+    return ""
+
+
+func _environment_game_value(actor: Dictionary, property_id: int) -> Variant:
+    var props: Variant = actor.get("game_properties", [])
+    if typeof(props) != TYPE_ARRAY:
+        return null
+    for prop in props:
+        if typeof(prop) == TYPE_DICTIONARY and int(prop.get("id", -1)) == property_id:
+            return prop.get("value")
+    return null
+
+
+func _refresh_environment_entities() -> void:
+    if environment_list == null:
+        return
+    environment_list.clear()
+    environment_visible.clear()
+    var query := environment_filter.text.strip_edges().to_lower() if environment_filter != null else ""
+    for actor in actors:
+        if typeof(actor) != TYPE_DICTIONARY:
+            continue
+        var kind := _environment_entity_kind(actor)
+        if kind.is_empty():
+            continue
+        var searchable := str(actor.get("name", "")) + " " + kind
+        for property_id in [116, 118, 1586, 1467, 1286, 1287]:
+            searchable += " " + str(_environment_game_value(actor, property_id))
+        if not query.is_empty() and query not in searchable.to_lower():
+            continue
+        environment_visible.append(actor)
+        environment_list.add_item(str(actor.get("name", "?")) + " [" + kind + "]")
+    if environment_details != null:
+        environment_details.text = (
+            "Original environment actors: " + str(environment_visible.size())
+            + " match the current filter.\nLights are native actors; sound schemas "
+            + "are attached to ZoneProperties. Particle Emitters are NOT audio.\n"
+            + "Select a source entity to view exact original parameters. "
+            + "No sound playback, new lights or GMP writes."
+        )
+
+
+func _environment_entity_selected(index: int) -> void:
+    if index < 0 or index >= environment_visible.size():
+        return
+    var actor: Dictionary = environment_visible[index]
+    var kind := _environment_entity_kind(actor)
+    select_actor(actor)
+    if environment_light_audit_button != null:
+        environment_light_audit_button.disabled = kind != "Light"
+    if environment_light_preview_button != null:
+        environment_light_preview_button.disabled = kind != "Light"
+    if environment_light_reset_button != null:
+        environment_light_reset_button.disabled = (kind != "Light"
+            or not environment_light_positions.has(str(actor.get("name", ""))))
+    if environment_details == null:
+        return
+    var rows: PackedStringArray = [
+        "ORIGINAL DX2 " + kind.to_upper() + " | READ ONLY",
+        "Actor: " + str(actor.get("name", "?")),
+        "Native class: " + str(actor.get("class", "?")),
+        "Source export: " + str(actor.get("export", "?")),
+        "Source Unreal XYZ: " + str(actor.get("location", [])),
+        ""
+    ]
+    if kind == "Light":
+        rows.append("LightColor (GameSys 116): " + str(_environment_game_value(actor, 116)))
+        rows.append("LightShape (GameSys 118): " + str(_environment_game_value(actor, 118)))
+        rows.append("EmissiveScale (GameSys 1586): " + str(_environment_game_value(actor, 1586)))
+        rows.append("bLightOn (GameSys 1487, explicit value only): " + str(_environment_game_value(actor, 1487)))
+        var native: Variant = actor.get("tagged", {})
+        if typeof(native) == TYPE_DICTIONARY:
+            rows.append("")
+            rows.append("Original PhysicsVolume: " + str(native.get("PhysicsVolume", "unknown")))
+            rows.append("Original Region: " + str(native.get("Region", "unavailable")))
+            rows.append("Original Level reference: " + str(native.get("Level", "unavailable")))
+            rows.append("bDynamicLight: " + str(native.get("bDynamicLight", "unavailable")))
+            rows.append("bSentSpawnNotification: " + str(native.get("bSentSpawnNotification", "unavailable")))
+        var visual_position: Variant = _environment_light_preview_position(actor)
+        if typeof(visual_position) == TYPE_VECTOR3:
+            rows.append("Light marker (Godot metres): " + str(visual_position))
+            rows.append("Move with W gizmo. Editor preview ONLY; Reset restores original coordinates.")
+        rows.append("New light placement BLOCKED: BSP point-to-leaf and native state must be reconstructed.")
+    elif kind == "Ambient sound zone":
+        rows.append("StreamSchema1 (GameSys 1287): " + str(_environment_game_value(actor, 1287)))
+        rows.append("StreamSchema2 (GameSys 1286): " + str(_environment_game_value(actor, 1286)))
+        rows.append("NonStreamSchema1 (GameSys 1467): " + str(_environment_game_value(actor, 1467)))
+        rows.append("These configure zone audio, not a standalone point sound emitter.")
+    else:
+        rows.append("Particle effects are unrelated to the sound emitter system.")
+    rows.append("")
+    rows.append("Original source unchanged; zone edits are opt-in, isolated and experimental.")
+    environment_details.text = "\n".join(rows)
+    _refresh_environment_sound_fields(actor)
+    _update_environment_light_selection()
+
+
+
+
+## Source-authentic Light markers with Unity-like click selection and a
+## three-circle influence preview. No input to GMP writers or prop drafts.
+func _environment_light_original_position(actor: Dictionary) -> Variant:
+    if actor.get("class", "") != "Light":
+        return null
+    var original: Variant = actor.get("location", null)
+    if typeof(original) != TYPE_ARRAY or original.size() != 3:
+        return null
+    for value in original:
+        if (typeof(value) != TYPE_INT and typeof(value) != TYPE_FLOAT
+            or not is_finite(float(value))):
+            return null
+    return Vector3(float(original[0]), float(original[2]),
+        float(original[1])) * NATIVE_CLONE_UNREAL_METRES
+
+
+func _environment_light_preview_position(actor: Dictionary) -> Variant:
+    var source_name := str(actor.get("name", ""))
+    if environment_light_positions.has(source_name):
+        var preview: Variant = environment_light_positions[source_name]
+        if typeof(preview) == TYPE_VECTOR3 and preview.is_finite():
+            return preview
+    return _environment_light_original_position(actor)
+
+
+func _environment_light_proxy_selected() -> bool:
+    return (selected_actor.get("class", "") == "Light"
+        and selected_meshes.is_empty()
+        and environment_light_markers_root != null
+        and environment_light_markers_root.visible
+        and typeof(_environment_light_preview_position(selected_actor)) == TYPE_VECTOR3)
+
+
+func _environment_light_preview_radius(actor: Dictionary) -> float:
+    var shape: Variant = _environment_game_value(actor, 118)
+    if typeof(shape) != TYPE_DICTIONARY:
+        return 1.5
+    var original: Variant = shape.get("LightRadius", null)
+    if typeof(original) != TYPE_FLOAT and typeof(original) != TYPE_INT:
+        return 1.5
+    if not is_finite(float(original)):
+        return 1.5
+    # Explicitly an approximate Godot preview. UE native bounds are not
+    # calibrated to the Godot/SubViewport renderer's light falloff.
+    return clampf(float(original) * 0.12, 0.5, 16.0)
+
+
+func _light_sphere_wire_mesh(radius: float) -> ArrayMesh:
+    var verts := PackedVector3Array()
+    var steps := 64
+    for plane in range(3):
+        for segment in range(steps):
+            var a := TAU * float(segment) / float(steps)
+            var b := TAU * float(segment + 1) / float(steps)
+            var ax := cos(a) * radius
+            var ay := sin(a) * radius
+            var bx := cos(b) * radius
+            var by := sin(b) * radius
+            match plane:
+                0:
+                    verts.append(Vector3(ax, ay, 0))
+                    verts.append(Vector3(bx, by, 0))
+                1:
+                    verts.append(Vector3(0, ax, ay))
+                    verts.append(Vector3(0, bx, by))
+                _:
+                    verts.append(Vector3(ax, 0, ay))
+                    verts.append(Vector3(bx, 0, by))
+    var arrays := []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = verts
+    var mesh := ArrayMesh.new()
+    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, arrays)
+    return mesh
+
+
+func _clear_environment_light_markers() -> void:
+    environment_light_gizmo_drag = false
+    environment_light_positions.clear()
+    for marker in environment_light_markers.values():
+        if is_instance_valid(marker):
+            marker.queue_free()
+    environment_light_markers.clear()
+    if is_instance_valid(environment_light_radius):
+        environment_light_radius.mesh = null
+        environment_light_radius.visible = false
+    if environment_light_reset_button != null:
+        environment_light_reset_button.disabled = true
+
+
+func _rebuild_environment_light_markers() -> void:
+    _clear_environment_light_markers()
+    if not is_instance_valid(environment_light_markers_root):
+        return
+    var marker_mesh := SphereMesh.new()
+    marker_mesh.radius = 0.15
+    marker_mesh.height = 0.3
+    var material := StandardMaterial3D.new()
+    material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    material.albedo_color = Color(1.0, 0.77, 0.28, 1.0)
+    material.no_depth_test = true
+    material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    for actor in actors:
+        if typeof(actor) != TYPE_DICTIONARY or actor.get("class", "") != "Light":
+            continue
+        var at: Variant = _environment_light_original_position(actor)
+        if typeof(at) != TYPE_VECTOR3 or not at.is_finite():
+            continue
+        var name := str(actor.get("name", ""))
+        if name.is_empty() or environment_light_markers.has(name):
+            continue
+        var marker := MeshInstance3D.new()
+        marker.name = "SourceLightMarker_" + name
+        marker.mesh = marker_mesh
+        marker.material_override = material
+        marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        marker.set_meta("editor_only", true)
+        marker.set_meta("source_actor", name)
+        environment_light_markers_root.add_child(marker)
+        marker.global_position = at
+        environment_light_markers[name] = marker
+    _set_environment_light_markers_visible(
+        environment_light_show_markers == null
+        or environment_light_show_markers.button_pressed)
+
+
+func _set_environment_light_markers_visible(enabled: bool) -> void:
+    if is_instance_valid(environment_light_markers_root):
+        environment_light_markers_root.visible = enabled
+    _update_environment_light_selection()
+    _update_gizmo_pose()
+    if status_label != null:
+        status_label.text = (
+            "Original Light markers shown (editor-only). Click to select, W to move the visual proxy."
+            if enabled else "Original Light markers hidden; native GMP remains unchanged."
+        )
+
+
+func _update_environment_light_selection() -> void:
+    if not is_instance_valid(environment_light_radius):
+        return
+    environment_light_radius.visible = false
+    if environment_light_reset_button != null:
+        environment_light_reset_button.disabled = not environment_light_positions.has(
+            str(selected_actor.get("name", "")))
+    if environment_light_audit_button != null:
+        environment_light_audit_button.disabled = selected_actor.get("class", "") != "Light"
+    if environment_light_preview_button != null:
+        environment_light_preview_button.disabled = selected_actor.get("class", "") != "Light"
+    if not _environment_light_proxy_selected():
+        _update_gizmo_pose()
+        return
+    var position: Vector3 = _environment_light_preview_position(selected_actor)
+    environment_light_radius.mesh = _light_sphere_wire_mesh(
+        _environment_light_preview_radius(selected_actor))
+    environment_light_radius.global_position = position
+    environment_light_radius.visible = true
+    _update_gizmo_pose()
+
+
+func _set_environment_light_preview_position(actor: Dictionary, position: Vector3) -> void:
+    if actor.get("class", "") != "Light" or not position.is_finite():
+        return
+    var name := str(actor.get("name", ""))
+    if not environment_light_markers.has(name):
+        return
+    environment_light_positions[name] = position
+    var marker: MeshInstance3D = environment_light_markers[name]
+    if is_instance_valid(marker):
+        marker.global_position = position
+    _update_environment_light_selection()
+    _update_gizmo_pose()
+
+
+func _reset_selected_environment_light_position() -> void:
+    if selected_actor.get("class", "") != "Light":
+        return
+    var name := str(selected_actor.get("name", ""))
+    environment_light_positions.erase(name)
+    var source: Variant = _environment_light_original_position(selected_actor)
+    if typeof(source) == TYPE_VECTOR3 and environment_light_markers.has(name):
+        var marker: MeshInstance3D = environment_light_markers[name]
+        if is_instance_valid(marker):
+            marker.global_position = source
+    _update_environment_light_selection()
+    _update_gizmo_pose()
+    status_label.text = (
+        "Reset editor-only Light marker " + name
+        + " to original source Location. No GMP changes exist."
+    )
+
+
+func _pick_environment_light_marker(screen: Vector2) -> String:
+    if (not is_instance_valid(environment_light_markers_root)
+        or not environment_light_markers_root.visible
+        or not is_instance_valid(camera)):
+        return ""
+    var closest_pixels := 17.0
+    var nearest := ""
+    for name in environment_light_markers:
+        var marker: MeshInstance3D = environment_light_markers[name]
+        if (not is_instance_valid(marker) or not marker.is_visible_in_tree()
+            or camera.is_position_behind(marker.global_position)):
+            continue
+        var pixels: Vector2 = camera.unproject_position(marker.global_position)
+        var distance := pixels.distance_to(screen)
+        if distance < closest_pixels:
+            closest_pixels = distance
+            nearest = str(name)
+    return nearest
+
+
+func _select_environment_light_from_viewport(name: String) -> void:
+    if not actors_by_name.has(name):
+        return
+    var actor: Dictionary = actors_by_name[name]
+    if actor.get("class", "") != "Light":
+        return
+    if environment_filter != null and not environment_filter.text.is_empty():
+        environment_filter.clear()
+        _refresh_environment_entities()
+    for i in range(environment_visible.size()):
+        if str(environment_visible[i].get("name", "")) == name:
+            environment_list.select(i)
+            _environment_entity_selected(i)
+            status_label.text = (
+                "Selected original " + name + " in Scene. Drag W arrows for "
+                + "editor-only position preview; never a native GMP write."
+            )
+            return
+    select_actor(actor)
+
+
+## Visual-only source-light visualization. Never a DX2 actor. Never attached
+## under imported scene_root or listed among native draft_prop_copies.
+func _preview_selected_light_at_target() -> void:
+    if selected_actor.get("class", "") != "Light" or world_root == null:
+        status_label.text = "Select an original native Light actor first."
+        return
+    if environment_light_previews.size() >= 8:
+        status_label.text = "Limit of 8 temporary editor-only Light previews reached. Clear previews."
+        return
+    var color_info: Variant = _environment_game_value(selected_actor, 116)
+    var shape: Variant = _environment_game_value(selected_actor, 118)
+    if typeof(color_info) != TYPE_DICTIONARY or typeof(shape) != TYPE_DICTIONARY:
+        status_label.text = "Missing original LightColor/LightShape. Visual preview refused."
+        return
+    var values := [color_info.get("LightHue", 0), color_info.get("LightSaturation", 0),
+        color_info.get("LightBrightness", 0), shape.get("LightRadius", 0)]
+    for value in values:
+        if typeof(value) != TYPE_INT and typeof(value) != TYPE_FLOAT:
+            status_label.text = "Original LightColor/LightShape contains unsupported values."
+            return
+        if not is_finite(float(value)) or float(value) < 0.0 or float(value) > 255.0:
+            status_label.text = "Original light values exceed source byte ranges."
+            return
+    if not camera_target.is_finite():
+        status_label.text = "Cannot place preview at invalid camera target."
+        return
+    var preview := OmniLight3D.new()
+    preview.name = "DX2EdPreviewOnly_Light_" + str(environment_light_previews.size() + 1)
+    preview.light_color = Color.from_hsv(
+        float(values[0]) / 255.0,
+        float(values[1]) / 255.0, 1.0)
+    preview.light_energy = clampf(float(values[2]) / 64.0, 0.05, 2.5)
+    # PREVIEW ONLY: No verified Unreal-unit to Godot intensity/range mapping.
+    preview.omni_range = clampf(float(values[3]) * 0.12, 0.5, 16.0)
+    preview.shadow_enabled = false
+    preview.set_meta("editor_only", true)
+    preview.set_meta("source_actor", str(selected_actor.get("name", "")))
+    world_root.add_child(preview)
+    preview.global_position = camera_target
+    environment_light_previews.append(preview)
+    if environment_light_clear_button != null:
+        environment_light_clear_button.disabled = false
+    status_label.text = (
+        "Editor-only light approximation at camera target from "
+        + str(selected_actor.get("name", ""))
+        + ". NO GMP actor or native light was created."
+    )
+
+
+func _clear_environment_light_previews() -> void:
+    for node in environment_light_previews:
+        if is_instance_valid(node):
+            node.queue_free()
+    environment_light_previews.clear()
+    if environment_light_clear_button != null:
+        environment_light_clear_button.disabled = true
+
+
+func _start_environment_light_dependency_audit() -> void:
+    var actor: Dictionary = selected_actor
+    if (actor.get("class", "") != "Light"
+        or int(actor.get("export", -1)) < 1
+        or environment_light_audit_thread != null
+        or not _native_clone_source_ready()):
+        status_label.text = "Light audit needs one original Light from an unchanged source-matched GMP."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_light_dependency_audit.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Native Light dependency audit backend not installed."
+        return
+    var source := last_gmp_path
+    var digest := source_gamesys_sha256
+    var expected_actor := str(actor.get("name", ""))
+    var expected_export := int(actor.get("export", -1))
+    environment_light_audit_thread = Thread.new()
+    var started := environment_light_audit_thread.start(
+        _run_environment_light_dependency_audit.bind(
+            script, source, digest, expected_export, expected_actor))
+    if started != OK:
+        environment_light_audit_thread = null
+        status_label.text = "Could not start read-only native Light dependency audit."
+        return
+    status_label.text = "Checking source Light, PhysicsVolume, Region and native state without writes..."
+
+
+func _run_environment_light_dependency_audit(script: String, source: String,
+        digest: String, actor_export: int, actor_name: String) -> void:
+    var args := PackedStringArray([
+        script, source, "--source-sha256", digest,
+        "--actor-export", str(actor_export)
+    ])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        code = OS.execute("py", pyargs, output, true)
+    call_deferred("_environment_light_dependency_audit_finished",
+        code, "\n".join(output), source, digest, actor_export, actor_name)
+
+
+func _environment_light_dependency_audit_finished(code: int, raw: String,
+        source: String, digest: String, actor_export: int, actor_name: String) -> void:
+    if environment_light_audit_thread != null:
+        environment_light_audit_thread.wait_to_finish()
+        environment_light_audit_thread = null
+    if (source != last_gmp_path or digest != source_gamesys_sha256
+        or not _native_clone_source_ready()
+        or int(selected_actor.get("export", -1)) != actor_export
+        or str(selected_actor.get("name", "")) != actor_name):
+        status_label.text = "Light audit discarded: source map or selected actor changed."
+        return
+    var doc: Variant = JSON.parse_string(raw.strip_edges())
+    if (code != 0 or typeof(doc) != TYPE_DICTIONARY
+        or doc.get("schema") != "DX2Ed-original-light-dependency-audit-v1"
+        or doc.get("status") != "read-only-source-verified"
+        or doc.get("source_sha256") != digest
+        or doc.get("source_map", "").to_lower() != last_gmp_path.get_file().to_lower()
+        or doc.get("source_modified") != false
+        or doc.get("native_light_spawn_enabled") != false
+        or typeof(doc.get("lights")) != TYPE_ARRAY
+        or doc["lights"].size() != 1):
+        status_label.text = "Light dependency audit refused: " + _native_clone_error_reason(raw)
+        return
+    var rec: Dictionary = doc["lights"][0]
+    if (str(rec.get("actor", "")) != actor_name
+        or int(rec.get("export", -1)) != actor_export
+        or rec.get("tagged_object_references_checked") != true
+        or rec.get("region_for_new_position_verified") != false):
+        status_label.text = "Light audit report did not match selected original actor."
+        return
+    var state: Dictionary = rec.get("state_frame", {})
+    var rows: PackedStringArray = [
+        "ORIGINAL LIGHT DEPENDENCY AUDIT | SOURCE VERIFIED",
+        "Light: " + actor_name + " (export " + str(actor_export) + ")",
+        "Original PhysicsVolume: " + str(rec.get("physics_volume", {})),
+        "Region.Zone: " + str(rec.get("region_zone", {})),
+        "Region.iLeaf: " + str(rec.get("region_leaf", "?")),
+        "Region.ZoneNumberLow: " + str(rec.get("region_zone_number_low", "?")),
+        "Original LevelInfo reference: " + str(rec.get("level", {})),
+        "Native frame: " + str(state),
+        "Original map Light actor count: " + str(doc.get("source_light_count", "?")),
+        "Distinct source zone numbers: " + str(doc.get("distinct_zone_numbers", [])),
+        "",
+        "Light creation remains BLOCKED. We do not know how to calculate",
+        "BSP leaf + zone for a new position, or initialize native state.",
+        "No original GMP or game asset was modified."
+    ]
+    if environment_details != null:
+        environment_details.text = "\n".join(rows)
+    status_label.text = "Original Light dependencies verified. New native Light creation correctly remains disabled."
+
+
+func _environment_sound_values(property_id: int) -> Array[String]:
+    # Strictly source-observed values for this exact property; never convert
+    # unrelated zone label/actor name fields into fake sound schemas.
+    var values: Array[String] = []
+    for rec in actors:
+        if typeof(rec) != TYPE_DICTIONARY or rec.get("class") != "ZoneProperties":
+            continue
+        var value: Variant = _environment_game_value(rec, property_id)
+        if typeof(value) != TYPE_STRING:
+            continue
+        var name := str(value)
+        if (not name.is_valid_identifier() or name.length() > 95
+            or name.to_lower() in ["silence", "inaccessible", "outside_world", "elevator"]):
+            continue
+        if not values.has(name):
+            values.append(name)
+    values.sort()
+    return values
+
+
+func _refresh_environment_sound_fields(actor: Dictionary) -> void:
+    if environment_sound_field == null:
+        return
+    environment_sound_field.clear()
+    environment_sound_schema.clear()
+    environment_sound_field.disabled = true
+    environment_sound_schema.disabled = true
+    environment_sound_button.disabled = true
+    if actor.get("class", "") != "ZoneProperties":
+        return
+    for pid in [1287, 1286, 1467]:
+        var original: Variant = _environment_game_value(actor, pid)
+        if typeof(original) != TYPE_STRING:
+            continue
+        var choices := _environment_sound_values(pid)
+        if choices.size() < 2 or not choices.has(str(original)):
+            continue
+        var label := ("StreamSchema1" if pid == 1287 else "StreamSchema2" if pid == 1286 else "NonStreamSchema1")
+        environment_sound_field.add_item(label + ": " + str(original), pid)
+    if environment_sound_field.item_count > 0:
+        environment_sound_field.disabled = false
+        environment_sound_field.select(0)
+        _refresh_environment_sound_replacements()
+
+
+func _refresh_environment_sound_replacements() -> void:
+    if environment_sound_schema == null:
+        return
+    environment_sound_schema.clear()
+    environment_sound_schema.disabled = true
+    environment_sound_button.disabled = true
+    if environment_sound_field == null or environment_sound_field.selected < 0:
+        return
+    var actor: Dictionary = selected_actor
+    if actor.get("class", "") != "ZoneProperties":
+        return
+    var pid := environment_sound_field.get_selected_id()
+    var original: Variant = _environment_game_value(actor, pid)
+    if typeof(original) != TYPE_STRING:
+        return
+    for candidate in _environment_sound_values(pid):
+        if candidate != str(original):
+            environment_sound_schema.add_item(candidate)
+    if environment_sound_schema.item_count > 0:
+        environment_sound_schema.disabled = false
+        environment_sound_schema.select(0)
+        environment_sound_button.disabled = false
+
+
+func _environment_sound_plan() -> Dictionary:
+    if environment_sound_field == null or environment_sound_schema == null:
+        return {}
+    var actor: Dictionary = selected_actor
+    if (actor.get("class", "") != "ZoneProperties"
+        or environment_sound_field.selected < 0
+        or environment_sound_schema.selected < 0):
+        return {}
+    var pid := environment_sound_field.get_selected_id()
+    if pid not in [1287, 1286, 1467]:
+        return {}
+    var expected: Variant = _environment_game_value(actor, pid)
+    var replacement := environment_sound_schema.get_item_text(environment_sound_schema.selected)
+    if (typeof(expected) != TYPE_STRING
+        or replacement == str(expected)
+        or not _environment_sound_values(pid).has(replacement)
+        or int(actor.get("export", -1)) < 1):
+        return {}
+    return {
+        "actor": str(actor.get("name", "")),
+        "export": int(actor.get("export", -1)),
+        "property_id": pid, "expect": str(expected),
+        "replace": replacement
+    }
+
+
+func _environment_sound_clean_draft() -> bool:
+    if (not draft_prop_copies.is_empty()
+        or not draft_brush_specs.is_empty()
+        or not property_overrides.is_empty()
+        or not draft_template_provenance.is_empty()):
+        return false
+    for name in original_mesh_transforms:
+        if meshes_by_actor.has(name):
+            var node: MeshInstance3D = meshes_by_actor[name]
+            if (is_instance_valid(node)
+                and not node.global_transform.is_equal_approx(original_mesh_transforms[name])):
+                return false
+    return true
+
+
+func _open_environment_sound_dialog() -> void:
+    _finish_gizmo_drag()
+    environment_sound_pending.clear()
+    if not _native_clone_source_ready() or not _environment_sound_clean_draft():
+        status_label.text = "Sound zone Save As requires an unchanged original map and no unrelated draft edits."
+        return
+    if _environment_sound_plan().is_empty():
+        status_label.text = "Select an original ZoneProperties source with a verified alternative sound schema."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_zone_sound_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Experimental native ZoneProperties sound writer not installed."
+        return
+    environment_sound_dialog.current_file = last_gmp_path.get_file()
+    environment_sound_dialog.popup_centered_ratio(0.75)
+
+
+func _stage_environment_sound_export(destination: String) -> void:
+    environment_sound_pending.clear()
+    if not _native_clone_source_ready() or not _environment_sound_clean_draft():
+        status_label.text = "Sound zone edit refused: source map or draft state changed."
+        return
+    var plan := _environment_sound_plan()
+    if (plan.is_empty() or destination.get_file().to_lower() != last_gmp_path.get_file().to_lower()):
+        status_label.text = "Sound zone edit refused: source selection or output map filename invalid."
+        return
+    environment_sound_pending = plan.duplicate(true)
+    environment_sound_pending["source"] = last_gmp_path
+    environment_sound_pending["source_sha256"] = source_gamesys_sha256
+    environment_sound_pending["destination"] = destination
+    environment_sound_confirmation.dialog_text = (
+        "EXPERIMENTAL: replace ONE original sound schema field."
+        + "\nActor: " + str(plan["actor"]) + " | export " + str(plan["export"])
+        + "\nGameSys property " + str(plan["property_id"])
+        + "\nFrom: " + str(plan["expect"]) + "\nTo: " + str(plan["replace"])
+        + "\n\nNew GMP: " + destination
+        + "\nOriginal map untouched. No game installation writes."
+        + "\nSound effect has NOT been confirmed in retail gameplay."
+    )
+    environment_sound_confirmation.popup_centered(Vector2i(760, 350))
+
+
+func _execute_environment_sound_export() -> void:
+    if environment_sound_pending.is_empty() or not _native_clone_source_ready() or not _environment_sound_clean_draft():
+        environment_sound_pending.clear()
+        status_label.text = "Sound zone Save As refused: original source or editor state changed."
+        return
+    var frozen := environment_sound_pending.duplicate(true)
+    environment_sound_pending.clear()
+    if (str(frozen["source"]) != last_gmp_path
+        or str(frozen["source_sha256"]) != source_gamesys_sha256
+        or _environment_sound_plan() != {
+            "actor": frozen["actor"], "export": frozen["export"],
+            "property_id": frozen["property_id"],
+            "expect": frozen["expect"], "replace": frozen["replace"]
+        }):
+        status_label.text = "Sound zone export cancelled: actor, field or source changed."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_zone_sound_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Sound zone writer unavailable."
+        return
+    native_export_thread = Thread.new()
+    var started := native_export_thread.start(_run_environment_sound_export.bind(script, frozen))
+    if started != OK:
+        native_export_thread = null
+        status_label.text = "Could not start sound zone writer."
+        return
+    status_label.text = "Verifying original sound zone property and writing isolated GMP..."
+
+
+func _run_environment_sound_export(script: String, frozen: Dictionary) -> void:
+    var args := PackedStringArray([
+        script, str(frozen["source"]), "--source-sha256",
+        str(frozen["source_sha256"]), "--actor-export", str(frozen["export"]),
+        "--actor-name", str(frozen["actor"]), "--property-id",
+        str(frozen["property_id"]), "--expect", str(frozen["expect"]),
+        "--replace", str(frozen["replace"]),
+        "--output", str(frozen["destination"])
+    ])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        code = OS.execute("py", pyargs, output, true)
+    call_deferred("_environment_sound_export_finished", code, "\n".join(output))
+
+
+func _environment_sound_export_finished(code: int, response: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    var doc: Variant = JSON.parse_string(response.strip_edges())
+    if (code == 0 and typeof(doc) == TYPE_DICTIONARY
+        and doc.get("schema") == "DX2Ed-experimental-existing-zone-schema-v1"
+        and doc.get("status") == "isolated-gmp-written-runtime-unverified"
+        and doc.get("reverse_payload_parity") == true
+        and doc.get("original_exports_preserved_except_target") == true
+        and doc.get("source_modified") == false):
+        status_label.text = (
+            "Verified isolated sound-zone GMP: " + str(doc.get("output", ""))
+            + " | One source schema changed. Retail sound effect unverified."
+        )
+        return
+    status_label.text = "Experimental sound zone export refused: " + _native_clone_error_reason(response)
+
+
 func _actor_category(actor: Dictionary) -> String:
     # This is class-name *discovery*, NOT proof of rigid-body physics,
     # inventory behavior, or final in-game script inheritance.
@@ -1082,6 +2378,8 @@ func _category_visible(category: String, actor: Dictionary = {}) -> bool:
     if category_filter.selected == 8:
         var evidence: Variant = actor.get("placement_diagnostic", {})
         return typeof(evidence) == TYPE_DICTIONARY and bool(evidence.get("needs_review", false))
+    if category_filter.selected == 9:
+        return _actor_on_original_ai_layer(actor)
     var values := [
         "All actors", "Static mesh", "Brush", "Light",
         "Volume / trigger", "Item candidate", "Physics candidate", "Gameplay / other"
@@ -1126,6 +2424,325 @@ func _load_archetype_catalog(path: String) -> void:
             if typeof(classes) == TYPE_ARRAY and classes.size() < 30000:
                 archetype_catalog = parsed
     _refresh_archetype_list()
+
+
+## The source GameSys Inspector never feeds actor draft/native-save controls.
+## A map-specific sidecar is accepted only with the actors.json source SHA.
+func _load_source_gamesys_catalog(path: String) -> void:
+    source_gamesys_catalog.clear()
+    if FileAccess.file_exists(path) and not source_gamesys_sha256.is_empty():
+        var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+        if (typeof(parsed) == TYPE_DICTIONARY
+            and parsed.get("schema") == "DX2Ed-gamesys-inspector-sidecar-v1"
+            and parsed.get("read_only") == true
+            and parsed.get("native_game_editing_enabled") == false
+            and str(parsed.get("source_sha256", "")) == source_gamesys_sha256
+            and str(parsed.get("source_map", "")).to_lower() == current_source_map_name.to_lower()
+            and typeof(parsed.get("actors", null)) == TYPE_DICTIONARY
+            and typeof(parsed.get("archetypes", null)) == TYPE_ARRAY):
+            var classes: Array = parsed["archetypes"]
+            if classes.size() <= 12000:
+                source_gamesys_catalog = parsed
+    source_gamesys_current_export = -1
+    source_gamesys_selected_field.clear()
+    source_gamesys_light_pending.clear()
+    if source_gamesys_light_button != null:
+        source_gamesys_light_button.visible = false
+    _refresh_source_archetype_list()
+    _refresh_source_gamesys_inspector()
+
+
+func _refresh_source_archetype_list() -> void:
+    if source_archetype_list == null:
+        return
+    source_archetype_list.clear()
+    source_archetype_visible.clear()
+    var query := source_archetype_filter.text.strip_edges().to_lower() if source_archetype_filter != null else ""
+    var classes: Variant = source_gamesys_catalog.get("archetypes", [])
+    if typeof(classes) != TYPE_ARRAY:
+        return
+    for rec in classes:
+        if typeof(rec) != TYPE_DICTIONARY:
+            continue
+        var searchable := str(rec.get("class", "")) + " " + str(rec.get("display_name", "")) + " " + str(rec.get("parent", ""))
+        if query != "" and query not in searchable.to_lower():
+            continue
+        source_archetype_visible.append(rec)
+        source_archetype_list.add_item(str(rec.get("display_name", "?")) + "  [" + str(rec.get("class", "?")) + "]")
+    if source_archetype_details != null:
+        if classes.is_empty():
+            source_archetype_details.text = "No original DX2Gamesys archetype source for this cache. Import with its original System folder or ZIP. Existing Classes and visual templates remain available."
+        else:
+            source_archetype_details.text = "%d original classes (%d filtered). Select one to inspect read-only source defaults. Archetype-to-map-actor bindings and native spawning are unverified." % [classes.size(), source_archetype_visible.size()]
+
+
+func _source_archetype_selected(index: int) -> void:
+    if index < 0 or index >= source_archetype_visible.size() or source_archetype_details == null:
+        return
+    var rec: Dictionary = source_archetype_visible[index]
+    var chain: Variant = rec.get("source_ancestry", [])
+    var lines := [
+        "Original archetype: " + str(rec.get("display_name", "?")),
+        "Class: " + str(rec.get("class", "?")),
+        "Immediate parent: " + str(rec.get("parent", "?")),
+        "Source ancestry: " + (" -> ".join(PackedStringArray(chain)) if typeof(chain) == TYPE_ARRAY else "unavailable"),
+        "Inheritance verified: " + str(rec.get("inheritance_complete", false)),
+        "DX2 grouped-array decoder: " + str(rec.get("recovered_dx2_layout", false)),
+        "Local defaults: " + str(rec.get("local_property_count", 0)),
+        "Native actor construction: NOT SUPPORTED", ""
+    ]
+    var defaults: Variant = rec.get("local_defaults", [])
+    if typeof(defaults) == TYPE_ARRAY:
+        for item in defaults:
+            if typeof(item) != TYPE_DICTIONARY:
+                continue
+            lines.append("#" + str(item.get("property_id", "?")) + " " + str(item.get("source_declared_name", "(source name unknown)")) +
+                " (" + str(item.get("source_declared_type", item.get("encoding", "?"))) + ")" +
+                " | " + str(item.get("element_count", 1)) + " element(s)")
+            var elements: Variant = item.get("elements", [])
+            if typeof(elements) == TYPE_ARRAY:
+                for element in elements:
+                    if typeof(element) != TYPE_DICTIONARY:
+                        continue
+                    var detail := ""
+                    if element.has("typed_fields"):
+                        var pairs := []
+                        for field in element.get("typed_fields", []):
+                            if typeof(field) == TYPE_DICTIONARY:
+                                pairs.append(str(field.get("name", "?")) + "=" + str(field.get("value", "?")))
+                        detail = ", ".join(pairs)
+                    elif element.has("string_value"):
+                        detail = str(element["string_value"])
+                    lines.append("  [" + str(element.get("element_index", "?")) + "] " + detail.substr(0, 300))
+    source_archetype_details.text = "\n".join(lines).substr(0, 30000)
+
+
+func _refresh_source_gamesys_inspector() -> void:
+    if source_gamesys_panel == null or source_gamesys_list == null:
+        return
+    source_gamesys_panel.visible = false
+    source_gamesys_list.clear()
+    source_gamesys_visible.clear()
+    source_gamesys_current_export = -1
+    source_gamesys_selected_field.clear()
+    source_gamesys_light_pending.clear()
+    if source_gamesys_light_button != null:
+        source_gamesys_light_button.visible = false
+    if source_gamesys_catalog.is_empty():
+        return
+    var nodes := _selection_nodes()
+    var actor: Dictionary = {}
+    if nodes.size() == 1 and actors_by_name.has(str(nodes[0].name)):
+        actor = actors_by_name[str(nodes[0].name)]
+    elif nodes.is_empty() and not selected_actor.is_empty():
+        actor = selected_actor
+    if actor.is_empty():
+        return
+    var export_id := int(actor.get("export", -1))
+    var source_actor: Variant = source_gamesys_catalog.get("actors", {}).get(str(export_id), {})
+    if (typeof(source_actor) != TYPE_DICTIONARY
+        or str(source_actor.get("name", "")) != str(actor.get("name", ""))
+        or int(source_actor.get("export", -2)) != export_id):
+        return
+    source_gamesys_panel.visible = true
+    source_gamesys_current_export = export_id
+    var query := source_gamesys_filter.text.strip_edges().to_lower() if source_gamesys_filter != null else ""
+    var fields: Variant = source_actor.get("properties", [])
+    if typeof(fields) != TYPE_ARRAY:
+        return
+    for rec in fields:
+        if typeof(rec) != TYPE_DICTIONARY:
+            continue
+        var label := "#" + str(rec.get("id", "?")) + " " + str(rec.get("name", "Unknown"))
+        var searchable := label + " " + str(rec.get("declared_type", "")) + " " + str(rec.get("encoding", ""))
+        if query != "" and query not in searchable.to_lower():
+            continue
+        source_gamesys_visible.append(rec)
+        source_gamesys_list.add_item(label + " [" + str(rec.get("encoding", "?")) + "]")
+    source_gamesys_details.text = "%d verified original blocks (%d matching). Select a field to inspect the source value and byte evidence. No native GameSys editing." % [fields.size(), source_gamesys_visible.size()]
+
+
+func _source_gamesys_selected(index: int) -> void:
+    if index < 0 or index >= source_gamesys_visible.size() or source_gamesys_details == null:
+        return
+    var rec: Dictionary = source_gamesys_visible[index]
+    source_gamesys_selected_field = rec.duplicate(true)
+    source_gamesys_light_pending.clear()
+    var light_context := _selected_source_light_bool_context()
+    if source_gamesys_light_button != null:
+        source_gamesys_light_button.visible = not light_context.is_empty()
+        if not light_context.is_empty():
+            source_gamesys_light_button.text = "Experimental Save As: light " + ("OFF" if bool(light_context["expected"]) else "ON")
+    var original_value := JSON.stringify(rec.get("source_value"))
+    source_gamesys_details.text = (
+        "Original #" + str(rec.get("id", "?")) + "  " + str(rec.get("name", "?")) +
+        "\nDeclared type: " + str(rec.get("declared_type", "(unavailable)")) +
+        "\nDeclared in: " + str(rec.get("declared_in", "(unavailable)")) +
+        "\nSerialized encoding: " + str(rec.get("encoding", "?")) +
+        "\nSource value: " + original_value.substr(0, 640) +
+        "\nOriginal ID: " + str(rec.get("encoded_id", "?")) +
+        "\nPayload offset: 0x" + ("%x" % int(rec.get("payload_offset", 0))) +
+        "\nPayload bytes: " + str(rec.get("payload_bytes", "?")) +
+        "\nSHA-256: " + str(rec.get("source_payload_sha256", "?")) +
+        "\nRead-only source evidence. No native write or script bindings."
+    )
+
+
+## Experimental: one SOURCE-VERIFIED existing authored bLightOn per separate GMP.
+## Never mutates draft-property values, original GameSys catalog or normal Save As.
+func _selected_source_light_bool_context() -> Dictionary:
+    if (source_gamesys_selected_field.is_empty()
+        or source_gamesys_current_export < 1
+        or source_gamesys_catalog.get("read_only") != true
+        or source_gamesys_catalog.get("native_game_editing_enabled") != false
+        or str(source_gamesys_catalog.get("source_sha256", "")) != source_gamesys_sha256
+        or str(source_gamesys_catalog.get("source_map", "")).to_lower() != current_source_map_name.to_lower()):
+        return {}
+    var rec := source_gamesys_selected_field
+    var encoded_id := int(rec.get("encoded_id", -1))
+    if (int(rec.get("id", -1)) != 1487 or str(rec.get("name", "")) != "bLightOn"
+        or str(rec.get("declared_type", "")).to_lower() != "bool"
+        or str(rec.get("encoding", "")) != "bool"
+        or int(rec.get("payload_bytes", -1)) != 1
+        or (encoded_id & 65535) != 1487
+        or ((encoded_id >> 16) & 65535) != 128
+        or typeof(rec.get("source_value")) != TYPE_BOOL):
+        return {}
+    var source_actor: Variant = source_gamesys_catalog.get("actors", {}).get(str(source_gamesys_current_export), {})
+    if typeof(source_actor) != TYPE_DICTIONARY:
+        return {}
+    var original_rows: Variant = source_actor.get("properties", [])
+    if (typeof(original_rows) != TYPE_ARRAY or not original_rows.has(rec)
+        or not source_gamesys_visible.has(rec)):
+        return {}
+    var actor_name := str(source_actor.get("name", ""))
+    if (actor_name.is_empty()
+        or int(source_actor.get("export", -1)) != source_gamesys_current_export
+        or not actors_by_name.has(actor_name)
+        or int(actors_by_name[actor_name].get("export", -2)) != source_gamesys_current_export):
+        return {}
+    var selected_name := ""
+    var nodes := _selection_nodes()
+    if nodes.size() == 1:
+        selected_name = str(nodes[0].name)
+    elif nodes.is_empty() and not selected_actor.is_empty():
+        selected_name = str(selected_actor.get("name", ""))
+    if selected_name != actor_name:
+        return {}
+    return {
+        "export": source_gamesys_current_export,
+        "actor": actor_name,
+        "property_id": 1487,
+        "expected": bool(rec["source_value"]),
+        "source_sha256": source_gamesys_sha256,
+        "source_map": current_source_map_name
+    }
+
+
+func _open_source_light_bool_dialog() -> void:
+    var context := _selected_source_light_bool_context()
+    if context.is_empty():
+        status_label.text = "Light test refused: select a verified original authored bLightOn Boolean."
+        return
+    if (native_export_thread != null or build_thread != null
+        or last_gmp_path.is_empty() or not FileAccess.file_exists(last_gmp_path)
+        or last_gmp_path.get_file().to_lower() != current_source_map_name.to_lower()):
+        status_label.text = "Light test refused: original GMP unavailable or a native operation is active."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_gamesys_bool_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Experimental one-byte GameSys probe unavailable. Use a full DX2SDK repository checkout."
+        return
+    source_gamesys_light_dialog.current_file = last_gmp_path.get_file()
+    source_gamesys_light_dialog.popup_centered_ratio(0.72)
+
+
+func _stage_source_light_bool_export(destination: String) -> void:
+    var context := _selected_source_light_bool_context()
+    if context.is_empty() or destination.get_file().to_lower() != current_source_map_name.to_lower():
+        status_label.text = "Light test refused: actor selection changed or target GMP filename differs."
+        return
+    source_gamesys_light_pending = context.duplicate(true)
+    source_gamesys_light_pending["destination"] = destination
+    source_gamesys_light_confirmation.dialog_text = (
+        "EXPERIMENTAL, ONE ORIGINAL LIGHT ONLY\n\n"
+        + "Actor: " + str(context["actor"]) + " | export #" + str(context["export"])
+        + "\nbLightOn: " + str(context["expected"]) + " -> " + str(not bool(context["expected"]))
+        + "\nOutput: " + destination
+        + "\n\nThe strict serializer refuses source changes, existing output files,"
+        + " runtime fields and any edits outside the original byte."
+        + "\nUse only an isolated test installation. The game runtime is not automatically verified."
+    )
+    source_gamesys_light_confirmation.popup_centered(Vector2i(680, 310))
+
+
+func _execute_source_light_bool_export() -> void:
+    var context := _selected_source_light_bool_context()
+    if (context.is_empty() or native_export_thread != null or build_thread != null
+        or last_gmp_path.is_empty() or not FileAccess.file_exists(last_gmp_path)
+        or last_gmp_path.get_file().to_lower() != current_source_map_name.to_lower()):
+        status_label.text = "Light test refused: source, selection or worker changed."
+        source_gamesys_light_pending.clear()
+        return
+    var destination := str(source_gamesys_light_pending.get("destination", ""))
+    var frozen := source_gamesys_light_pending.duplicate(true)
+    frozen.erase("destination")
+    source_gamesys_light_pending.clear()
+    if frozen != context or destination.get_file().to_lower() != current_source_map_name.to_lower():
+        status_label.text = "Light test refused: verified actor field changed before confirmation."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_gamesys_bool_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Light test refused: experimental one-byte Boolean probe not installed."
+        return
+    native_export_thread = Thread.new()
+    var started := native_export_thread.start(_run_source_light_bool_export.bind(
+        script, last_gmp_path, context, destination
+    ))
+    if started != OK:
+        native_export_thread = null
+        status_label.text = "Could not start experimental single-light worker."
+        return
+    status_label.text = "Building isolated single-light GMP; checking byte-exact T3SDK parity..."
+
+
+func _run_source_light_bool_export(script: String, source: String, context: Dictionary, destination: String) -> void:
+    var original := "true" if bool(context["expected"]) else "false"
+    var replacement := "false" if bool(context["expected"]) else "true"
+    var args := PackedStringArray([
+        script, source,
+        "--source-sha256", str(context["source_sha256"]),
+        "--actor-export", str(context["export"]),
+        "--actor-name", str(context["actor"]),
+        "--property-id", str(context["property_id"]),
+        "--expect", original, "--replace", replacement, "--output", destination
+    ])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        var launcher := PackedStringArray(["-3"])
+        launcher.append_array(args)
+        output.clear()
+        code = OS.execute("py", launcher, output, true)
+    call_deferred("_source_light_bool_finished", code, "\n".join(output))
+
+
+func _source_light_bool_finished(code: int, output: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    var result: Variant = JSON.parse_string(output.strip_edges())
+    if (code == 0 and typeof(result) == TYPE_DICTIONARY
+        and result.get("status") == "isolated-boolean-gmp-written-runtime-unverified"
+        and result.get("independent_full_package_byte_match") == true
+        and int(result.get("changed_bytes", -1)) == 1):
+        status_label.text = (
+            "Single-light GMP saved (one verified byte only): " + str(result.get("output", ""))
+            + " | Runtime test and original restoration still required."
+        )
+        return
+    var reason := str(result.get("reason", "Check source map, SHA, actor and isolated destination.")) if typeof(result) == TYPE_DICTIONARY else output.strip_edges().substr(0, 300)
+    status_label.text = "Experimental light Boolean Save As refused: " + reason
 
 
 func _refresh_archetype_list() -> void:
@@ -1232,6 +2849,8 @@ func _place_archetype_template() -> void:
 func _load_asset_catalog(path: String) -> void:
     asset_catalog.clear()
     selected_asset.clear()
+    if native_asset_place_button != null:
+        native_asset_place_button.disabled = true
     if not FileAccess.file_exists(path):
         _refresh_asset_list()
         return
@@ -1266,6 +2885,8 @@ func _refresh_asset_list() -> void:
         return
     asset_list.clear()
     assets_visible.clear()
+    if native_asset_place_button != null:
+        native_asset_place_button.disabled = true
     var query := asset_filter.text.strip_edges().to_lower() if asset_filter != null else ""
     var resources: Variant = asset_catalog.get("assets", [])
     if typeof(resources) != TYPE_ARRAY:
@@ -1295,6 +2916,9 @@ func _asset_selected(index: int) -> void:
     selected_asset = assets_visible[index]
     var name := str(selected_asset.get("name", ""))
     var placed := _placed_instances_for_asset(name) if str(selected_asset.get("kind", "")) == "staticmesh" else []
+    var native_candidate := _native_asset_source_for(name)
+    if native_asset_place_button != null:
+        native_asset_place_button.disabled = native_candidate.is_empty()
     asset_details.text = (
         "Name: " + name +
         "\nKind: " + str(selected_asset.get("kind", "")) +
@@ -1302,7 +2926,11 @@ func _asset_selected(index: int) -> void:
         "\nResource index: " + str(selected_asset.get("resource_index", "?")) +
         "\nBytes: " + str(selected_asset.get("bytes", "?")) +
         "\nPlaced actors: " + str(placed.size()) +
-        "\nPlace preview creates editor-only geometry, not a native game actor."
+        "\nNative reuse source: " + (
+            str(native_candidate.get("name", "?")) + " (export " + str(native_candidate.get("export", "?")) + ")"
+            if not native_candidate.is_empty() else "Unavailable; only preview placement possible"
+        ) +
+        "\nPlace preview = editor-only. Place native copy = uses verified original actor; isolated GMP export still required."
     )
 
 
@@ -1456,6 +3084,97 @@ func _place_loaded_asset(name: String) -> void:
     _sync_actor_list_selection()
     _record_edit("Place IBD asset " + name, before)
     status_label.text = "Placed preview mesh " + name + ". Save draft; GMP remains untouched."
+
+
+
+## Use the Assets list for real native prop placement when a verified
+## original StaticMeshActor already references this exact mesh resource.
+## This never fabricates a new StaticMesh resource reference or collision.
+func _native_asset_source_for(resource_name: String) -> Dictionary:
+    var catalog_item := _asset_record(resource_name)
+    if catalog_item.is_empty() or str(catalog_item.get("kind", "")) != "staticmesh":
+        return {}
+    var chosen: Dictionary = {}
+    for source in _placed_instances_for_asset(resource_name):
+        if typeof(source) != TYPE_DICTIONARY:
+            continue
+        var source_name := str(source.get("name", ""))
+        if (str(source.get("class", "")) != "StaticMeshActor"
+            or int(source.get("export", -1)) < 1
+            or not meshes_by_actor.has(source_name)
+            or not original_mesh_transforms.has(source_name)):
+            continue
+        var mesh_node: MeshInstance3D = meshes_by_actor[source_name]
+        if not is_instance_valid(mesh_node) or mesh_node.mesh == null:
+            continue
+        if chosen.is_empty() or int(source["export"]) < int(chosen["export"]):
+            chosen = source
+    return chosen
+
+
+func _native_asset_target_pose(source_name: String, target: Vector3) -> Transform3D:
+    var original_pose: Transform3D = original_mesh_transforms[source_name]
+    var difference := target - original_pose.origin
+    var max_translation := 4095.0 * NATIVE_CLONE_UNREAL_METRES
+    # The first position is the camera target when safely serializable.
+    # Never silently extrapolate an impossibly distant placement. Start
+    # a metre from the original if the camera is in a different region.
+    if (not difference.is_finite()
+        or difference.length_squared() < 0.0000001
+        or abs(difference.x) >= max_translation
+        or abs(difference.y) >= max_translation
+        or abs(difference.z) >= max_translation):
+        target = original_pose.origin + Vector3(1.0, 0.0, 0.0)
+    return Transform3D(original_pose.basis, target)
+
+
+func _place_asset_as_native_copy() -> void:
+    var name := str(selected_asset.get("name", ""))
+    if scene_root == null or not _native_clone_source_ready():
+        status_label.text = "Native asset placement needs an unchanged original GMP and finished import."
+        return
+    var source_actor := _native_asset_source_for(name)
+    if source_actor.is_empty():
+        status_label.text = (
+            "No original StaticMeshActor uses " + name
+            + " in this map. Preview-only placement still works; new asset references aren't supported yet."
+        )
+        return
+    if draft_prop_copies.size() >= 8:
+        status_label.text = "Native Save As supports at most eight draft copies. Save a batch or Restore All."
+        return
+    var name_of_source := str(source_actor.get("name", ""))
+    var checker := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_clone_probe.py")
+    if not FileAccess.file_exists(checker):
+        status_label.text = "Native source verification backend is unavailable."
+        return
+    var checked := _native_clone_check_actor(checker, {
+        "actor": name_of_source, "export": int(source_actor["export"])
+    })
+    if checked.get("eligible", false) != true:
+        status_label.text = (
+            "Native placement refused for " + name_of_source + ": "
+            + str(checked.get("reason", "Original source is not eligible."))
+        )
+        return
+    var history_before := _capture_edit_state()
+    var draft_name := "DraftProp_" + str(next_prop_copy_id)
+    var placement := _native_asset_target_pose(name_of_source, camera_target)
+    var copy := _new_draft_copy(name_of_source, draft_name, placement)
+    if not is_instance_valid(copy):
+        status_label.text = "Could not create source-verified native preview from " + name_of_source
+        return
+    next_prop_copy_id += 1
+    _clear_selection()
+    _add_selection_mesh(copy)
+    _refresh_selection_inspector()
+    _sync_actor_list_selection()
+    _record_edit("Place native asset " + name + " from " + name_of_source, history_before)
+    status_label.text = (
+        "Native draft " + draft_name + " uses original " + name_of_source
+        + " (export " + str(source_actor["export"]) + "). Use ONE Duplicate Save As "
+        + "(or MULTI for 2-8) to write an isolated GMP. Original game unchanged."
+    )
 
 
 func _focus_asset_instance() -> void:
@@ -1770,6 +3489,93 @@ func _selection_pivot() -> Vector3:
     for node in nodes:
         pivot += node.global_position
     return pivot / float(nodes.size())
+
+
+## Geometry debugging never writes an editor draft or a native map.
+## This is intentionally separate from the experimental actor writers.
+func _refresh_geometry_debug_buttons() -> void:
+    var available := _selection_nodes().size() == 1
+    if geometry_isolation_button != null:
+        geometry_isolation_button.disabled = not available and geometry_isolation_visibility.is_empty()
+        geometry_isolation_button.text = (
+            "Restore visibility" if not geometry_isolation_visibility.is_empty()
+            else "Isolate selected"
+        )
+    if geometry_all_faces_button != null:
+        geometry_all_faces_button.disabled = not available and not is_instance_valid(geometry_all_faces_target)
+        geometry_all_faces_button.text = (
+            "Restore materials" if is_instance_valid(geometry_all_faces_target)
+            else "Inspect both faces"
+        )
+
+
+func _restore_geometry_isolation() -> void:
+    for target in geometry_isolation_visibility:
+        if is_instance_valid(target):
+            target.visible = bool(geometry_isolation_visibility[target])
+    geometry_isolation_visibility.clear()
+    geometry_isolation_target = null
+    _refresh_geometry_debug_buttons()
+
+
+func _toggle_geometry_isolation() -> void:
+    if not geometry_isolation_visibility.is_empty():
+        _restore_geometry_isolation()
+        status_label.text = "Geometry diagnostic ended. All original scene visibility restored."
+        return
+    var nodes := _selection_nodes()
+    if nodes.size() != 1 or not is_instance_valid(nodes[0]):
+        status_label.text = "Select exactly one original rendered mesh to isolate."
+        return
+    var source: MeshInstance3D = nodes[0]
+    for node in all_mesh_instances:
+        if is_instance_valid(node):
+            geometry_isolation_visibility[node] = node.visible
+            node.visible = node == source
+    geometry_isolation_target = source
+    status_label.text = (
+        "Geometry diagnostic: isolated " + str(source.name)
+        + ". Other meshes and glass are temporarily hidden, not changed."
+    )
+    _refresh_geometry_debug_buttons()
+
+
+func _restore_geometry_all_faces() -> void:
+    if is_instance_valid(geometry_all_faces_target):
+        geometry_all_faces_target.material_override = geometry_all_faces_previous_override
+    geometry_all_faces_target = null
+    geometry_all_faces_previous_override = null
+    _refresh_geometry_debug_buttons()
+
+
+func _toggle_geometry_all_faces() -> void:
+    if is_instance_valid(geometry_all_faces_target):
+        _restore_geometry_all_faces()
+        status_label.text = "Geometry diagnostic ended. Source preview material restored."
+        return
+    var nodes := _selection_nodes()
+    if nodes.size() != 1 or not is_instance_valid(nodes[0]):
+        status_label.text = "Select exactly one mesh to inspect backfaces."
+        return
+    var source: MeshInstance3D = nodes[0]
+    if source.mesh == null:
+        status_label.text = "The selected actor has no rendered triangles."
+        return
+    geometry_all_faces_target = source
+    geometry_all_faces_previous_override = source.material_override
+    var debug_material := StandardMaterial3D.new()
+    debug_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    debug_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    debug_material.albedo_color = Color(0.25, 0.9, 0.95, 1.0)
+    source.material_override = debug_material
+    var count := 0
+    for surface in range(source.mesh.get_surface_count()):
+        count += source.mesh.surface_get_array_index_len(surface) / 3
+    status_label.text = (
+        "Geometry diagnostic: " + str(source.name) + " approx " + str(count)
+        + " triangles, both faces visible in cyan. This is a read-only preview."
+    )
+    _refresh_geometry_debug_buttons()
 
 
 func _add_selection_mesh(mesh_instance: MeshInstance3D) -> void:
@@ -2126,6 +3932,7 @@ func _mesh_geometry_material_summary(actor: Dictionary, node: MeshInstance3D = n
 func _refresh_inspector_panel() -> void:
     if inspector_title == null or inspector_transform_section == null:
         return
+    _refresh_geometry_debug_buttons()
     _refresh_brush_inspector()
     _refresh_placement_panel()
     var nodes := _selection_nodes()
@@ -2141,6 +3948,7 @@ func _refresh_inspector_panel() -> void:
     var eligible := _draft_selected_is_prop()
     inspector_transform_section.visible = eligible
     _refresh_actor_property_editor()
+    _refresh_source_gamesys_inspector()
     if nodes.is_empty():
         if selected_actor.is_empty():
             inspector_title.text = "Nothing selected"
@@ -2474,6 +4282,7 @@ func select_actor(actor: Dictionary) -> void:
         status_label.text = "Selected " + name + " | " + str(actor.get("class", "Unknown"))
         _refresh_inspector_panel()
     _sync_actor_list_selection()
+    _update_environment_light_selection()
 
 
 func _clear_selection() -> void:
@@ -2487,6 +4296,7 @@ func _clear_selection() -> void:
     selected_overlay_original = null
     selected_diagnostic = ""
     selected_actor = {}
+    _update_environment_light_selection()
 
 
 
@@ -2662,6 +4472,13 @@ func _finish_gizmo_drag() -> void:
     if not gizmo_drag_active:
         return
     gizmo_drag_active = false
+    if environment_light_gizmo_drag:
+        environment_light_gizmo_drag = false
+        gizmo_undo_before.clear()
+        status_label.text = (
+            "Light gizmo preview positioned. Editor-only: no native DX2 Light moved or saved."
+        )
+        return
     _record_edit("Drag " + editor_tool, gizmo_undo_before)
     gizmo_undo_before.clear()
 
@@ -3075,6 +4892,417 @@ func _native_audit_finished(code: int, output: String) -> void:
     status_label.text = "Native location audit failed: " + message
 
 
+
+## Only one existing StaticMeshActor may be cloned natively at a time.
+## Normal Duplicate continues producing preview drafts until this explicit Save As.
+## A pure translation of its unmodified imported pose is the only supported edit.
+const NATIVE_CLONE_UNREAL_METRES := 0.01905
+
+func _native_clone_draft_plan() -> Dictionary:
+    if (scene_root == null or draft_prop_copies.size() != 1
+        or not property_overrides.is_empty() or not draft_brush_specs.is_empty()
+        or not draft_template_provenance.is_empty()):
+        return {}
+    # Native clone is not a combined edit mode. Other original transforms
+    # must stay at the exact imported poses; they are not silently discarded.
+    for name in original_mesh_transforms:
+        if not meshes_by_actor.has(name):
+            continue
+        var original_node: MeshInstance3D = meshes_by_actor[name]
+        if (is_instance_valid(original_node)
+            and not original_node.global_transform.is_equal_approx(original_mesh_transforms[name])):
+            return {}
+    var draft_name := str(draft_prop_copies.keys()[0])
+    var copy: MeshInstance3D = draft_prop_copies[draft_name]
+    var original_name := str(draft_prop_sources.get(draft_name, ""))
+    if (not is_instance_valid(copy) or not actors_by_name.has(original_name)
+        or not meshes_by_actor.has(original_name)
+        or not original_mesh_transforms.has(original_name)):
+        return {}
+    var original_actor: Dictionary = actors_by_name[original_name]
+    if (str(original_actor.get("class", "")) != "StaticMeshActor"
+        or int(original_actor.get("export", -1)) < 1):
+        return {}
+    var base_pose: Transform3D = original_mesh_transforms[original_name]
+    if not copy.global_transform.basis.is_equal_approx(base_pose.basis):
+        return {}  # Rotation/scale/preview auto-roll changes cannot be serialized.
+    var delta_world := copy.global_position - base_pose.origin
+    if not delta_world.is_finite() or delta_world.length_squared() <= 0.00000001:
+        return {}
+    # GLB basis: X=UE X; Y=UE Z; Z=UE Y. Never infer from mesh bounds.
+    var delta_unreal := Vector3(
+        delta_world.x / NATIVE_CLONE_UNREAL_METRES,
+        delta_world.z / NATIVE_CLONE_UNREAL_METRES,
+        delta_world.y / NATIVE_CLONE_UNREAL_METRES
+    )
+    if (not delta_unreal.is_finite()
+        or abs(delta_unreal.x) > 4096.0
+        or abs(delta_unreal.y) > 4096.0
+        or abs(delta_unreal.z) > 4096.0):
+        return {}
+    return {
+        "actor": original_name, "export": int(original_actor["export"]),
+        "draft_name": draft_name, "delta": [delta_unreal.x, delta_unreal.y, delta_unreal.z]
+    }
+
+
+func _native_clone_source_ready() -> bool:
+    return (build_thread == null and native_export_thread == null
+        and not last_gmp_path.is_empty()
+        and FileAccess.file_exists(last_gmp_path)
+        and last_gmp_path.get_file().to_lower() == current_source_map_name.to_lower()
+        and source_gamesys_sha256.length() == 64
+        and FileAccess.get_sha256(last_gmp_path) == source_gamesys_sha256)
+
+
+func _native_clone_error_reason(response: String) -> String:
+    var parsed: Variant = JSON.parse_string(response.strip_edges())
+    if typeof(parsed) == TYPE_DICTIONARY:
+        return str(parsed.get("reason", parsed.get("message", "Unknown clone writer refusal."))).substr(0, 480)
+    # A script/import crash might still be a traditional Python traceback.
+    # Show the FINAL exception line, not the useless first traceback line.
+    var lines := response.strip_edges().split("\n")
+    return lines[lines.size() - 1].strip_edges().substr(0, 480) if lines.size() > 0 else "Python clone writer unavailable."
+
+
+func _native_clone_check_actor(script: String, plan: Dictionary) -> Dictionary:
+    # Read-only source-verified eligibility check BEFORE showing Save As.
+    # The writer independently repeats all checks when exporting.
+    var args := PackedStringArray([
+        script, last_gmp_path,
+        "--source-sha256", source_gamesys_sha256,
+        "--check-actor",
+        "--actor-export", str(plan["export"]),
+        "--actor-name", str(plan["actor"])
+    ])
+    var stdout: Array = []
+    var code := OS.execute("python", args, stdout, true)
+    if code == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        stdout.clear()
+        code = OS.execute("py", pyargs, stdout, true)
+    var response := "\n".join(stdout).strip_edges()
+    var parsed: Variant = JSON.parse_string(response)
+    if (code == 0 and typeof(parsed) == TYPE_DICTIONARY
+        and parsed.get("schema") == "DX2Ed-experimental-native-prop-duplicate-v1"
+        and parsed.get("status") == "clone-source-eligible"
+        and str(parsed.get("actor", "")) == str(plan["actor"])
+        and int(parsed.get("export", -1)) == int(plan["export"])
+        and str(parsed.get("source_sha256", "")) == source_gamesys_sha256):
+        return {"eligible": true,
+            "source_latent_action": int(parsed.get("source_latent_action", 0)),
+            "state_normalized": parsed.get("new_actor_state_will_be_normalized", false)}
+    return {"eligible": false, "reason": _native_clone_error_reason(response)}
+
+
+func _open_native_clone_dialog() -> void:
+    _finish_gizmo_drag()
+    native_clone_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Clone Save As refused: original source GMP/hash unavailable or another operation is active."
+        return
+    var plan := _native_clone_draft_plan()
+    if plan.is_empty():
+        status_label.text = "Clone Save As supports exactly one moved StaticMeshActor preview copy, with no rotation, scaling, other moves, brushes or property edits."
+        return
+    var backend := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_clone_probe.py")
+    if not FileAccess.file_exists(backend):
+        status_label.text = "Experimental native clone writer is unavailable."
+        return
+    var preflight := _native_clone_check_actor(backend, plan)
+    if preflight.get("eligible", false) != true:
+        var reason := str(preflight.get("reason", "Actor cannot be cloned safely."))
+        status_label.text = "This prop cannot be cloned natively: " + reason
+        if native_audit_dialog != null:
+            native_audit_dialog.title = "Original actor is not eligible for native duplication"
+            native_audit_dialog.dialog_text = (
+                "Actor: " + str(plan["actor"]) + " (export " + str(plan["export"]) + ")"
+                + "\n\n" + reason
+                + "\n\nNothing was saved or modified."
+                + "\nFor the first test, choose StaticMeshActor__611, the previously proven table."
+            )
+            native_audit_dialog.popup_centered(Vector2i(720, 310))
+        return
+    status_label.text = (
+        "Source actor verified. A new static prop will be created with neutralized "
+        + "native state; source actor and original GMP unchanged."
+    )
+    native_clone_dialog.current_file = last_gmp_path.get_file()
+    native_clone_dialog.popup_centered_ratio(0.75)
+
+
+func _stage_native_clone_export(destination: String) -> void:
+    native_clone_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Clone Save As refused: source GMP or import hash changed."
+        return
+    var plan := _native_clone_draft_plan()
+    if plan.is_empty() or destination.get_file().to_lower() != current_source_map_name.to_lower():
+        status_label.text = "Clone Save As refused: invalid draft or target map filename."
+        return
+    plan["source_sha256"] = source_gamesys_sha256
+    plan["source"] = last_gmp_path
+    plan["destination"] = destination
+    native_clone_pending = plan
+    native_clone_confirmation.dialog_text = (
+        "EXPERIMENTAL one-actor GMP copy ONLY. Never install automatically."
+        + "\nOriginal actor: " + str(plan["actor"])
+        + "\nOriginal export: " + str(plan["export"])
+        + "\nUnreal translation: " + str(plan["delta"])
+        + "\n\nNew export: latent/script action DWORD reset to zero."
+        + "\nOriginal actor and its bytes will not be changed."
+        + "\nOutput: " + destination
+        + "\n\nThe Python writer refuses game Maps folders, overwrites, and"
+        + " non-byte-exact original source hashes."
+        + "\nOriginal retail map stays unchanged. Runtime still requires testing."
+    )
+    native_clone_confirmation.popup_centered(Vector2i(720, 370))
+
+
+func _execute_native_clone_export() -> void:
+    if native_clone_pending.is_empty() or not _native_clone_source_ready():
+        native_clone_pending.clear()
+        status_label.text = "Clone Save As refused: source or operation changed before confirmation."
+        return
+    var current_plan := _native_clone_draft_plan()
+    var frozen := native_clone_pending.duplicate(true)
+    native_clone_pending.clear()
+    if (current_plan.is_empty()
+        or current_plan != {
+            "actor": frozen["actor"], "export": frozen["export"],
+            "draft_name": frozen["draft_name"], "delta": frozen["delta"]
+        }
+        or str(frozen["source"]) != last_gmp_path
+        or str(frozen["source_sha256"]) != source_gamesys_sha256):
+        status_label.text = "Clone Save As refused: preview clone or original source changed."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_clone_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Clone Save As refused: Python clone script missing."
+        return
+    native_export_thread = Thread.new()
+    var error := native_export_thread.start(_run_native_clone_export.bind(script, frozen))
+    if error != OK:
+        native_export_thread = null
+        status_label.text = "Unable to start native prop clone worker."
+        return
+    status_label.text = "Verifying one native StaticMeshActor clone and writing isolated GMP..."
+
+
+func _run_native_clone_export(script: String, frozen: Dictionary) -> void:
+    var delta: Array = frozen["delta"]
+    var args := PackedStringArray([
+        script, str(frozen["source"]),
+        "--source-sha256", str(frozen["source_sha256"]),
+        "--actor-export", str(frozen["export"]),
+        "--actor-name", str(frozen["actor"]),
+        "--dx", str(delta[0]), "--dy", str(delta[1]), "--dz", str(delta[2]),
+        "--output", str(frozen["destination"])
+    ])
+    var stdout: Array = []
+    var code := OS.execute("python", args, stdout, true)
+    if code == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        stdout.clear()
+        code = OS.execute("py", pyargs, stdout, true)
+    call_deferred("_native_clone_export_finished", code, "\n".join(stdout))
+
+
+func _native_clone_export_finished(code: int, response: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    var result: Variant = JSON.parse_string(response.strip_edges())
+    if (code == 0 and typeof(result) == TYPE_DICTIONARY
+        and result.get("schema") == "DX2Ed-experimental-native-prop-duplicate-v1"
+        and result.get("status") == "isolated-GMP-created-runtime-unverified"
+        and int(result.get("new_export_count", -1)) == int(result.get("original_export_count", 0)) + 1
+        and int(result.get("level_actor_count_after", -1)) == int(result.get("level_actor_count_before", 0)) + 1
+        and result.get("clone_frame_normalized") == true
+        and result.get("clone_payload_provenance_verified") == true
+        and int(result.get("clone_latent_action", -1)) == 0
+        and result.get("original_bytes_unchanged") == true):
+        status_label.text = (
+            "Experimental native clone GMP saved: " + str(result.get("output_file", ""))
+            + " | New actor: " + str(result.get("new_actor_name", ""))
+            + " | Verify in a backed-up retail test and restore original."
+        )
+        return
+    status_label.text = "Native clone Save As refused: " + _native_clone_error_reason(response)
+
+
+## Experimental multiple static props: source-bound, translation-only.
+## Kept separate from existing-actor Save As and one-prop path.
+func _native_multi_clone_draft_plan() -> Array:
+    var rows := []
+    if (scene_root == null or draft_prop_copies.size() < 2
+        or draft_prop_copies.size() > 8 or not property_overrides.is_empty()
+        or not draft_brush_specs.is_empty()
+        or not draft_template_provenance.is_empty()):
+        return rows
+    for name in original_mesh_transforms:
+        if meshes_by_actor.has(name):
+            var original_node: MeshInstance3D = meshes_by_actor[name]
+            if (is_instance_valid(original_node)
+                and not original_node.global_transform.is_equal_approx(original_mesh_transforms[name])):
+                return []
+    var keys := draft_prop_copies.keys()
+    keys.sort()
+    for name in keys:
+        var node: MeshInstance3D = draft_prop_copies[name]
+        var original_name := str(draft_prop_sources.get(name, ""))
+        if (not is_instance_valid(node) or not actors_by_name.has(original_name)
+            or not meshes_by_actor.has(original_name)
+            or not original_mesh_transforms.has(original_name)):
+            return []
+        var actor: Dictionary = actors_by_name[original_name]
+        if (str(actor.get("class", "")) != "StaticMeshActor"
+            or int(actor.get("export", -1)) < 1):
+            return []
+        var base_pose: Transform3D = original_mesh_transforms[original_name]
+        if not node.global_transform.basis.is_equal_approx(base_pose.basis):
+            return []
+        var shift := node.global_position - base_pose.origin
+        if not shift.is_finite() or shift.length_squared() <= 0.00000001:
+            return []
+        var unreal := [
+            shift.x / NATIVE_CLONE_UNREAL_METRES,
+            shift.z / NATIVE_CLONE_UNREAL_METRES,
+            shift.y / NATIVE_CLONE_UNREAL_METRES
+        ]
+        for component in unreal:
+            if not is_finite(float(component)) or abs(float(component)) > 4096.0:
+                return []
+        rows.append({"actor": original_name, "export": int(actor["export"]), "delta": unreal})
+    return rows
+
+
+func _open_native_multi_dialog() -> void:
+    _finish_gizmo_drag()
+    native_multi_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Multi Duplicate refused: original map/hash unavailable or writer busy."
+        return
+    var plan := _native_multi_clone_draft_plan()
+    if plan.size() < 2:
+        status_label.text = "Multi Duplicate needs 2..8 moved original StaticMeshActor copies; no rotation, scaling, original moves or other edits."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_multi_clone_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Multi Duplicate Python writer is missing."
+        return
+    # Verify every source independently before requesting a filename.
+    var checker := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_clone_probe.py")
+    if not FileAccess.file_exists(checker):
+        status_label.text = "Native actor eligibility preflight is missing."
+        return
+    for row in plan:
+        var verdict := _native_clone_check_actor(checker, row)
+        if not verdict.get("eligible", false):
+            status_label.text = "Multi Duplicate blocked " + str(row["actor"]) + ": " + str(verdict.get("reason", "Unverified source actor"))
+            return
+    native_multi_dialog.current_file = last_gmp_path.get_file()
+    native_multi_dialog.popup_centered_ratio(0.75)
+
+
+func _stage_native_multi_export(destination: String) -> void:
+    native_multi_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Multi Duplicate refused: original map changed."
+        return
+    var rows := _native_multi_clone_draft_plan()
+    if (rows.size() < 2
+        or destination.get_file().to_lower() != last_gmp_path.get_file().to_lower()):
+        status_label.text = "Multi Duplicate refused: invalid preview copies or output filename."
+        return
+    native_multi_pending = {
+        "copies": rows.duplicate(true), "source": last_gmp_path,
+        "source_sha256": source_gamesys_sha256, "destination": destination
+    }
+    native_multi_confirmation.dialog_text = (
+        "Create " + str(rows.size()) + " new StaticMeshActor exports in ONE GMP?"
+        + "\n\nOnly new actors receive normalized latent state and translated Location."
+        + "\nNo rotation/scaling/original actor changes."
+        + "\n\nIsolated output: " + destination
+        + "\n\nNo game installation is modified automatically."
+        + "\nThe original map remains unchanged and each clone is independently verified."
+    )
+    native_multi_confirmation.popup_centered(Vector2i(730, 340))
+
+
+func _execute_native_multi_export() -> void:
+    if native_multi_pending.is_empty() or not _native_clone_source_ready():
+        native_multi_pending.clear()
+        status_label.text = "Multi Duplicate refused: source or writer state changed."
+        return
+    var frozen := native_multi_pending.duplicate(true)
+    native_multi_pending.clear()
+    if (str(frozen["source"]) != last_gmp_path
+        or str(frozen["source_sha256"]) != source_gamesys_sha256
+        or _native_multi_clone_draft_plan() != frozen["copies"]):
+        status_label.text = "Multi Duplicate refused: map or preview copies changed during confirmation."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_multi_clone_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Multi Duplicate script unavailable."
+        return
+    var plan_path := OS.get_user_data_dir().path_join("native_multi_clone_plan.json")
+    var plan_file := FileAccess.open(plan_path, FileAccess.WRITE)
+    if plan_file == null:
+        status_label.text = "Multi Duplicate could not write private temporary plan."
+        return
+    plan_file.store_string(JSON.stringify({
+        "schema": "DX2Ed-experimental-multi-prop-duplicate-v1",
+        "copies": frozen["copies"]
+    }))
+    plan_file.close()
+    frozen["plan_path"] = plan_path
+    native_export_thread = Thread.new()
+    var started := native_export_thread.start(_run_native_multi_export.bind(script, frozen))
+    if started != OK:
+        native_export_thread = null
+        status_label.text = "Multi Duplicate could not start Python worker."
+        return
+    status_label.text = "Verifying and writing " + str(frozen["copies"].size()) + " new static props into one isolated GMP..."
+
+
+func _run_native_multi_export(script: String, frozen: Dictionary) -> void:
+    var args := PackedStringArray([
+        script, str(frozen["source"]), "--source-sha256", str(frozen["source_sha256"]),
+        "--copies-json", str(frozen["plan_path"]), "--output", str(frozen["destination"])
+    ])
+    var output: Array = []
+    var status := OS.execute("python", args, output, true)
+    if status == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        status = OS.execute("py", pyargs, output, true)
+    call_deferred("_native_multi_export_finished", status, "\n".join(output), str(frozen["plan_path"]))
+
+
+func _native_multi_export_finished(code: int, response: String, plan_path: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    if FileAccess.file_exists(plan_path):
+        DirAccess.remove_absolute(plan_path)
+    var result: Variant = JSON.parse_string(response.strip_edges())
+    if (code == 0 and typeof(result) == TYPE_DICTIONARY
+        and result.get("schema") == "DX2Ed-experimental-multi-prop-duplicate-v1"
+        and result.get("status") == "isolated-GMP-created-runtime-unverified"
+        and typeof(result.get("copies", null)) == TYPE_ARRAY
+        and result["copies"].size() >= 2 and result["copies"].size() <= 8
+        and result.get("original_bytes_unchanged") == true
+        and int(result.get("new_export_count", -1)) - int(result.get("original_export_count", 0)) == result["copies"].size()
+        and int(result.get("level_actor_count_after", -1)) - int(result.get("level_actor_count_before", 0)) == result["copies"].size()):
+        status_label.text = "Multi Duplicate GMP saved: " + str(result.get("output_file", "")) + " | New static props: " + str(result["copies"].size()) + " | Runtime unverified."
+        return
+    status_label.text = "Multi Duplicate refused: " + _native_clone_error_reason(response)
+
+
 func _open_native_save_as_dialog() -> void:
     if scene_root == null or current_folder.is_empty():
         status_label.text = "Import a native GMP first."
@@ -3282,6 +5510,28 @@ func focus_selected() -> void:
         camera_target = aabb.get_center()
         orbit_distance = max(1.0, aabb.size.length() * 2.4)
         _update_camera()
+        return
+    # Most original AI/NPC candidates have no GLB mesh. Make them locatable
+    # without fabricating any native NPC geometry or gameplay behavior.
+    if (not selected_actor.is_empty() and
+        (_actor_on_original_ai_layer(selected_actor)
+         or not _environment_entity_kind(selected_actor).is_empty())):
+        var coords: Variant = selected_actor.get("location", [])
+        if typeof(coords) != TYPE_ARRAY or coords.size() != 3:
+            return
+        for value in coords:
+            if typeof(value) != TYPE_FLOAT and typeof(value) != TYPE_INT:
+                return
+        var source_point := Vector3(float(coords[0]), float(coords[2]), float(coords[1]))
+        if not source_point.is_finite():
+            return
+        camera_target = source_point * NATIVE_CLONE_UNREAL_METRES
+        orbit_distance = 6.0
+        _update_camera()
+        status_label.text = (
+            "Focused original source actor " + str(selected_actor.get("name", ""))
+            + " at original Location. No new entity spawned."
+        )
 
 func frame_whole_scene() -> void:
     if scene_bounds_valid:
@@ -3347,6 +5597,20 @@ func _refresh_gizmo_shape() -> void:
             handle.position = axis * 0.68
             handle.quaternion = Quaternion(Vector3.UP, axis)
         gizmo_root.add_child(handle)
+        if editor_tool == "move":
+            # Unity-style arrow tip stays a child of its own pickable axis.
+            var tip := MeshInstance3D.new()
+            tip.name = "arrow_tip"
+            var cone := CylinderMesh.new()
+            cone.top_radius = 0.0
+            cone.bottom_radius = 0.16
+            cone.height = 0.28
+            tip.mesh = cone
+            tip.position = axis * 1.35
+            tip.quaternion = Quaternion(Vector3.UP, axis)
+            tip.material_override = tint
+            tip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+            handle.add_child(tip)
         gizmo_handles.append(handle)
     _update_gizmo_pose()
 
@@ -3354,11 +5618,16 @@ func _refresh_gizmo_shape() -> void:
 func _update_gizmo_pose() -> void:
     if gizmo_root == null:
         return
-    var show := _draft_selected_is_prop()
+    var preview_light := _environment_light_proxy_selected() and editor_tool == "move"
+    var show := _draft_selected_is_prop() or preview_light
     gizmo_root.visible = show
     if not show:
         return
-    gizmo_root.global_position = _selection_pivot()
+    if preview_light:
+        var position: Vector3 = _environment_light_preview_position(selected_actor)
+        gizmo_root.global_position = position
+    else:
+        gizmo_root.global_position = _selection_pivot()
     # Keep the handles about the same apparent size while zooming.
     var distance := camera.global_position.distance_to(gizmo_root.global_position)
     # Unity-sized move handle: 75% larger on screen than the old preview.
@@ -3385,7 +5654,8 @@ func _gizmo_axis_scalar(mouse_position: Vector2, pivot: Vector3, axis: Vector3) 
 
 
 func _begin_gizmo_drag() -> bool:
-    if not _draft_selected_is_prop():
+    var is_light := _environment_light_proxy_selected() and editor_tool == "move"
+    if not is_light and not _draft_selected_is_prop():
         return false
     _update_gizmo_pose()
     var ray := _mouse_ray(view_container.get_local_mouse_position())
@@ -3396,28 +5666,61 @@ func _begin_gizmo_drag() -> bool:
     for handle in gizmo_handles:
         if not is_instance_valid(handle):
             continue
-        var hit := _ray_mesh_triangles(handle, ray["origin"], ray["direction"])
-        if not hit.is_empty() and float(hit["distance"]) < best_distance:
-            best_distance = float(hit["distance"])
-            best_axis = handle.get_meta("axis")
+        var parts: Array[MeshInstance3D] = [handle]
+        for child in handle.get_children():
+            if child is MeshInstance3D:
+                parts.append(child)
+        for part in parts:
+            var hit := _ray_mesh_triangles(part, ray["origin"], ray["direction"])
+            if not hit.is_empty() and float(hit["distance"]) < best_distance:
+                best_distance = float(hit["distance"])
+                best_axis = handle.get_meta("axis")
     if best_axis == Vector3.ZERO:
         return false
     gizmo_drag_axis = best_axis
-    gizmo_drag_pivot = _selection_pivot()
+    environment_light_gizmo_drag = is_light
+    if is_light:
+        gizmo_drag_pivot = _environment_light_preview_position(selected_actor)
+    else:
+        gizmo_drag_pivot = _selection_pivot()
     gizmo_start_transforms.clear()
-    for node in _selection_nodes():
-        gizmo_start_transforms[str(node.name)] = node.global_transform
-    gizmo_start_transform = selected_mesh.global_transform
+    if not is_light:
+        for node in _selection_nodes():
+            gizmo_start_transforms[str(node.name)] = node.global_transform
+        gizmo_start_transform = selected_mesh.global_transform
     gizmo_drag_start_screen = view_container.get_local_mouse_position()
     var scalar: Variant = _gizmo_axis_scalar(gizmo_drag_start_screen, gizmo_drag_pivot, best_axis)
     gizmo_drag_start_scalar = float(scalar) if scalar != null else 0.0
-    gizmo_undo_before = _capture_edit_state()
+    if is_light:
+        gizmo_undo_before.clear() # This light proxy must NEVER enter prop undo/draft records.
+    else:
+        gizmo_undo_before = _capture_edit_state()
     gizmo_drag_active = true
     return true
 
 
 func _apply_gizmo_drag() -> void:
-    if not gizmo_drag_active or not _draft_selected_is_prop():
+    if not gizmo_drag_active:
+        return
+    if environment_light_gizmo_drag:
+        if editor_tool != "move" or not _environment_light_proxy_selected():
+            return
+        var scalar: Variant = _gizmo_axis_scalar(
+            view_container.get_local_mouse_position(), gizmo_drag_pivot, gizmo_drag_axis)
+        if scalar == null:
+            return
+        var shift := float(scalar) - gizmo_drag_start_scalar
+        if Input.is_key_pressed(KEY_CTRL):
+            shift = snapped(shift, float(prop_edit_step.value))
+        _set_environment_light_preview_position(
+            selected_actor, gizmo_drag_pivot + gizmo_drag_axis * shift)
+        status_label.text = (
+            "Editor-only " + str(selected_actor.get("name", "")) +
+            " light gizmo: " + str(_environment_light_preview_position(selected_actor))
+            + " | original DX2 Light remains unchanged; use Reset to restore."
+        )
+        return
+    if not _draft_selected_is_prop():
         return
     var distance := camera.global_position.distance_to(gizmo_drag_pivot)
     var mouse := view_container.get_local_mouse_position()
@@ -3623,6 +5926,15 @@ func _input(event: InputEvent) -> void:
 
 
 func _pick_actor(additive: bool = false) -> void:
+    # On-screen original Light handles are editor overlays, not map meshes.
+    # Give a clearly clickable marker priority over underlying BSP triangles.
+    if view_container.size.x > 0.0 and view_container.size.y > 0.0:
+        var screen := (view_container.get_local_mouse_position()
+            * Vector2(world_view.size) / view_container.size)
+        var light_name := _pick_environment_light_marker(screen)
+        if not light_name.is_empty():
+            _select_environment_light_from_viewport(light_name)
+            return
     # AABB is a broad-phase filter only. Actual visible triangles decide the pick:
     # a huge BSP box must not swallow a smaller prop, nor select an empty area.
     if all_mesh_instances.is_empty() or view_container.size.x <= 0.0 or view_container.size.y <= 0.0:
