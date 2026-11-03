@@ -346,7 +346,12 @@ func _run() -> void:
         or viewer.semi_lit_last_source_stats.get("explicit_off") != 1
         or viewer.semi_lit_last_source_stats.get("missing_data") != 1
         or not viewer.lighting_diagnostics.text.contains("Excluded by chosen limit: 9")
-        or viewer.lighting_ambient_control.value != 0.38):
+        or abs(viewer.lighting_ambient_control.value - 0.38) > 0.001
+        or viewer.lighting_source_list.item_count != 43
+        or not viewer.lighting_source_list.get_item_text(0).begins_with("ACTIVE")
+        or not viewer.lighting_source_list.get_item_text(32).begins_with("LIMITED")
+        or not viewer.lighting_source_list.get_item_text(41).begins_with("OFF")
+        or not viewer.lighting_source_list.get_item_text(42).begins_with("INVALID")):
         _fail("Default semi-lit 32/41 diagnostics mismatch: "
             + JSON.stringify(viewer.semi_lit_last_source_stats)
             + " ambient_control=" + str(viewer.lighting_ambient_control.value))
@@ -361,6 +366,7 @@ func _run() -> void:
         or viewer._semi_lit_active_budget() != 256
         or viewer.semi_lit_nodes.size() != 41
         or viewer.semi_lit_last_source_stats.get("capped") != 0
+        or not viewer.lighting_source_list.get_item_text(32).begins_with("ACTIVE")
         or abs(viewer.semi_lit_world_environment.ambient_light_energy - 0.65) > 0.001
         or not viewer.semi_lit_nodes.has("Light__7")
         or abs(viewer.semi_lit_nodes["Light__7"].omni_range - 8.64) > 0.001
