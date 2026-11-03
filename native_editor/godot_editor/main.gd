@@ -655,7 +655,7 @@ func _make_ui() -> void:
     environment_light_radius_control.max_value = 16.0
     environment_light_radius_control.step = 0.1
     environment_light_radius_control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    environment_light_radius_control.disabled = true
+    environment_light_radius_control.editable = false
     environment_light_radius_control.value_changed.connect(
         func(value): _set_environment_light_visual_setting("range", value))
     light_radius_row.add_child(environment_light_radius_control)
@@ -669,7 +669,7 @@ func _make_ui() -> void:
     environment_light_energy_control.max_value = 2.5
     environment_light_energy_control.step = 0.05
     environment_light_energy_control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    environment_light_energy_control.disabled = true
+    environment_light_energy_control.editable = false
     environment_light_energy_control.value_changed.connect(
         func(value): _set_environment_light_visual_setting("energy", value))
     light_energy_row.add_child(environment_light_energy_control)
@@ -1927,8 +1927,8 @@ func _refresh_environment_light_visual_controls() -> void:
     enabled = enabled and not values.is_empty()
     environment_light_controls_syncing = true
     environment_light_color_control.disabled = not enabled
-    environment_light_radius_control.disabled = not enabled
-    environment_light_energy_control.disabled = not enabled
+    environment_light_radius_control.editable = enabled
+    environment_light_energy_control.editable = enabled
     environment_light_live_toggle.disabled = not enabled
     environment_light_visual_reset_button.disabled = (not enabled
         or not environment_light_visual_settings.has(str(selected_actor.get("name", ""))))
