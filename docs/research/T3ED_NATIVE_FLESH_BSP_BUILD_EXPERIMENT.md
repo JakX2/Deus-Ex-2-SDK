@@ -50,3 +50,18 @@ The [original Ion Storm editor release instructions](https://worthplaying.com/ar
 The editor toolbar Play Map requires the **debug-only T3MainOptVersion.exe** replacing a backed-up T3Main.exe in a test installation, per the original release instructions. Do not replace a retail executable merely to run this test.
 
 T3 runtime verification remains pending, and T3 compatibility **does not** prove DX2 runtime compatibility.
+
+## Follow-up: first user-generated GMP export
+
+On 2026-11-03, user exported `DX2SDK_Geo_Test.gmp` using **File > Export Map For Game** from the 78,727-byte After_Flesh_BSP source map.
+
+- Exported GMP: **68,118 bytes**, SHA-256 `6b205d1cc09a299e82cf6863bf3968dd4d19e5a4977c50790b4e6c40b666eba3`.
+- Source UNR: SHA-256 `289a16523e2e20c6096bcaf77e1d99d9af3d889f8419e23a0ea4d52b0544d0b9`.
+- Both valid UE95 / T3 licensee133. Names/imports/exports **129/16/46 → 114/10/37**.
+- Editable Polys exports **9 → 0**, Brush **7 → 7**, Model **9 → 9**.
+- **All eight validated Flesh BSP render blocks survive byte-for-byte in identical order**, preserving **172 vertices**, **94 triangles** and **21,024 packed render-block bytes**.
+- Level payload **46,785 → 52,303 bytes** (+5,518); its additional nonrender bytes remain uninterpreted.
+
+**Concluded:** The native T3Ed source-to-uncooked-GMP exporter preserves newly built render geometry. **Not yet proven:** actual T3 game load, collision/PVS/Havok, IBT generation or DX2 licensee68 writing compatibility. No copyrighted map data is committed.
+
+Use `research/t3ed/compare_editor_cooked.py pair` to reproduce this kind of same-name `.unr`/`.gmp` comparison; use `compare_editor_stages.py` for the two source `.unr` build stages.
