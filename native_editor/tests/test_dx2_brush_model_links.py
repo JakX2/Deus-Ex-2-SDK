@@ -133,6 +133,14 @@ class BrushModelAuditTests(unittest.TestCase):
         self.assertEqual(report["owners"][0]["model_header"]["candidate_bounds_status"],
                          "unavailable_unrecognized_prefix")
 
+    def test_all_source_observed_dx2_licensees_accepted(self):
+        for licensee in (65, 67, 68, 69):
+            with self.subTest(licensee=licensee):
+                self.pkg.licensee = licensee
+                report = tool.audit_map(self.original)
+                self.assertEqual(report["source"]["licensee_version"], licensee)
+        self.pkg.licensee = 68
+
     def test_refuses_thief_and_tampered_game_version(self):
         self.pkg.licensee = 133
         with self.assertRaisesRegex(ValueError,"Expected DX2 Unreal v95"):
