@@ -1901,12 +1901,14 @@ func _update_environment_light_selection() -> void:
     if environment_light_preview_button != null:
         environment_light_preview_button.disabled = selected_actor.get("class", "") != "Light"
     if not _environment_light_proxy_selected():
+        _update_gizmo_pose()
         return
     var position: Vector3 = _environment_light_preview_position(selected_actor)
     environment_light_radius.mesh = _light_sphere_wire_mesh(
         _environment_light_preview_radius(selected_actor))
     environment_light_radius.global_position = position
     environment_light_radius.visible = true
+    _update_gizmo_pose()
 
 
 func _set_environment_light_preview_position(actor: Dictionary, position: Vector3) -> void:
