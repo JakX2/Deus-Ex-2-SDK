@@ -194,6 +194,10 @@ var geometry_all_faces_target: MeshInstance3D
 var geometry_all_faces_previous_override: Material
 var geometry_isolation_button: Button
 var geometry_all_faces_button: Button
+# User-controlled visibility exclusion for suspect native BSP preview blocks.
+# Never touches GLB, GMP, actor drafts, game source or native save plans.
+var bsp_hidden_preview: Dictionary = {} # MeshInstance3D -> original visibility
+var bsp_hide_preview_button: Button
 # Faces are shared by instances of the same imported mesh; cache per mesh resource.
 var pick_faces_by_mesh: Dictionary = {}
 var selected_diagnostic: String = ""
@@ -887,6 +891,14 @@ func _make_ui() -> void:
     geometry_all_faces_button.tooltip_text = "Reversible: render only the selected mesh unshaded with backface culling OFF. Never changes source or shared GLB materials."
     geometry_all_faces_button.pressed.connect(_toggle_geometry_all_faces)
     geometry_debug_row.add_child(geometry_all_faces_button)
+    bsp_hide_preview_button = Button.new()
+    bsp_hide_preview_button.text = "Hide selected BSP (preview)"
+    bsp_hide_preview_button.tooltip_text = (
+        "Temporarily hide a selected original BSP render block to inspect geometry behind it. "
+        + "Restore here; original GMP/GLB and game geometry are unchanged."
+    )
+    bsp_hide_preview_button.pressed.connect(_toggle_bsp_preview_visibility)
+    geometry_debug_row.add_child(bsp_hide_preview_button)
     inspector_transform_section = VBoxContainer.new()
     inspector_pane.add_child(inspector_transform_section)
     var inspector_transform_heading := Label.new()
@@ -1497,6 +1509,7 @@ func _clear_current_scene() -> void:
         environment_light_reset_button.disabled = true
     _restore_geometry_all_faces()
     _restore_geometry_isolation()
+    _restore_bsp_preview_visibility()
     _clear_selection()
     asset_catalog.clear()
     selected_asset.clear()
@@ -3894,6 +3907,49 @@ func _refresh_geometry_debug_buttons() -> void:
             "Restore materials" if is_instance_valid(geometry_all_faces_target)
             else "Inspect both faces"
         )
+    if bsp_hide_preview_button != null:
+        var selected_bsp := (available and _selection_nodes()[0] is MeshInstance3D
+            and str(_selection_nodes()[0].name).begins_with("BSP_"))
+        bsp_hide_preview_button.disabled = (bsp_hidden_preview.is_empty() and not selected_bsp)
+        bsp_hide_preview_button.text = (
+            "Restore hidden BSP (" + str(bsp_hidden_preview.size()) + ")"
+            if not bsp_hidden_preview.is_empty() else "Hide selected BSP (preview)"
+        )
+
+
+## Reversible scene-visibility operation only. Does NOT remove BSP from GLB,
+## package files, actor metadata, or the native writer's source set.
+func _restore_bsp_preview_visibility() -> void:
+    for node in bsp_hidden_preview:
+        if is_instance_valid(node):
+            node.visible = bool(bsp_hidden_preview[node])
+    bsp_hidden_preview.clear()
+    _refresh_geometry_debug_buttons()
+
+
+func _toggle_bsp_preview_visibility() -> void:
+    if not bsp_hidden_preview.is_empty():
+        _restore_bsp_preview_visibility()
+        if status_label != null:
+            status_label.text = "Original BSP viewport visibility restored. No game files edited."
+        return
+    if not geometry_isolation_visibility.is_empty():
+        if status_label != null:
+            status_label.text = "End geometry isolation before temporarily hiding BSP."
+        return
+    var nodes := _selection_nodes()
+    if nodes.size() != 1 or not is_instance_valid(nodes[0]):
+        return
+    var target: MeshInstance3D = nodes[0]
+    if not str(target.name).begins_with("BSP_") or not all_mesh_instances.has(target):
+        return
+    bsp_hidden_preview[target] = target.visible
+    target.visible = false
+    _clear_selection()
+    _refresh_inspector_panel()
+    if status_label != null:
+        status_label.text = ("Temporarily hid " + str(target.name)
+            + " in the Godot viewport only. Click Restore hidden BSP to bring it back.")
 
 
 func _restore_geometry_isolation() -> void:
