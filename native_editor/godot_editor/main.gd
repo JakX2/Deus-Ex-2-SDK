@@ -1922,7 +1922,7 @@ func _environment_light_visual_values(actor: Dictionary) -> Dictionary:
 func _refresh_environment_light_visual_controls() -> void:
     if environment_light_color_control == null:
         return
-    var enabled := selected_actor.get("class", "") == "Light"
+    var enabled: bool = selected_actor.get("class", "") == "Light"
     var values := _environment_light_visual_values(selected_actor) if enabled else {}
     enabled = enabled and not values.is_empty()
     environment_light_controls_syncing = true
