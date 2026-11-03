@@ -129,7 +129,23 @@ class ConvexCandidateTests(unittest.TestCase):
             text = output.read_text()
             self.assertEqual(len([row for row in text.splitlines() if row.startswith("v ")]),8)
             self.assertEqual(len([row for row in text.splitlines() if row.startswith("f ")]),12)
-            self.assertIn("NOT native vertex data",text)
+            self.assertIn("NOT native stored vertices",text)
+            self.assertIn("bounds-centered; display-scale 0.01905", text)
+            pts = [list(map(float, row.split()[1:]))
+                   for row in text.splitlines() if row.startswith("v ")]
+            for axis, half in enumerate((2.0, 3.0, 4.0)):
+                self.assertAlmostEqual(
+                    max(p[axis] for p in pts), half * recon.DEFAULT_OBJ_DISPLAY_SCALE)
+                self.assertAlmostEqual(
+                    min(p[axis] for p in pts), -half * recon.DEFAULT_OBJ_DISPLAY_SCALE)
+            raw_output = root/"reports"/"raw.obj"
+            recon.write_candidate_obj(hull, raw_output, source, 7,
+                                      raw_source_coords=True)
+            self.assertIn("RAW source coordinates", raw_output.read_text())
+            raw_pts = [list(map(float, row.split()[1:]))
+                       for row in raw_output.read_text().splitlines()
+                       if row.startswith("v ")]
+            self.assertAlmostEqual(max(p[2] for p in raw_pts), 4.0)
             with self.assertRaises(FileExistsError):
                 recon.write_candidate_obj(hull,output,source,7)
             with self.assertRaisesRegex(ValueError,"outside the original game map"):
@@ -163,6 +179,9 @@ class ConvexCandidateTests(unittest.TestCase):
                 preview=root/"output"/"one.obj"
                 report=recon.export_single_model(source,1,preview)
                 self.assertEqual(report["candidate_vertices"],8)
+                self.assertTrue(report["blender_centered_and_scaled"])
+                self.assertEqual(report["preview_scale_units_per_source_unit"],
+                                 recon.DEFAULT_OBJ_DISPLAY_SCALE)
                 self.assertTrue(preview.is_file())
                 with self.assertRaisesRegex(ValueError,"outside source package"):
                     recon.export_single_model(source,99,root/"output"/"bad.obj")

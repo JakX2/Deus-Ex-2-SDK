@@ -22,6 +22,8 @@ SCHEMA = "DX2SDK-native-model-convex-candidate-v1"
 MAX_PLANES = 64
 MIN_DETERMINANT = 1e-6
 RADIUS_FACTOR = 1.001
+# Blender preview convenience only. This is not verified DX2 world-unit scale.
+DEFAULT_OBJ_DISPLAY_SCALE = 0.01905
 
 
 def dot(a, b):
@@ -276,8 +278,9 @@ def audit_maps(paths, *, include_geometry=False, include_owners=False):
     }
 
 
-def write_candidate_obj(shape, output: Path, source: Path, export_id: int):
-    """Write one validated triangulated, untextured offline preview OBJ."""
+def write_candidate_obj(shape, output: Path, source: Path, export_id: int,
+                        *, raw_source_coords: bool = False):
+    """Write a centered Blender preview by default; retain optional raw export."""
     if shape.get("status") != "validated_candidate_convex_hull":
         raise ValueError("Only validated candidate convex hulls may be previewed")
     output, source = Path(output).resolve(), Path(source).resolve()
@@ -285,13 +288,23 @@ def write_candidate_obj(shape, output: Path, source: Path, export_id: int):
         raise ValueError("Expected a new .obj distinct from source GMP")
     if output.is_relative_to(source.parent):
         raise ValueError("Write previews outside the original game map directory")
+    corners = shape["corner_xyz"]
+    # Bounding-box center, not actor Location or world placement.
+    center = [(min(p[i] for p in corners) + max(p[i] for p in corners))*0.5
+              for i in range(3)]
+    scale = 1.0 if raw_source_coords else DEFAULT_OBJ_DISPLAY_SCALE
     lines = [
-        "# DX2SDK candidate convex Model, reconstructed from original face planes",
-        "# NOT native vertex data; runtime coordinate frame unverified",
+        "# DX2SDK candidate convex volume from source Model face planes",
+        "# NOT native stored vertices or DX2 world-position export",
+        "# Blender preview: " + ("RAW source coordinates" if raw_source_coords
+                                 else "bounds-centered; display-scale 0.01905"),
+        "# source candidate bounds center (removed in preview only): " +
+        ", ".join(format(v, ".10g") for v in center),
         "o Model_Export_"+str(export_id)
     ]
-    for xyz in shape["corner_xyz"]:
-        lines.append("v "+" ".join(format(float(v), ".10g") for v in xyz))
+    for xyz in corners:
+        displayed = xyz if raw_source_coords else [(xyz[i]-center[i])*scale for i in range(3)]
+        lines.append("v "+" ".join(format(float(v), ".10g") for v in displayed))
     for poly in shape["polygons_outward"]:
         ids = poly["vertex_indices"]
         lines.append("g Candidate_Face_"+str(poly["source_face"]))
@@ -302,7 +315,8 @@ def write_candidate_obj(shape, output: Path, source: Path, export_id: int):
         stream.write("\n".join(lines)+"\n")
 
 
-def export_single_model(source: Path, export_id: int, output: Path) -> dict:
+def export_single_model(source: Path, export_id: int, output: Path,
+                        *, raw_source_coords: bool = False) -> dict:
     if type(export_id) is not int or export_id < 1:
         raise ValueError("Model export ID must be a positive integer")
     source = Path(source)
@@ -324,11 +338,16 @@ def export_single_model(source: Path, export_id: int, output: Path) -> dict:
     hull = reconstruct_faces(record["faces"])
     if hull["status"] != "validated_candidate_convex_hull":
         raise ValueError("Model did not pass convex validation: "+hull["status"])
-    write_candidate_obj(hull, output, source, export_id)
+    write_candidate_obj(hull, output, source, export_id,
+                        raw_source_coords=raw_source_coords)
     return {"model_export": export_id, "model_name": exp["name"],
             "candidate_vertices": hull["corner_count"], "faces": hull["face_count"],
             "source_sha256": hashlib.sha256(pkg.data).hexdigest(),
-            "obj": str(Path(output).resolve()), "native_map_written": False}
+            "obj": str(Path(output).resolve()),
+            "blender_centered_and_scaled": not raw_source_coords,
+            "preview_scale_units_per_source_unit": (
+                1.0 if raw_source_coords else DEFAULT_OBJ_DISPLAY_SCALE),
+            "native_map_written": False}
 
 
 def main(argv=None):
@@ -340,17 +359,22 @@ def main(argv=None):
                         help="Join Level actor GameSys45 Model ownership (slower)")
     parser.add_argument("--preview-model-export", type=int)
     parser.add_argument("--preview-obj", type=Path)
+    parser.add_argument("--preview-raw-source-coordinates", action="store_true",
+                        help="Disable default bounds-centering and display scaling")
     args = parser.parse_args(argv)
     try:
         if (args.preview_model_export is None) != (args.preview_obj is None):
             raise ValueError("Specify --preview-model-export and --preview-obj together")
+        if args.preview_raw_source_coordinates and args.preview_obj is None:
+            raise ValueError("Raw-coordinate option requires --preview-obj")
         if args.preview_obj is not None and len(args.maps) != 1:
             raise ValueError("OBJ preview needs exactly one original GMP source")
         result = audit_maps(args.maps, include_geometry=args.include_geometry,
                             include_owners=args.include_owners)
         if args.preview_obj is not None:
             result["obj_preview"] = export_single_model(
-                args.maps[0], args.preview_model_export, args.preview_obj)
+                args.maps[0], args.preview_model_export, args.preview_obj,
+                raw_source_coords=args.preview_raw_source_coordinates)
         if args.report:
             face_reader.header.write_report(result, args.report, args.maps)
             print(json.dumps({"status": "ok", "report": str(args.report),
