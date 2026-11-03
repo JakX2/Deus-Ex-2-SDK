@@ -52,3 +52,19 @@ python -m unittest discover -s native_editor/tests -p "test_dx2_brush_model_link
 - Only then implement isolated GMP output with independent whole-package verification, and test the result in **Invisible War** itself.
 
 **No playable DX2 level, new collision data or native brush writer is claimed by this work.**
+
+## Extended corpus: additional DX2 package licensee revisions
+
+A read-only survey of **19** original Seattle mission GMPs found Unreal package
+version 95 with DX2 licensee **65, 67, 68 and 69**. The Level actor-list offset
+and repeated-count format held across all 19. Brush → Model GameSys property
+45 was present with a valid unique Model reference for **3,392 of 3,408**
+original Brush exports; **16 Brushes** from
+`M1_Seattle_Acorp_Lab_Upper.gmp` (licensee 67) had **no** such property.
+The audit now accepts all four **source-observed** licensee versions, retains
+Brush missing-link anomalies as explicit issues, and does not silently invent
+a Model reference. This corpus does not prove compatibility with every game
+revision or establish what the 16 unlinked Brushes represent.
+
+These figures expand the separate three-map totals above; they do **not**
+replace or contradict the earlier 515/515 finding for those three maps.
