@@ -168,6 +168,42 @@ class ConvexCandidateTests(unittest.TestCase):
                     recon.export_single_model(source,99,root/"output"/"bad.obj")
             self.assertEqual(source.read_bytes(),b"fixture-only source")
 
+    def test_optional_gamesys45_owner_classification(self):
+        import inspect_brush_model_links
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root/"Game"/"Synthetic.gmp"
+            source.parent.mkdir()
+            source.write_bytes(b"fixture")
+            class FakePackage:
+                def __init__(self, path):
+                    self.data = Path(path).read_bytes()
+                    self.version = 95
+                    self.licensee = 68
+                    self.exports = [{"index":1, "name":"Model__42"}]
+                def class_name(self, _exp):
+                    return "Model"
+                def payload(self, _exp):
+                    return b"synthetic"
+            fake_link = {"owners": [{
+                "model_export": 1, "actor_export": 12,
+                "actor_name": "NavMeshSubtractionVolume__1",
+                "actor_class": "NavMeshSubtractionVolume",
+            }]}
+            with patch.object(recon.face_reader.header,"Package",side_effect=FakePackage), \
+                 patch.object(recon.face_reader,"inspect_model_faces",
+                              return_value={"status":"decoded_candidate_face_records",
+                                            "faces":box()}), \
+                 patch.object(inspect_brush_model_links,"audit_map",return_value=fake_link):
+                result = recon.audit_maps([source], include_owners=True)
+                self.assertEqual(
+                    result["totals"]["face_bearing_owner_NavMeshSubtractionVolume"],1)
+                row = result["maps"][0]["nonempty_model_results"][0]
+                self.assertEqual(
+                    row["actor_owners_by_gamesys45"][0]["actor_class"],
+                    "NavMeshSubtractionVolume")
+                self.assertNotIn("Brush",row["actor_owners_by_gamesys45"][0]["actor_class"])
+
     def test_reject_duplicate_source_inputs(self):
         with self.assertRaisesRegex(ValueError,"Duplicate"):
             recon.audit_maps([Path("same.gmp"),Path("same.gmp")])
