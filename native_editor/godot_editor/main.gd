@@ -126,6 +126,15 @@ var environment_light_preview_button: Button
 var environment_light_clear_button: Button
 var environment_light_audit_thread: Thread = null
 var environment_light_previews: Array[OmniLight3D] = []
+# Unity-style source Light selection is editor-only. Never a native
+# actor transform, prop draft, or input to any GMP writer.
+var environment_light_markers_root: Node3D
+var environment_light_markers: Dictionary = {} # source actor name -> MeshInstance3D
+var environment_light_positions: Dictionary = {} # changed visual-only positions
+var environment_light_radius: MeshInstance3D
+var environment_light_show_markers: CheckBox
+var environment_light_reset_button: Button
+var environment_light_gizmo_drag := false
 var loaded_actors_json_path: String = ""
 var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
@@ -598,6 +607,17 @@ func _make_ui() -> void:
     environment_details.custom_minimum_size.y = 200
     environment_details.text = "Import an original DX2 map to browse its native lights and audio zones. Read-only."
     environment_tab.add_child(environment_details)
+    environment_light_show_markers = CheckBox.new()
+    environment_light_show_markers.text = "Show clickable Light markers in Scene"
+    environment_light_show_markers.button_pressed = true
+    environment_light_show_markers.tooltip_text = "Original Light locations. Click a marker to select; W to move its preview-only gizmo."
+    environment_light_show_markers.toggled.connect(_set_environment_light_markers_visible)
+    environment_tab.add_child(environment_light_show_markers)
+    environment_light_reset_button = Button.new()
+    environment_light_reset_button.text = "Reset selected Light gizmo preview"
+    environment_light_reset_button.disabled = true
+    environment_light_reset_button.pressed.connect(_reset_selected_environment_light_position)
+    environment_tab.add_child(environment_light_reset_button)
     environment_light_audit_button = Button.new()
     environment_light_audit_button.text = "Audit original Light dependencies"
     environment_light_audit_button.disabled = true
@@ -1251,6 +1271,22 @@ func _make_world() -> void:
     gizmo_root.name = "EditorGizmo"
     world_root.add_child(gizmo_root)
     _create_transform_gizmo()
+    environment_light_markers_root = Node3D.new()
+    environment_light_markers_root.name = "DX2Ed_Original_Light_Markers_EDITOR_ONLY"
+    environment_light_markers_root.set_meta("editor_only", true)
+    world_root.add_child(environment_light_markers_root)
+    environment_light_radius = MeshInstance3D.new()
+    environment_light_radius.name = "DX2Ed_Selected_Light_Radius_EDITOR_ONLY"
+    environment_light_radius.set_meta("editor_only", true)
+    var radius_material := StandardMaterial3D.new()
+    radius_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    radius_material.albedo_color = Color(1.0, 0.85, 0.25, 0.78)
+    radius_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    radius_material.no_depth_test = true
+    radius_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    environment_light_radius.material_override = radius_material
+    environment_light_radius.visible = false
+    environment_light_markers_root.add_child(environment_light_radius)
     var light := DirectionalLight3D.new()
     light.rotation_degrees = Vector3(-45, 25, 0)
     light.light_energy = 1.6
@@ -1331,15 +1367,19 @@ func load_actors(path: String) -> void:
             actors_by_name[str(actor["name"])] = actor
     _refresh_actor_list()
     _refresh_environment_entities()
+    _rebuild_environment_light_markers()
     _load_source_gamesys_catalog(path.get_base_dir().path_join("gamesys_inspector.json"))
     status_label.text = "Loaded %d actors, %d meshes. Click a mesh or select an actor." % [actors.size(), mesh_count]
 
 func _clear_current_scene() -> void:
+    _clear_environment_light_markers()
     _clear_environment_light_previews()
     if environment_light_audit_button != null:
         environment_light_audit_button.disabled = true
     if environment_light_preview_button != null:
         environment_light_preview_button.disabled = true
+    if environment_light_reset_button != null:
+        environment_light_reset_button.disabled = true
     _restore_geometry_all_faces()
     _restore_geometry_isolation()
     _clear_selection()
@@ -1664,6 +1704,9 @@ func _environment_entity_selected(index: int) -> void:
         environment_light_audit_button.disabled = kind != "Light"
     if environment_light_preview_button != null:
         environment_light_preview_button.disabled = kind != "Light"
+    if environment_light_reset_button != null:
+        environment_light_reset_button.disabled = (kind != "Light"
+            or not environment_light_positions.has(str(actor.get("name", ""))))
     if environment_details == null:
         return
     var rows: PackedStringArray = [
@@ -1687,6 +1730,10 @@ func _environment_entity_selected(index: int) -> void:
             rows.append("Original Level reference: " + str(native.get("Level", "unavailable")))
             rows.append("bDynamicLight: " + str(native.get("bDynamicLight", "unavailable")))
             rows.append("bSentSpawnNotification: " + str(native.get("bSentSpawnNotification", "unavailable")))
+        var visual_position: Variant = _environment_light_preview_position(actor)
+        if typeof(visual_position) == TYPE_VECTOR3:
+            rows.append("Light marker (Godot metres): " + str(visual_position))
+            rows.append("Move with W gizmo. Editor preview ONLY; Reset restores original coordinates.")
         rows.append("New light placement BLOCKED: BSP point-to-leaf and native state must be reconstructed.")
     elif kind == "Ambient sound zone":
         rows.append("StreamSchema1 (GameSys 1287): " + str(_environment_game_value(actor, 1287)))
@@ -1699,6 +1746,7 @@ func _environment_entity_selected(index: int) -> void:
     rows.append("Original source unchanged; zone edits are opt-in, isolated and experimental.")
     environment_details.text = "\n".join(rows)
     _refresh_environment_sound_fields(actor)
+    _update_environment_light_selection()
 
 
 
@@ -4001,6 +4049,7 @@ func select_actor(actor: Dictionary) -> void:
         status_label.text = "Selected " + name + " | " + str(actor.get("class", "Unknown"))
         _refresh_inspector_panel()
     _sync_actor_list_selection()
+    _update_environment_light_selection()
 
 
 func _clear_selection() -> void:
@@ -4014,6 +4063,7 @@ func _clear_selection() -> void:
     selected_overlay_original = null
     selected_diagnostic = ""
     selected_actor = {}
+    _update_environment_light_selection()
 
 
 
