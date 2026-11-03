@@ -135,6 +135,16 @@ var environment_light_radius: MeshInstance3D
 var environment_light_show_markers: CheckBox
 var environment_light_reset_button: Button
 var environment_light_gizmo_drag := false
+# v10 light inspector is an isolated visual sandbox. These controls and
+# settings must NEVER be routed into native GMP writers or draft state.
+var environment_light_color_control: ColorPickerButton
+var environment_light_radius_control: SpinBox
+var environment_light_energy_control: SpinBox
+var environment_light_live_toggle: CheckBox
+var environment_light_visual_reset_button: Button
+var environment_light_visual_settings: Dictionary = {} # source name -> preview-only color/range/energy
+var environment_light_live_node: OmniLight3D
+var environment_light_controls_syncing := false
 var loaded_actors_json_path: String = ""
 var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
@@ -618,6 +628,68 @@ func _make_ui() -> void:
     environment_light_reset_button.disabled = true
     environment_light_reset_button.pressed.connect(_reset_selected_environment_light_position)
     environment_tab.add_child(environment_light_reset_button)
+    var light_visual_heading := Label.new()
+    light_visual_heading.text = "Selected Light appearance | GODOT PREVIEW ONLY"
+    light_visual_heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    environment_tab.add_child(light_visual_heading)
+    environment_light_color_control = ColorPickerButton.new()
+    environment_light_color_control.text = "Preview color"
+    environment_light_color_control.disabled = true
+    environment_light_color_control.edit_alpha = false
+    environment_light_color_control.color_changed.connect(
+        func(value): _set_environment_light_visual_setting("color", value))
+    environment_tab.add_child(environment_light_color_control)
+    var light_radius_row := HBoxContainer.new()
+    var light_radius_label := Label.new()
+    light_radius_label.text = "Radius (preview m)"
+    light_radius_row.add_child(light_radius_label)
+    environment_light_radius_control = SpinBox.new()
+    environment_light_radius_control.min_value = 0.5
+    environment_light_radius_control.max_value = 16.0
+    environment_light_radius_control.step = 0.1
+    environment_light_radius_control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    environment_light_radius_control.disabled = true
+    environment_light_radius_control.value_changed.connect(
+        func(value): _set_environment_light_visual_setting("range", value))
+    light_radius_row.add_child(environment_light_radius_control)
+    environment_tab.add_child(light_radius_row)
+    var light_energy_row := HBoxContainer.new()
+    var light_energy_label := Label.new()
+    light_energy_label.text = "Brightness (preview)"
+    light_energy_row.add_child(light_energy_label)
+    environment_light_energy_control = SpinBox.new()
+    environment_light_energy_control.min_value = 0.05
+    environment_light_energy_control.max_value = 2.5
+    environment_light_energy_control.step = 0.05
+    environment_light_energy_control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    environment_light_energy_control.disabled = true
+    environment_light_energy_control.value_changed.connect(
+        func(value): _set_environment_light_visual_setting("energy", value))
+    light_energy_row.add_child(environment_light_energy_control)
+    environment_tab.add_child(light_energy_row)
+    environment_light_live_toggle = CheckBox.new()
+    environment_light_live_toggle.text = "Live lighting at selected source marker"
+    environment_light_live_toggle.tooltip_text = (
+        "Godot OmniLight3D at visual marker position, approximate lighting. "
+        + "Does NOT bake illumination, edit LightColor, or save to GMP."
+    )
+    environment_light_live_toggle.disabled = true
+    environment_light_live_toggle.toggled.connect(
+        func(_enabled): _sync_environment_light_live_node())
+    environment_tab.add_child(environment_light_live_toggle)
+    environment_light_visual_reset_button = Button.new()
+    environment_light_visual_reset_button.text = "Reset selected Light preview appearance"
+    environment_light_visual_reset_button.disabled = true
+    environment_light_visual_reset_button.pressed.connect(
+        _reset_selected_environment_light_visual_settings)
+    environment_tab.add_child(environment_light_visual_reset_button)
+    var light_visual_note := Label.new()
+    light_visual_note.text = (
+        "Visual units are approximate, not DX2 engine units. "
+        + "No original GameSys values, GMP bytes or native light states are changed."
+    )
+    light_visual_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    environment_tab.add_child(light_visual_note)
     environment_light_audit_button = Button.new()
     environment_light_audit_button.text = "Audit original Light dependencies"
     environment_light_audit_button.disabled = true
@@ -1798,6 +1870,142 @@ func _environment_light_preview_radius(actor: Dictionary) -> float:
     return clampf(float(original) * 0.12, 0.5, 16.0)
 
 
+# Source byte fields are interpreted only as approximate Godot visuals.
+# We deliberately keep source GameSys dictionaries immutable.
+func _environment_light_visual_defaults(actor: Dictionary) -> Dictionary:
+    if actor.get("class", "") != "Light":
+        return {}
+    var color_info: Variant = _environment_game_value(actor, 116)
+    var shape: Variant = _environment_game_value(actor, 118)
+    if typeof(color_info) != TYPE_DICTIONARY or typeof(shape) != TYPE_DICTIONARY:
+        return {}
+    var values := [
+        color_info.get("LightHue", 0),
+        color_info.get("LightSaturation", 0),
+        color_info.get("LightBrightness", null),
+        shape.get("LightRadius", null)
+    ]
+    for value in values:
+        if typeof(value) != TYPE_FLOAT and typeof(value) != TYPE_INT:
+            return {}
+        if not is_finite(float(value)) or float(value) < 0.0 or float(value) > 255.0:
+            return {}
+    return {
+        "color": Color.from_hsv(float(values[0]) / 255.0,
+            float(values[1]) / 255.0, 1.0),
+        "range": clampf(float(values[3]) * 0.12, 0.5, 16.0),
+        "energy": clampf(float(values[2]) / 64.0, 0.05, 2.5)
+    }
+
+
+func _environment_light_visual_values(actor: Dictionary) -> Dictionary:
+    var defaults := _environment_light_visual_defaults(actor)
+    if defaults.is_empty():
+        return {}
+    var name := str(actor.get("name", ""))
+    var overrides: Variant = environment_light_visual_settings.get(name, {})
+    if typeof(overrides) != TYPE_DICTIONARY:
+        return defaults
+    for key in ["color", "range", "energy"]:
+        if overrides.has(key):
+            defaults[key] = overrides[key]
+    return defaults
+
+
+func _refresh_environment_light_visual_controls() -> void:
+    if environment_light_color_control == null:
+        return
+    var enabled := selected_actor.get("class", "") == "Light"
+    var values := _environment_light_visual_values(selected_actor) if enabled else {}
+    enabled = enabled and not values.is_empty()
+    environment_light_controls_syncing = true
+    environment_light_color_control.disabled = not enabled
+    environment_light_radius_control.disabled = not enabled
+    environment_light_energy_control.disabled = not enabled
+    environment_light_live_toggle.disabled = not enabled
+    environment_light_visual_reset_button.disabled = (not enabled
+        or not environment_light_visual_settings.has(str(selected_actor.get("name", ""))))
+    if enabled:
+        environment_light_color_control.color = values["color"]
+        environment_light_radius_control.value = float(values["range"])
+        environment_light_energy_control.value = float(values["energy"])
+    environment_light_controls_syncing = false
+
+
+func _set_environment_light_visual_setting(key: String, value: Variant) -> void:
+    if environment_light_controls_syncing or selected_actor.get("class", "") != "Light":
+        return
+    var defaults := _environment_light_visual_defaults(selected_actor)
+    if defaults.is_empty() or not defaults.has(key):
+        return
+    if key == "color":
+        if typeof(value) != TYPE_COLOR or not value.is_finite():
+            return
+        value = Color(value.r, value.g, value.b, 1.0)
+    else:
+        if typeof(value) != TYPE_FLOAT and typeof(value) != TYPE_INT:
+            return
+        if not is_finite(float(value)):
+            return
+        if key == "range":
+            value = clampf(float(value), 0.5, 16.0)
+        elif key == "energy":
+            value = clampf(float(value), 0.05, 2.5)
+        else:
+            return
+    var name := str(selected_actor.get("name", ""))
+    if not environment_light_markers.has(name):
+        return
+    var settings: Dictionary = environment_light_visual_settings.get(name, {})
+    settings[key] = value
+    environment_light_visual_settings[name] = settings
+    _update_environment_light_selection()
+    if status_label != null:
+        status_label.text = ("Godot-only preview " + key + " for " + name
+            + "; original LightColor/LightShape and GMP are unchanged.")
+
+
+func _reset_selected_environment_light_visual_settings() -> void:
+    if selected_actor.get("class", "") != "Light":
+        return
+    var name := str(selected_actor.get("name", ""))
+    environment_light_visual_settings.erase(name)
+    _update_environment_light_selection()
+    if status_label != null:
+        status_label.text = ("Reset " + name
+            + " preview appearance to source-derived approximation. No GMP changes.")
+
+
+func _clear_environment_light_live_node() -> void:
+    if is_instance_valid(environment_light_live_node):
+        environment_light_live_node.free()
+    environment_light_live_node = null
+
+
+func _sync_environment_light_live_node() -> void:
+    if (environment_light_live_toggle == null
+        or not environment_light_live_toggle.button_pressed
+        or not _environment_light_proxy_selected()
+        or not is_instance_valid(world_root)):
+        _clear_environment_light_live_node()
+        return
+    var values := _environment_light_visual_values(selected_actor)
+    if values.is_empty():
+        _clear_environment_light_live_node()
+        return
+    if not is_instance_valid(environment_light_live_node):
+        environment_light_live_node = OmniLight3D.new()
+        environment_light_live_node.name = "DX2Ed_Selected_Light_LIVE_PREVIEW_ONLY"
+        environment_light_live_node.shadow_enabled = false
+        environment_light_live_node.set_meta("editor_only", true)
+        world_root.add_child(environment_light_live_node)
+    environment_light_live_node.set_meta("source_actor", str(selected_actor.get("name", "")))
+    environment_light_live_node.global_position = _environment_light_preview_position(selected_actor)
+    environment_light_live_node.light_color = values["color"]
+    environment_light_live_node.omni_range = float(values["range"])
+    environment_light_live_node.light_energy = float(values["energy"])
+
+
 func _light_sphere_wire_mesh(radius: float) -> ArrayMesh:
     var verts := PackedVector3Array()
     var steps := 64
@@ -1829,6 +2037,10 @@ func _light_sphere_wire_mesh(radius: float) -> ArrayMesh:
 
 func _clear_environment_light_markers() -> void:
     environment_light_gizmo_drag = false
+    _clear_environment_light_live_node()
+    environment_light_visual_settings.clear()
+    if environment_light_live_toggle != null:
+        environment_light_live_toggle.set_pressed_no_signal(false)
     environment_light_positions.clear()
     for marker in environment_light_markers.values():
         if is_instance_valid(marker):
@@ -1892,6 +2104,8 @@ func _set_environment_light_markers_visible(enabled: bool) -> void:
 func _update_environment_light_selection() -> void:
     if not is_instance_valid(environment_light_radius):
         return
+    _refresh_environment_light_visual_controls()
+    _sync_environment_light_live_node()
     environment_light_radius.visible = false
     if environment_light_reset_button != null:
         environment_light_reset_button.disabled = not environment_light_positions.has(
@@ -1904,8 +2118,10 @@ func _update_environment_light_selection() -> void:
         _update_gizmo_pose()
         return
     var position: Vector3 = _environment_light_preview_position(selected_actor)
-    environment_light_radius.mesh = _light_sphere_wire_mesh(
-        _environment_light_preview_radius(selected_actor))
+    var appearance := _environment_light_visual_values(selected_actor)
+    var radius := (float(appearance.get("range", 1.5))
+        if not appearance.is_empty() else _environment_light_preview_radius(selected_actor))
+    environment_light_radius.mesh = _light_sphere_wire_mesh(radius)
     environment_light_radius.global_position = position
     environment_light_radius.visible = true
     _update_gizmo_pose()
