@@ -92,8 +92,8 @@ class ZoneRelationTests(unittest.TestCase):
         ]
         payload,frame=synthetic_world(node_records=records)
         result=zones.inspect_zone_relations(payload,frame)
-        self.assertEqual(result["both_nonzero_zones"],1)
-        self.assertEqual(result["both_nonzero_pairs_compatible_with_zone_relations"],1)
+        self.assertEqual(result["both_nonzero_zones"],2)
+        self.assertEqual(result["both_nonzero_pairs_compatible_with_zone_relations"],2)
         payload,frame=synthetic_world(node_records=records,relation_masks=[1,2,4])
         with self.assertRaisesRegex(ValueError,"zone pair absent"):
             zones.inspect_zone_relations(payload,frame)
