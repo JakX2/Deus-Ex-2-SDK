@@ -38,18 +38,15 @@ Synthetic, game-asset-free tests:
 
     python -m unittest discover -s native_editor/tests -p test_t3ed_flesh_stage_audit.py -v
 
-## Next gate: run the new geometry in Thief 3
+## T3 runtime test: custom geometry and collision confirmed by user
 
-The [original Ion Storm editor release instructions](https://worthplaying.com/article/2005/2/23/news/22704-thief-deadly-shadows-game-editor-available-now/) distinguish editable .unr, game-ready **uncooked** .gmp, and cooked resource blocks .ibt. Test only in a separate game/editor installation:
+On 2026-11-03, the user reported **DX2SDK_Geo_Test** successfully loaded inside *Thief: Deadly Shadows* when launched through T3Ed **Build > Play Level with Game Exe (Ctrl+B)**. They subsequently tested the added cube and confirmed it **blocked Garrett's movement**. This is a first successful **user-observed runtime geometry and collision test** of the native T3Ed-edited map, not a tool-instrumented collision or Havok payload decode.
 
-1. Export DX2SDK_Geo_Test.gmp from the editor's **Export .gmp file** command.
-2. In that test installation's user.ini, comment out LoadFromResourceBlockFiles=true (prefix the line with a semicolon) to enable GMP loading.
-3. Close the editor and run **T3.exe DX2SDK_Geo_Test** from System.
-4. Confirm whether the map loads; walk into the cube, check collision and rendering; collect the exported GMP and logs.
+The standard command-line `T3.exe DX2SDK_Geo_Test` initially failed with a Microsoft Visual C++ 'abnormal program termination' on the loading screen, **and the unmodified stock Tutorial3 GMP crashed the same way**. The user's `User.ini` contained `LoadFromResourceBlockFiles=True` while `System/Default.ini` contained `False`. Commenting the user override did not resolve command-line loading. Switching to **Build > Play Level with Game Exe** succeeded. Do not infer that the original failed launch was caused by the rebuilt map, or that standalone command-line launching is fixed.
 
-The editor toolbar Play Map requires the **debug-only T3MainOptVersion.exe** replacing a backed-up T3Main.exe in a test installation, per the original release instructions. Do not replace a retail executable merely to run this test.
+The [original editor release instructions](https://worthplaying.com/article/2005/2/23/news/22704-thief-deadly-shadows-game-editor-available-now/) distinguish editable `.unr`, game-ready *uncooked* `.gmp`, and cooked `.ibt` resource blocks. The test proves successful T3 runtime use of an exported custom map via the editor-integrated patched launch path, with user-observed physical blocking by newly authored geometry. **It does not show** how collision is serialized, demonstrate accurate PVS/AI/Havok for larger levels, validate IBT cooking, or establish DX2 licensee 68 compatibility.
 
-T3 runtime verification remains pending, and T3 compatibility **does not** prove DX2 runtime compatibility.
+Preserve the two UNR build snapshots and the generated GMP as private research fixtures; never commit proprietary assets. Next priority: document a DX2-specific compiler/writer design from validated shared primitives while testing the different game serializer boundaries on user-owned DX2 maps.
 
 ## Follow-up: first user-generated GMP export
 
@@ -62,6 +59,6 @@ On 2026-11-03, user exported `DX2SDK_Geo_Test.gmp` using **File > Export Map For
 - **All eight validated Flesh BSP render blocks survive byte-for-byte in identical order**, preserving **172 vertices**, **94 triangles** and **21,024 packed render-block bytes**.
 - Level payload **46,785 → 52,303 bytes** (+5,518); its additional nonrender bytes remain uninterpreted.
 
-**Concluded:** The native T3Ed source-to-uncooked-GMP exporter preserves newly built render geometry. **Not yet proven:** actual T3 game load, collision/PVS/Havok, IBT generation or DX2 licensee68 writing compatibility. No copyrighted map data is committed.
+**Concluded:** The native T3Ed source-to-uncooked-GMP exporter preserves newly built render geometry. **T3 game load and cube collision were subsequently confirmed by the user through T3Ed's Ctrl+B launch**; PVS, Havok data serialization, IBT generation and DX2 licensee68 writing compatibility remain unproven. No copyrighted map data is committed.
 
 Use `research/t3ed/compare_editor_cooked.py pair` to reproduce this kind of same-name `.unr`/`.gmp` comparison; use `compare_editor_stages.py` for the two source `.unr` build stages.
