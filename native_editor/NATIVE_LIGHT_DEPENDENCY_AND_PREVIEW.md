@@ -122,3 +122,75 @@ never modify original Light actors and never make the native
 
 Do not commit the user's original GMP, native reports containing
 proprietary source payloads, or third-party EXEs to GitHub.
+
+
+## v9: Unity-like native Light source selection gizmo (2026-11-03)
+
+Requested after the user confirmed they could find `Light__3` in the
+Environment tab but wanted a direct-select handle and yellow radius
+sphere comparable to the Unity/Unreal editor.
+
+- **Clickable source markers:** opening an original GMP and its
+  source-matched actor JSON creates a small unshaded yellow sphere
+  at each original `Light` actor's exact decoded Unreal XYZ,
+  remapped into Godot world units. Markers live in a dedicated
+  `DX2Ed_Original_Light_Markers_EDITOR_ONLY` Node3D outside
+  the imported GLB. They are **never** registered in the
+  native prop list or written to a GMP.
+- **Scene selection:** clicking within 17 screen pixels of a
+  visible source marker selects the corresponding original Light
+  actor and synchronizes the Environment list/Inspector.
+  This uses an explicit screen-projection hit test, not a huge
+  BSP bounds intersection. The existing material/triangle picker
+  remains unchanged for non-marker clicks.
+- **Unity-like gizmo:** selected light sources show
+  three red/green/blue axis arrows (including arrow tips).
+  **W** selects Move. Dragging one axis moves an
+  editor-only *position proxy*, not the serialized original
+  `Light.Location` or `Region`. **Ctrl**-drag retains
+  the existing numeric movement snapping. Rotation/Scale
+  remain intentionally disabled for this Light proxy.
+- **Influence visualization:** the selected Light also shows
+  a yellow wire sphere made of three mutually orthogonal
+  64-segment circles. Its radius is an **approximate**
+  conversion of original `LightShape.LightRadius` for visual
+  context, not a verified runtime falloff or native BSP radius.
+- **Visibility & reset:** the Environment tab has a
+  `Show clickable Light markers in Scene` checkbox and
+  a `Reset selected Light gizmo preview` button.
+  Reset restores the original source marker location; loading
+  another map removes all markers and offsets.
+- **No native writes:** `environment_light_positions` is a
+  *separate in-memory dictionary*. It is excluded from
+  `draft_prop_copies`, `property_overrides`, undo
+  snapshots, native static prop Save As plans, audio-zone
+  Save As plans and GMP/IBD asset serialization.
+  Ending the drag explicitly avoids recording a native
+  or prop-transform undo entry.
+- **Source bounds:** the existing Light dependency audit,
+  zone/leaf metadata requirements and disabled native
+  Light writer remain unchanged. A moved marker is
+  **not proof** that an equivalent native DX2 Light could be
+  moved to the new point or would illuminate the scene
+  accurately.
+
+Godot headless test exercises original Unreal XYZ positioning,
+marker provenance, screen-projection selection,
+visible red/green/blue gizmo, line-wire sphere, hidden
+marker refusal, live preview position, reset, original
+source actor immutability, and GMP draft isolation.
+
+Visual workflow:
+1. Open WTO Terminal original GMP in DX2Ed.
+2. In Environment search `Light` or click a yellow
+   source-light marker in the viewport.
+3. If it is offscreen, select `Light__3` in the list
+   and press **F** to focus on the original Light source
+   location.
+4. Press **W** for three-axis Move; drag an arrow.
+   The yellow radius sphere follows the editor-only proxy.
+5. Click **Reset selected Light gizmo preview** to
+   return to the exact original location, or hide markers.
+
+This is a **Godot UI milestone**, not a retail game
+Light cloning or BSP compilation milestone.
