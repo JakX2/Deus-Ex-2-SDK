@@ -145,6 +145,18 @@ var environment_light_visual_reset_button: Button
 var environment_light_visual_settings: Dictionary = {} # source name -> preview-only color/range/energy
 var environment_light_live_node: OmniLight3D
 var environment_light_controls_syncing := false
+# v11 scene-wide source Light approximations in a bounded, read-only render mode.
+# No baked DX2 lighting, shadow maps or native Light writers are implied.
+const SEMI_LIT_MAX_LOCAL_LIGHTS := 32
+var semi_lit_enabled := false
+var semi_lit_toggle: CheckBox
+var semi_lit_label: Label
+var semi_lit_key_light: DirectionalLight3D
+var semi_lit_world_environment: Environment
+var semi_lit_root: Node3D
+var semi_lit_nodes: Dictionary = {} # source Light name -> OmniLight3D
+var semi_lit_last_camera_position := Vector3(INF, INF, INF)
+var semi_lit_update_elapsed := 0.0
 var loaded_actors_json_path: String = ""
 var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
@@ -345,6 +357,19 @@ func _make_ui() -> void:
     auto_roll_toggle.button_pressed = preview_auto_roll
     auto_roll_toggle.toggled.connect(_set_auto_roll_preview)
     zip_bar.add_child(auto_roll_toggle)
+    semi_lit_toggle = CheckBox.new()
+    semi_lit_toggle.text = "Semi-lit (map lights)"
+    semi_lit_toggle.button_pressed = false
+    semi_lit_toggle.disabled = true
+    semi_lit_toggle.tooltip_text = (
+        "Approximate Godot lighting from nearby original DX2 Light actors. "
+        + "Max 32 nonshadowing lights. No DX2 lightmaps or runtime/baked lighting."
+    )
+    semi_lit_toggle.toggled.connect(_set_semi_lit_enabled)
+    zip_bar.add_child(semi_lit_toggle)
+    semi_lit_label = Label.new()
+    semi_lit_label.text = ""
+    zip_bar.add_child(semi_lit_label)
     var zip_hint := Label.new()
     zip_hint.text = "  Select shared resources, optional System, then a mission ZIP"
     zip_bar.add_child(zip_hint)
@@ -1366,18 +1391,22 @@ func _make_world() -> void:
     environment_light_radius.material_override = radius_material
     environment_light_radius.visible = false
     environment_light_markers_root.add_child(environment_light_radius)
-    var light := DirectionalLight3D.new()
-    light.rotation_degrees = Vector3(-45, 25, 0)
-    light.light_energy = 1.6
-    world_root.add_child(light)
+    semi_lit_root = Node3D.new()
+    semi_lit_root.name = "DX2Ed_SemiLit_Source_Approximation_EDITOR_ONLY"
+    semi_lit_root.set_meta("editor_only", true)
+    world_root.add_child(semi_lit_root)
+    semi_lit_key_light = DirectionalLight3D.new()
+    semi_lit_key_light.rotation_degrees = Vector3(-45, 25, 0)
+    semi_lit_key_light.light_energy = 1.6
+    world_root.add_child(semi_lit_key_light)
     var env := WorldEnvironment.new()
-    var world_environment := Environment.new()
-    world_environment.background_mode = Environment.BG_COLOR
-    world_environment.background_color = Color(0.12, 0.16, 0.2)
-    world_environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    world_environment.ambient_light_color = Color(0.75, 0.8, 0.9)
-    world_environment.ambient_light_energy = 1.1
-    env.environment = world_environment
+    semi_lit_world_environment = Environment.new()
+    semi_lit_world_environment.background_mode = Environment.BG_COLOR
+    semi_lit_world_environment.background_color = Color(0.12, 0.16, 0.2)
+    semi_lit_world_environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+    semi_lit_world_environment.ambient_light_color = Color(0.75, 0.8, 0.9)
+    semi_lit_world_environment.ambient_light_energy = 1.1
+    env.environment = semi_lit_world_environment
     world_root.add_child(env)
 
 func _make_material() -> void:
@@ -1447,10 +1476,17 @@ func load_actors(path: String) -> void:
     _refresh_actor_list()
     _refresh_environment_entities()
     _rebuild_environment_light_markers()
+    if semi_lit_toggle != null:
+        semi_lit_toggle.disabled = not _semi_lit_has_valid_source_lights()
+    _refresh_semi_lit_scene()
     _load_source_gamesys_catalog(path.get_base_dir().path_join("gamesys_inspector.json"))
     status_label.text = "Loaded %d actors, %d meshes. Click a mesh or select an actor." % [actors.size(), mesh_count]
 
 func _clear_current_scene() -> void:
+    _set_semi_lit_enabled(false)
+    if semi_lit_toggle != null:
+        semi_lit_toggle.set_pressed_no_signal(false)
+        semi_lit_toggle.disabled = true
     _clear_environment_light_markers()
     _clear_environment_light_previews()
     if environment_light_audit_button != null:
@@ -1968,6 +2004,7 @@ func _set_environment_light_visual_setting(key: String, value: Variant) -> void:
     var settings: Dictionary = environment_light_visual_settings.get(name, {})
     settings[key] = value
     environment_light_visual_settings[name] = settings
+    _refresh_semi_lit_actor(selected_actor)
     _update_environment_light_selection()
     if status_label != null:
         status_label.text = ("Godot-only preview " + key + " for " + name
@@ -1979,10 +2016,131 @@ func _reset_selected_environment_light_visual_settings() -> void:
         return
     var name := str(selected_actor.get("name", ""))
     environment_light_visual_settings.erase(name)
+    _refresh_semi_lit_actor(selected_actor)
     _update_environment_light_selection()
     if status_label != null:
         status_label.text = ("Reset " + name
             + " preview appearance to source-derived approximation. No GMP changes.")
+
+
+## Semi-lit mode is a *visual approximation* using existing source actors.
+## Reusing nearest source locations rather than creating uncapped lights keeps
+## the Godot 4 compatibility renderer usable in dense DX2 maps.
+func _semi_lit_has_valid_source_lights() -> bool:
+    for actor in actors:
+        if (typeof(actor) == TYPE_DICTIONARY
+            and actor.get("class", "") == "Light"
+            and _environment_light_visual_defaults(actor).size() == 3
+            and typeof(_environment_light_original_position(actor)) == TYPE_VECTOR3):
+            return true
+    return false
+
+
+func _set_semi_lit_enabled(enabled: bool) -> void:
+    if enabled and not _semi_lit_has_valid_source_lights():
+        semi_lit_enabled = false
+        if semi_lit_toggle != null:
+            semi_lit_toggle.set_pressed_no_signal(false)
+        if status_label != null:
+            status_label.text = "Semi-lit requires original positioned Lights with readable LightColor and LightShape."
+    else:
+        semi_lit_enabled = enabled
+    if is_instance_valid(semi_lit_key_light):
+        semi_lit_key_light.light_energy = 0.18 if semi_lit_enabled else 1.6
+    if semi_lit_world_environment != null:
+        semi_lit_world_environment.ambient_light_energy = 0.38 if semi_lit_enabled else 1.1
+    semi_lit_last_camera_position = Vector3(INF, INF, INF)
+    _refresh_semi_lit_scene()
+    _sync_environment_light_live_node()
+    if semi_lit_enabled and status_label != null:
+        status_label.text = (
+            "SEMI-LIT preview uses nearby original source Light actors, "
+            + "approximated by Godot. Not native/baked DX2 lighting."
+        )
+
+
+func _clear_semi_lit_nodes() -> void:
+    for light in semi_lit_nodes.values():
+        if is_instance_valid(light):
+            light.free()
+    semi_lit_nodes.clear()
+    if semi_lit_label != null:
+        semi_lit_label.text = ""
+
+
+func _refresh_semi_lit_scene() -> void:
+    if not semi_lit_enabled or not is_instance_valid(semi_lit_root):
+        _clear_semi_lit_nodes()
+        return
+    var ranked: Array[Dictionary] = []
+    var eye := camera.global_position if is_instance_valid(camera) else Vector3.ZERO
+    for actor in actors:
+        if typeof(actor) != TYPE_DICTIONARY or actor.get("class", "") != "Light":
+            continue
+        # Explicitly authored OFF is respected. An absent property must
+        # not be interpreted as either native-on or native-off evidence.
+        if _environment_game_value(actor, 1487) == false:
+            continue
+        var position: Variant = _environment_light_preview_position(actor)
+        var settings: Dictionary = _environment_light_visual_values(actor)
+        if typeof(position) != TYPE_VECTOR3 or settings.is_empty():
+            continue
+        var name := str(actor.get("name", ""))
+        if name.is_empty() or not environment_light_markers.has(name):
+            continue
+        ranked.append({
+            "name": name, "position": position, "settings": settings,
+            "distance2": eye.distance_squared_to(position)
+        })
+    ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+        return float(a["distance2"]) < float(b["distance2"]))
+    var wanted := {}
+    var count := mini(ranked.size(), SEMI_LIT_MAX_LOCAL_LIGHTS)
+    for index in range(count):
+        var info: Dictionary = ranked[index]
+        var name: String = str(info["name"])
+        wanted[name] = true
+        var node: OmniLight3D = semi_lit_nodes.get(name, null)
+        if not is_instance_valid(node):
+            node = OmniLight3D.new()
+            node.name = "DX2Ed_SemiLit_EDITOR_ONLY_" + name
+            node.shadow_enabled = false
+            node.set_meta("editor_only", true)
+            node.set_meta("source_actor", name)
+            semi_lit_root.add_child(node)
+            semi_lit_nodes[name] = node
+        node.global_position = info["position"]
+        node.light_color = info["settings"]["color"]
+        node.omni_range = float(info["settings"]["range"])
+        node.light_energy = float(info["settings"]["energy"])
+    for name in semi_lit_nodes.keys():
+        if not wanted.has(name):
+            var stale: OmniLight3D = semi_lit_nodes[name]
+            if is_instance_valid(stale):
+                stale.free()
+            semi_lit_nodes.erase(name)
+    semi_lit_last_camera_position = eye
+    if semi_lit_label != null:
+        semi_lit_label.text = " %d/%d source lights (approx.)" % [count, ranked.size()]
+
+
+func _refresh_semi_lit_actor(actor: Dictionary) -> void:
+    if not semi_lit_enabled or actor.get("class", "") != "Light":
+        return
+    var name := str(actor.get("name", ""))
+    if not semi_lit_nodes.has(name):
+        return
+    var node: OmniLight3D = semi_lit_nodes[name]
+    if not is_instance_valid(node):
+        return
+    var pos: Variant = _environment_light_preview_position(actor)
+    var values := _environment_light_visual_values(actor)
+    if typeof(pos) != TYPE_VECTOR3 or values.is_empty():
+        return
+    node.global_position = pos
+    node.light_color = values["color"]
+    node.omni_range = float(values["range"])
+    node.light_energy = float(values["energy"])
 
 
 func _clear_environment_light_live_node() -> void:
@@ -1992,7 +2150,8 @@ func _clear_environment_light_live_node() -> void:
 
 
 func _sync_environment_light_live_node() -> void:
-    if (environment_light_live_toggle == null
+    if (semi_lit_enabled
+        or environment_light_live_toggle == null
         or not environment_light_live_toggle.button_pressed
         or not _environment_light_proxy_selected()
         or not is_instance_valid(world_root)):
@@ -2045,6 +2204,7 @@ func _light_sphere_wire_mesh(radius: float) -> ArrayMesh:
 
 
 func _clear_environment_light_markers() -> void:
+    _clear_semi_lit_nodes()
     environment_light_gizmo_drag = false
     _clear_environment_light_live_node()
     environment_light_visual_settings.clear()
@@ -2146,6 +2306,7 @@ func _set_environment_light_preview_position(actor: Dictionary, position: Vector
     var marker: MeshInstance3D = environment_light_markers[name]
     if is_instance_valid(marker):
         marker.global_position = position
+    _refresh_semi_lit_actor(actor)
     _update_environment_light_selection()
     _update_gizmo_pose()
 
@@ -2160,6 +2321,7 @@ func _reset_selected_environment_light_position() -> void:
         var marker: MeshInstance3D = environment_light_markers[name]
         if is_instance_valid(marker):
             marker.global_position = source
+    _refresh_semi_lit_actor(selected_actor)
     _update_environment_light_selection()
     _update_gizmo_pose()
     status_label.text = (
@@ -5999,6 +6161,12 @@ func _camera_offset() -> Vector3:
 
 
 func _process(delta: float) -> void:
+    if semi_lit_enabled and is_instance_valid(camera):
+        semi_lit_update_elapsed += delta
+        if semi_lit_update_elapsed >= 0.75:
+            semi_lit_update_elapsed = 0.0
+            if camera.global_position.distance_squared_to(semi_lit_last_camera_position) > 9.0:
+                _refresh_semi_lit_scene()
     if fly_looking and is_instance_valid(camera):
         var local := Vector3.ZERO
         if Input.is_key_pressed(KEY_W): local.z -= 1.0

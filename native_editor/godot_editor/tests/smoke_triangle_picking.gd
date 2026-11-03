@@ -203,6 +203,40 @@ func _run() -> void:
         or viewer.all_mesh_instances.has(original_light_marker)):
         _fail("Source light handle must be positioned from Unreal XYZ and excluded from native meshes")
         return
+    # v11 whole-map semi-lit scene: source light positions, property-derived
+    # approximate illumination, no shadows and no native state changes.
+    viewer.semi_lit_toggle.disabled = not viewer._semi_lit_has_valid_source_lights()
+    if viewer.semi_lit_toggle.disabled:
+        _fail("Synthetic source Light should permit semi-lit preview")
+        return
+    var original_props_for_semi_lit: Variant = light_fixture["game_properties"].duplicate(true)
+    viewer._set_semi_lit_enabled(true)
+    if (not viewer.semi_lit_enabled or viewer.semi_lit_nodes.size() != 1
+        or viewer.semi_lit_root.get_parent() != viewer.world_root
+        or abs(viewer.semi_lit_key_light.light_energy - 0.18) > 0.001
+        or abs(viewer.semi_lit_world_environment.ambient_light_energy - 0.38) > 0.001):
+        _fail("Semi-lit must lower flat ambient/key light and create one source light")
+        return
+    var mapped_light: OmniLight3D = viewer.semi_lit_nodes["Light__7"]
+    if (not is_instance_valid(mapped_light)
+        or mapped_light.get_parent() != viewer.semi_lit_root
+        or not mapped_light.get_meta("editor_only", false)
+        or mapped_light.get_meta("source_actor") != "Light__7"
+        or mapped_light.shadow_enabled
+        or mapped_light.global_position.distance_to(original_light_position) > 0.00001
+        or abs(mapped_light.omni_range - 5.76) > 0.001
+        or abs(mapped_light.light_energy - 0.375) > 0.001
+        or light_fixture["game_properties"] != original_props_for_semi_lit
+        or not viewer.property_overrides.is_empty()
+        or not viewer.draft_prop_copies.is_empty()):
+        _fail("Semi-lit light must respect source values, no shadows, no GMP drafts")
+        return
+    viewer._set_semi_lit_enabled(false)
+    if (viewer.semi_lit_enabled or not viewer.semi_lit_nodes.is_empty()
+        or abs(viewer.semi_lit_key_light.light_energy - 1.6) > 0.001
+        or abs(viewer.semi_lit_world_environment.ambient_light_energy - 1.1) > 0.001):
+        _fail("Semi-lit OFF must restore baseline lights and clear source proxies")
+        return
     viewer._refresh_environment_entities()
     if viewer.environment_list.item_count != 4 or viewer.environment_visible.size() != 4:
         _fail("Environment must list real lights, ambient zones and particle emitters separately")
@@ -275,6 +309,17 @@ func _run() -> void:
         _fail("Preview radius must stay within its visual-only safety range")
         return
     viewer._set_environment_light_visual_setting("range", 9.5)
+    # The map-wide renderer must reuse v10 selected Light preview settings
+    # rather than changing authoritative GameSys property dictionaries.
+    viewer._set_semi_lit_enabled(true)
+    if (viewer.semi_lit_nodes.size() != 1
+        or not viewer.semi_lit_nodes["Light__7"].light_color.is_equal_approx(Color(0.2, 0.4, 0.9))
+        or abs(viewer.semi_lit_nodes["Light__7"].omni_range - 9.5) > 0.001
+        or abs(viewer.semi_lit_nodes["Light__7"].light_energy - 1.35) > 0.001
+        or is_instance_valid(viewer.environment_light_live_node)
+        or light_fixture["game_properties"] != original_game_properties):
+        _fail("Semi-lit must respect v10 color/range/energy overrides, without double lighting")
+        return
     var preview_offset := original_light_position + Vector3(2.0, 0.0, 0.0)
     viewer._set_environment_light_preview_position(light_fixture, preview_offset)
     if (not viewer.environment_light_positions.has("Light__7")
@@ -287,6 +332,11 @@ func _run() -> void:
         or not viewer.property_overrides.is_empty()):
         _fail("Dragging a light proxy must move gizmo + radius only, never source actor or GMP drafts")
         return
+    if (viewer.semi_lit_nodes["Light__7"].global_position.distance_to(preview_offset) > 0.00001):
+        _fail("Semi-lit light must follow editor-only moved marker")
+        return
+    viewer._set_semi_lit_enabled(false)
+    viewer._sync_environment_light_live_node()
     if (not is_instance_valid(viewer.environment_light_live_node)
         or viewer.environment_light_live_node.global_position.distance_to(preview_offset) > 0.00001):
         _fail("Moving visual light marker must move its live preview without GMP edits")
