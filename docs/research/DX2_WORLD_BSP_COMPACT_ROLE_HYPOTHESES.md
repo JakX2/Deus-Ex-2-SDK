@@ -35,6 +35,32 @@ python -m unittest discover -s native_editor/tests -p "test_dx2_world_bsp_compac
 
 Optional --include-nodes includes all eight raw compact values per node (large JSON). Reports are exclusively created outside input map directories, with source hashes. No original map bytes are written, and no game assets are distributed.
 
+
+## Independent 19-map original-corpus observation (2026-11-03)
+
+The user's privately shared Maps ZIP was analyzed locally, without modifying or publishing the retail maps. A **separate bounded UE95 and World Model reader**, using the same previously observed framing, checked all 19 source maps. It independently reproduced the prior **17,743 nodes, 688 zone records, 82,657 polygon vertex-count slots**, rooted-parent constraints and exact zone-mask OR relationships. The numeric role measurements used the pure analyze_rows function from PR #26. This private read is **not** a run of the full repository CLI, and its results must not be treated as proof of native member names or geometry writing.
+
+| New property | Original-map observation |
+|---|---:|
+| Field 1 values unique and nonnegative | 17,743 / 17,743 nodes; all 19 maps |
+| Candidate field-1 spans overlapping | **0** |
+| Field-1 spans touching in **sorted index order** | 11,415 / 17,724 adjacent interval pairs |
+| Sorted field-1 intervals separated by positive gaps | 6,309 / 17,724 |
+| Total summed internal gap slots across maps | 138,837 |
+| Field-1 index/vertex ranges forming a complete zero-based dense pool | **0 / 19 maps** |
+| Field 2 values covering each map's zero-based range with no missing integer | **19 / 19 maps** |
+| Field 2 equality across field-5 coplanar links | **4,161 / 7,733** (53.8%) |
+| Field 6 nonnegative indices | 6,923, all distinct per map; sparse |
+| Field 6 values at least as large as that map's node count | 5,443 |
+| Field 7 nonnegative indices | 7,398, all distinct per map |
+| Field 7 covers zero through its maximum with **no missing values** | **19 / 19 maps** |
+
+**Interpretation:** Field 1 is now a much stronger **first-vertex-start candidate**: unique ranges and zero overlaps are exactly what one expects of non-shared polygon vertex storage. However, many gaps rule out an unqualified claim that those 82,657 slots alone form the *entire* dense vertex pool. Field 2 behaves like an index into a smaller shared table (possibly BSP surfaces); differing values across coplanar chains are not unexpected for distinct surfaces, and must not be discarded. Fields 6 and 7 have distinct index-domain signatures, with field 7 looking like a compact zero-based per-record table and field 6 like an offset-bearing/sparse table. These could be collision/render bounds but **neither name is proven**.
+
+The added profiler emits index_shapes (unique/dense/holes per field) and both original node-order and **sorted-span** gap counts. The two notions of adjacency are intentionally separated. An original map must not be rejected solely because its vertex ranges contain gaps or its coplanar links reference different candidate surfaces.
+
+Next tests: find the actual native vertex-pool and surface-count fields; verify every field-1 range and every field-2 index against those independently serialized arrays. Then locate consumers/arrays for fields 6 and 7. Only independent bounds checks, references and actual vertex XYZ recovery could promote these hypotheses to a loader schema.
+
 ## Decision gates
 
 - **Promote field 1 to likely iVertPool only** if native-corpus spans consistently behave as a plausible vertex pool, with exceptions explained. Polygon geometry still requires its actual indexed vertex XYZ array.
