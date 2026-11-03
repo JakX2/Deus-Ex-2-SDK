@@ -240,6 +240,41 @@ func _run() -> void:
         _fail("Hidden Light markers must not be viewport-pickable or show edit gizmos")
         return
     viewer._set_environment_light_markers_visible(true)
+    # v10 preview color/range/energy are isolated editor-only values.
+    # They must neither mutate original GameSys fields nor stage a GMP edit.
+    if (viewer.environment_light_color_control.disabled
+        or not viewer.environment_light_radius_control.editable
+        or not viewer.environment_light_energy_control.editable
+        or viewer.environment_light_live_toggle.disabled):
+        _fail("Selected source Light should enable v10 visual inspector controls")
+        return
+    viewer.environment_light_live_toggle.button_pressed = true
+    viewer._sync_environment_light_live_node()
+    if (not is_instance_valid(viewer.environment_light_live_node)
+        or not viewer.environment_light_live_node.get_meta("editor_only", false)
+        or viewer.environment_light_live_node.get_parent() != viewer.world_root
+        or str(viewer.environment_light_live_node.get_meta("source_actor", "")) != "Light__7"):
+        _fail("Live source light must be an editor-only Godot OmniLight3D")
+        return
+    var original_game_properties: Variant = light_fixture["game_properties"].duplicate(true)
+    viewer._set_environment_light_visual_setting("color", Color(0.2, 0.4, 0.9))
+    viewer._set_environment_light_visual_setting("range", 9.5)
+    viewer._set_environment_light_visual_setting("energy", 1.35)
+    if (not viewer.environment_light_live_node.light_color.is_equal_approx(Color(0.2, 0.4, 0.9))
+        or abs(viewer.environment_light_live_node.omni_range - 9.5) > 0.001
+        or abs(viewer.environment_light_live_node.light_energy - 1.35) > 0.001
+        or not viewer.environment_light_visual_settings.has("Light__7")
+        or viewer.environment_light_visual_reset_button.disabled
+        or light_fixture["game_properties"] != original_game_properties
+        or not viewer.draft_prop_copies.is_empty()
+        or not viewer.property_overrides.is_empty()):
+        _fail("Preview edits must change only Godot visuals, not source GameSys/drafts")
+        return
+    viewer._set_environment_light_visual_setting("range", -100.0)
+    if abs(viewer.environment_light_live_node.omni_range - 0.5) > 0.001:
+        _fail("Preview radius must stay within its visual-only safety range")
+        return
+    viewer._set_environment_light_visual_setting("range", 9.5)
     var preview_offset := original_light_position + Vector3(2.0, 0.0, 0.0)
     viewer._set_environment_light_preview_position(light_fixture, preview_offset)
     if (not viewer.environment_light_positions.has("Light__7")
@@ -252,11 +287,23 @@ func _run() -> void:
         or not viewer.property_overrides.is_empty()):
         _fail("Dragging a light proxy must move gizmo + radius only, never source actor or GMP drafts")
         return
+    if (not is_instance_valid(viewer.environment_light_live_node)
+        or viewer.environment_light_live_node.global_position.distance_to(preview_offset) > 0.00001):
+        _fail("Moving visual light marker must move its live preview without GMP edits")
+        return
     viewer._reset_selected_environment_light_position()
     if (not viewer.environment_light_positions.is_empty()
         or original_light_marker.global_position.distance_to(original_light_position) > 0.00001
         or not viewer.environment_light_reset_button.disabled):
         _fail("Light visual position reset must restore original actor coordinates without GMP changes")
+        return
+    viewer._reset_selected_environment_light_visual_settings()
+    if (not viewer.environment_light_visual_settings.is_empty()
+        or not viewer.environment_light_visual_reset_button.disabled
+        or abs(viewer.environment_light_live_node.omni_range - 5.76) > 0.001
+        or abs(viewer.environment_light_live_node.light_energy - 0.375) > 0.001
+        or light_fixture["game_properties"] != original_game_properties):
+        _fail("Visual appearance reset must restore source-derived preview only")
         return
     viewer._preview_selected_light_at_target()
     if viewer.environment_light_previews.size() != 1:
@@ -283,6 +330,11 @@ func _run() -> void:
         _fail("Native light entity without rendered mesh should focus source XYZ")
         return
     viewer._environment_entity_selected(1)
+    if (is_instance_valid(viewer.environment_light_live_node)
+        or viewer.environment_light_radius_control.editable
+        or not viewer.environment_light_visual_reset_button.disabled):
+        _fail("Changing selection to sound zone must clear live light and lock light controls")
+        return
     if (not viewer.environment_details.text.contains("HubWTO_RandomInAdj")
         or not viewer.environment_details.text.contains("StreamSchema1 (GameSys 1287)")
         or not viewer.environment_details.text.contains("NonStreamSchema1 (GameSys 1467)")):
