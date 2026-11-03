@@ -260,7 +260,7 @@ func _run() -> void:
     viewer._set_environment_light_visual_setting("color", Color(0.2, 0.4, 0.9))
     viewer._set_environment_light_visual_setting("range", 9.5)
     viewer._set_environment_light_visual_setting("energy", 1.35)
-    if (viewer.environment_light_live_node.light_color.distance_to(Color(0.2, 0.4, 0.9)) > 0.0001
+    if (not viewer.environment_light_live_node.light_color.is_equal_approx(Color(0.2, 0.4, 0.9))
         or abs(viewer.environment_light_live_node.omni_range - 9.5) > 0.001
         or abs(viewer.environment_light_live_node.light_energy - 1.35) > 0.001
         or not viewer.environment_light_visual_settings.has("Light__7")
