@@ -151,6 +151,54 @@ func _run() -> void:
     if viewer.camera_target.distance_to(expected_ai_focus) > 0.0001:
         _fail("Original AI-layer candidates without meshes must be focusable from source XYZ")
         return
+    # v12 translucent guides visualize exact source AI-layer origins.
+    # They are NOT rigged NPC models and cannot be native-spawned.
+    var original_ai_properties: Variant = ai_fixture["game_properties"].duplicate(true)
+    viewer.actors = [ai_fixture, {"name":"Decoration__0","class":"StaticMeshActor",
+        "location":[3,4,5],"game_properties":[{"id":82,"value":"Staticmeshes"}]}]
+    viewer._rebuild_ai_proxies()
+    if (viewer.ai_proxies.size() != 1 or viewer.ai_proxies_toggle.disabled
+        or viewer.ai_proxies_root.get_parent() != viewer.world_root):
+        _fail("AI origin overlay should use exact source property-82 AI candidates")
+        return
+    var ai_capsule: MeshInstance3D = viewer.ai_proxies["D_527__0"]
+    var source_ai_position: Vector3 = Vector3(1,3,2) * float(viewer.NATIVE_CLONE_UNREAL_METRES)
+    if (not ai_capsule.get_meta("editor_only", false)
+        or ai_capsule.get_meta("npc_body_decoded", true)
+        or ai_capsule.global_position.distance_to(source_ai_position) > 0.000001
+        or viewer.all_mesh_instances.has(ai_capsule)):
+        _fail("AI origin capsule must be source-positioned and excluded from native meshes")
+        return
+    viewer.ai_proxies_toggle.button_pressed = true
+    viewer._set_ai_proxies_visible(true)
+    var ai_click: Vector2 = viewer.camera.unproject_position(source_ai_position)
+    if (viewer._pick_ai_proxy_marker(ai_click) != "D_527__0"
+        or not viewer.ai_proxies_count.text.contains("NOT bodies")):
+        _fail("AI origin marker must be pickable and explicitly marked as a proxy")
+        return
+    viewer._set_ai_proxies_visible(false)
+    if viewer._pick_ai_proxy_marker(ai_click) != "":
+        _fail("Hidden AI origin overlays must never intercept scene picking")
+        return
+    viewer._clear_ai_proxies()
+    viewer.ai_proxies_toggle.set_pressed_no_signal(false)
+    if (not viewer.ai_proxies.is_empty()
+        or ai_fixture["game_properties"] != original_ai_properties
+        or not viewer.property_overrides.is_empty()
+        or not viewer.draft_prop_copies.is_empty()):
+        _fail("Clearing AI origin guides must not alter source actors/GMP drafts")
+        return
+    viewer.actors.clear()
+    viewer.asset_kind_filter.select(7)
+    if (not viewer._asset_kind_matches("skeletalmesh")
+        or viewer._asset_kind_matches("staticmesh")):
+        _fail("Skeletal mesh resources must be explicitly filterable in Assets")
+        return
+    viewer.asset_kind_filter.select(8)
+    if not viewer._asset_kind_matches("skeletalanim"):
+        _fail("Skeletal animations must be separately filterable in Assets")
+        return
+    viewer.asset_kind_filter.select(0)
     viewer._inspect_selected_actor_scripts()
     if (not viewer.gameplay_details.text.contains("432")
         or not viewer.gameplay_details.text.contains("NOT verified TS_")):
