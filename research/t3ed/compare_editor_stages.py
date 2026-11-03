@@ -20,6 +20,8 @@ def _profile(pkg):
     """Summarize only validated packed render blocks; opaque bytes stay opaque."""
     info, hashes, spans = core._flesh_bsp(pkg)
     blocks = core.find_bsp(pkg)
+    if not blocks:
+        raise ValueError("No validated Flesh render blocks in snapshot")
     if len(blocks) != len(spans):
         raise ValueError("Inconsistent packed render-block scan")
     detailed = []
