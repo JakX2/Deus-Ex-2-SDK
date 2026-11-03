@@ -23,7 +23,7 @@ from dx2inspect import Package, Cursor
 from dx2scene import decode_full_actor
 
 SCHEMA = "DX2SDK-native-brush-model-ownership-v1"
-DX2_LICENSEES = (68, 69)
+DX2_LICENSEES = (65, 67, 68, 69)
 LEVEL_ACTORS_OFFSET = 13  # UE95/Flesh Level source-observed layout
 GAMESYS_MODEL_REF_ID = 45
 MAX_MAP_BYTES = 250 * 1024 * 1024
@@ -95,7 +95,7 @@ def audit_map(path: Path) -> dict:
         raise ValueError("Map file exceeds safe research size")
     pkg = Package(path)
     if pkg.version != 95 or pkg.licensee not in DX2_LICENSEES:
-        raise ValueError(f"Expected DX2 Unreal v95 / licensee 68 or 69, got {pkg.version}/{pkg.licensee}")
+        raise ValueError(f"Expected DX2 Unreal v95 / licensee 65, 67, 68 or 69, got {pkg.version}/{pkg.licensee}")
     actor_refs, actor_list = _level_actor_refs(pkg)
     models = {e["index"]: e for e in pkg.exports if pkg.class_name(e) == "Model"}
     brushes = {e["index"]: e for e in pkg.exports if pkg.class_name(e) == "Brush"}
