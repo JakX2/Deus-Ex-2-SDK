@@ -4470,6 +4470,13 @@ func _finish_gizmo_drag() -> void:
     if not gizmo_drag_active:
         return
     gizmo_drag_active = false
+    if environment_light_gizmo_drag:
+        environment_light_gizmo_drag = false
+        gizmo_undo_before.clear()
+        status_label.text = (
+            "Light gizmo preview positioned. Editor-only: no native DX2 Light moved or saved."
+        )
+        return
     _record_edit("Drag " + editor_tool, gizmo_undo_before)
     gizmo_undo_before.clear()
 
@@ -5588,6 +5595,20 @@ func _refresh_gizmo_shape() -> void:
             handle.position = axis * 0.68
             handle.quaternion = Quaternion(Vector3.UP, axis)
         gizmo_root.add_child(handle)
+        if editor_tool == "move":
+            # Unity-style arrow tip stays a child of its own pickable axis.
+            var tip := MeshInstance3D.new()
+            tip.name = "arrow_tip"
+            var cone := CylinderMesh.new()
+            cone.top_radius = 0.0
+            cone.bottom_radius = 0.16
+            cone.height = 0.28
+            tip.mesh = cone
+            tip.position = axis * 1.35
+            tip.quaternion = Quaternion(Vector3.UP, axis)
+            tip.material_override = tint
+            tip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+            handle.add_child(tip)
         gizmo_handles.append(handle)
     _update_gizmo_pose()
 
@@ -5595,11 +5616,16 @@ func _refresh_gizmo_shape() -> void:
 func _update_gizmo_pose() -> void:
     if gizmo_root == null:
         return
-    var show := _draft_selected_is_prop()
+    var preview_light := _environment_light_proxy_selected() and editor_tool == "move"
+    var show := _draft_selected_is_prop() or preview_light
     gizmo_root.visible = show
     if not show:
         return
-    gizmo_root.global_position = _selection_pivot()
+    if preview_light:
+        var position: Vector3 = _environment_light_preview_position(selected_actor)
+        gizmo_root.global_position = position
+    else:
+        gizmo_root.global_position = _selection_pivot()
     # Keep the handles about the same apparent size while zooming.
     var distance := camera.global_position.distance_to(gizmo_root.global_position)
     # Unity-sized move handle: 75% larger on screen than the old preview.
@@ -5626,7 +5652,8 @@ func _gizmo_axis_scalar(mouse_position: Vector2, pivot: Vector3, axis: Vector3) 
 
 
 func _begin_gizmo_drag() -> bool:
-    if not _draft_selected_is_prop():
+    var is_light := _environment_light_proxy_selected() and editor_tool == "move"
+    if not is_light and not _draft_selected_is_prop():
         return false
     _update_gizmo_pose()
     var ray := _mouse_ray(view_container.get_local_mouse_position())
@@ -5637,28 +5664,61 @@ func _begin_gizmo_drag() -> bool:
     for handle in gizmo_handles:
         if not is_instance_valid(handle):
             continue
-        var hit := _ray_mesh_triangles(handle, ray["origin"], ray["direction"])
-        if not hit.is_empty() and float(hit["distance"]) < best_distance:
-            best_distance = float(hit["distance"])
-            best_axis = handle.get_meta("axis")
+        var parts: Array[MeshInstance3D] = [handle]
+        for child in handle.get_children():
+            if child is MeshInstance3D:
+                parts.append(child)
+        for part in parts:
+            var hit := _ray_mesh_triangles(part, ray["origin"], ray["direction"])
+            if not hit.is_empty() and float(hit["distance"]) < best_distance:
+                best_distance = float(hit["distance"])
+                best_axis = handle.get_meta("axis")
     if best_axis == Vector3.ZERO:
         return false
     gizmo_drag_axis = best_axis
-    gizmo_drag_pivot = _selection_pivot()
+    environment_light_gizmo_drag = is_light
+    if is_light:
+        gizmo_drag_pivot = _environment_light_preview_position(selected_actor)
+    else:
+        gizmo_drag_pivot = _selection_pivot()
     gizmo_start_transforms.clear()
-    for node in _selection_nodes():
-        gizmo_start_transforms[str(node.name)] = node.global_transform
-    gizmo_start_transform = selected_mesh.global_transform
+    if not is_light:
+        for node in _selection_nodes():
+            gizmo_start_transforms[str(node.name)] = node.global_transform
+        gizmo_start_transform = selected_mesh.global_transform
     gizmo_drag_start_screen = view_container.get_local_mouse_position()
     var scalar: Variant = _gizmo_axis_scalar(gizmo_drag_start_screen, gizmo_drag_pivot, best_axis)
     gizmo_drag_start_scalar = float(scalar) if scalar != null else 0.0
-    gizmo_undo_before = _capture_edit_state()
+    if is_light:
+        gizmo_undo_before.clear() # This light proxy must NEVER enter prop undo/draft records.
+    else:
+        gizmo_undo_before = _capture_edit_state()
     gizmo_drag_active = true
     return true
 
 
 func _apply_gizmo_drag() -> void:
-    if not gizmo_drag_active or not _draft_selected_is_prop():
+    if not gizmo_drag_active:
+        return
+    if environment_light_gizmo_drag:
+        if editor_tool != "move" or not _environment_light_proxy_selected():
+            return
+        var scalar: Variant = _gizmo_axis_scalar(
+            view_container.get_local_mouse_position(), gizmo_drag_pivot, gizmo_drag_axis)
+        if scalar == null:
+            return
+        var shift := float(scalar) - gizmo_drag_start_scalar
+        if Input.is_key_pressed(KEY_CTRL):
+            shift = snapped(shift, float(prop_edit_step.value))
+        _set_environment_light_preview_position(
+            selected_actor, gizmo_drag_pivot + gizmo_drag_axis * shift)
+        status_label.text = (
+            "Editor-only " + str(selected_actor.get("name", "")) +
+            " light gizmo: " + str(_environment_light_preview_position(selected_actor))
+            + " | original DX2 Light remains unchanged; use Reset to restore."
+        )
+        return
+    if not _draft_selected_is_prop():
         return
     var distance := camera.global_position.distance_to(gizmo_drag_pivot)
     var mouse := view_container.get_local_mouse_position()
@@ -5864,6 +5924,15 @@ func _input(event: InputEvent) -> void:
 
 
 func _pick_actor(additive: bool = false) -> void:
+    # On-screen original Light handles are editor overlays, not map meshes.
+    # Give a clearly clickable marker priority over underlying BSP triangles.
+    if view_container.size.x > 0.0 and view_container.size.y > 0.0:
+        var screen := (view_container.get_local_mouse_position()
+            * Vector2(world_view.size) / view_container.size)
+        var light_name := _pick_environment_light_marker(screen)
+        if not light_name.is_empty():
+            _select_environment_light_from_viewport(light_name)
+            return
     # AABB is a broad-phase filter only. Actual visible triangles decide the pick:
     # a huge BSP box must not swallow a smaller prop, nor select an empty area.
     if all_mesh_instances.is_empty() or view_container.size.x <= 0.0 or view_container.size.y <= 0.0:
