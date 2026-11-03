@@ -50,8 +50,7 @@ def block_report(block, index):
         for i in range(0,len(coords)-2,3):
             area, normal=triangle_properties(*coords[i:i+3])
             areas.append(area)
-            if area>1e-10:
-                normals.append(normal)
+            normals.append(normal)
         box=bounds(coords)
         scaled=bounds([unreal_to_world(x) for x in coords])
         spans=sizes(scaled)
@@ -124,11 +123,12 @@ def main(argv=None):
     args=ap.parse_args(argv)
     if args.gmp.suffix.lower()!=".gmp" or not args.gmp.is_file():
         ap.error("Select a readable original .gmp")
-    raw_sha=hashlib.sha256(args.gmp.read_bytes()).hexdigest()
+    pkg=Package(args.gmp)
+    raw_sha=hashlib.sha256(pkg.data).hexdigest()
     report={"schema":"dx2ed-readonly-bsp-source-audit-v1",
             "map":args.gmp.name,"source_gmp_sha256":raw_sha,
             "source_modified":False,"render_visibility_verified":False,
-            "target":audit(Package(args.gmp),args.index)}
+            "target":audit(pkg,args.index)}
     if args.output:
         output=args.output.resolve()
         if output==args.gmp.resolve() or (
