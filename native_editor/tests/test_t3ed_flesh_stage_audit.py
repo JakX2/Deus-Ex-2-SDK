@@ -115,11 +115,8 @@ class FleshStageAuditTests(unittest.TestCase):
             self.audit()
         self.b.licensee = 133
         self.b.bsp = []
-        with self.assertRaisesRegex(ValueError, "Empty|no render|No|Inconsistent"):
-            # An empty scan must be reported, never counted as a successful rebuild.
-            result = self.audit()
-            if result["after"]["render"]["validated_render_blocks"] == 0:
-                raise ValueError("No validated render blocks")
+        with self.assertRaisesRegex(ValueError, "No validated Flesh render blocks"):
+            self.audit()
 
     def test_report_is_exclusive_and_outside_input_folders(self):
         result = self.audit()
