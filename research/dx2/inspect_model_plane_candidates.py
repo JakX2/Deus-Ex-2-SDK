@@ -53,7 +53,8 @@ def inspect_planes(payload: bytes) -> dict:
         unit = finite and abs(norm_length - 1.0) <= NORMAL_TOLERANCE
         planes.append({
             "index": i, "relative_payload_offset": offset,
-            "candidate_normal_xyz": [x, y, z], "candidate_plane_w": w,
+            "candidate_normal_xyz": [v if math.isfinite(v) else None for v in (x, y, z)],
+            "candidate_plane_w": w if math.isfinite(w) else None,
             "normal_length": norm_length if finite else None,
             "unit_normal": unit,
         })
