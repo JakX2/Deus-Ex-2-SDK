@@ -50,6 +50,10 @@ All 16 validated Flesh BSP render blocks are **byte-identical**
 between these preexisting editable/cooked tutorial pairs.
 Each tutorial Level payload changes, and all matched Brush and Model
 payloads change bytewise even though their export counts are retained.
+**All four source/cooked pairs also have different Unreal package GUIDs**,
+so GUID alone cannot be treated as a stable source-to-cook identifier
+when comparing these originals. The auditor records both GUIDs without
+rejecting a match solely because they differ.
 This is **not proof** of a new compiler run, nor does BSP render-data
 equality establish spatial visibility/PVS, Havok physics, navigation,
 lightmaps, runtime lighting or engine load compatibility.
