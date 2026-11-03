@@ -4593,6 +4593,17 @@ func _refresh_inspector_panel() -> void:
     elif nodes.is_empty() and not selected_actor.is_empty():
         current_actor = selected_actor
     inspector_summary.text = _mesh_geometry_material_summary(current_actor, current_mesh)
+    if _actor_on_original_ai_layer(current_actor):
+        var tag: Variant = _environment_game_value(current_actor, 41)
+        var skin: Variant = _environment_game_value(current_actor, 1659)
+        inspector_summary.text += (
+            "\nOriginal SkeletalTag (41): "
+            + (str(tag) if tag != null else "not serialized on this actor")
+            + "\nOriginal MaterialSkin (1659): "
+            + (str(skin) if skin != null else "not serialized on this actor")
+            + "\nThese are per-actor observations only; inherited class defaults "
+            + "and skeletal rendering are not reconstructed."
+        )
     var eligible := _draft_selected_is_prop()
     inspector_transform_section.visible = eligible
     _refresh_actor_property_editor()
