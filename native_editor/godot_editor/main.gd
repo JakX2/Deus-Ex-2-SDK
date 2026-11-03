@@ -1479,7 +1479,7 @@ func _make_lighting_dialog() -> void:
     limit_row.add_child(lighting_limit_select)
     panel.add_child(limit_row)
     for spec in [
-        ["Ambient energy", "ambient", 0.0, 2.0, 0.05, SEMI_LIT_DEFAULT_AMBIENT],
+        ["Ambient energy", "ambient", 0.0, 2.0, 0.01, SEMI_LIT_DEFAULT_AMBIENT],
         ["Source radius multiplier", "radius", 0.25, 4.0, 0.05, 1.0],
         ["Source brightness multiplier", "energy", 0.1, 4.0, 0.05, 1.0]
     ]:
