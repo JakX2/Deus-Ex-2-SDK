@@ -36,11 +36,14 @@ def _snapshot(path: Path) -> dict:
     if render["level_payload_bytes"] != len(level):
         raise ValueError("Inconsistent Level byte count")
     preceding_end = 0
-    gap_sizes = Counter()
-    for start, end, digest in spans:
-        if not (0 <= preceding_end <= start < end <= len(level)):
-            raise ValueError("Overlapping/invalid block ranges")
-        gap_sizes[start - preceding_end] += 1
+    for start, end, _digest in spans:
+        if not (4 <= start < end <= len(level) and preceding_end <= start-4):
+            raise ValueError("Overlapping/invalid size-prefixed render-block ranges")
+        # Stronger than marker-only validation: in both observed engine branches,
+        # the preceding DWORD is the exact packed block payload byte length.
+        declared_bytes = struct.unpack_from("<I", level, start-4)[0]
+        if declared_bytes != end - start:
+            raise ValueError("Render record DWORD does not match payload byte length")
         if level[start + 0x44:start + 0x50] != MARKER:
             raise ValueError("Render block marker missing from validated span")
         if end - start < 80:
@@ -55,6 +58,9 @@ def _snapshot(path: Path) -> dict:
     tail = len(level) - spans[-1][1]
     if first + between + render_bytes + tail != len(level):
         raise ValueError("Level-region byte partition does not add up")
+    known_length_prefix_bytes = len(spans) * 4
+    if first + between < known_length_prefix_bytes:
+        raise ValueError("Insufficient room for all render record length prefixes")
     classes = Counter(package.class_name(e) for e in package.exports)
     return {
         "package": meta,
@@ -68,13 +74,19 @@ def _snapshot(path: Path) -> dict:
             "unknown_header_u32_9": 0,
             "validated_block_count": len(spans),
             "all_validated_blocks_match": True,
+            "all_render_length_prefixes_equal_payload_size": True,
         },
         "level_regions_bytes": {
             "prefix_before_first_render_block": first,
             "between_render_blocks": between,
             "validated_render_blocks": render_bytes,
             "suffix_after_last_render_block": tail,
-            "opaque_total_outside_validated_blocks": first + between + tail,
+            "bytes_outside_validated_render_payloads": first + between + tail,
+            "validated_four_byte_record_length_prefixes": len(spans),
+            "known_length_prefix_bytes": known_length_prefix_bytes,
+            "unclassified_bytes_excluding_length_prefixes": (
+                first + between + tail - known_length_prefix_bytes
+            ),
         },
         "between_block_gap_histogram": dict(sorted(Counter(
             spans[i + 1][0] - spans[i][1] for i in range(len(spans)-1)
@@ -106,6 +118,10 @@ def audit(t3_path: Path, dx2_path: Path) -> dict:
                 t3["structural_render_header"]["all_validated_blocks_match"]
                 and dx2["structural_render_header"]["all_validated_blocks_match"]
             ),
+            "four_byte_length_prefixed_render_records_shared": (
+                t3["structural_render_header"]["all_render_length_prefixes_equal_payload_size"]
+                and dx2["structural_render_header"]["all_render_length_prefixes_equal_payload_size"]
+            ),
             "shared_export_classes": classes_common,
             "t3_only_export_classes": sorted(set(a)-set(b)),
             "dx2_only_export_classes": sorted(set(b)-set(a)),
@@ -117,7 +133,8 @@ def audit(t3_path: Path, dx2_path: Path) -> dict:
             "Inputs are named T3/DX2 by the caller; this tool does not authenticate game provenance.",
             "The 80-byte packed render header and 32-byte vertices are validated in both inputs.",
             "Material names, geometric triangles and shared class names are NOT serialized writer compatibility.",
-            "Offsets outside validated render blocks are opaque and may mix unrelated native data.",
+            "Each validated render block in these samples has a matching 4-byte payload-length prefix.",
+            "Only non-render Level bytes excluding those size words are unclassified by this tool.",
             "The T3 and DX2 licencee revisions are different for these supplied samples.",
             "No native writer, collision decoder, .ibt cooker, level compiler or game runtime is run.",
         ],
