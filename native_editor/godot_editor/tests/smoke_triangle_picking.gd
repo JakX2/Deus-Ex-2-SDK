@@ -317,14 +317,14 @@ func _run() -> void:
         var additional_actor: Dictionary = light_fixture.duplicate(true)
         var additional_name := "Light__v13_fixture_" + str(i)
         additional_actor["name"] = additional_name
-        additional_actor["location"] = [40 + i, 20, 300]
+        additional_actor["location"] = [-10000 - i * 10, 20, 300]
         viewer.actors.append(additional_actor)
         var additional_marker := MeshInstance3D.new()
         additional_marker.name = "DX2Ed_source_marker_" + additional_name
         additional_marker.mesh = fixture_marker_mesh
         additional_marker.set_meta("editor_only", true)
         viewer.environment_light_markers_root.add_child(additional_marker)
-        additional_marker.global_position = (Vector3(40 + i, 300, 20)
+        additional_marker.global_position = (Vector3(-10000 - i * 10, 300, 20)
             * float(viewer.NATIVE_CLONE_UNREAL_METRES))
         viewer.environment_light_markers[additional_name] = additional_marker
         source_light_markers.append(additional_marker)
@@ -362,6 +362,7 @@ func _run() -> void:
         or viewer.semi_lit_nodes.size() != 41
         or viewer.semi_lit_last_source_stats.get("capped") != 0
         or abs(viewer.semi_lit_world_environment.ambient_light_energy - 0.65) > 0.001
+        or not viewer.semi_lit_nodes.has("Light__7")
         or abs(viewer.semi_lit_nodes["Light__7"].omni_range - 8.64) > 0.001
         or abs(viewer.semi_lit_nodes["Light__7"].light_energy - 0.46875) > 0.001
         or light_fixture["game_properties"] != lighting_original_properties
@@ -372,6 +373,7 @@ func _run() -> void:
     viewer.lighting_preset_select.select(3)
     viewer._select_lighting_preset(3)
     if (viewer.semi_lit_nodes.size() != 32
+        or not viewer.semi_lit_nodes.has("Light__7")
         or abs(viewer.semi_lit_world_environment.ambient_light_energy - 0.15) > 0.001
         or abs(viewer.semi_lit_nodes["Light__7"].omni_range - 4.896) > 0.001):
         _fail("Dark preset should restore a bounded 32-source preview")
