@@ -1939,7 +1939,9 @@ func _set_environment_light_visual_setting(key: String, value: Variant) -> void:
     if defaults.is_empty() or not defaults.has(key):
         return
     if key == "color":
-        if typeof(value) != TYPE_COLOR or not value.is_finite():
+        if (typeof(value) != TYPE_COLOR or not is_finite(value.r)
+            or not is_finite(value.g) or not is_finite(value.b)
+            or not is_finite(value.a)):
             return
         value = Color(value.r, value.g, value.b, 1.0)
     else:
