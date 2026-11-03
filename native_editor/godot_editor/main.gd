@@ -17,6 +17,8 @@ var asset_filter: LineEdit
 var asset_kind_filter: OptionButton
 var asset_list: ItemList
 var asset_details: Label
+var skeletal_zip_dialog: FileDialog
+var skeletal_inventory: Dictionary = {} # source-only .ski metadata, never native NPC body
 var asset_catalog: Dictionary = {}
 var assets_visible: Array = []
 var selected_asset: Dictionary = {}
@@ -538,6 +540,15 @@ func _make_ui() -> void:
     asset_details.text = "Import a DX2 mission to browse its IBD resources."
     asset_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     assets_tab.add_child(asset_details)
+    var skeletal_source_button := Button.new()
+    skeletal_source_button.text = "Open original SkeletalMeshes.zip (read-only)"
+    skeletal_source_button.tooltip_text = (
+        "Browse original .ski animation-set metadata for skeletal IBD assets. "
+        + "Does not render bodies, assign NPCs or write game files."
+    )
+    skeletal_source_button.pressed.connect(
+        func(): skeletal_zip_dialog.popup_centered_ratio(0.72))
+    assets_tab.add_child(skeletal_source_button)
     var place_resource := Button.new()
     place_resource.text = "Place preview mesh"
     place_resource.tooltip_text = "Place a cataloged static mesh as an editable draft; does not create native DX2 actors"
@@ -1160,6 +1171,12 @@ func _make_ui() -> void:
     gameplay_zip_dialog.filters = PackedStringArray(["*.zip ; Original TriggerScript definitions ZIP"])
     gameplay_zip_dialog.file_selected.connect(_open_original_gameplay_scripts)
     add_child(gameplay_zip_dialog)
+    skeletal_zip_dialog = FileDialog.new()
+    skeletal_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    skeletal_zip_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    skeletal_zip_dialog.filters = PackedStringArray(["*.zip ; Original DX2 SkeletalMeshes ZIP"])
+    skeletal_zip_dialog.file_selected.connect(_open_original_skeletal_zip)
+    add_child(skeletal_zip_dialog)
 
     shared_zip_dialog = FileDialog.new()
     shared_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -3370,6 +3387,63 @@ func _place_archetype_template() -> void:
     status_label.text = "Placed visual template for " + qualified + ". No native class spawned."
 
 
+## Original .ski metadata helps future skeletal assembly but contains
+## neither decoded vertices/bone weights nor verified actor-to-model links.
+func _skeletal_source_description(name: String) -> String:
+    var records: Variant = skeletal_inventory.get("records", [])
+    if typeof(records) != TYPE_ARRAY:
+        return "Open original SkeletalMeshes.zip to inspect .ski links."
+    for record in records:
+        if (typeof(record) == TYPE_DICTIONARY
+            and str(record.get("name", "")).to_lower() == name.to_lower()):
+            return (
+                "Original SKI version: " + str(record.get("version", "unknown"))
+                + "\nMatching .pro in ZIP: " + str(record.get("pro_present", false))
+                + "\nDeclared animation sets: " + str(record.get("animation_sets", []))
+                + "\nOriginal SKI offset: " + str(record.get("position", []))
+                + "\nOriginal SKI scale: " + str(record.get("scale", []))
+                + "\nActor-to-skeleton mapping NOT verified."
+            )
+    return "No matching .ski descriptor loaded (IBD asset may be bundled separately)."
+
+
+func _open_original_skeletal_zip(path: String) -> void:
+    if path.get_extension().to_lower() != "zip" or not FileAccess.file_exists(path):
+        status_label.text = "Choose an existing original SkeletalMeshes.zip."
+        return
+    var script := ProjectSettings.globalize_path(
+        "res://backend/dx2_skeletal_ski_inventory.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Read-only SKI metadata parser unavailable."
+        return
+    var args := PackedStringArray([script, path])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        output.clear()
+        code = OS.execute("py", PackedStringArray(["-3", script, path]), output, true)
+    var parsed: Variant = JSON.parse_string("\n".join(output))
+    if (code != 0 or typeof(parsed) != TYPE_DICTIONARY
+        or parsed.get("schema", "") != "DX2Ed-original-skeletal-ski-inventory-v1"
+        or parsed.get("read_only") != true
+        or parsed.get("npc_spawn_enabled") != false
+        or parsed.get("geometry_decoded") != false
+        or typeof(parsed.get("records", null)) != TYPE_ARRAY
+        or parsed["records"].size() > 2000):
+        skeletal_inventory.clear()
+        status_label.text = "Source-only skeletal metadata rejected; check original ZIP and Python 3."
+        return
+    skeletal_inventory = parsed
+    if not selected_asset.is_empty():
+        for index in range(assets_visible.size()):
+            if (str(assets_visible[index].get("name", "")) == str(selected_asset.get("name", ""))
+                and str(assets_visible[index].get("kind", "")) == str(selected_asset.get("kind", ""))):
+                _asset_selected(index)
+                break
+    status_label.text = ("Read %d original .ski descriptors (metadata only). "
+        + "No NPC geometry, animation or gameplay was imported.") % int(parsed.get("record_count", 0))
+
+
 func _load_asset_catalog(path: String) -> void:
     asset_catalog.clear()
     selected_asset.clear()
@@ -3459,8 +3533,8 @@ func _asset_selected(index: int) -> void:
         ) +
         ("\nSKELETAL RESOURCE (source metadata only). "
          + "Body bones, skin weights and animation are not decoded; "
-         + "static-mesh preview and native spawn are NOT supported."
-         if skeletal else
+         + "static-mesh preview and native spawn are NOT supported.\n"
+         + _skeletal_source_description(name) if skeletal else
          "\nPlace preview = editor-only. Place native copy = uses verified original actor; isolated GMP export still required.")
     )
 
