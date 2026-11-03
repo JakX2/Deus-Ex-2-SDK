@@ -25,9 +25,29 @@ The faces are rebuilt from vertices on each source plane and sorted with outward
 3. Every polygon has a positive signed area in its outward plane-normal orientation.
 4. Every undirected polyhedron edge is shared by exactly **two faces**, with **opposite directed winding**.
 5. The polyhedron satisfies Euler's V − E + F = 2.
-6. No singular, malformed, mirrored, open or inconsistent plane set is silently converted into a supposed native brush.
+6. No singular, malformed, mirrored, open or inconsistent plane set is silently converted into a supposedly valid volume solid.
 
 **These are derived corner positions, not copied XYZ vertices from a native Model array.** Their coordinate space is the source face-plane frame, which need not equal the stored Model bounding box, and is **not** yet established against the actual retail game's actor transforms. The small-scale source coordinate tolerances are pragmatic and need wider corpus validation before writing data.
+
+
+## Critical ownership correction: these are VOLUME Models, not the original Brush Models
+
+After reconstructing the convex candidates, we joined the same 19-map source corpus to the **existing GameSys object-property-45 Model ownership references**. The **309 face-bearing Models** are owned exclusively by these volume actor classes:
+
+| Owner class | Face-bearing Models |
+|---|---:|
+| NavMeshSubtractionVolume | **159** |
+| AITaggedVolume | **52** |
+| Volume | **50** |
+| DatalinkVolume | **47** |
+| DefaultPhysicsVolume | **1** |
+| **Total** | **309** |
+
+All **3,392 source Brush-owned Models** in this corpus are **63 bytes** long and have **no face records** in this decoded section. There are also 16 Brush actors lacking GameSys45 links, documented by the previous ownership audit. These 309 decoded shapes represent **native volume geometry**, not the original subtractive/additive world-brush topology.
+
+The **19 large Models** without actor-property-45 ownership remain separate **compiled-world-geometry candidates**. We should investigate those large Models and the Level's BSP/collision data before attempting any actual world-brush compiler.
+
+This means the reconstructed geometry is already useful for prospective **volume visualization and editing**, but it **does not** establish that native world brushes' polygons are individually stored in their 63-byte Model exports. Do not label this as complete Brush CSG decoding.
 
 ## 19-map results
 
@@ -82,7 +102,7 @@ python -m unittest discover -s native_editor/tests -p "test_dx2_model_convex_rec
 ## Next engineering gates
 
 - Explain the three refusing Models with additional source evidence (nonconvex / compound / transform / other record grammar).
-- Check whether face data corresponds to brush-local, map-world or a third coordinate system by matching **actor locations, rotations and Model references** against the recovered candidate hulls.
+- Check whether face data corresponds to volume-local, map-world or a third coordinate system by matching **actor locations, rotations and Model references** against the recovered candidate hulls.
 - Independently recover the native **stored vertex representation and face index linkage**, if present, rather than only deriving intersections from planes.
 - Investigate the large invalid-box Models containing compiled world data, and DX2-specific collision/CSG reconstruction.
 - Attempt native Model/Level serialization only when all these source and runtime gates pass.
