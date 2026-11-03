@@ -426,6 +426,33 @@ func _run() -> void:
     if viewer._actor_category({"class":"D_Character"}) != "Gameplay / other":
         _fail("unverified gameplay actors should remain unclassified")
         return
+    # An anomalous source BSP (Seattle Needle BSP_218) can be hidden for
+    # viewport comparison, but neither its geometry nor native draft changes.
+    var suspect_bsp := MeshInstance3D.new()
+    suspect_bsp.name = "BSP_218"
+    suspect_bsp.mesh = BoxMesh.new()
+    viewer.world_root.add_child(suspect_bsp)
+    viewer.all_mesh_instances.append(suspect_bsp)
+    viewer._select_mesh_only(suspect_bsp)
+    if viewer.bsp_hide_preview_button.disabled:
+        _fail("Selected original BSP should enable the temporary hide control")
+        return
+    viewer._toggle_bsp_preview_visibility()
+    if (suspect_bsp.visible or viewer.bsp_hidden_preview.size() != 1
+        or viewer.bsp_hide_preview_button.disabled
+        or not viewer.bsp_hide_preview_button.text.begins_with("Restore hidden BSP")
+        or not viewer.property_overrides.is_empty()
+        or not viewer.draft_prop_copies.is_empty()):
+        _fail("BSP preview hide must only affect reversible viewport visibility")
+        return
+    viewer._toggle_bsp_preview_visibility()
+    if not suspect_bsp.visible or not viewer.bsp_hidden_preview.is_empty():
+        _fail("BSP preview restore must return original visibility")
+        return
+    viewer._clear_selection()
+    viewer.all_mesh_instances.erase(suspect_bsp)
+    suspect_bsp.free()
+
     viewer._set_editor_tool("rotate")
     if viewer.editor_tool != "rotate" or viewer.gizmo_handles.size() != 3:
         _fail("rotation gizmo should have three axis handles")
