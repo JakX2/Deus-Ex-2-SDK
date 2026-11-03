@@ -42,6 +42,19 @@ The screenshots provided show floating hat/headwear meshes within
 Seattle Hub. A specific source actor identity for the accessories
 was not determined from those screenshots alone.
 
+The user's original `System/Engine.d2u` also contains these directly
+verifiable UnrealScript TextBuffer declarations:
+
+- `var(Render) inherited(41) Name SkeletalTag;`
+- `var(Render) inherited(1659) CustomEditor string MaterialSkin;`
+
+They are **source-authoritative property IDs**, not guessed class names.
+The editor now exposes those values for selected AI-layer candidates
+*when explicitly serialized on the actor*. Absence does NOT imply
+there is no model: the property may be inherited from a GameSys
+archetype or replaced dynamically at runtime. An actor's class-to-
+model association is not fully resolved yet.
+
 ## Editor usage (Godot 4.3+)
 
 1. Load original `M1_Seattle_hub.gmp` and matching IBD bundles.
