@@ -76,5 +76,49 @@ class CompactRoleHypothesisTests(unittest.TestCase):
             roles.inspect_model(bytes(wrong),frame)
 
 
+    def test_disjoint_sparse_vertex_ranges_dense_shared_surfaces_and_unique_bounds(self):
+        records = [
+            row(0, 0, vcount=4, collision=-1, render=0),
+            row(8, 1, vcount=5, collision=400, render=1),
+            row(17, 1, vcount=3, collision=1000, render=2),
+        ]
+        result = roles.analyze_rows(records)
+        shape = result["index_shapes"]
+        self.assertTrue(shape["1"]["unique_nonnegative"])
+        self.assertFalse(shape["1"]["zero_based_dense"])
+        self.assertTrue(shape["2"]["zero_based_dense"])
+        self.assertFalse(shape["2"]["unique_nonnegative"])
+        self.assertTrue(shape["6"]["unique_nonnegative"])
+        self.assertFalse(shape["6"]["zero_based_dense"])
+        self.assertTrue(shape["7"]["zero_based_unique_dense"])
+        spans = result["candidate_vertex_spans"]
+        self.assertTrue(spans["all_nonnegative_spans_disjoint"])
+        self.assertEqual(spans["sorted_gapped_neighbors"], 2)
+        self.assertEqual(spans["sorted_gap_slots"], 8)
+        self.assertEqual(spans["overlap_slot_count"], 0)
+
+    def test_missing_and_repeated_candidate_indices_reported_without_refusal(self):
+        records = [
+            row(0, 0, collision=4, render=0),
+            row(2, 7, collision=4, render=0),
+            row(16, 7, collision=10, render=2),
+        ]
+        r = roles.analyze_rows(records)
+        self.assertFalse(r["index_shapes"]["2"]["zero_based_dense"])
+        self.assertEqual(r["index_shapes"]["6"]["duplicate_nonnegative_occurrences"], 1)
+        self.assertEqual(r["index_shapes"]["7"]["duplicate_nonnegative_occurrences"], 1)
+        self.assertEqual(r["index_shapes"]["7"]["missing_zero_based_values"], 1)
+        self.assertEqual(r["candidate_vertex_spans"]["overlap_slot_count"], 2)
+        self.assertFalse(r["candidate_vertex_spans"]["all_nonnegative_spans_disjoint"])
+
+    def test_sorted_contiguity_is_distinct_from_serial_node_order(self):
+        records = [row(8, 2), row(0, 0), row(4, 1)]
+        r = roles.analyze_rows(records)
+        self.assertEqual(r["candidate_vertex_spans"]["adjacent_exact_contiguous"], 1)
+        self.assertEqual(r["candidate_vertex_spans"]["sorted_contiguous_neighbors"], 2)
+        self.assertTrue(r["candidate_vertex_spans"]["all_nonnegative_spans_disjoint"])
+        self.assertTrue(r["candidate_vertex_spans"]["dense_zero_based_no_overlaps"])
+
+
 if __name__ == "__main__":
     unittest.main()
