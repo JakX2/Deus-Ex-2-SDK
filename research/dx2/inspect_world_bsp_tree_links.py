@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, deque
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -146,6 +147,8 @@ def audit_map(path: Path, *, include_edges=False) -> dict:
     payload = pkg.payload(model)
     frame = boundaries.parse_world_model(payload, include_nodes=True)
     return {"file":path.name, "licensee":pkg.licensee,
+            "source_sha256":hashlib.sha256(pkg.data).hexdigest(),
+            "world_model_sha256":hashlib.sha256(payload).hexdigest(),
             "world_model_export_ref":model_id,
             **inspect_link_graph(payload,frame,include_edges=include_edges)}
 
