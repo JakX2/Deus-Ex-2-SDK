@@ -196,7 +196,7 @@ def reconstruct_faces(faces):
     }
 
 
-def audit_map(path: Path, *, include_geometry=False):
+def audit_map(path: Path, *, include_geometry=False, include_owners=False):
     path = Path(path)
     if path.suffix.casefold() != ".gmp" or not path.is_file():
         raise ValueError("Expected existing user-owned DX2 .gmp")
@@ -207,6 +207,18 @@ def audit_map(path: Path, *, include_geometry=False):
         raise ValueError("Expected UE95 DX2 licensee 65/67/68/69")
     counts = Counter()
     rows = []
+    # Optional independent Level actor / GameSys property-45 ownership join.
+    # Never assume all face-bearing Models belong to Brush actors.
+    ownership = {}
+    if include_owners:
+        from inspect_brush_model_links import audit_map as inspect_owners
+        owner_report = inspect_owners(path)
+        for owner in owner_report["owners"]:
+            ownership.setdefault(owner["model_export"], []).append({
+                "actor_export": owner["actor_export"],
+                "actor_name": owner["actor_name"],
+                "actor_class": owner["actor_class"],
+            })
     for exp in pkg.exports:
         if pkg.class_name(exp) != "Model":
             continue
@@ -217,6 +229,13 @@ def audit_map(path: Path, *, include_geometry=False):
             continue
         result = reconstruct_faces(record["faces"])
         counts[result["status"]] += 1
+        if include_owners:
+            owner_rows = ownership.get(exp["index"], [])
+            result["actor_owners_by_gamesys45"] = owner_rows
+            if not owner_rows:
+                counts["face_bearing_without_owner"] += 1
+            for owner in owner_rows:
+                counts["face_bearing_owner_"+owner["actor_class"]] += 1
         if result["status"] == "validated_candidate_convex_hull":
             counts["reconstructed_corners"] += result["corner_count"]
             counts["reconstructed_faces"] += result["face_count"]
@@ -230,13 +249,14 @@ def audit_map(path: Path, *, include_geometry=False):
             "nonempty_model_results": rows}
 
 
-def audit_maps(paths, *, include_geometry=False):
+def audit_maps(paths, *, include_geometry=False, include_owners=False):
     if not paths or len(paths) > face_reader.header.MAX_MAPS:
         raise ValueError("Provide 1 to 32 user-owned DX2 GMPs")
     resolved = [Path(path).resolve() for path in paths]
     if len(set(resolved)) != len(resolved):
         raise ValueError("Duplicate input map path")
-    reports = [audit_map(path, include_geometry=include_geometry) for path in resolved]
+    reports = [audit_map(path, include_geometry=include_geometry,
+                         include_owners=include_owners) for path in resolved]
     counts = Counter()
     for report in reports:
         counts.update(report["counts"])
@@ -316,6 +336,8 @@ def main(argv=None):
     parser.add_argument("maps", type=Path, nargs="+")
     parser.add_argument("--report", type=Path)
     parser.add_argument("--include-geometry", action="store_true")
+    parser.add_argument("--include-owners", action="store_true",
+                        help="Join Level actor GameSys45 Model ownership (slower)")
     parser.add_argument("--preview-model-export", type=int)
     parser.add_argument("--preview-obj", type=Path)
     args = parser.parse_args(argv)
@@ -324,7 +346,8 @@ def main(argv=None):
             raise ValueError("Specify --preview-model-export and --preview-obj together")
         if args.preview_obj is not None and len(args.maps) != 1:
             raise ValueError("OBJ preview needs exactly one original GMP source")
-        result = audit_maps(args.maps, include_geometry=args.include_geometry)
+        result = audit_maps(args.maps, include_geometry=args.include_geometry,
+                            include_owners=args.include_owners)
         if args.preview_obj is not None:
             result["obj_preview"] = export_single_model(
                 args.maps[0], args.preview_model_export, args.preview_obj)
