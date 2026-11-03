@@ -173,6 +173,8 @@ var lighting_ambient_control: SpinBox
 var lighting_radius_control: SpinBox
 var lighting_energy_control: SpinBox
 var lighting_diagnostics: Label
+var lighting_source_list: ItemList
+var lighting_source_names: Array[String] = []
 var lighting_controls_syncing := false
 var semi_lit_last_source_stats: Dictionary = {}
 var semi_lit_toggle: CheckBox
@@ -1439,10 +1441,10 @@ func _backend_finished(code: int, output: String) -> void:
 func _make_lighting_dialog() -> void:
     lighting_dialog = AcceptDialog.new()
     lighting_dialog.title = "DX2Ed Lighting | PREVIEW ONLY"
-    lighting_dialog.min_size = Vector2i(440, 395)
+    lighting_dialog.min_size = Vector2i(500, 545)
     add_child(lighting_dialog)
     var panel := VBoxContainer.new()
-    panel.custom_minimum_size = Vector2(405, 340)
+    panel.custom_minimum_size = Vector2(455, 485)
     lighting_dialog.add_child(panel)
     var heading := Label.new()
     heading.text = (
@@ -1505,6 +1507,27 @@ func _make_lighting_dialog() -> void:
     lighting_diagnostics.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     lighting_diagnostics.text = "Open an original map with source Light actors to view diagnostics."
     panel.add_child(lighting_diagnostics)
+    var list_hint := Label.new()
+    list_hint.text = "Original sources | double-click an ID to focus"
+    panel.add_child(list_hint)
+    lighting_source_list = ItemList.new()
+    lighting_source_list.custom_minimum_size.y = 120
+    lighting_source_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    lighting_source_list.item_activated.connect(_focus_lighting_source)
+    panel.add_child(lighting_source_list)
+
+
+func _focus_lighting_source(index: int) -> void:
+    if index < 0 or index >= lighting_source_names.size():
+        return
+    var name := lighting_source_names[index]
+    if not actors_by_name.has(name):
+        return
+    var actor: Dictionary = actors_by_name[name]
+    if actor.get("class", "") != "Light":
+        return
+    select_actor(actor)
+    focus_selected()
 
 
 func _sync_lighting_panel_controls() -> void:
@@ -2403,6 +2426,9 @@ func _clear_semi_lit_nodes() -> void:
             light.free()
     semi_lit_nodes.clear()
     semi_lit_last_source_stats.clear()
+    lighting_source_names.clear()
+    if lighting_source_list != null:
+        lighting_source_list.clear()
     if semi_lit_label != null:
         semi_lit_label.text = ""
     if lighting_diagnostics != null:
@@ -2420,6 +2446,8 @@ func _refresh_semi_lit_scene() -> void:
     var source_light_total := 0
     var explicitly_off := 0
     var missing_source_data := 0
+    var names_explicit_off: Array[String] = []
+    var names_invalid: Array[String] = []
     var eye := camera.global_position if is_instance_valid(camera) else Vector3.ZERO
     for actor in actors:
         if typeof(actor) != TYPE_DICTIONARY or actor.get("class", "") != "Light":
@@ -2428,6 +2456,7 @@ func _refresh_semi_lit_scene() -> void:
         # Only an explicitly authored false bLightOn is known to be OFF.
         if _environment_game_value(actor, 1487) == false:
             explicitly_off += 1
+            names_explicit_off.append(str(actor.get("name", "")))
             continue
         var position: Variant = _environment_light_preview_position(actor)
         var settings: Dictionary = _environment_light_visual_values(actor)
@@ -2436,6 +2465,7 @@ func _refresh_semi_lit_scene() -> void:
             or settings.is_empty() or name.is_empty()
             or not environment_light_markers.has(name)):
             missing_source_data += 1
+            names_invalid.append(name)
             continue
         ranked.append({
             "name": name, "position": position, "settings": settings,
@@ -2476,6 +2506,20 @@ func _refresh_semi_lit_scene() -> void:
                 stale.free()
             semi_lit_nodes.erase(name)
     semi_lit_last_camera_position = eye
+    if lighting_source_list != null:
+        lighting_source_list.clear()
+        lighting_source_names.clear()
+        for i in range(mini(ranked.size(), 500)):
+            var name := str(ranked[i]["name"])
+            lighting_source_list.add_item(
+                ("ACTIVE   " if i < count else "LIMITED  ") + name)
+            lighting_source_names.append(name)
+        for name in names_explicit_off:
+            lighting_source_list.add_item("OFF      " + name)
+            lighting_source_names.append(name)
+        for name in names_invalid:
+            lighting_source_list.add_item("INVALID  " + name)
+            lighting_source_names.append(name)
     var capped := maxi(0, ranked.size() - count)
     semi_lit_last_source_stats = {
         "total": source_light_total, "eligible": ranked.size(),
@@ -2492,6 +2536,7 @@ func _refresh_semi_lit_scene() -> void:
             "Original Light actors: %d\nEligible source lights: %d\n"
             + "Godot light nodes: %d\nExcluded by chosen limit: %d\n"
             + "Explicit bLightOn=false: %d\nMissing/invalid source data: %d\n"
+            + ("Only first 500 eligible IDs listed below.\n" if ranked.size() > 500 else "")
             + "Godot Compatibility still limits lights affecting individual meshes; "
             + "these nodes do not recreate DX2 occlusion, shadows, or lightmaps."
         ) % [source_light_total, ranked.size(), count, capped,
