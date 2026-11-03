@@ -15,17 +15,17 @@ import compare_t3_dx2_boundaries as tool
 
 
 def make_blob(blocks, extra_tail=0):
-    data = bytearray(b"H" * 8)
+    data = bytearray(b"H" * 4)
     spans = []
     for i in range(blocks):
+        data.extend(struct.pack("<I", 80))
         start = len(data)
         header = bytearray(80)
         struct.pack_into("<10I", header, 0x28, 3, 3, 1, 1, 0, 0, 0, 1, 0xFFFFFFE0, 0)
         data.extend(header)
         end = len(data)
         spans.append((start, end, hashlib.sha256(data[start:end]).hexdigest()))
-        if i < blocks - 1:
-            data.extend(b"SIZE")
+        # The following record writes the next four-byte length prefix.
     data.extend(b"TAIL" + b"T"*extra_tail)
     return bytes(data), spans
 
@@ -101,9 +101,14 @@ class CrossLicenseeBoundaryTests(unittest.TestCase):
             "between_render_blocks": 0,
             "validated_render_blocks": 80,
             "suffix_after_last_render_block": 4,
-            "opaque_total_outside_validated_blocks": 12,
+            "bytes_outside_validated_render_payloads": 12,
+            "validated_four_byte_record_length_prefixes": 1,
+            "known_length_prefix_bytes": 4,
+            "unclassified_bytes_excluding_length_prefixes": 8,
         })
         self.assertEqual(result["dx2"]["between_block_gap_histogram"], {4: 1})
+        self.assertTrue(result["comparison"]["four_byte_length_prefixed_render_records_shared"])
+        self.assertEqual(result["dx2"]["level_regions_bytes"]["known_length_prefix_bytes"], 8)
         self.assertEqual(result["dx2"]["level_regions_bytes"]["suffix_after_last_render_block"], 13)
 
     def test_bad_render_header_refused(self):
@@ -113,6 +118,17 @@ class CrossLicenseeBoundaryTests(unittest.TestCase):
             d[DX2.spans[0][0] + 0x44] = 99
             DX2.data = bytes(d)
             with self.assertRaisesRegex(ValueError, "marker missing"):
+                tool.audit(self.t3, self.dx2)
+        finally:
+            DX2.data = original
+
+    def test_incorrect_length_prefix_refused_even_with_valid_marker(self):
+        original = DX2.data
+        try:
+            data = bytearray(DX2.data)
+            struct.pack_into("<I", data, DX2.spans[0][0]-4, 123)
+            DX2.data = bytes(data)
+            with self.assertRaisesRegex(ValueError, "does not match payload byte length"):
                 tool.audit(self.t3, self.dx2)
         finally:
             DX2.data = original
