@@ -305,6 +305,92 @@ func _run() -> void:
         or abs(viewer.semi_lit_world_environment.ambient_light_energy - 1.1) > 0.001):
         _fail("Semi-lit OFF must restore baseline lights and clear source proxies")
         return
+    # v13: Seattle Hub reproduction: exactly 41 eligible source lights,
+    # plus an explicitly OFF and an invalid source actor.
+    # The v11 32-light limit must now be configurable without a native edit.
+    var lighting_original_properties: Variant = light_fixture["game_properties"].duplicate(true)
+    var source_light_markers: Array[MeshInstance3D] = []
+    for i in range(40):
+        var additional_actor: Dictionary = light_fixture.duplicate(true)
+        var additional_name := "Light__v13_fixture_" + str(i)
+        additional_actor["name"] = additional_name
+        additional_actor["location"] = [40 + i, 20, 300]
+        viewer.actors.append(additional_actor)
+        var additional_marker := MeshInstance3D.new()
+        additional_marker.name = "DX2Ed_source_marker_" + additional_name
+        additional_marker.set_meta("editor_only", true)
+        viewer.environment_light_markers_root.add_child(additional_marker)
+        additional_marker.global_position = (Vector3(40 + i, 300, 20)
+            * float(viewer.NATIVE_CLONE_UNREAL_METRES))
+        viewer.environment_light_markers[additional_name] = additional_marker
+        source_light_markers.append(additional_marker)
+    var explicitly_off_light: Dictionary = light_fixture.duplicate(true)
+    explicitly_off_light["name"] = "Light__v13_OFF"
+    explicitly_off_light["game_properties"].append({"id":1487,"value":false})
+    viewer.actors.append(explicitly_off_light)
+    viewer.actors.append({
+        "name":"Light__v13_INVALID","class":"Light","location":[1,2,3],
+        "game_properties":[{"id":116,"value":{"LightBrightness":24,"LightHue":150}},
+                           {"id":118,"value":{"LightRadius":"not a number"}}]
+    })
+    viewer.lighting_preset_select.select(1)
+    viewer._select_lighting_preset(1)
+    if (not viewer.semi_lit_enabled or viewer.semi_lit_nodes.size() != 32
+        or viewer.semi_lit_last_source_stats.get("total") != 43
+        or viewer.semi_lit_last_source_stats.get("eligible") != 41
+        or viewer.semi_lit_last_source_stats.get("capped") != 9
+        or viewer.semi_lit_last_source_stats.get("explicit_off") != 1
+        or viewer.semi_lit_last_source_stats.get("missing_data") != 1
+        or not viewer.lighting_diagnostics.text.contains("Excluded by chosen limit: 9")
+        or viewer.lighting_ambient_control.value != 0.38):
+        _fail("Default semi-lit must show 32/41 valid nodes and explain excluded Light actors")
+        return
+    viewer.lighting_limit_select.select(4) # All source lights, bounded by 256
+    viewer.lighting_ambient_control.set_value_no_signal(0.65)
+    viewer.lighting_radius_control.set_value_no_signal(1.5)
+    viewer.lighting_energy_control.set_value_no_signal(1.25)
+    viewer._lighting_manual_change()
+    if (viewer.lighting_preset_select.selected != 4
+        or viewer.semi_lit_light_limit != 0
+        or viewer._semi_lit_active_budget() != 256
+        or viewer.semi_lit_nodes.size() != 41
+        or viewer.semi_lit_last_source_stats.get("capped") != 0
+        or abs(viewer.semi_lit_world_environment.ambient_light_energy - 0.65) > 0.001
+        or abs(viewer.semi_lit_nodes["Light__7"].omni_range - 8.64) > 0.001
+        or abs(viewer.semi_lit_nodes["Light__7"].light_energy - 0.46875) > 0.001
+        or light_fixture["game_properties"] != lighting_original_properties
+        or not viewer.draft_prop_copies.is_empty()
+        or not viewer.property_overrides.is_empty()):
+        _fail("All valid source lights, tone, radius and energy must only update Godot preview")
+        return
+    viewer.lighting_preset_select.select(3)
+    viewer._select_lighting_preset(3)
+    if (viewer.semi_lit_nodes.size() != 32
+        or abs(viewer.semi_lit_world_environment.ambient_light_energy - 0.15) > 0.001
+        or abs(viewer.semi_lit_nodes["Light__7"].omni_range - 4.896) > 0.001):
+        _fail("Dark preset should restore a bounded 32-source preview")
+        return
+    viewer.lighting_preset_select.select(0)
+    viewer._select_lighting_preset(0)
+    if (viewer.semi_lit_enabled or not viewer.semi_lit_nodes.is_empty()
+        or abs(viewer.semi_lit_world_environment.ambient_light_energy - 1.1) > 0.001
+        or abs(viewer.semi_lit_key_light.light_energy - 1.6) > 0.001):
+        _fail("Editor preset must remove all source lights and restore legacy editor tone")
+        return
+    for i in range(40):
+        var name := "Light__v13_fixture_" + str(i)
+        viewer.environment_light_markers.erase(name)
+        source_light_markers[i].free()
+    viewer.actors.resize(4)
+    # Restore default v11 preview values before older v10/v11 integration tests.
+    viewer.lighting_preset_select.select(1)
+    viewer._select_lighting_preset(1)
+    viewer.lighting_preset_select.select(0)
+    viewer._select_lighting_preset(0)
+    if (not viewer.semi_lit_nodes.is_empty()
+        or light_fixture["game_properties"] != lighting_original_properties):
+        _fail("V13 diagnostics cleanup must preserve original actor and scene data")
+        return
     viewer._refresh_environment_entities()
     if viewer.environment_list.item_count != 4 or viewer.environment_visible.size() != 4:
         _fail("Environment must list real lights, ambient zones and particle emitters separately")
