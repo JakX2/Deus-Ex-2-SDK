@@ -186,7 +186,7 @@ def main(argv=None) -> int:
                        for k,v in totals.items()))
     except (OSError,ValueError,TypeError,KeyError,IndexError,OverflowError,
             struct.error) as error:
-        print(json.dumps({"status":"refused","reason":str(error)},file=sys.stderr)
+        print(json.dumps({"status":"refused","reason":str(error)}),file=sys.stderr)
         return 1
 
 
