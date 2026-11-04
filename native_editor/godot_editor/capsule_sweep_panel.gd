@@ -268,7 +268,9 @@ func _show_height_overlay() -> bool:
     return true
 
 func _replay_selected_height() -> void:
-    if replay_choice == null:
+    if (replay_choice == null or not height_overlay.ready
+        or replay_choice.get_selected_id() < 0):
+        _status("No authenticated capsule profile elevation is selected.")
         return
     _run_research([], replay_choice.get_selected_id())
 
