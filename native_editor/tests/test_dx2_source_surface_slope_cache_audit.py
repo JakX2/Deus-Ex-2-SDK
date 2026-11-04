@@ -26,6 +26,7 @@ def fixture():
         "physics_materials_verified":False,
         "coordinate_system":audit.COORD,
         "edge_provenance_schema":audit.EDGE_SCHEMA,
+        "source_edge_welding":"exact_original_Level_XYZ_no_epsilon",
         "source_flat_vertex_count":4,
         "source_triangle_count":2,
         "mopp_leaf_triangle_count":2,
@@ -33,9 +34,9 @@ def fixture():
         "render_material_names":["MatA","MatB"],
         "leaf_triangles":[
             {"triangle_id":0,"vertex_indices":[0,1,2],
-             "source_edge_kinds":[1,2,1]},
+             "source_edge_kinds":[1,2,1], "source_weld_ids":[0,1,2]},
             {"triangle_id":1,"vertex_indices":[1,3,2],
-             "source_edge_kinds":[1,1,2]},
+             "source_edge_kinds":[1,1,2], "source_weld_ids":[1,3,2]},
         ],
         "source_topology_summary":{
             "source_exact_welded_vertex_count":4,
@@ -57,7 +58,7 @@ def one_face(verts):
     doc["mopp_leaf_triangle_count"]=1
     doc["leaf_triangles"]=[{
         "triangle_id":0,"vertex_indices":[0,1,2],
-        "source_edge_kinds":[1,1,1]}]
+        "source_edge_kinds":[1,1,1], "source_weld_ids":[0,1,2]}]
     doc["source_topology_summary"].update({
         "source_exact_welded_vertex_count":3,
         "unique_source_edges":3,
