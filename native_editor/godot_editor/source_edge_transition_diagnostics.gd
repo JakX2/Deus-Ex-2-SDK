@@ -44,9 +44,9 @@ func inspect(picker: RefCounted, original_id: int,
              slope_limit_degrees: float = 45.) -> Dictionary:
     if (picker == null or not bool(picker.get("ready"))
         or not is_finite(bend_limit_degrees)
-        or not 0. <= bend_limit_degrees <= 89.9
+        or bend_limit_degrees < 0. or bend_limit_degrees > 89.9
         or not is_finite(slope_limit_degrees)
-        or not 0. <= slope_limit_degrees <= 89.9):
+        or slope_limit_degrees < 0. or slope_limit_degrees > 89.9):
         return {}
     var source_map := str(picker.get("source_map"))
     var sha := str(picker.get("source_sha256"))
