@@ -191,7 +191,7 @@ def main(argv=None) -> int:
         return int(all_misses>0)
     except (OSError,ValueError,KeyError,IndexError,TypeError,
             OverflowError,struct.error) as error:
-        print(json.dumps({"status":"refused","reason":str(error)},file=sys.stderr)
+        print(json.dumps({"status":"refused","reason":str(error)}),file=sys.stderr)
         return 1
 
 
