@@ -132,6 +132,8 @@ func load_document(data: Dictionary, map_name: String, hash: String,
             "count": int(count),
             "first_id": int(tid) if tid != null else -1,
             "time": float(hit_t) if hit_t != null else -1.,
+            "initial_overlap": bool(initial) if initial != null else false,
+            "near_tangency": bool(tangent) if tangent != null else false,
         })
     source_map = map_name
     source_sha256 = hash
