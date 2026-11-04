@@ -1,5 +1,6 @@
 extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
+const SourceCollisionPicker = preload("res://collision_source_picker.gd")
 ## DX2Ed native viewer: a READ-ONLY Godot 4 GLB + GMP actor inspector.
 ## Can open an original DX2 .gmp using the bundled read-only Python backend.
 ## No runtime game assets bundled. Exports are cached outside the game folder.
@@ -32,6 +33,17 @@ var selected_archetype: Dictionary = {}
 # Kept separate from class templates, draft properties and native Save As.
 var source_gamesys_catalog: Dictionary = {}
 var source_gamesys_sha256 := ""
+# Opt-in original MOPP-linked collision triangle selection. Never an actor,
+# an edit target, a physics material, or a native GMP Save As input.
+var source_collision_picker = SourceCollisionPicker.new()
+var source_collision_button: Button
+var source_collision_details: Label
+var source_collision_thread: Thread = null
+var source_collision_pending_folder := ""
+var source_collision_pending_map := ""
+var source_collision_pending_sha := ""
+var source_collision_marker: MeshInstance3D
+var source_collision_mode := false
 var source_gamesys_panel: VBoxContainer
 var source_gamesys_filter: LineEdit
 var source_gamesys_list: ItemList
@@ -279,6 +291,9 @@ func _exit_tree() -> void:
     if environment_light_audit_thread != null:
         environment_light_audit_thread.wait_to_finish()
         environment_light_audit_thread = null
+    if source_collision_thread != null:
+        source_collision_thread.wait_to_finish()
+        source_collision_thread = null
 
 
 func _ready() -> void:
@@ -319,6 +334,17 @@ func _make_ui() -> void:
     audit_gmp_btn.tooltip_text = "Check original map actors for writable Location fields, without changing game files"
     audit_gmp_btn.pressed.connect(_audit_current_native_map)
     toolbar.add_child(audit_gmp_btn)
+    source_collision_button = Button.new()
+    source_collision_button.text = "Inspect source collision"
+    source_collision_button.toggle_mode = true
+    source_collision_button.disabled = true
+    source_collision_button.tooltip_text = (
+        "Opt-in, original MOPP-linked triangle picking. Cache is source SHA-bound. "
+        + "Click a surface for its original Level ID and render-section provenance. "
+        + "Not a Havok runtime query, physics material, or editable collision."
+    )
+    source_collision_button.pressed.connect(_toggle_source_collision_inspection)
+    toolbar.add_child(source_collision_button)
     var verify_gmp_btn := Button.new()
     verify_gmp_btn.text = "Verify GMP copy..."
     verify_gmp_btn.tooltip_text = "Independently compare a saved GMP against its original and manifest"
@@ -929,6 +955,10 @@ func _make_ui() -> void:
     inspector_details.text = "Select an actor or rendered mesh in the Scene or Hierarchy."
     inspector_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     inspector_pane.add_child(inspector_details)
+    source_collision_details = Label.new()
+    source_collision_details.visible = false
+    source_collision_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    inspector_pane.add_child(source_collision_details)
     placement_inspector = Label.new()
     placement_inspector.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     placement_inspector.visible = false
@@ -1361,6 +1391,9 @@ func _zip_stage_finished(code: int, output: String) -> void:
     open_gmp(map_path)
 
 func open_gmp(path: String) -> void:
+    if source_collision_thread != null:
+        status_label.text = "Source collision cache is building; finish it before changing maps."
+        return
     if build_thread != null:
         status_label.text = "Already processing a map. Please finish this load first."
         return
@@ -1709,6 +1742,12 @@ func load_glb(path: String) -> void:
     _load_prop_draft(true)
     _refresh_hierarchy()
     _refresh_inspector_panel()
+    if source_collision_button != null:
+        source_collision_button.disabled = (
+            last_gmp_path.is_empty() or not FileAccess.file_exists(last_gmp_path)
+            or current_source_map_name != last_gmp_path.get_file()
+            or source_gamesys_sha256.length() != 64
+        )
     if not FileAccess.file_exists(actor_path):
         status_label.text = "3D loaded (%d meshes). Open its actors.json to inspect entities." % mesh_count
     print("DX2Ed native: GLB loaded with ", mesh_count, " mesh instances")
@@ -1742,6 +1781,9 @@ func load_actors(path: String) -> void:
     status_label.text = "Loaded %d actors, %d meshes. Click a mesh or select an actor." % [actors.size(), mesh_count]
 
 func _clear_current_scene() -> void:
+    _reset_source_collision_inspection()
+    if source_collision_button != null:
+        source_collision_button.disabled = true
     _clear_ai_proxies()
     if ai_proxies_toggle != null:
         ai_proxies_toggle.set_pressed_no_signal(false)
@@ -6828,7 +6870,10 @@ func _input(event: InputEvent) -> void:
                     drag_mode = "select"
             else:
                 if drag_mode == "select" and mouse_inside and drag_distance < 3.0:
-                    _pick_actor(button.ctrl_pressed or button.shift_pressed)
+                    if source_collision_mode:
+                        _pick_source_collision_triangle()
+                    else:
+                        _pick_actor(button.ctrl_pressed or button.shift_pressed)
                 if drag_mode == "gizmo":
                     _finish_gizmo_drag()
                 dragging = false
@@ -6857,6 +6902,183 @@ func _input(event: InputEvent) -> void:
             elif drag_mode == "gizmo":
                 _apply_gizmo_drag()
             get_viewport().set_input_as_handled()
+
+
+
+# Source collision inspection has a separate read-only selection lifecycle.
+# Existing actor selection, transform gizmos, draft edits and GMP writers
+# never consume this triangle ID, marker or provenance label.
+func _reset_source_collision_inspection() -> void:
+    source_collision_mode = false
+    source_collision_picker.clear()
+    if source_collision_button != null:
+        source_collision_button.set_pressed_no_signal(false)
+    if source_collision_details != null:
+        source_collision_details.visible = false
+        source_collision_details.text = ""
+    if is_instance_valid(source_collision_marker):
+        source_collision_marker.queue_free()
+    source_collision_marker = null
+
+
+func _toggle_source_collision_inspection() -> void:
+    if source_collision_button == null:
+        return
+    if not source_collision_button.button_pressed:
+        _reset_source_collision_inspection()
+        status_label.text = "Original collision inspection disabled. Actor selection restored."
+        return
+    if (source_collision_thread != null or last_gmp_path.is_empty()
+        or not FileAccess.file_exists(last_gmp_path) or current_folder.is_empty()
+        or current_source_map_name != last_gmp_path.get_file()
+        or source_gamesys_sha256.length() != 64):
+        _reset_source_collision_inspection()
+        status_label.text = "Open an authenticated original DX2 GMP before collision inspection."
+        return
+    var cache := current_folder.path_join("source_collision_selection.json")
+    if FileAccess.file_exists(cache):
+        _activate_source_collision_cache(cache)
+        return
+    var script := ProjectSettings.globalize_path("res://backend/dx2_collision_selection_cache.py")
+    if not FileAccess.file_exists(script):
+        _reset_source_collision_inspection()
+        status_label.text = "Missing source collision backend: " + script
+        return
+    source_collision_pending_folder = current_folder
+    source_collision_pending_map = last_gmp_path
+    source_collision_pending_sha = source_gamesys_sha256
+    source_collision_button.disabled = true
+    source_collision_thread = Thread.new()
+    var error := source_collision_thread.start(_build_source_collision_cache.bind(
+        script, last_gmp_path, cache, source_gamesys_sha256))
+    if error != OK:
+        source_collision_thread = null
+        source_collision_button.disabled = false
+        _reset_source_collision_inspection()
+        status_label.text = "Could not start collision cache worker: " + error_string(error)
+        return
+    status_label.text = "Validating original collision triangles in private editor cache..."
+
+
+func _build_source_collision_cache(script: String, source: String, cache: String, sha: String) -> void:
+    var args := PackedStringArray([
+        script, "--map", source, "--output", cache, "--expected-sha256", sha])
+    var output: Array = []
+    var code := OS.execute("python", args, output, true)
+    if code == -1:
+        var py_args := PackedStringArray(["-3"])
+        py_args.append_array(args)
+        output.clear()
+        code = OS.execute("py", py_args, output, true)
+    call_deferred("_source_collision_cache_finished", code, "\n".join(output), cache,
+        source, sha)
+
+
+func _source_collision_cache_finished(code: int, output: String, cache: String, source: String, sha: String) -> void:
+    if source_collision_thread != null:
+        source_collision_thread.wait_to_finish()
+        source_collision_thread = null
+    if source_collision_button != null:
+        source_collision_button.disabled = false
+    if (source_collision_pending_folder != current_folder
+        or source_collision_pending_map != source
+        or source_collision_pending_sha != sha
+        or source != last_gmp_path or sha != source_gamesys_sha256):
+        _reset_source_collision_inspection()
+        status_label.text = "Collision cache result discarded after map/source change."
+        return
+    var result: Variant = null
+    for line in output.strip_edges().split("\n"):
+        var candidate: Variant = JSON.parse_string(line.strip_edges())
+        if typeof(candidate) == TYPE_DICTIONARY and candidate.has("status"):
+            result = candidate
+    if code != 0 or typeof(result) != TYPE_DICTIONARY or result.get("status") != "ok":
+        _reset_source_collision_inspection()
+        status_label.text = "Source collision validation refused: " + str(
+            result.get("reason", "check Python/retail GMP")) if typeof(result) == TYPE_DICTIONARY else (
+            "Source collision validation failed. Check Python and map input."
+        )
+        return
+    _activate_source_collision_cache(cache)
+
+
+func _activate_source_collision_cache(cache: String) -> void:
+    if not source_collision_picker.load_cache(cache, source_gamesys_sha256, current_source_map_name):
+        var reason: String = source_collision_picker.last_error
+        _reset_source_collision_inspection()
+        status_label.text = "Source collision cache refused: " + reason
+        return
+    source_collision_mode = true
+    source_collision_button.set_pressed_no_signal(true)
+    source_collision_details.visible = true
+    source_collision_details.text = (
+        "ORIGINAL COLLISION TRIANGLES | READ-ONLY\n"
+        + "Click an original MOPP-linked triangle in the 3D scene. "
+        + "Render material names are NOT verified Havok physical materials."
+    )
+    status_label.text = (
+        "Collision inspection enabled: %d source MOPP-linked triangles. "
+        + "Click to inspect; toggle off to restore actor picking." %
+        source_collision_picker.faces.size()
+    )
+
+
+func _pick_source_collision_triangle() -> void:
+    if not source_collision_mode or not source_collision_picker.ready:
+        return
+    var ray := _mouse_ray(view_container.get_local_mouse_position())
+    if ray.is_empty():
+        return
+    var hit: Dictionary = source_collision_picker.ray_pick(ray["origin"], ray["direction"])
+    if is_instance_valid(source_collision_marker):
+        source_collision_marker.queue_free()
+        source_collision_marker = null
+    if hit.is_empty():
+        source_collision_details.text = "ORIGINAL COLLISION TRIANGLES | No MOPP-linked triangle under cursor."
+        status_label.text = "No original MOPP-linked triangle under cursor."
+        return
+    source_collision_details.text = (
+        "ORIGINAL DX2 COLLISION TRIANGLE (READ-ONLY)\n"
+        + "Level triangle ID: %d\n"
+        + "Flesh render block ordinal: %d\n"
+        + "Original source block ID: %d\n"
+        + "Render section: %d\n"
+        + "Original render-material name: %s\n"
+        + "Hit position (Godot): %s\n"
+        + "Geometric normal (Godot): %s\n"
+        + "Geometric distance: %.5f Godot units\n"
+        + "NOT a Havok runtime contact or verified physics material." % [
+            int(hit["original_level_triangle_id"]),
+            int(hit["render_block_ordinal"]), int(hit["source_block_id"]),
+            int(hit["render_section_ordinal"]), str(hit["render_material_name"]),
+            str(hit["point_godot"]), str(hit["normal_godot"]),
+            float(hit["distance_godot_units"])
+        ]
+    )
+    status_label.text = (
+        "Original MOPP triangle #%d | render material %s | source-only." %
+        [int(hit["original_level_triangle_id"]), str(hit["render_material_name"])]
+    )
+    var points: Array = hit["vertices_godot"]
+    if points.size() != 3 or world_root == null:
+        return
+    var edges := ImmediateMesh.new()
+    edges.surface_begin(Mesh.PRIMITIVE_LINES)
+    for i in 3:
+        edges.surface_add_vertex(points[i])
+        edges.surface_add_vertex(points[(i + 1) % 3])
+    edges.surface_end()
+    source_collision_marker = MeshInstance3D.new()
+    source_collision_marker.name = "SourceCollision_EditorOnly_Selection"
+    source_collision_marker.mesh = edges
+    var highlight := StandardMaterial3D.new()
+    highlight.albedo_color = Color(1.0, 0.77, 0.08)
+    highlight.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    highlight.no_depth_test = true
+    highlight.cull_mode = BaseMaterial3D.CULL_DISABLED
+    source_collision_marker.material_override = highlight
+    source_collision_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    world_root.add_child(source_collision_marker)
 
 
 func _pick_actor(additive: bool = false) -> void:
