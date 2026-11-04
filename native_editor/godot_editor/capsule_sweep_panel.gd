@@ -21,6 +21,8 @@ var pending_map := ""
 var pending_hash := ""
 var pending_folder := ""
 var pending_output := ""
+var pending_profile_offsets: Array = []
+var profile_summary := ""
 
 func initialize(host: Control) -> void:
     editor_host = host
@@ -99,6 +101,8 @@ func _active() -> bool:
 func _refresh() -> void:
     if note != null:
         note.text = picks.description()
+        if not profile_summary.is_empty():
+            note.text += "\n\n" + profile_summary
     var disabled := not _active() or worker != null
     if start_button != null:
         start_button.disabled = disabled
@@ -108,11 +112,13 @@ func _refresh() -> void:
         run_button.disabled = disabled or not picks.can_run()
 
 func activate() -> void:
+    profile_summary = ""
     picks.clear()
     visible = true
     _refresh()
 
 func reset() -> void:
+    profile_summary = ""
     picks.clear()
     visible = false
     _refresh()
@@ -124,6 +130,7 @@ func finish() -> void:
     reset()
 
 func _clear_picks() -> void:
+    profile_summary = ""
     picks.clear()
     _refresh()
 
@@ -131,6 +138,7 @@ func _begin(which: int) -> void:
     if not _active() or worker != null:
         _status("Original source collision inspection must be active.")
         return
+    profile_summary = ""
     if not picks.begin_pick(which,
         str(editor_host.get("current_source_map_name")),
         str(editor_host.get("source_gamesys_sha256"))):
@@ -182,6 +190,7 @@ func prepare_exact_edge_chord(chord: Dictionary) -> bool:
         return false
     radius.value = float(chord["radius_level_units"])
     half_axis.value = float(chord["axis_half_length_level_units"])
+    profile_summary = ""
     _refresh()
     _status("Original source edge crossing prepared; no Havok or game map changes.")
     return true
@@ -189,6 +198,29 @@ func prepare_exact_edge_chord(chord: Dictionary) -> bool:
 func run_exact_edge_chord(chord: Dictionary) -> void:
     if prepare_exact_edge_chord(chord):
         _run_research()
+
+# Height samples are strictly upward translations of the exact source
+# reconstructed chord, not a player-controller step-height test.
+func profile_height_offsets(base_level: float, count: int, step: float) -> Array:
+    if (not is_finite(base_level) or base_level < 0. or base_level > 100.
+        or count < 2 or count > 9
+        or not is_finite(step) or step < .1 or step > 10.
+        or base_level + float(count-1) * step > 100.):
+        return []
+    var offsets: Array = []
+    for i in count:
+        offsets.append(float(i) * step)
+    return offsets
+
+func run_exact_edge_profile(chord: Dictionary, count: int, step: float) -> void:
+    if not prepare_exact_edge_chord(chord):
+        return
+    var offsets := profile_height_offsets(
+        float(chord["above_face_vertical_offset_level_units"]), count, step)
+    if offsets.is_empty():
+        _status("Profile refused: height range must remain inside source chord bounds.")
+        return
+    _run_research(offsets)
 
 
 func capture_pending() -> bool:
@@ -211,7 +243,7 @@ func accept_source_hit(hit: Dictionary) -> bool:
            int(hit.get("original_level_triangle_id", -1))])
     return true
 
-func _run_research() -> void:
+func _run_research(height_offsets: Array = []) -> void:
     if not _active() or worker != null or not picks.can_run():
         _status("Pick two distinct source collision points before running a sweep.")
         return
@@ -247,10 +279,15 @@ func _run_research() -> void:
         return
     var args := PackedStringArray([exporter])
     args.append_array(options)
+    if not height_offsets.is_empty():
+        args.append("--height-offsets")
+        for offset in height_offsets:
+            args.append(str(offset))
     pending_map = source
     pending_hash = sha
     pending_folder = folder
     pending_output = output
+    pending_profile_offsets = height_offsets.duplicate()
     worker = Thread.new()
     var code := worker.start(
         _worker_run.bind(args, output, source, sha, folder))
@@ -299,6 +336,56 @@ func _research_finished(code: int, output_text: String, output: String,
         return
     if not FileAccess.file_exists(output):
         _status("Research solver reported success without producing a sidecar.")
+        return
+    if not pending_profile_offsets.is_empty():
+        var document: Variant = JSON.parse_string(
+            FileAccess.get_file_as_string(output))
+        if (typeof(document) != TYPE_DICTIONARY
+            or document.get("schema") != "DX2Ed-source-edge-capsule-height-profile-v1"
+            or document.get("source_map") != str(editor_host.get("current_source_map_name"))
+            or document.get("source_sha256") != sha
+            or document.get("read_only") != true
+            or document.get("original_game_assets_modified") != false
+            or document.get("havok_runtime_contact_verified") != false
+            or document.get("contact_is_not_a_blocking_classifier") != true
+            or document.get("no_contact_is_not_proof_of_walkability") != true):
+            _status("Height profile refused: wrong schema, source hash or research flags.")
+            return
+        var samples: Variant = document.get("profile_samples", [])
+        if typeof(samples) != TYPE_ARRAY or samples.size() != pending_profile_offsets.size():
+            _status("Height profile refused: incomplete original source samples.")
+            return
+        var summary := "CAPSULE HEIGHT PROFILE | geometric contacts only\n"
+        summary += "Offsets relative to authenticated baseline (original Level +Z):\n"
+        var valid_ids: Dictionary = _picker().get("face_index_by_id")
+        for i in samples.size():
+            var sample: Variant = samples[i]
+            if typeof(sample) != TYPE_DICTIONARY:
+                _status("Height profile refused: malformed sample.")
+                return
+            var height: Variant = sample.get("relative_height_level_units")
+            var number: Variant = sample.get("geometric_source_triangle_hits")
+            var hit: Variant = sample.get("first_hit_original_triangle_id")
+            if (typeof(height) not in [TYPE_INT,TYPE_FLOAT]
+                or not is_finite(float(height))
+                or absf(float(height)-float(pending_profile_offsets[i])) > .0001
+                or typeof(number) not in [TYPE_INT,TYPE_FLOAT]
+                or not is_finite(float(number)) or float(number) != float(int(number))
+                or int(number) < 0
+                or (hit != null and (typeof(hit) not in [TYPE_INT,TYPE_FLOAT]
+                    or not is_finite(float(hit)) or float(hit) != float(int(hit))
+                    or not valid_ids.has(int(hit))))
+                or (int(number) == 0 and hit != null)
+                or (int(number) > 0 and hit == null)):
+                _status("Height profile refused: invalid offset or source triangle ID.")
+                return
+            var contact := "no geometric contact" if int(number) == 0 else (
+                "%d source contacts; first triangle #%d" % [int(number), int(hit)])
+            summary += "+%.2f Level u: %s\n" % [float(height), contact]
+        summary += "Floor support may count as contact; no Havok walkability inferred."
+        profile_summary = summary
+        _refresh()
+        _status("Multi-height profile written to fresh private research JSON.")
         return
     editor_host.call("_load_capsule_research_preview", output)
     _refresh()

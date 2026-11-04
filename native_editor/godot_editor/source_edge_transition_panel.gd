@@ -17,6 +17,9 @@ var note: Label
 var edge_select: OptionButton
 var follow_button: Button
 var probe_button: Button
+var profile_button: Button
+var profile_count: SpinBox
+var profile_step: SpinBox
 var chord_fraction: SpinBox
 var chord_clearance: SpinBox
 var chord_radius: SpinBox
@@ -53,12 +56,27 @@ func initialize(host: Control, world: Node3D) -> void:
         + " the separate PRIVATE numerical collision oracle. NOT walkability.")
     probe_button.pressed.connect(_probe_capsule_crossing)
     row.add_child(probe_button)
+    profile_button = Button.new()
+    profile_button.text = "Profile capsule heights"
+    profile_button.tooltip_text = (
+        "Run the authenticated full-map capsule oracle at several upward"
+        + " Level +Z offsets. Contacts are NOT Havok blocking or walkability.")
+    profile_button.pressed.connect(_probe_capsule_profile)
+    row.add_child(profile_button)
     var probe_controls := HFlowContainer.new()
     add_child(probe_controls)
     chord_fraction = _probe_number(probe_controls,"Interior fraction",.01,.45,.2,.01)
     chord_clearance = _probe_number(probe_controls,"Up offset",0.,100.,1.,.1)
     chord_radius = _probe_number(probe_controls,"Capsule radius",.01,20.,.2,.05)
     chord_half_axis = _probe_number(probe_controls,"Half-axis",0.,20.,.5,.1)
+    var profile_controls := HFlowContainer.new()
+    add_child(profile_controls)
+    profile_count = _probe_number(profile_controls,"Height samples",2.,9.,5.,1.)
+    profile_count.suffix = "samples"
+    profile_step = _probe_number(profile_controls,"Height step",.1,10.,.5,.1)
+    profile_step.tooltip_text = (
+        "Upward original Level +Z increments from the chosen baseline chord."
+        + " Each sample is independently tested against the full original map.")
     chord_fraction.tooltip_text = "Interior barycentric fraction from each source exact shared edge midpoint. Not a physical movement length."
     chord_clearance.tooltip_text = "Vertical original Level-unit center offset above both face samples, NOT a tested player hover height."
     for field in [chord_fraction, chord_clearance, chord_radius, chord_half_axis]:
@@ -116,6 +134,35 @@ func _probe_capsule_crossing() -> void:
     var worker_panel: Variant = editor_host.get("interactive_capsule_panel")
     if worker_panel != null and worker_panel.has_method("run_exact_edge_chord"):
         worker_panel.call("run_exact_edge_chord", result)
+
+# Reuse the exact chord generator, which separately authenticates both source
+# triangles and their finite shared edge. Never bypass that when profiling.
+func _probe_capsule_profile() -> void:
+    if not _active() or current.is_empty() or last_id < 0:
+        return
+    var count := int(profile_count.value)
+    var step := profile_step.value
+    var baseline := chord_clearance.value
+    if count < 2 or count > 9 or not is_finite(step) or step < .1 or step > 10.:
+        return
+    if baseline + float(count - 1) * step > 100.:
+        var status: Variant = editor_host.get("status_label")
+        if status is Label:
+            status.text = "Height profile refused: last elevation exceeds +100 Level units."
+        return
+    var result: Dictionary = capsule_chord.build(
+        source_picker, last_id, selected_edge,
+        chord_fraction.value, chord_clearance.value,
+        chord_radius.value, chord_half_axis.value,
+        hinge_limit.value, slope_limit.value)
+    if result.is_empty():
+        var status: Variant = editor_host.get("status_label")
+        if status is Label:
+            status.text = "Height profile refused: source edge geometry is ambiguous."
+        return
+    var worker_panel: Variant = editor_host.get("interactive_capsule_panel")
+    if worker_panel != null and worker_panel.has_method("run_exact_edge_profile"):
+        worker_panel.call("run_exact_edge_profile", result, count, step)
 
 
 func _active() -> bool:
@@ -257,6 +304,9 @@ func _refresh() -> void:
     if probe_button != null:
         probe_button.disabled = (not enabled or selected.is_empty()
             or not bool(selected.get("smooth_floorlike_geometric_proxy",false)))
+    if profile_button != null:
+        profile_button.disabled = (not enabled or selected.is_empty()
+            or not bool(selected.get("smooth_floorlike_geometric_proxy",false)))
     if note == null:
         return
     if not enabled:
@@ -291,6 +341,8 @@ func _refresh() -> void:
             body += "Non-manifold: multiple incident faces, no unique next triangle.\n"
     body += "Capsule chord: both endpoints interior to source-connected triangles; "
     body += "only the full Python oracle tests possible 3D contacts. "
-    body += "No character walkability or Havok runtime verified."
+    body += "No character walkability or Havok runtime verified.\n"
+    body += "Height profile: sample multiple upward Level +Z offsets; "
+    body += "contacts alone do not classify movement as blocked or clear."
     note.text = body
     _draw()
