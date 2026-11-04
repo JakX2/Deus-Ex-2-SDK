@@ -26,6 +26,7 @@ import inspect_mopp_capsule_first_contact as toi
 import inspect_mopp_swept_capsule as capsule
 
 SCHEMA = "DX2Ed-capsule-first-contact-preview-v1"
+PROFILE_SCHEMA = "DX2Ed-source-edge-capsule-height-profile-v1"
 COORD = "Godot preview (Level.x/10, Level.z/10, Level.y/10)"
 MAX_INPUT_BYTES = 500_000_000
 
@@ -119,8 +120,73 @@ def build_document(oracle, walker, *, map_name, source_hash, start,
     }
 
 
+
+def build_profile_document(oracle, walker, *, map_name, source_hash,
+                           start, end, radius, axis, axis_half_length,
+                           height_offsets):
+    """Compare several translated chords using the SAME authenticated full-map
+    first-contact, independent sweep and conservative MOPP checks as build_document.
+
+    Heights are additive original Level +Z displacements from the supplied
+    already-validated edge chord, not Havok controller step/clearance settings.
+    All samples are research contacts, never a binary walkability verdict.
+    """
+    if not isinstance(height_offsets, (list, tuple)) or not 2 <= len(height_offsets) <= 9:
+        raise ValueError("Height profile requires 2 to 9 ordered offsets")
+    if (any(type(x) not in (int, float) or not math.isfinite(x)
+            or x < 0 or x > 100 for x in height_offsets)
+            or height_offsets[0] != 0
+            or any(b - a < .01 for a, b in zip(height_offsets, height_offsets[1:]))):
+        raise ValueError("Height offsets must start at zero and rise by >=0.01 Level units")
+    if tuple(float(x) for x in axis) != (0., 0., 1.):
+        raise ValueError("Research height profile requires fixed original Level +Z axis")
+    baseline_start = geometry._point(start, label="Profile baseline start")
+    baseline_end = geometry._point(end, label="Profile baseline end")
+    samples = []
+    for offset in height_offsets:
+        rise = (0., 0., float(offset))
+        a = tuple(baseline_start[i] + rise[i] for i in range(3))
+        b = tuple(baseline_end[i] + rise[i] for i in range(3))
+        document = build_document(
+            oracle, walker, map_name=map_name, source_hash=source_hash,
+            start=a, end=b, radius=radius, axis=axis,
+            axis_half_length=axis_half_length)
+        hit = document["first_hit"]
+        samples.append({
+            "relative_height_level_units": float(offset),
+            "geometric_source_triangle_hits": document["geometric_source_triangle_hits"],
+            "first_hit_original_triangle_id":
+                hit["original_level_triangle_id"] if hit is not None else None,
+            "first_contact_path_t": hit["t_first_inside"] if hit is not None else None,
+            "first_contact_initial_overlap":
+                hit["initial_overlap"] if hit is not None else None,
+            "first_contact_near_tangency":
+                hit["near_tangency"] if hit is not None else None,
+        })
+    return {
+        "schema": PROFILE_SCHEMA,
+        "source_map": map_name,
+        "source_sha256": source_hash,
+        "read_only": True,
+        "not_a_native_collision_writer": True,
+        "original_game_assets_modified": False,
+        "havok_runtime_contact_verified": False,
+        "physics_materials_verified": False,
+        "coordinate_system": COORD,
+        "height_direction_original_Level": "positive Z",
+        "baseline_capsule_start_godot_xyz": preview_point(baseline_start),
+        "baseline_capsule_end_godot_xyz": preview_point(baseline_end),
+        "capsule_radius_level_units": float(radius),
+        "capsule_axis_half_length_level_units": float(axis_half_length),
+        "height_offsets_relative_to_baseline": True,
+        "profile_samples": samples,
+        "contact_is_not_a_blocking_classifier": True,
+        "no_contact_is_not_proof_of_walkability": True,
+    }
+
+
 def build(map_path, destination, *, expected_sha256, start, end, radius,
-          axis, axis_half_length):
+          axis, axis_half_length, height_offsets=None):
     map_path = Path(map_path).resolve()
     destination = Path(destination).resolve()
     if (not map_path.is_file() or map_path.suffix.lower() != ".gmp"
@@ -163,17 +229,27 @@ def build(map_path, destination, *, expected_sha256, start, end, radius,
         level[pc:verified["mopp_code_end_in_level"]],
         candidate_atlas["source_triangle_count"],
         struct.unpack_from("<4f", level, pc-20))
-    doc = build_document(oracle, walker, map_name=map_path.name,
-                         source_hash=digest, start=start, end=end,
-                         radius=radius, axis=axis, axis_half_length=axis_half_length)
+    common = dict(map_name=map_path.name, source_hash=digest,
+                  start=start, end=end, radius=radius, axis=axis,
+                  axis_half_length=axis_half_length)
+    if height_offsets is None:
+        doc = build_document(oracle, walker, **common)
+    else:
+        doc = build_profile_document(oracle, walker,
+                                     height_offsets=height_offsets, **common)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("x", encoding="utf-8") as handle:
         json.dump(doc, handle, indent=2, allow_nan=False)
         handle.write("\n")
-    return {"status": "ok", "private_preview": str(destination),
-            "source_map": map_path.name, "first_hit_original_triangle_id":
-            doc["first_hit"]["original_level_triangle_id"] if doc["first_hit"] else None,
-            "research_only": True}
+    response = {"status": "ok", "private_preview": str(destination),
+                "source_map": map_path.name, "research_only": True}
+    if height_offsets is not None:
+        response["kind"] = "capsule-height-profile"
+        response["sample_count"] = len(doc["profile_samples"])
+    else:
+        response["first_hit_original_triangle_id"] = (
+            doc["first_hit"]["original_level_triangle_id"] if doc["first_hit"] else None)
+    return response
 
 
 def main(argv=None):
@@ -186,11 +262,14 @@ def main(argv=None):
     ap.add_argument("--radius", type=float, default=.2)
     ap.add_argument("--axis", type=float, nargs=3, default=(0.,0.,1.))
     ap.add_argument("--axis-half-length", type=float, default=.5)
+    ap.add_argument("--height-offsets", type=float, nargs="+", default=None,
+                    help="2-9 increasing original Level +Z offsets starting at 0")
     a = ap.parse_args(argv)
     try:
         result = build(a.map, a.output, expected_sha256=a.expected_sha256,
                        start=a.start, end=a.end, radius=a.radius,
-                       axis=a.axis, axis_half_length=a.axis_half_length)
+                       axis=a.axis, axis_half_length=a.axis_half_length,
+                       height_offsets=a.height_offsets)
         print(json.dumps(result))
         return 0
     except (OSError, TypeError, KeyError, ValueError, IndexError,
