@@ -4,6 +4,7 @@ extends VBoxContainer
 ## and validated PR #47 overlay loader. No editable map or gameplay physics.
 
 const PickState = preload("res://capsule_sweep_picks.gd")
+const ExactChord = preload("res://source_edge_capsule_chord.gd")
 
 var editor_host: Control
 var picks = PickState.new()
@@ -147,6 +148,24 @@ func prepare_exact_edge_chord(chord: Dictionary) -> bool:
         _status("Original source collision inspector not authenticated for edge probe.")
         return false
     var selection := _picker()
+    # Never trust an unchecked dictionary supplied from another UI panel:
+    # reconstruct the selected edge chord from the authenticated v3 cache.
+    var recomputed: Dictionary = ExactChord.new().build(
+        selection, int(chord.get("source_original_triangle_id", -1)),
+        int(chord.get("source_edge_slot", -1)),
+        float(chord.get("interior_fraction", -1.)),
+        float(chord.get("above_face_vertical_offset_level_units", -1.)),
+        float(chord.get("radius_level_units", -1.)),
+        float(chord.get("axis_half_length_level_units", -1.)),
+        float(chord.get("bend_limit_degrees", 15.)),
+        float(chord.get("slope_limit_degrees", 45.)))
+    if (recomputed.is_empty()
+        or recomputed["neighbor_original_triangle_id"] != chord.get("neighbor_original_triangle_id")
+        or recomputed["source_sha256"] != chord.get("source_sha256")
+        or recomputed["start_godot_xyz"].distance_to(chord.get("start_godot_xyz", Vector3.INF)) > .000001
+        or recomputed["end_godot_xyz"].distance_to(chord.get("end_godot_xyz", Vector3.INF)) > .000001):
+        _status("Edge crossing rejected: not reproducible from current exact source cache.")
+        return false
     var face_ids: Dictionary = selection.get("face_index_by_id")
     if not picks.load_exact_edge_chord(chord, face_ids,
         str(editor_host.get("current_source_map_name")),
