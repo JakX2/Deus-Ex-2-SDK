@@ -4,7 +4,9 @@ extends RefCounted
 ## Level flat XYZ -> Godot preview axes (x,z,y) times 0.1, as verified by
 ## existing packed Flesh render geometry. Source IDs remain intact.
 
-const SCHEMA := "DX2Ed-source-MOPP-collision-selection-cache-v1"
+const SCHEMA := "DX2Ed-source-MOPP-collision-selection-cache-v2"
+const EDGE_SCHEMA := "DX2Ed-MOPP-source-exact-edge-provenance-v1"
+const EDGE_NAMES := ["interior", "open boundary", "render-material seam", "non-manifold"]
 const MAX_VERTICES := 300000
 const MAX_FACES := 300000
 const MAX_TREE_NODES := 100000
@@ -22,6 +24,7 @@ var face_centers := PackedVector3Array()
 var tree: Array[Dictionary] = []
 var source_map := ""
 var source_sha256 := ""
+var source_topology_summary: Dictionary = {}
 var last_error := ""
 var ready := false
 
@@ -36,6 +39,7 @@ func clear() -> void:
     tree.clear()
     source_map = ""
     source_sha256 = ""
+    source_topology_summary.clear()
     ready = false
     last_error = ""
 
@@ -84,6 +88,21 @@ func load_document(doc: Dictionary, expected_hash: String, expected_map: String)
         return _fail("Collision geometry counts or field types are invalid")
     if int(doc["source_triangle_count"]) < raw_faces.size() or int(doc["source_triangle_count"]) > MAX_FACES:
         return _fail("Invalid original Level triangle total")
+    var top: Variant = doc.get("source_topology_summary")
+    if (doc.get("edge_provenance_schema", "") != EDGE_SCHEMA
+        or typeof(top) != TYPE_DICTIONARY):
+        return _fail("Missing source-validated original collision edge provenance")
+    for key in ["source_exact_welded_vertex_count", "unique_source_edges",
+                "open_boundary_edges", "two_triangle_same_material_edges",
+                "two_triangle_render_material_seams",
+                "three_or_more_triangle_edges", "max_triangles_using_one_edge"]:
+        if not _bounded_integer(top.get(key), 0, MAX_FACES * 3):
+            return _fail("Invalid source topology edge count " + key)
+    if int(top["source_exact_welded_vertex_count"]) > raw_vertices.size():
+        return _fail("Source welded vertex count exceeds original vertex count")
+    if int(top["unique_source_edges"]) > raw_faces.size() * 3:
+        return _fail("Source edge count exceeds original triangle edge uses")
+    var edge_uses := [0, 0, 0, 0]
     for triple in raw_vertices:
         if typeof(triple) != TYPE_ARRAY or triple.size() != 3:
             return _fail("Malformed collision source vertex")
@@ -107,6 +126,13 @@ func load_document(doc: Dictionary, expected_hash: String, expected_map: String)
         var tid: Variant = f.get("triangle_id")
         var ids: Variant = f.get("vertex_indices")
         var mat: Variant = f.get("render_material_id")
+        var kinds: Variant = f.get("source_edge_kinds")
+        if (typeof(kinds) != TYPE_ARRAY or kinds.size() != 3):
+            return _fail("Missing three source-validated edge classifications")
+        for kind in kinds:
+            if not _bounded_integer(kind, 0, 3):
+                return _fail("Invalid original topology edge kind")
+            edge_uses[int(kind)] += 1
         if (not _bounded_integer(tid, 0, int(doc["source_triangle_count"])-1)
             or int(tid) <= previous_id or typeof(ids) != TYPE_ARRAY or ids.size() != 3
             or not _bounded_integer(mat, 0, materials.size()-1)) :
@@ -141,10 +167,24 @@ func load_document(doc: Dictionary, expected_hash: String, expected_map: String)
             "source_block_id": int(f["source_block_id"]),
             "render_block_ordinal": int(f["render_block_ordinal"]),
             "render_section_ordinal": int(f["render_section_ordinal"]),
-            "render_material_id": int(mat), "source_section_key": key})
+            "render_material_id": int(mat), "source_section_key": key,
+            "source_edge_kinds": [int(kinds[0]), int(kinds[1]), int(kinds[2])]})
         group.append(int(tid))
         section_triangle_ids[key] = group
         previous_id = int(tid)
+    if (edge_uses[1] != int(top["open_boundary_edges"])
+        or edge_uses[0] != int(top["two_triangle_same_material_edges"]) * 2
+        or edge_uses[2] != int(top["two_triangle_render_material_seams"]) * 2
+        or edge_uses[3] < int(top["three_or_more_triangle_edges"]) * 3
+        or (edge_uses[3] == 0 and int(top["three_or_more_triangle_edges"]) != 0)
+        or (edge_uses[3] > 0 and int(top["three_or_more_triangle_edges"]) == 0)
+        or int(top["unique_source_edges"]) !=
+            (int(top["open_boundary_edges"])
+             + int(top["two_triangle_same_material_edges"])
+             + int(top["two_triangle_render_material_seams"])
+             + int(top["three_or_more_triangle_edges"]))):
+        return _fail("Source edge incidence counts do not match the original map cache")
+    source_topology_summary = top.duplicate(true)
     var list: Array[int] = []
     for index in faces.size():
         list.append(index)
@@ -247,6 +287,7 @@ func ray_pick(origin: Vector3, direction: Vector3, max_distance: float = 100000.
                 "render_section_ordinal": face["render_section_ordinal"],
                 "render_material_name": materials[face["render_material_id"]],
                 "render_material_is_physics_material": false,
+                "source_edge_kinds": face["source_edge_kinds"].duplicate(),
                 "point_godot": p,
                 "normal_godot": normal,
                 "vertices_godot": [a,b,c],
@@ -273,6 +314,7 @@ func triangle_details(original_id: int) -> Dictionary:
         "render_section_ordinal": face["render_section_ordinal"],
         "render_material_name": materials[int(face["render_material_id"])],
         "render_material_is_physics_material": false,
+        "source_edge_kinds": face["source_edge_kinds"].duplicate(),
         "point_godot": (a+b+c)/3.0,
         "normal_godot": (c-a).cross(b-a).normalized(),
         "vertices_godot": [a, b, c],
