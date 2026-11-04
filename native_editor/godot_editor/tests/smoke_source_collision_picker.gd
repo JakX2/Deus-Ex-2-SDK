@@ -210,7 +210,7 @@ func _run() -> void:
         or evidence.get("render_material_name", "") != "MatA"
         or evidence.get("source_edge_kinds_ab_bc_ca", []) != [1,2,1]
         or evidence.get("render_material_is_physics_material", true) != false):
-        _fail("Copyable evidence lost source identity or mislabeled physics materials")
+        _fail("Copyable evidence mismatch: " + JSON.stringify(evidence))
         return
     editor.source_collision_section_toggle.set_pressed_no_signal(true)
     editor._toggle_source_collision_section_outline(true)
