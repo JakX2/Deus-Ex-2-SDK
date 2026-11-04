@@ -28,7 +28,7 @@ def source():
     original = list(vertices), list(triangles)
     oracle = geometry.LevelPointTriangleOracle(vertices, triangles)
     walker = mopp.ConservativeMoppPointCandidates(
-        b"\\x28\\x00\\xff\\x30", 1, (0., 0., -10., 65536.))
+        b"\x28\x00\xff\x30", 1, (0., 0., -10., 65536.))
     return oracle, walker, original, vertices, triangles
 
 
