@@ -3,7 +3,7 @@ extends SceneTree
 ## No retail GMP, subprocess, collision shape, native Save As, or Havok runtime.
 
 const PickState = preload("res://capsule_sweep_picks.gd")
-const Panel = preload("res://capsule_sweep_panel.gd")
+const SweepPanel = preload("res://capsule_sweep_panel.gd")
 const SHA := "1111111111111111111111111111111111111111111111111111111111111111"
 
 class MockPicker:
@@ -41,7 +41,7 @@ func _hit(point: Vector3, tid: int = 3) -> Dictionary:
 func _run() -> void:
     var host := MockHost.new()
     root.add_child(host)
-    var panel := Panel.new()
+    var panel := SweepPanel.new()
     host.add_child(panel)
     panel.initialize(host)
     if panel.visible or panel.run_button == null or not panel.run_button.disabled:
