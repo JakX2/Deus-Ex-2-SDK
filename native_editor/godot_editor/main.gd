@@ -1,6 +1,7 @@
 extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
 const SourceCollisionPicker = preload("res://collision_source_picker.gd")
+const CapsuleContactPreview = preload("res://capsule_contact_preview.gd")
 ## DX2Ed native viewer: a READ-ONLY Godot 4 GLB + GMP actor inspector.
 ## Can open an original DX2 .gmp using the bundled read-only Python backend.
 ## No runtime game assets bundled. Exports are cached outside the game folder.
@@ -51,6 +52,12 @@ var source_collision_next_button: Button
 var source_collision_copy_button: Button
 var source_collision_last_hit: Dictionary = {}
 var source_collision_mode := false
+# Deliberately separate from actors, draft tools, Save As and actual game collision.
+var capsule_contact_preview = CapsuleContactPreview.new()
+var capsule_preview_button: Button
+var capsule_preview_dialog: FileDialog
+var capsule_preview_marker: MeshInstance3D
+var capsule_preview_details: Label
 var source_gamesys_panel: VBoxContainer
 var source_gamesys_filter: LineEdit
 var source_gamesys_list: ItemList
@@ -352,6 +359,16 @@ func _make_ui() -> void:
     )
     source_collision_button.pressed.connect(_toggle_source_collision_inspection)
     toolbar.add_child(source_collision_button)
+    capsule_preview_button = Button.new()
+    capsule_preview_button.text = "Load capsule research preview..."
+    capsule_preview_button.disabled = true
+    capsule_preview_button.tooltip_text = (
+        "Load a private, original-GMP-hash-bound PR #46 capsule first-contact JSON. "
+        + "Editor wireframe only. NOT Havok, gameplay collision or Save As.")
+    capsule_preview_button.pressed.connect(func():
+        if source_collision_mode and source_collision_picker.ready:
+            capsule_preview_dialog.popup_centered_ratio(0.72))
+    toolbar.add_child(capsule_preview_button)
     var verify_gmp_btn := Button.new()
     verify_gmp_btn.text = "Verify GMP copy..."
     verify_gmp_btn.tooltip_text = "Independently compare a saved GMP against its original and manifest"
@@ -966,6 +983,10 @@ func _make_ui() -> void:
     source_collision_details.visible = false
     source_collision_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     inspector_pane.add_child(source_collision_details)
+    capsule_preview_details = Label.new()
+    capsule_preview_details.visible = false
+    capsule_preview_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    inspector_pane.add_child(capsule_preview_details)
     # These are source-only inspection tools, never inputs to Save As or drafts.
     source_collision_section_actions = HFlowContainer.new()
     source_collision_section_actions.visible = false
@@ -1177,6 +1198,12 @@ func _make_ui() -> void:
     gmp_dialog.filters = PackedStringArray(["*.gmp ; Deus Ex Invisible War map"])
     gmp_dialog.file_selected.connect(_open_gmp_file)
     add_child(gmp_dialog)
+    capsule_preview_dialog = FileDialog.new()
+    capsule_preview_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    capsule_preview_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    capsule_preview_dialog.filters = PackedStringArray(["*.json ; DX2Ed read-only capsule contact research preview"])
+    capsule_preview_dialog.file_selected.connect(_load_capsule_research_preview)
+    add_child(capsule_preview_dialog)
     direct_system_dialog = FileDialog.new()
     direct_system_dialog.access = FileDialog.ACCESS_FILESYSTEM
     direct_system_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
@@ -6937,10 +6964,67 @@ func _input(event: InputEvent) -> void:
 
 
 
+# Read-only capsule preview overlays are detached from source actor/draft lifecycle.
+func _clear_capsule_research_preview() -> void:
+    capsule_contact_preview.clear()
+    if is_instance_valid(capsule_preview_marker):
+        capsule_preview_marker.queue_free()
+    capsule_preview_marker = null
+    if capsule_preview_details != null:
+        capsule_preview_details.text = ""
+        capsule_preview_details.visible = false
+    if capsule_preview_button != null:
+        capsule_preview_button.disabled = true
+
+
+func _load_capsule_research_preview(path: String) -> void:
+    _clear_capsule_research_preview()
+    if (not source_collision_mode or not source_collision_picker.ready
+        or current_source_map_name != source_collision_picker.source_map
+        or source_gamesys_sha256 != source_collision_picker.source_sha256):
+        status_label.text = "Capsule research preview requires an authenticated open collision map."
+        return
+    capsule_preview_button.disabled = false
+    if not capsule_contact_preview.load_file(path, source_gamesys_sha256,
+        current_source_map_name, source_collision_picker.face_index_by_id):
+        status_label.text = "Capsule preview rejected: " + capsule_contact_preview.last_error
+        return
+    var overlay: ImmediateMesh = capsule_contact_preview.make_mesh()
+    if overlay == null or world_root == null:
+        _clear_capsule_research_preview()
+        status_label.text = "Capsule preview geometry unavailable."
+        return
+    capsule_preview_marker = MeshInstance3D.new()
+    capsule_preview_marker.name = "ResearchOnly_CapsuleContactOverlay_NotGamePhysics"
+    capsule_preview_marker.mesh = overlay
+    var ink := StandardMaterial3D.new()
+    ink.albedo_color = Color.WHITE
+    ink.vertex_color_use_as_albedo = true
+    ink.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    ink.no_depth_test = true
+    ink.cull_mode = BaseMaterial3D.CULL_DISABLED
+    capsule_preview_marker.material_override = ink
+    capsule_preview_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    world_root.add_child(capsule_preview_marker)
+    capsule_preview_details.visible = true
+    capsule_preview_details.text = capsule_contact_preview.description()
+    if capsule_contact_preview.contact_triangle_id >= 0:
+        var hit: Dictionary = source_collision_picker.triangle_details(
+            capsule_contact_preview.contact_triangle_id)
+        if hit.is_empty():
+            _clear_capsule_research_preview()
+            status_label.text = "Capsule preview source triangle not found in authenticated cache."
+            return
+        _show_source_collision_hit(hit)
+    status_label.text = (
+        "Capsule research-only overlay loaded. NOT Havok gameplay or writable map collision.")
+
+
 # Source collision inspection has a separate read-only selection lifecycle.
 # Existing actor selection, transform gizmos, draft edits and GMP writers
 # never consume this triangle ID, marker or provenance label.
 func _reset_source_collision_inspection() -> void:
+    _clear_capsule_research_preview()
     source_collision_mode = false
     source_collision_picker.clear()
     if source_collision_button != null:
@@ -7052,7 +7136,10 @@ func _activate_source_collision_cache(cache: String) -> void:
         _reset_source_collision_inspection()
         status_label.text = "Source collision cache refused: " + reason
         return
+    _clear_capsule_research_preview()
     source_collision_mode = true
+    if capsule_preview_button != null:
+        capsule_preview_button.disabled = false
     source_collision_button.set_pressed_no_signal(true)
     source_collision_details.visible = true
     var counts: Dictionary = source_collision_picker.source_topology_summary
