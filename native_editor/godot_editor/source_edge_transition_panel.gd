@@ -3,8 +3,10 @@ extends VBoxContainer
 ## Uses strictly source-validated v3 cache; does not construct game collision.
 
 const Analyzer = preload("res://source_edge_transition_diagnostics.gd")
+const CapsuleChord = preload("res://source_edge_capsule_chord.gd")
 
 var analyzer = Analyzer.new()
+var capsule_chord = CapsuleChord.new()
 var editor_host: Control
 var world_root: Node3D
 var source_picker: RefCounted
@@ -14,6 +16,11 @@ var last_id := -1
 var note: Label
 var edge_select: OptionButton
 var follow_button: Button
+var probe_button: Button
+var chord_fraction: SpinBox
+var chord_clearance: SpinBox
+var chord_radius: SpinBox
+var chord_half_axis: SpinBox
 var hinge_limit: SpinBox
 var slope_limit: SpinBox
 var overlay: MeshInstance3D
@@ -39,6 +46,23 @@ func initialize(host: Control, world: Node3D) -> void:
         + " share the same welded original Level edge. NOT a Havok path.")
     follow_button.pressed.connect(follow_neighbor)
     row.add_child(follow_button)
+    probe_button = Button.new()
+    probe_button.text = "Probe capsule across edge"
+    probe_button.tooltip_text = (
+        "Generate a source-exact, interior-to-interior edge crossing and launch"
+        + " the separate PRIVATE numerical collision oracle. NOT walkability.")
+    probe_button.pressed.connect(_probe_capsule_crossing)
+    row.add_child(probe_button)
+    var probe_controls := HFlowContainer.new()
+    add_child(probe_controls)
+    chord_fraction = _probe_number(probe_controls,"Interior fraction",.01,.45,.2,.01)
+    chord_clearance = _probe_number(probe_controls,"Up offset",0.,100.,1.,.1)
+    chord_radius = _probe_number(probe_controls,"Capsule radius",.01,20.,.2,.05)
+    chord_half_axis = _probe_number(probe_controls,"Half-axis",0.,20.,.5,.1)
+    chord_fraction.tooltip_text = "Interior barycentric fraction from each source exact shared edge midpoint. Not a physical movement length."
+    chord_clearance.tooltip_text = "Vertical original Level-unit center offset above both face samples, NOT a tested player hover height."
+    for field in [chord_fraction, chord_clearance, chord_radius, chord_half_axis]:
+        field.value_changed.connect(_on_threshold_changed)
     var limits := HFlowContainer.new()
     add_child(limits)
     hinge_limit = _spin(limits, "Max hinge", 0., 89.9, 15.)
@@ -62,6 +86,37 @@ func _spin(row: HFlowContainer, prefix: String,
     control.value_changed.connect(_on_threshold_changed)
     row.add_child(control)
     return control
+
+func _probe_number(row: HFlowContainer, prefix: String,
+                   low: float, high: float, initial: float, step_value: float) -> SpinBox:
+    var control := SpinBox.new()
+    control.prefix = prefix
+    control.min_value = low
+    control.max_value = high
+    control.step = step_value
+    control.value = initial
+    control.suffix = "fraction" if prefix == "Interior fraction" else "Level u"
+    row.add_child(control)
+    return control
+
+
+func _probe_capsule_crossing() -> void:
+    if not _active() or current.is_empty() or last_id < 0:
+        return
+    var result: Dictionary = capsule_chord.build(
+        source_picker, last_id, selected_edge,
+        chord_fraction.value, chord_clearance.value,
+        chord_radius.value, chord_half_axis.value,
+        hinge_limit.value, slope_limit.value)
+    if result.is_empty():
+        var status: Variant = editor_host.get("status_label")
+        if status is Label:
+            status.text = "Source edge crossing refused: ambiguous geometry, slope, projection or segment."
+        return
+    var worker_panel: Variant = editor_host.get("interactive_capsule_panel")
+    if worker_panel != null and worker_panel.has_method("run_exact_edge_chord"):
+        worker_panel.call("run_exact_edge_chord", result)
+
 
 func _active() -> bool:
     if editor_host == null or source_picker == null:
@@ -199,6 +254,9 @@ func _refresh() -> void:
     if follow_button != null:
         follow_button.disabled = (not enabled or selected.is_empty()
             or not bool(selected.get("one_unique_neighbor", false)))
+    if probe_button != null:
+        probe_button.disabled = (not enabled or selected.is_empty()
+            or not bool(selected.get("smooth_floorlike_geometric_proxy",false)))
     if note == null:
         return
     if not enabled:
@@ -231,6 +289,8 @@ func _refresh() -> void:
             body += "Open source edge: no other MOPP-leaf triangle shares exact endpoints.\n"
         else:
             body += "Non-manifold: multiple incident faces, no unique next triangle.\n"
-    body += "No step continuity, clearance, character walkability or Havok runtime verified."
+    body += "Capsule chord: both endpoints interior to source-connected triangles; "
+    body += "only the full Python oracle tests possible 3D contacts. "
+    body += "No character walkability or Havok runtime verified."
     note.text = body
     _draw()
