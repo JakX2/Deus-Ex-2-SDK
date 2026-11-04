@@ -24,16 +24,26 @@ func _fixture() -> Dictionary:
         "source_flat_vertex_count": 4,
         "source_triangle_count": 2,
         "mopp_leaf_triangle_count": 2,
+        "edge_provenance_schema": Picker.EDGE_SCHEMA,
+        "source_topology_summary": {
+            "source_exact_welded_vertex_count": 4,
+            "unique_source_edges": 5,
+            "open_boundary_edges": 4,
+            "two_triangle_same_material_edges": 0,
+            "two_triangle_render_material_seams": 1,
+            "three_or_more_triangle_edges": 0,
+            "max_triangles_using_one_edge": 2,
+        },
         "vertices_godot_xyz": [[0.0,0.0,0.0],[2.0,0.0,0.0],
                                [0.0,0.0,2.0],[2.0,0.0,2.0]],
         "render_material_names": ["MatA", "MatB"],
         "leaf_triangles": [
             {"triangle_id": 0, "vertex_indices": [0,1,2], "source_block_id": 3,
              "render_block_ordinal": 0, "render_section_ordinal": 0,
-             "render_material_id": 0},
+             "render_material_id": 0, "source_edge_kinds": [1,2,1]},
             {"triangle_id": 1, "vertex_indices": [1,3,2], "source_block_id": 3,
              "render_block_ordinal": 0, "render_section_ordinal": 1,
-             "render_material_id": 1},
+             "render_material_id": 1, "source_edge_kinds": [1,1,2]},
         ],
     }
 
@@ -52,6 +62,7 @@ func _run() -> void:
     if (hit.is_empty() or hit["original_level_triangle_id"] != 0
         or hit["render_material_name"] != "MatA"
         or hit["source_block_id"] != 3
+        or hit.get("source_edge_kinds", []) != [1,2,1]
         or abs(float(hit["distance_godot_units"])-3.0) > 0.00001):
         _fail("Ray does not preserve triangle zero and its source provenance")
         return
@@ -80,6 +91,10 @@ func _run() -> void:
     var grouped := _fixture()
     grouped["leaf_triangles"][1]["render_section_ordinal"] = 0
     grouped["leaf_triangles"][1]["render_material_id"] = 0
+    grouped["leaf_triangles"][0]["source_edge_kinds"] = [1,0,1]
+    grouped["leaf_triangles"][1]["source_edge_kinds"] = [1,1,0]
+    grouped["source_topology_summary"]["two_triangle_same_material_edges"] = 1
+    grouped["source_topology_summary"]["two_triangle_render_material_seams"] = 0
     if not picker.load_document(grouped, SHA, "Fixture.gmp"):
         _fail("Two triangles in the same verified render section rejected: " + picker.last_error)
         return
@@ -107,6 +122,16 @@ func _run() -> void:
     if not picker.load_document(decoded, SHA, "Fixture.gmp"):
         _fail("Failed to restore default picker after section checks")
         return
+    var bad_edges := _fixture()
+    bad_edges["leaf_triangles"][0]["source_edge_kinds"] = [1,1,1]
+    if picker.load_document(bad_edges, SHA, "Fixture.gmp"):
+        _fail("Inconsistent source edge incidence totals were accepted")
+        return
+    var old_cache := _fixture()
+    old_cache["schema"] = "DX2Ed-source-MOPP-collision-selection-cache-v1"
+    if picker.load_document(old_cache, SHA, "Fixture.gmp"):
+        _fail("Old v1 cache without mandatory topology metadata was accepted")
+        return
     if picker.load_document(decoded, "0".repeat(64), "Fixture.gmp") or picker.ready:
         _fail("Stale source digest accepted")
         return
@@ -116,6 +141,11 @@ func _run() -> void:
     var gap := _fixture()
     gap["leaf_triangles"].remove_at(0)
     gap["mopp_leaf_triangle_count"] = 1
+    gap["leaf_triangles"][0]["source_edge_kinds"] = [1,1,1]
+    gap["source_topology_summary"]["unique_source_edges"] = 3
+    gap["source_topology_summary"]["open_boundary_edges"] = 3
+    gap["source_topology_summary"]["two_triangle_render_material_seams"] = 0
+    gap["source_topology_summary"]["max_triangles_using_one_edge"] = 1
     if not picker.load_document(gap, SHA, "Fixture.gmp"):
         _fail("MOPP omission gaps must be preserved: " + picker.last_error)
         return
@@ -169,16 +199,25 @@ func _run() -> void:
     if (not editor.source_collision_section_actions.visible
         or editor.source_collision_last_hit.get("original_level_triangle_id", -1) != 0
         or not editor.source_collision_details.text.contains("1 of 1")
+        or not editor.source_collision_details.text.contains("open boundary")
         or not is_instance_valid(editor.source_collision_marker)):
         _fail("Editor source-section controls did not activate on ray selection")
         return
     var evidence: Variant = JSON.parse_string(editor._source_collision_evidence_json())
+    var json_edges: Variant = evidence.get("source_edge_kinds_ab_bc_ca", null) if typeof(evidence) == TYPE_DICTIONARY else null
+    var correct_edge_codes := false
+    if typeof(json_edges) == TYPE_ARRAY and json_edges.size() == 3:
+        correct_edge_codes = (
+            int(json_edges[0]) == 1 and int(json_edges[1]) == 2
+            and int(json_edges[2]) == 1
+        )
     if (typeof(evidence) != TYPE_DICTIONARY
         or evidence.get("original_level_triangle_id", -1) != 0
         or evidence.get("source_sha256", "") != SHA
         or evidence.get("render_material_name", "") != "MatA"
+        or not correct_edge_codes
         or evidence.get("render_material_is_physics_material", true) != false):
-        _fail("Copyable evidence lost source identity or mislabeled physics materials")
+        _fail("Copyable evidence mismatch: " + JSON.stringify(evidence))
         return
     editor.source_collision_section_toggle.set_pressed_no_signal(true)
     editor._toggle_source_collision_section_outline(true)

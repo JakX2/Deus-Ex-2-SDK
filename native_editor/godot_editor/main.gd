@@ -6979,7 +6979,7 @@ func _toggle_source_collision_inspection() -> void:
         _reset_source_collision_inspection()
         status_label.text = "Open an authenticated original DX2 GMP before collision inspection."
         return
-    var cache := current_folder.path_join("source_collision_selection.json")
+    var cache := current_folder.path_join("source_collision_selection_v2.json")
     if FileAccess.file_exists(cache):
         _activate_source_collision_cache(cache)
         return
@@ -7055,10 +7055,22 @@ func _activate_source_collision_cache(cache: String) -> void:
     source_collision_mode = true
     source_collision_button.set_pressed_no_signal(true)
     source_collision_details.visible = true
+    var counts: Dictionary = source_collision_picker.source_topology_summary
+    var topology_line := (
+        "Unique source edges: %d | open: %d | render seams: %d | non-manifold: %d.\n"
+        % [
+            int(counts.get("unique_source_edges", 0)),
+            int(counts.get("open_boundary_edges", 0)),
+            int(counts.get("two_triangle_render_material_seams", 0)),
+            int(counts.get("three_or_more_triangle_edges", 0))
+        ]
+    )
     source_collision_details.text = (
         "ORIGINAL COLLISION TRIANGLES | READ-ONLY\n"
-        + "Click an original MOPP-linked triangle in the 3D scene. "
-        + "Render material names are NOT verified Havok physical materials."
+        + "Click a source MOPP-linked triangle for original Level IDs and geometric edge diagnostics.\n"
+        + "Edge legend: amber interior | cyan open | pink render seam | red non-manifold.\n"
+        + topology_line
+        + "Render materials are NOT verified Havok physical materials."
     )
     status_label.text = (
         ("Collision inspection enabled: %d source MOPP-linked triangles. "
@@ -7099,6 +7111,16 @@ func _show_source_collision_hit(hit: Dictionary) -> void:
     var point_name := "Ray hit position" if ray_hit else "Source triangle centroid"
     var distance_text := ("%.5f Godot units" % float(hit["distance_godot_units"])) if ray_hit else (
         "N/A (section navigation, not a ray)")
+    var edge_codes: Array = hit.get("source_edge_kinds", [])
+    if edge_codes.size() != 3:
+        status_label.text = "Missing original source edge metadata; refusing partial geometry evidence."
+        return
+    var edge_names: Array = SourceCollisionPicker.EDGE_NAMES
+    var edge_labels := []
+    for code in edge_codes:
+        if int(code) < 0 or int(code) >= edge_names.size():
+            return
+        edge_labels.append(str(edge_names[int(code)]))
     source_collision_details.text = (
         ("ORIGINAL DX2 COLLISION TRIANGLE (READ-ONLY)\n"
         + "Level triangle ID: %d\n"
@@ -7107,6 +7129,7 @@ func _show_source_collision_hit(hit: Dictionary) -> void:
         + "Render section: %d\n"
         + "Original render-material name: %s\n"
         + "Triangle in original section: %d of %d\n"
+        + "Source edge AB / BC / CA: %s / %s / %s\n"
         + "%s (Godot): %s\n"
         + "Geometric normal (Godot): %s\n"
         + "Geometric distance: %s\n"
@@ -7114,6 +7137,7 @@ func _show_source_collision_hit(hit: Dictionary) -> void:
             tid, int(hit["render_block_ordinal"]), int(hit["source_block_id"]),
             int(hit["render_section_ordinal"]), str(hit["render_material_name"]),
             int(section["triangle_index_in_section"])+1, int(section["triangle_count"]),
+            edge_labels[0], edge_labels[1], edge_labels[2],
             point_name, str(hit["point_godot"]), str(hit["normal_godot"]), distance_text,
         ]
     )
@@ -7125,7 +7149,14 @@ func _show_source_collision_hit(hit: Dictionary) -> void:
     if points.size() == 3 and world_root != null:
         var edges := ImmediateMesh.new()
         edges.surface_begin(Mesh.PRIMITIVE_LINES)
+        var colors := [
+            Color(1.0, 0.77, 0.08),  # two incident triangles, same render material
+            Color(0.05, 0.9, 0.91),  # one incident original Level triangle
+            Color(1.0, 0.24, 0.72),  # two incident triangles with different render names
+            Color(1.0, 0.1, 0.1),   # three or more incident source triangles
+        ]
         for i in 3:
+            edges.surface_set_color(colors[int(edge_codes[i])])
             edges.surface_add_vertex(points[i])
             edges.surface_add_vertex(points[(i + 1) % 3])
         edges.surface_end()
@@ -7133,7 +7164,8 @@ func _show_source_collision_hit(hit: Dictionary) -> void:
         source_collision_marker.name = "SourceCollision_EditorOnly_Selection"
         source_collision_marker.mesh = edges
         var highlight := StandardMaterial3D.new()
-        highlight.albedo_color = Color(1.0, 0.77, 0.08)
+        highlight.albedo_color = Color.WHITE
+        highlight.vertex_color_use_as_albedo = true
         highlight.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
         highlight.no_depth_test = true
         highlight.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -7224,6 +7256,13 @@ func _source_collision_evidence_json() -> String:
         "render_block_ordinal": int(hit["render_block_ordinal"]),
         "render_section_ordinal": int(hit["render_section_ordinal"]),
         "render_material_name": str(hit["render_material_name"]),
+        "source_edge_kinds_ab_bc_ca": hit.get("source_edge_kinds", []).duplicate(),
+        "source_edge_names_ab_bc_ca": [
+            SourceCollisionPicker.EDGE_NAMES[int(hit["source_edge_kinds"][0])],
+            SourceCollisionPicker.EDGE_NAMES[int(hit["source_edge_kinds"][1])],
+            SourceCollisionPicker.EDGE_NAMES[int(hit["source_edge_kinds"][2])]
+        ],
+        "source_exact_edge_topology": true,
         "source_section_triangle_count": int(section["triangle_count"]),
         "point_godot_xyz": [pos.x, pos.y, pos.z],
         "geometric_normal_godot_xyz": [normal.x, normal.y, normal.z],
