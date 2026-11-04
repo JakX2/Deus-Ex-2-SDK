@@ -139,6 +139,16 @@ func _run() -> void:
     host.interactive_capsule_panel=sweep
     sweep.initialize(host)
     sweep.activate()
+    var heights: Array = sweep.profile_height_offsets(1.,5,.5)
+    if heights != [0.,.5,1.,1.5,2.]:
+        _fail("Bounded original Level +Z profile heights were not generated correctly")
+        return
+    if (not sweep.profile_height_offsets(99.5,5,.5).is_empty()
+        or not sweep.profile_height_offsets(1.,1,.5).is_empty()
+        or not sweep.profile_height_offsets(1.,5,float("nan")).is_empty()
+        or not sweep.profile_height_offsets(1.,5,0.).is_empty()):
+        _fail("Profile samples accepted invalid or unsafe elevation ranges")
+        return
     if not sweep.prepare_exact_edge_chord(c) or not sweep.picks.can_run():
         _fail("Exact edge path was not accepted by existing source-verified sweep picker")
         return
@@ -168,11 +178,11 @@ func _run() -> void:
     edge_panel.activate(p)
     edge_panel.observe_hit({"original_level_triangle_id":0})
     edge_panel._on_select_edge(1)
-    if edge_panel.probe_button.disabled:
+    if edge_panel.probe_button.disabled or edge_panel.profile_button.disabled:
         _fail("Exact opposite-side coplanar edge probe UI stayed disabled")
         return
     edge_panel._on_select_edge(0)
-    if not edge_panel.probe_button.disabled:
+    if not edge_panel.probe_button.disabled or not edge_panel.profile_button.disabled:
         _fail("Open source boundary incorrectly offered capsule crossing probe")
         return
     edge_panel.reset()
