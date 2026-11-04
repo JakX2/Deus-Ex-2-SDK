@@ -91,7 +91,8 @@ func verify_replay_document(document: Dictionary, plan_data: Dictionary,
         or contact.contact_triangle_id != int(row["first_id"])
         or (contact.contact_triangle_id >= 0 and (
             absf(contact.contact_t - float(row["time"])) > 0.00001
-            or bool(document["first_hit"]["initial_overlap"]) != (float(row["time"]) == 0.)
+            or bool(document["first_hit"]["initial_overlap"]) != bool(row["initial_overlap"])
+            or bool(document["first_hit"]["near_tangency"]) != bool(row["near_tangency"])
         ))):
         last_error = "Detailed replay disagrees with authenticated height-profile geometry"
         return false
