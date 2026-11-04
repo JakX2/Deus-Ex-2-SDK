@@ -164,7 +164,7 @@ func _run() -> void:
     editor.source_collision_button.set_pressed_no_signal(false)
     editor._toggle_source_collision_inspection()
     if (panel.visible or not panel.current.is_empty() or panel.overlay!=null
-        or not editor.source_edge_transition_panel.source_picker==null):
+        or panel.source_picker != null):
         _fail("Disabling source inspection left stale exact-edge link overlay")
         return
     editor.queue_free()
