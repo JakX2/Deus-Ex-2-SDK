@@ -25,6 +25,7 @@ func _fixture() -> Dictionary:
         "source_triangle_count": 2,
         "mopp_leaf_triangle_count": 2,
         "edge_provenance_schema": Picker.EDGE_SCHEMA,
+        "source_edge_welding": "exact_original_Level_XYZ_no_epsilon",
         "source_topology_summary": {
             "source_exact_welded_vertex_count": 4,
             "unique_source_edges": 5,
@@ -40,10 +41,12 @@ func _fixture() -> Dictionary:
         "leaf_triangles": [
             {"triangle_id": 0, "vertex_indices": [0,1,2], "source_block_id": 3,
              "render_block_ordinal": 0, "render_section_ordinal": 0,
-             "render_material_id": 0, "source_edge_kinds": [1,2,1]},
+             "render_material_id": 0, "source_edge_kinds": [1,2,1],
+             "source_weld_ids": [0,1,2]},
             {"triangle_id": 1, "vertex_indices": [1,3,2], "source_block_id": 3,
              "render_block_ordinal": 0, "render_section_ordinal": 1,
-             "render_material_id": 1, "source_edge_kinds": [1,1,2]},
+             "render_material_id": 1, "source_edge_kinds": [1,1,2],
+             "source_weld_ids": [1,3,2]},
         ],
     }
 
