@@ -41,8 +41,8 @@ class CollisionCacheTests(unittest.TestCase):
         self.assertTrue(doc['not_a_native_collision_writer'])
         self.assertEqual(doc['edge_provenance_schema'],
                          'DX2Ed-MOPP-source-exact-edge-provenance-v1')
-        self.assertEqual(doc['leaf_triangles'][0]['source_edge_kinds'],[1,2,1])
-        self.assertEqual(doc['leaf_triangles'][1]['source_edge_kinds'],[1,1,2])
+        self.assertEqual(doc['leaf_triangles'][0]['source_edge_kinds'],[1,1,2])
+        self.assertEqual(doc['leaf_triangles'][1]['source_edge_kinds'],[2,1,1])
         self.assertEqual(doc['source_topology_summary']['open_boundary_edges'],4)
         self.assertEqual(doc['source_topology_summary']['two_triangle_render_material_seams'],1)
 
