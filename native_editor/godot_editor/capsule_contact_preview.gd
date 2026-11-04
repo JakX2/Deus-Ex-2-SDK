@@ -88,7 +88,8 @@ func load_document(data: Dictionary, expected_hash: String,
         or not _finite_number(data.get("capsule_radius_godot_units"), 0.0, 100.0)
         or not _finite_number(data.get("capsule_axis_half_length_godot_units"), 0.0, 100.0)
         or not _finite_number(data.get("geometric_source_triangle_hits"), 0.0, 300000.0)
-        or not _finite_number(data.get("source_verified_mopp_leaf_ids"), 1.0, 300000.0)):
+        or not _finite_number(data.get("source_verified_mopp_leaf_ids"), 1.0, 300000.0)
+        or int(data.get("source_verified_mopp_leaf_ids", -1)) != original_face_ids.size()):
         return _fail("Stale, unverified or invalid research capsule preview")
     var first := _vec(data["capsule_start_godot_xyz"])
     var last := _vec(data["capsule_end_godot_xyz"])
@@ -104,6 +105,8 @@ func load_document(data: Dictionary, expected_hash: String,
     var outward := Vector3.ZERO
     var has_normal := false
     if raw_hit != null:
+        if int(data["geometric_source_triangle_hits"]) < 1:
+            return _fail("First contact has no geometric triangle hits")
         if (typeof(raw_hit) != TYPE_DICTIONARY
             or not _finite_number(raw_hit.get("original_level_triangle_id"), 0.0, 300000.0)
             or float(raw_hit["original_level_triangle_id"]) != floor(float(raw_hit["original_level_triangle_id"]))
@@ -195,8 +198,8 @@ func _outline_capsule(mesh: ImmediateMesh, center: Vector3, ink: Color) -> void:
         for i in 16:
             var a := TAU * float(i) / 16.0
             var b := TAU * float(i+1) / 16.0
-            var first := base + radius * (u * cos(a) + v * sin(a))
-            var last := base + radius * (u * cos(b) + v * sin(b))
+            var first: Vector3 = base + radius * (u * cos(a) + v * sin(a))
+            var last: Vector3 = base + radius * (u * cos(b) + v * sin(b))
             _segment(mesh, first, last, ink)
     for i in 4:
         var angle := TAU * float(i) / 4.0
