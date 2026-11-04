@@ -4,7 +4,7 @@ extends RefCounted
 ## Level flat XYZ -> Godot preview axes (x,z,y) times 0.1, as verified by
 ## existing packed Flesh render geometry. Source IDs remain intact.
 
-const SCHEMA := "DX2Ed-source-MOPP-collision-selection-cache-v2"
+const SCHEMA := "DX2Ed-source-MOPP-collision-selection-cache-v3"
 const EDGE_SCHEMA := "DX2Ed-MOPP-source-exact-edge-provenance-v1"
 const EDGE_NAMES := ["interior", "open boundary", "render-material seam", "non-manifold"]
 const MAX_VERTICES := 300000
@@ -25,6 +25,9 @@ var tree: Array[Dictionary] = []
 var source_map := ""
 var source_sha256 := ""
 var source_topology_summary: Dictionary = {}
+# Each source edge is keyed by exact ORIGINAL Level float32 coordinate weld IDs.
+# Never use Godot Vector3 proximity to manufacture authentic adjacency.
+var original_edge_incidence: Dictionary = {}
 var last_error := ""
 var ready := false
 
@@ -40,6 +43,7 @@ func clear() -> void:
     source_map = ""
     source_sha256 = ""
     source_topology_summary.clear()
+    original_edge_incidence.clear()
     ready = false
     last_error = ""
 
@@ -90,7 +94,8 @@ func load_document(doc: Dictionary, expected_hash: String, expected_map: String)
         return _fail("Invalid original Level triangle total")
     var top: Variant = doc.get("source_topology_summary")
     if (doc.get("edge_provenance_schema", "") != EDGE_SCHEMA
-        or typeof(top) != TYPE_DICTIONARY):
+        or typeof(top) != TYPE_DICTIONARY
+        or doc.get("source_edge_welding", "") != "exact_original_Level_XYZ_no_epsilon"):
         return _fail("Missing source-validated original collision edge provenance")
     for key in ["source_exact_welded_vertex_count", "unique_source_edges",
                 "open_boundary_edges", "two_triangle_same_material_edges",
@@ -98,7 +103,7 @@ func load_document(doc: Dictionary, expected_hash: String, expected_map: String)
                 "three_or_more_triangle_edges", "max_triangles_using_one_edge"]:
         if not _bounded_integer(top.get(key), 0, MAX_FACES * 3):
             return _fail("Invalid source topology edge count " + key)
-    if int(top["source_exact_welded_vertex_count"]) > raw_vertices.size():
+    if int(top["source_exact_welded_vertex_count"]) < 3 or int(top["source_exact_welded_vertex_count"]) > raw_vertices.size():
         return _fail("Source welded vertex count exceeds original vertex count")
     if int(top["unique_source_edges"]) > raw_faces.size() * 3:
         return _fail("Source edge count exceeds original triangle edge uses")
@@ -127,6 +132,16 @@ func load_document(doc: Dictionary, expected_hash: String, expected_map: String)
         var ids: Variant = f.get("vertex_indices")
         var mat: Variant = f.get("render_material_id")
         var kinds: Variant = f.get("source_edge_kinds")
+        var source_welds: Variant = f.get("source_weld_ids")
+        if (typeof(source_welds) != TYPE_ARRAY or source_welds.size() != 3):
+            return _fail("Missing exact original Level welded vertex IDs")
+        for weld in source_welds:
+            if not _bounded_integer(weld, 0, int(top["source_exact_welded_vertex_count"])-1):
+                return _fail("Original source weld ID outside authenticated Level range")
+        if (int(source_welds[0]) == int(source_welds[1])
+            or int(source_welds[1]) == int(source_welds[2])
+            or int(source_welds[2]) == int(source_welds[0])):
+            return _fail("Collapsed original welded collision triangle edge")
         if (typeof(kinds) != TYPE_ARRAY or kinds.size() != 3):
             return _fail("Missing three source-validated edge classifications")
         for kind in kinds:
@@ -168,7 +183,21 @@ func load_document(doc: Dictionary, expected_hash: String, expected_map: String)
             "render_block_ordinal": int(f["render_block_ordinal"]),
             "render_section_ordinal": int(f["render_section_ordinal"]),
             "render_material_id": int(mat), "source_section_key": key,
-            "source_edge_kinds": [int(kinds[0]), int(kinds[1]), int(kinds[2])]})
+            "source_edge_kinds": [int(kinds[0]), int(kinds[1]), int(kinds[2])],
+            "source_weld_ids": [int(source_welds[0]), int(source_welds[1]), int(source_welds[2])]})
+        # Build edge incidence using the original, exact-float32 source weld
+        # IDs; preview f32 coordinate coincidences are insufficient proof.
+        for slot in 3:
+            var low: int = mini(int(source_welds[slot]), int(source_welds[(slot+1)%3]))
+            var high: int = maxi(int(source_welds[slot]), int(source_welds[(slot+1)%3]))
+            var edge_key := "%d:%d" % [low, high]
+            var incident: Array = original_edge_incidence.get(edge_key, [])
+            incident.append({
+                "triangle_id": int(tid),
+                "edge_slot": slot,
+                "render_material_id": int(mat),
+            })
+            original_edge_incidence[edge_key] = incident
         group.append(int(tid))
         section_triangle_ids[key] = group
         previous_id = int(tid)
@@ -184,6 +213,32 @@ func load_document(doc: Dictionary, expected_hash: String, expected_map: String)
              + int(top["two_triangle_render_material_seams"])
              + int(top["three_or_more_triangle_edges"]))):
         return _fail("Source edge incidence counts do not match the original map cache")
+    # Independently re-count original edge incidence from exact welded IDs.
+    # A forged preview-side seam or neighboring face must not be accepted.
+    var confirmed := [0, 0, 0, 0]
+    var largest := 0
+    for uses in original_edge_incidence.values():
+        var members: Array = uses
+        var n := members.size()
+        largest = maxi(largest, n)
+        var expected_class := 3
+        if n == 1:
+            expected_class = 1
+        elif n == 2:
+            expected_class = (0 if int(members[0]["render_material_id"])
+                == int(members[1]["render_material_id"]) else 2)
+        confirmed[expected_class] += 1
+        for incident in members:
+            var incident_face: Dictionary = faces[int(face_index_by_id[incident["triangle_id"]])]
+            if int(incident_face["source_edge_kinds"][int(incident["edge_slot"])]) != expected_class:
+                return _fail("Original exact welded edge topology contradicts source edge class")
+    if (original_edge_incidence.size() != int(top["unique_source_edges"])
+        or confirmed[1] != int(top["open_boundary_edges"])
+        or confirmed[0] != int(top["two_triangle_same_material_edges"])
+        or confirmed[2] != int(top["two_triangle_render_material_seams"])
+        or confirmed[3] != int(top["three_or_more_triangle_edges"])
+        or largest != int(top["max_triangles_using_one_edge"])):
+        return _fail("Source exact-weld topology count mismatches original collision cache")
     source_topology_summary = top.duplicate(true)
     var list: Array[int] = []
     for index in faces.size():
@@ -299,6 +354,38 @@ func ray_pick(origin: Vector3, direction: Vector3, max_distance: float = 100000.
 
 # Triangles are arranged in original Level order, not nearest-neighbor order.
 # Navigating by original section is an inspection convenience, NOT Havok topology.
+# Exact source-vertex-welded edge neighbors, including duplicated raw
+# indices. No inference from a shared screen coordinate or render material.
+func edge_connected_original_triangles(original_id: int) -> Array[Dictionary]:
+    var report: Array[Dictionary] = []
+    if not ready or not face_index_by_id.has(original_id):
+        return report
+    var face: Dictionary = faces[int(face_index_by_id[original_id])]
+    var weld: Array = face["source_weld_ids"]
+    for slot in 3:
+        var low: int = mini(int(weld[slot]), int(weld[(slot+1)%3]))
+        var high: int = maxi(int(weld[slot]), int(weld[(slot+1)%3]))
+        var key := "%d:%d" % [low, high]
+        var neighbors: Array[int] = []
+        var neighbors_slots: Array[int] = []
+        var incidence: Array = original_edge_incidence.get(key, [])
+        for other in incidence:
+            var partner: int = int(other["triangle_id"])
+            if partner != original_id:
+                neighbors.append(partner)
+                neighbors_slots.append(int(other["edge_slot"]))
+        report.append({
+            "edge_slot": slot,
+            "source_class_code": int(face["source_edge_kinds"][slot]),
+            "original_incident_triangle_count": incidence.size(),
+            "neighbor_original_triangle_ids": neighbors,
+            "neighbor_source_edge_slots": neighbors_slots,
+            "source_welding_is_exact_original_Level_XYZ": true,
+            "havok_runtime_adjacency_verified": false,
+        })
+    return report
+
+
 func triangle_details(original_id: int) -> Dictionary:
     if not ready or not face_index_by_id.has(original_id):
         return {}
@@ -315,6 +402,7 @@ func triangle_details(original_id: int) -> Dictionary:
         "render_material_name": materials[int(face["render_material_id"])],
         "render_material_is_physics_material": false,
         "source_edge_kinds": face["source_edge_kinds"].duplicate(),
+        "source_weld_ids": face["source_weld_ids"].duplicate(),
         "point_godot": (a+b+c)/3.0,
         "normal_godot": (c-a).cross(b-a).normalized(),
         "vertices_godot": [a, b, c],
