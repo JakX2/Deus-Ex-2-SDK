@@ -7038,7 +7038,7 @@ func _pick_source_collision_triangle() -> void:
         status_label.text = "No original MOPP-linked triangle under cursor."
         return
     source_collision_details.text = (
-        "ORIGINAL DX2 COLLISION TRIANGLE (READ-ONLY)\n"
+        ("ORIGINAL DX2 COLLISION TRIANGLE (READ-ONLY)\n"
         + "Level triangle ID: %d\n"
         + "Flesh render block ordinal: %d\n"
         + "Original source block ID: %d\n"
@@ -7047,7 +7047,7 @@ func _pick_source_collision_triangle() -> void:
         + "Hit position (Godot): %s\n"
         + "Geometric normal (Godot): %s\n"
         + "Geometric distance: %.5f Godot units\n"
-        + "NOT a Havok runtime contact or verified physics material." % [
+        + "NOT a Havok runtime contact or verified physics material.") % [
             int(hit["original_level_triangle_id"]),
             int(hit["render_block_ordinal"]), int(hit["source_block_id"]),
             int(hit["render_section_ordinal"]), str(hit["render_material_name"]),
