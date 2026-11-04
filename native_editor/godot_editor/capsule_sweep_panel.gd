@@ -139,6 +139,31 @@ func _begin(which: int) -> void:
     _status("Click an original collision surface to set capsule %s."
         % ("START" if which == 1 else "END"))
 
+# Called only by source-exact edge transition Inspector after its geometric
+# solver independently verifies a unique original shared edge and a finite
+# crossing. Reuse the same private read-only Python worker as manual picks.
+func prepare_exact_edge_chord(chord: Dictionary) -> bool:
+    if not _active() or worker != null:
+        _status("Original source collision inspector not authenticated for edge probe.")
+        return false
+    var selection := _picker()
+    var face_ids: Dictionary = selection.get("face_index_by_id")
+    if not picks.load_exact_edge_chord(chord, face_ids,
+        str(editor_host.get("current_source_map_name")),
+        str(editor_host.get("source_gamesys_sha256"))):
+        _status("Original edge probe refused: " + picks.last_error)
+        return false
+    radius.value = float(chord["radius_level_units"])
+    half_axis.value = float(chord["axis_half_length_level_units"])
+    _refresh()
+    _status("Original source edge crossing prepared; no Havok or game map changes.")
+    return true
+
+func run_exact_edge_chord(chord: Dictionary) -> void:
+    if prepare_exact_edge_chord(chord):
+        _run_research()
+
+
 func capture_pending() -> bool:
     return picks.picking != 0
 
