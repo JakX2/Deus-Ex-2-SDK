@@ -7056,17 +7056,21 @@ func _activate_source_collision_cache(cache: String) -> void:
     source_collision_button.set_pressed_no_signal(true)
     source_collision_details.visible = true
     var counts: Dictionary = source_collision_picker.source_topology_summary
-    source_collision_details.text = (
-        "ORIGINAL COLLISION TRIANGLES | READ-ONLY\n"
-        + "Click a source MOPP-linked triangle for original Level IDs and geometric edge diagnostics.\n"
-        + "Edge legend: amber interior | cyan open | pink render seam | red non-manifold.\n"
-        + "Unique source edges: %d | open: %d | render seams: %d | non-manifold: %d.\n"
-        + "Render materials are NOT verified Havok physical materials." % [
+    var topology_line := (
+        "Unique source edges: %d | open: %d | render seams: %d | non-manifold: %d.\n"
+        % [
             int(counts.get("unique_source_edges", 0)),
             int(counts.get("open_boundary_edges", 0)),
             int(counts.get("two_triangle_render_material_seams", 0)),
             int(counts.get("three_or_more_triangle_edges", 0))
         ]
+    )
+    source_collision_details.text = (
+        "ORIGINAL COLLISION TRIANGLES | READ-ONLY\n"
+        + "Click a source MOPP-linked triangle for original Level IDs and geometric edge diagnostics.\n"
+        + "Edge legend: amber interior | cyan open | pink render seam | red non-manifold.\n"
+        + topology_line
+        + "Render materials are NOT verified Havok physical materials."
     )
     status_label.text = (
         ("Collision inspection enabled: %d source MOPP-linked triangles. "
