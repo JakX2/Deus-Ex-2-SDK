@@ -58,7 +58,7 @@ def classify_source_edges(atlas: dict) -> dict:
     for tid, face in enumerate(triangles):
         if (not isinstance(face, dict) or type(face.get('triangle_id')) is not int
                 or face['triangle_id'] != tid):
-            raise ValueError('Out-of-order original Level triangle ID')
+            raise ValueError('Out-of-order original Level triangle ID order mismatch')
         ids = face.get('vertex_indices_zero_based')
         mat = face.get('render_material_id')
         linked = face.get('mopp_terminal_leaf')
