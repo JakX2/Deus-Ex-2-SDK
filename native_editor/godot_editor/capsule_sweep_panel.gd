@@ -5,6 +5,7 @@ extends VBoxContainer
 
 const PickState = preload("res://capsule_sweep_picks.gd")
 const ExactChord = preload("res://source_edge_capsule_chord.gd")
+const HeightOverlay = preload("res://source_edge_capsule_height_overlay.gd")
 
 var editor_host: Control
 var picks = PickState.new()
@@ -23,6 +24,13 @@ var pending_folder := ""
 var pending_output := ""
 var pending_profile_offsets: Array = []
 var profile_summary := ""
+var height_overlay = HeightOverlay.new()
+var height_overlay_marker: MeshInstance3D
+var clear_profile_button: Button
+var pending_profile_start := Vector3.ZERO
+var pending_profile_end := Vector3.ZERO
+var pending_profile_radius := 0.0
+var pending_profile_half_axis := 0.0
 
 func initialize(host: Control) -> void:
     editor_host = host
@@ -48,6 +56,12 @@ func initialize(host: Control) -> void:
     clear_button.text = "Clear points"
     clear_button.pressed.connect(_clear_picks)
     actions.add_child(clear_button)
+    clear_profile_button = Button.new()
+    clear_profile_button.text = "Clear height paths"
+    clear_profile_button.tooltip_text = (
+        "Remove the editor-only multi-height lines; never changes source assets.")
+    clear_profile_button.pressed.connect(clear_profile_display)
+    actions.add_child(clear_profile_button)
     var controls := HFlowContainer.new()
     add_child(controls)
     start_offset = _number(controls, "Start offset", -100.0, 100.0, 2.0, .1)
@@ -110,15 +124,17 @@ func _refresh() -> void:
         end_button.disabled = disabled
     if run_button != null:
         run_button.disabled = disabled or not picks.can_run()
+    if clear_profile_button != null:
+        clear_profile_button.disabled = not height_overlay.ready
 
 func activate() -> void:
-    profile_summary = ""
+    clear_profile_display()
     picks.clear()
     visible = true
     _refresh()
 
 func reset() -> void:
-    profile_summary = ""
+    clear_profile_display()
     picks.clear()
     visible = false
     _refresh()
@@ -130,7 +146,7 @@ func finish() -> void:
     reset()
 
 func _clear_picks() -> void:
-    profile_summary = ""
+    clear_profile_display()
     picks.clear()
     _refresh()
 
@@ -138,7 +154,7 @@ func _begin(which: int) -> void:
     if not _active() or worker != null:
         _status("Original source collision inspection must be active.")
         return
-    profile_summary = ""
+    clear_profile_display()
     if not picks.begin_pick(which,
         str(editor_host.get("current_source_map_name")),
         str(editor_host.get("source_gamesys_sha256"))):
@@ -190,9 +206,41 @@ func prepare_exact_edge_chord(chord: Dictionary) -> bool:
         return false
     radius.value = float(chord["radius_level_units"])
     half_axis.value = float(chord["axis_half_length_level_units"])
-    profile_summary = ""
+    clear_profile_display()
     _refresh()
     _status("Original source edge crossing prepared; no Havok or game map changes.")
+    return true
+
+# The profile preview never enters the imported GLB, actor drafts, or collision.
+func clear_profile_display() -> void:
+    height_overlay.clear()
+    if is_instance_valid(height_overlay_marker):
+        height_overlay_marker.queue_free()
+    height_overlay_marker = null
+    profile_summary = ""
+    _refresh()
+
+func _show_height_overlay() -> bool:
+    if not _active() or not height_overlay.ready:
+        return false
+    var parent: Variant = editor_host.get("world_root")
+    if not (parent is Node3D):
+        return false
+    var mesh: ImmediateMesh = height_overlay.make_mesh()
+    if mesh == null:
+        return false
+    var marker := MeshInstance3D.new()
+    marker.name = "ResearchOnly_SourceEdgeCapsuleHeightPaths_NOT_GamePhysics"
+    marker.mesh = mesh
+    var ink := StandardMaterial3D.new()
+    ink.vertex_color_use_as_albedo = true
+    ink.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    ink.cull_mode = BaseMaterial3D.CULL_DISABLED
+    ink.no_depth_test = true
+    marker.material_override = ink
+    marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    (parent as Node3D).add_child(marker)
+    height_overlay_marker = marker
     return true
 
 func run_exact_edge_chord(chord: Dictionary) -> void:
@@ -287,7 +335,12 @@ func _run_research(height_offsets: Array = []) -> void:
     pending_hash = sha
     pending_folder = folder
     pending_output = output
+    clear_profile_display()
     pending_profile_offsets = height_offsets.duplicate()
+    pending_profile_start = picks.start_preview
+    pending_profile_end = picks.end_preview
+    pending_profile_radius = radius.value
+    pending_profile_half_axis = half_axis.value
     worker = Thread.new()
     var code := worker.start(
         _worker_run.bind(args, output, source, sha, folder))
@@ -322,6 +375,7 @@ func _research_finished(code: int, output_text: String, output: String,
         or folder != str(editor_host.get("current_folder"))
         or pending_map != source or pending_hash != sha
         or pending_folder != folder or pending_output != output):
+        clear_profile_display()
         _status("Stale capsule result discarded after source map change.")
         return
     var result: Variant = null
@@ -355,6 +409,13 @@ func _research_finished(code: int, output_text: String, output: String,
         if typeof(samples) != TYPE_ARRAY or samples.size() != pending_profile_offsets.size():
             _status("Height profile refused: incomplete original source samples.")
             return
+        if not height_overlay.load_document(
+            document, str(editor_host.get("current_source_map_name")), sha,
+            pending_profile_start, pending_profile_end, pending_profile_offsets,
+            pending_profile_radius, pending_profile_half_axis,
+            _picker().get("face_index_by_id")):
+            _status("Height profile overlay refused: " + height_overlay.last_error)
+            return
         var summary := "CAPSULE HEIGHT PROFILE | geometric contacts only\n"
         summary += "Offsets relative to authenticated baseline (original Level +Z):\n"
         var valid_ids: Dictionary = _picker().get("face_index_by_id")
@@ -383,9 +444,13 @@ func _research_finished(code: int, output_text: String, output: String,
                 "%d source contacts; first triangle #%d" % [int(number), int(hit)])
             summary += "+%.2f Level u: %s\n" % [float(height), contact]
         summary += "Floor support may count as contact; no Havok walkability inferred."
-        profile_summary = summary
+        profile_summary = summary + "\n" + height_overlay.description()
+        if not _show_height_overlay():
+            clear_profile_display()
+            _status("Height profile lines unavailable: no authenticated 3D editor scene.")
+            return
         _refresh()
-        _status("Multi-height profile written to fresh private research JSON.")
+        _status("Read-only height profile and 3D contact-path comparison loaded.")
         return
     editor_host.call("_load_capsule_research_preview", output)
     _refresh()
