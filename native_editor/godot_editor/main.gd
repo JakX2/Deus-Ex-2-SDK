@@ -43,6 +43,13 @@ var source_collision_pending_folder := ""
 var source_collision_pending_map := ""
 var source_collision_pending_sha := ""
 var source_collision_marker: MeshInstance3D
+var source_collision_section_marker: MeshInstance3D
+var source_collision_section_actions: HFlowContainer
+var source_collision_section_toggle: CheckBox
+var source_collision_previous_button: Button
+var source_collision_next_button: Button
+var source_collision_copy_button: Button
+var source_collision_last_hit: Dictionary = {}
 var source_collision_mode := false
 var source_gamesys_panel: VBoxContainer
 var source_gamesys_filter: LineEdit
@@ -959,6 +966,31 @@ func _make_ui() -> void:
     source_collision_details.visible = false
     source_collision_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     inspector_pane.add_child(source_collision_details)
+    # These are source-only inspection tools, never inputs to Save As or drafts.
+    source_collision_section_actions = HFlowContainer.new()
+    source_collision_section_actions.visible = false
+    inspector_pane.add_child(source_collision_section_actions)
+    source_collision_previous_button = Button.new()
+    source_collision_previous_button.text = "Previous in section"
+    source_collision_previous_button.tooltip_text = "Browse original Level triangle IDs within this Flesh render section."
+    source_collision_previous_button.pressed.connect(_step_source_collision_triangle.bind(-1))
+    source_collision_section_actions.add_child(source_collision_previous_button)
+    source_collision_next_button = Button.new()
+    source_collision_next_button.text = "Next in section"
+    source_collision_next_button.pressed.connect(_step_source_collision_triangle.bind(1))
+    source_collision_section_actions.add_child(source_collision_next_button)
+    source_collision_section_toggle = CheckBox.new()
+    source_collision_section_toggle.text = "Outline section"
+    source_collision_section_toggle.tooltip_text = (
+        "Preview all original MOPP triangles in this render section, capped at 1024 faces. "
+        + "Render materials are not Havok physical materials."
+    )
+    source_collision_section_toggle.toggled.connect(_toggle_source_collision_section_outline)
+    source_collision_section_actions.add_child(source_collision_section_toggle)
+    source_collision_copy_button = Button.new()
+    source_collision_copy_button.text = "Copy triangle evidence"
+    source_collision_copy_button.pressed.connect(_copy_source_collision_evidence)
+    source_collision_section_actions.add_child(source_collision_copy_button)
     placement_inspector = Label.new()
     placement_inspector.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     placement_inspector.visible = false
@@ -6916,9 +6948,21 @@ func _reset_source_collision_inspection() -> void:
     if source_collision_details != null:
         source_collision_details.visible = false
         source_collision_details.text = ""
+    _clear_source_collision_highlights()
+    source_collision_last_hit.clear()
+    if source_collision_section_actions != null:
+        source_collision_section_actions.visible = false
+    if source_collision_section_toggle != null:
+        source_collision_section_toggle.set_pressed_no_signal(false)
+
+
+func _clear_source_collision_highlights() -> void:
     if is_instance_valid(source_collision_marker):
         source_collision_marker.queue_free()
     source_collision_marker = null
+    if is_instance_valid(source_collision_section_marker):
+        source_collision_section_marker.queue_free()
+    source_collision_section_marker = null
 
 
 func _toggle_source_collision_inspection() -> void:
@@ -7030,13 +7074,31 @@ func _pick_source_collision_triangle() -> void:
     if ray.is_empty():
         return
     var hit: Dictionary = source_collision_picker.ray_pick(ray["origin"], ray["direction"])
-    if is_instance_valid(source_collision_marker):
-        source_collision_marker.queue_free()
-        source_collision_marker = null
     if hit.is_empty():
+        _clear_source_collision_highlights()
+        source_collision_last_hit.clear()
+        source_collision_section_actions.visible = false
         source_collision_details.text = "ORIGINAL COLLISION TRIANGLES | No MOPP-linked triangle under cursor."
         status_label.text = "No original MOPP-linked triangle under cursor."
         return
+    hit["selection_is_ray_hit"] = true
+    _show_source_collision_hit(hit)
+
+
+func _show_source_collision_hit(hit: Dictionary) -> void:
+    if not source_collision_mode or not source_collision_picker.ready or hit.is_empty():
+        return
+    var tid := int(hit["original_level_triangle_id"])
+    var section: Dictionary = source_collision_picker.section_details(tid)
+    if section.is_empty():
+        return
+    source_collision_last_hit = hit.duplicate()
+    source_collision_section_actions.visible = true
+    _clear_source_collision_highlights()
+    var ray_hit := bool(hit.get("selection_is_ray_hit", false))
+    var point_name := "Ray hit position" if ray_hit else "Source triangle centroid"
+    var distance_text := ("%.5f Godot units" % float(hit["distance_godot_units"])) if ray_hit else (
+        "N/A (section navigation, not a ray)")
     source_collision_details.text = (
         ("ORIGINAL DX2 COLLISION TRIANGLE (READ-ONLY)\n"
         + "Level triangle ID: %d\n"
@@ -7044,41 +7106,140 @@ func _pick_source_collision_triangle() -> void:
         + "Original source block ID: %d\n"
         + "Render section: %d\n"
         + "Original render-material name: %s\n"
-        + "Hit position (Godot): %s\n"
+        + "Triangle in original section: %d of %d\n"
+        + "%s (Godot): %s\n"
         + "Geometric normal (Godot): %s\n"
-        + "Geometric distance: %.5f Godot units\n"
+        + "Geometric distance: %s\n"
         + "NOT a Havok runtime contact or verified physics material.") % [
-            int(hit["original_level_triangle_id"]),
-            int(hit["render_block_ordinal"]), int(hit["source_block_id"]),
+            tid, int(hit["render_block_ordinal"]), int(hit["source_block_id"]),
             int(hit["render_section_ordinal"]), str(hit["render_material_name"]),
-            str(hit["point_godot"]), str(hit["normal_godot"]),
-            float(hit["distance_godot_units"])
+            int(section["triangle_index_in_section"])+1, int(section["triangle_count"]),
+            point_name, str(hit["point_godot"]), str(hit["normal_godot"]), distance_text,
         ]
     )
     status_label.text = (
         "Original MOPP triangle #%d | render material %s | source-only." %
-        [int(hit["original_level_triangle_id"]), str(hit["render_material_name"])]
+        [tid, str(hit["render_material_name"])]
     )
     var points: Array = hit["vertices_godot"]
-    if points.size() != 3 or world_root == null:
+    if points.size() == 3 and world_root != null:
+        var edges := ImmediateMesh.new()
+        edges.surface_begin(Mesh.PRIMITIVE_LINES)
+        for i in 3:
+            edges.surface_add_vertex(points[i])
+            edges.surface_add_vertex(points[(i + 1) % 3])
+        edges.surface_end()
+        source_collision_marker = MeshInstance3D.new()
+        source_collision_marker.name = "SourceCollision_EditorOnly_Selection"
+        source_collision_marker.mesh = edges
+        var highlight := StandardMaterial3D.new()
+        highlight.albedo_color = Color(1.0, 0.77, 0.08)
+        highlight.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+        highlight.no_depth_test = true
+        highlight.cull_mode = BaseMaterial3D.CULL_DISABLED
+        source_collision_marker.material_override = highlight
+        source_collision_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        world_root.add_child(source_collision_marker)
+    if source_collision_section_toggle.button_pressed:
+        _draw_source_collision_section_outline(section)
+
+
+func _draw_source_collision_section_outline(section: Dictionary) -> void:
+    if is_instance_valid(source_collision_section_marker):
+        source_collision_section_marker.queue_free()
+    source_collision_section_marker = null
+    if section.is_empty() or world_root == null:
         return
-    var edges := ImmediateMesh.new()
-    edges.surface_begin(Mesh.PRIMITIVE_LINES)
-    for i in 3:
-        edges.surface_add_vertex(points[i])
-        edges.surface_add_vertex(points[(i + 1) % 3])
-    edges.surface_end()
-    source_collision_marker = MeshInstance3D.new()
-    source_collision_marker.name = "SourceCollision_EditorOnly_Selection"
-    source_collision_marker.mesh = edges
-    var highlight := StandardMaterial3D.new()
-    highlight.albedo_color = Color(1.0, 0.77, 0.08)
-    highlight.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-    highlight.no_depth_test = true
-    highlight.cull_mode = BaseMaterial3D.CULL_DISABLED
-    source_collision_marker.material_override = highlight
-    source_collision_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-    world_root.add_child(source_collision_marker)
+    if bool(section.get("preview_skipped_for_size", true)):
+        source_collision_details.text += (
+            "\nSection outline skipped: %d triangles exceeds %d-face preview safety cap." %
+            [int(section["triangle_count"]), int(section["preview_triangle_cap"])]
+        )
+        return
+    var points: PackedVector3Array = section["outline_vertices_godot"]
+    if points.is_empty():
+        return
+    var outline := ImmediateMesh.new()
+    outline.surface_begin(Mesh.PRIMITIVE_LINES)
+    for point in points:
+        outline.surface_add_vertex(point)
+    outline.surface_end()
+    source_collision_section_marker = MeshInstance3D.new()
+    source_collision_section_marker.name = "SourceCollision_EditorOnly_SectionOutline"
+    source_collision_section_marker.mesh = outline
+    var ink := StandardMaterial3D.new()
+    ink.albedo_color = Color(0.17, 0.83, 0.94)
+    ink.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    ink.no_depth_test = true
+    ink.cull_mode = BaseMaterial3D.CULL_DISABLED
+    source_collision_section_marker.material_override = ink
+    source_collision_section_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    world_root.add_child(source_collision_section_marker)
+
+
+func _toggle_source_collision_section_outline(enabled: bool) -> void:
+    if is_instance_valid(source_collision_section_marker):
+        source_collision_section_marker.queue_free()
+    source_collision_section_marker = null
+    if (not enabled or not source_collision_mode or source_collision_last_hit.is_empty()
+        or not source_collision_picker.ready):
+        return
+    var tid := int(source_collision_last_hit["original_level_triangle_id"])
+    _draw_source_collision_section_outline(source_collision_picker.section_details(tid))
+
+
+func _step_source_collision_triangle(step: int) -> void:
+    if (not source_collision_mode or not source_collision_picker.ready
+        or source_collision_last_hit.is_empty() or step not in [-1, 1]):
+        return
+    var tid := int(source_collision_last_hit["original_level_triangle_id"])
+    var section: Dictionary = source_collision_picker.section_details(tid)
+    if section.is_empty():
+        return
+    var next_id := int(section["previous_triangle_id"]) if step == -1 else int(
+        section["next_triangle_id"])
+    var next_hit: Dictionary = source_collision_picker.triangle_details(next_id)
+    if next_hit.is_empty():
+        return
+    _show_source_collision_hit(next_hit)
+
+
+func _source_collision_evidence_json() -> String:
+    if (not source_collision_mode or source_collision_last_hit.is_empty()
+        or not source_collision_picker.ready):
+        return ""
+    var hit := source_collision_last_hit
+    var id := int(hit["original_level_triangle_id"])
+    var section: Dictionary = source_collision_picker.section_details(id)
+    if section.is_empty():
+        return ""
+    var pos: Vector3 = hit["point_godot"]
+    var normal: Vector3 = hit["normal_godot"]
+    return JSON.stringify({
+        "schema": "DX2Ed-read-only-source-collision-evidence-v1",
+        "source_map": source_collision_picker.source_map,
+        "source_sha256": source_collision_picker.source_sha256,
+        "original_level_triangle_id": id,
+        "source_block_id": int(hit["source_block_id"]),
+        "render_block_ordinal": int(hit["render_block_ordinal"]),
+        "render_section_ordinal": int(hit["render_section_ordinal"]),
+        "render_material_name": str(hit["render_material_name"]),
+        "source_section_triangle_count": int(section["triangle_count"]),
+        "point_godot_xyz": [pos.x, pos.y, pos.z],
+        "geometric_normal_godot_xyz": [normal.x, normal.y, normal.z],
+        "selection_is_ray_hit": bool(hit.get("selection_is_ray_hit", false)),
+        "render_material_is_physics_material": false,
+        "havok_runtime_contact": false,
+        "native_map_written": false,
+    }, "  ")
+
+
+func _copy_source_collision_evidence() -> void:
+    var evidence := _source_collision_evidence_json()
+    if evidence.is_empty():
+        return
+    DisplayServer.clipboard_set(evidence)
+    status_label.text = "Copied original triangle provenance (read-only JSON, not a Havok contact)."
 
 
 func _pick_actor(additive: bool = false) -> void:

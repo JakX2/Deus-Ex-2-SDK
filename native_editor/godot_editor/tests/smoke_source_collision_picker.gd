@@ -68,6 +68,45 @@ func _run() -> void:
     if picker.ray_pick(Vector3(0,0,0), Vector3.ZERO).size() != 0:
         _fail("Zero-length ray must be rejected")
         return
+    var single_section: Dictionary = picker.section_details(0)
+    if (single_section.get("triangle_count", -1) != 1
+        or single_section.get("next_triangle_id", -1) != 0
+        or single_section.get("outline_vertices_godot", PackedVector3Array()).size() != 6):
+        _fail("Original section grouping lost a single source triangle")
+        return
+    if picker.triangle_details(1).get("render_material_name", "") != "MatB":
+        _fail("Direct original triangle lookup did not retain render provenance")
+        return
+    var grouped := _fixture()
+    grouped["leaf_triangles"][1]["render_section_ordinal"] = 0
+    grouped["leaf_triangles"][1]["render_material_id"] = 0
+    if not picker.load_document(grouped, SHA, "Fixture.gmp"):
+        _fail("Two triangles in the same verified render section rejected: " + picker.last_error)
+        return
+    var section: Dictionary = picker.section_details(0)
+    if (section.get("triangle_count", -1) != 2
+        or section.get("next_triangle_id", -1) != 1
+        or section.get("previous_triangle_id", -1) != 1
+        or section.get("outline_vertices_godot", PackedVector3Array()).size() != 12):
+        _fail("Original render-section ordering or geometry preview failed")
+        return
+    var capped: Dictionary = picker.section_details(0, 1)
+    if (not capped.get("preview_skipped_for_size", false)
+        or not capped.get("outline_vertices_godot", PackedVector3Array()).is_empty()
+        or capped.get("triangle_count", -1) != 2):
+        _fail("Large render sections must not silently produce partial outlines")
+        return
+    if not picker.section_details(-1).is_empty() or not picker.triangle_details(666).is_empty():
+        _fail("Out-of-range original triangle ID lookup must refuse")
+        return
+    var conflicted := _fixture()
+    conflicted["leaf_triangles"][1]["render_section_ordinal"] = 0
+    if picker.load_document(conflicted, SHA, "Fixture.gmp"):
+        _fail("Contradictory render material in one source section was accepted")
+        return
+    if not picker.load_document(decoded, SHA, "Fixture.gmp"):
+        _fail("Failed to restore default picker after section checks")
+        return
     if picker.load_document(decoded, "0".repeat(64), "Fixture.gmp") or picker.ready:
         _fail("Stale source digest accepted")
         return
@@ -120,11 +159,47 @@ func _run() -> void:
         or not editor.source_collision_details.text.contains("READ-ONLY")):
         _fail("DX2Ed did not enable source collision inspector on authenticated fixture")
         return
+    if editor.source_collision_section_actions.visible:
+        _fail("Section navigation must remain hidden before first source triangle selection")
+        return
+    var chosen: Dictionary = editor.source_collision_picker.ray_pick(
+        Vector3(0.4, 3, 0.3), Vector3.DOWN)
+    chosen["selection_is_ray_hit"] = true
+    editor._show_source_collision_hit(chosen)
+    if (not editor.source_collision_section_actions.visible
+        or editor.source_collision_last_hit.get("original_level_triangle_id", -1) != 0
+        or not editor.source_collision_details.text.contains("1 of 1")
+        or not is_instance_valid(editor.source_collision_marker)):
+        _fail("Editor source-section controls did not activate on ray selection")
+        return
+    var evidence: Variant = JSON.parse_string(editor._source_collision_evidence_json())
+    if (typeof(evidence) != TYPE_DICTIONARY
+        or evidence.get("original_level_triangle_id", -1) != 0
+        or evidence.get("source_sha256", "") != SHA
+        or evidence.get("render_material_name", "") != "MatA"
+        or evidence.get("render_material_is_physics_material", true) != false):
+        _fail("Copyable evidence lost source identity or mislabeled physics materials")
+        return
+    editor.source_collision_section_toggle.set_pressed_no_signal(true)
+    editor._toggle_source_collision_section_outline(true)
+    if not is_instance_valid(editor.source_collision_section_marker):
+        _fail("Editor-only original render-section preview was not created")
+        return
+    editor._step_source_collision_triangle(1)
+    if (editor.source_collision_last_hit.get("original_level_triangle_id", -1) != 0
+        or editor.source_collision_last_hit.get("selection_is_ray_hit", true) != false
+        or not editor.source_collision_details.text.contains("section navigation")):
+        _fail("Navigating source section must use centroid and not fake a ray hit")
+        return
     editor.source_collision_button.set_pressed_no_signal(false)
     editor._toggle_source_collision_inspection()
     if (editor.source_collision_mode or editor.source_collision_picker.ready
-        or editor.source_collision_details.visible):
-        _fail("Turning off collision inspect must restore independent actor selection")
+        or editor.source_collision_details.visible
+        or editor.source_collision_section_actions.visible
+        or not editor.source_collision_last_hit.is_empty()
+        or editor.source_collision_marker != null
+        or editor.source_collision_section_marker != null):
+        _fail("Turning off collision inspect must clean up source-only overlays and navigation")
         return
     editor.queue_free()
     DirAccess.remove_absolute(ProjectSettings.globalize_path(cache_path))
