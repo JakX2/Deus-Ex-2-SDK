@@ -170,6 +170,55 @@ func _run() -> void:
     if not sweep.prepare_exact_edge_chord(c):
         _fail("Restored source chord rejected")
         return
+    # The detailed selected-height replay must reconstruct source-exact chord
+    # from current v3 picker, rather than trusting the previously stored path.
+    var research_profile := {
+        "schema":"DX2Ed-source-edge-capsule-height-profile-v1",
+        "source_map":"Fixture.gmp", "source_sha256":SHA,
+        "read_only":true, "not_a_native_collision_writer":true,
+        "original_game_assets_modified":false,
+        "havok_runtime_contact_verified":false, "physics_materials_verified":false,
+        "coordinate_system":"Godot preview (Level.x/10, Level.z/10, Level.y/10)",
+        "height_direction_original_Level":"positive Z",
+        "height_offsets_relative_to_baseline":true,
+        "contact_is_not_a_blocking_classifier":true,
+        "no_contact_is_not_proof_of_walkability":true,
+        "baseline_capsule_start_godot_xyz":[start.x,start.y,start.z],
+        "baseline_capsule_end_godot_xyz":[finish.x,finish.y,finish.z],
+        "capsule_radius_level_units":.2,
+        "capsule_axis_half_length_level_units":.5,
+        "profile_samples":[
+            {"relative_height_level_units":0.,"geometric_source_triangle_hits":1,
+             "first_hit_original_triangle_id":0,"first_contact_path_t":.3,
+             "first_contact_initial_overlap":false,"first_contact_near_tangency":false},
+            {"relative_height_level_units":.5,"geometric_source_triangle_hits":0,
+             "first_hit_original_triangle_id":null,"first_contact_path_t":null,
+             "first_contact_initial_overlap":null,"first_contact_near_tangency":null},
+        ],
+    }
+    if not sweep.height_overlay.load_document(
+        research_profile, "Fixture.gmp", SHA, start, finish, [0.,.5],.2,.5,
+        p.get("face_index_by_id")):
+        _fail("Height profile readback fixture rejected before replay")
+        return
+    sweep.profile_chord = c.duplicate(true)
+    var plan: Dictionary = sweep.prepare_height_replay(
+        1,"C:/Synthetic/PrivateCache/replay.json")
+    if plan.is_empty() or (plan["start_godot_xyz"] as Vector3).distance_to(
+        start+Vector3.UP*.05) > .000001:
+        _fail("Source-exact replay did not reconstruct expected raised chord")
+        return
+    host.source_gamesys_sha256="2222222222222222222222222222222222222222222222222222222222222222"
+    if not sweep.prepare_height_replay(
+        1,"C:/Synthetic/PrivateCache/replay.json").is_empty():
+        _fail("Stale original GMP SHA enabled height replay")
+        return
+    host.source_gamesys_sha256=SHA
+    sweep.clear_profile_display()
+    if not sweep.prepare_height_replay(
+        1,"C:/Synthetic/PrivateCache/replay.json").is_empty():
+        _fail("Cleared height-profile replay remained actionable")
+        return
     var edge_panel := EdgePanel.new()
     host.add_child(edge_panel)
     var world := Node3D.new()
