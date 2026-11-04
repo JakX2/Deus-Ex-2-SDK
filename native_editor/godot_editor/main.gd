@@ -3,6 +3,7 @@ const BrushGeometry = preload("res://brush_geometry.gd")
 const SourceCollisionPicker = preload("res://collision_source_picker.gd")
 const CapsuleContactPreview = preload("res://capsule_contact_preview.gd")
 const CapsuleSweepPanel = preload("res://capsule_sweep_panel.gd")
+const SourceSurfacePanel = preload("res://source_surface_panel.gd")
 ## DX2Ed native viewer: a READ-ONLY Godot 4 GLB + GMP actor inspector.
 ## Can open an original DX2 .gmp using the bundled read-only Python backend.
 ## No runtime game assets bundled. Exports are cached outside the game folder.
@@ -60,6 +61,7 @@ var capsule_preview_dialog: FileDialog
 var capsule_preview_marker: MeshInstance3D
 var capsule_preview_details: Label
 var interactive_capsule_panel: VBoxContainer
+var source_surface_panel: VBoxContainer
 var source_gamesys_panel: VBoxContainer
 var source_gamesys_filter: LineEdit
 var source_gamesys_list: ItemList
@@ -317,6 +319,8 @@ func _exit_tree() -> void:
 func _ready() -> void:
     _make_ui()
     _make_world()
+    if source_surface_panel != null:
+        source_surface_panel.initialize(world_root)
     _make_material()
     _update_camera()
     status_label.text = "Ready. Open an original DX2 .gmp map (Python 3 required) or an existing GLB."
@@ -991,6 +995,8 @@ func _make_ui() -> void:
     capsule_preview_details.visible = false
     capsule_preview_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     inspector_pane.add_child(capsule_preview_details)
+    source_surface_panel = SourceSurfacePanel.new()
+    inspector_pane.add_child(source_surface_panel)
     interactive_capsule_panel = CapsuleSweepPanel.new()
     inspector_pane.add_child(interactive_capsule_panel)
     interactive_capsule_panel.initialize(self)
@@ -7032,6 +7038,8 @@ func _load_capsule_research_preview(path: String) -> void:
 # never consume this triangle ID, marker or provenance label.
 func _reset_source_collision_inspection() -> void:
     _clear_capsule_research_preview()
+    if source_surface_panel != null:
+        source_surface_panel.reset()
     if interactive_capsule_panel != null:
         interactive_capsule_panel.reset()
     source_collision_mode = false
@@ -7147,6 +7155,8 @@ func _activate_source_collision_cache(cache: String) -> void:
         return
     _clear_capsule_research_preview()
     source_collision_mode = true
+    if source_surface_panel != null:
+        source_surface_panel.activate(source_collision_picker)
     if interactive_capsule_panel != null:
         interactive_capsule_panel.activate()
     if capsule_preview_button != null:
@@ -7187,6 +7197,8 @@ func _pick_source_collision_triangle() -> void:
     if hit.is_empty():
         _clear_source_collision_highlights()
         source_collision_last_hit.clear()
+        if source_surface_panel != null:
+            source_surface_panel.observe_hit({})
         source_collision_section_actions.visible = false
         source_collision_details.text = "ORIGINAL COLLISION TRIANGLES | No MOPP-linked triangle under cursor."
         status_label.text = "No original MOPP-linked triangle under cursor."
@@ -7207,6 +7219,8 @@ func _show_source_collision_hit(hit: Dictionary) -> void:
     if section.is_empty():
         return
     source_collision_last_hit = hit.duplicate()
+    if source_surface_panel != null:
+        source_surface_panel.observe_hit(hit)
     source_collision_section_actions.visible = true
     _clear_source_collision_highlights()
     var ray_hit := bool(hit.get("selection_is_ray_hit", false))
