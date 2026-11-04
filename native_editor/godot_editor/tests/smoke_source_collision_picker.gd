@@ -96,5 +96,37 @@ func _run() -> void:
     if picker.load_document(invalid, SHA, "Fixture.gmp"):
         _fail("Unproven physical material accepted")
         return
+    # Verify the actual DX2Ed toolbar/inspector integration as well as the
+    # independent BVH, using a synthetic sidecar under user:// only.
+    var editor = load("res://main.gd").new()
+    root.add_child(editor)
+    if editor.source_collision_button == null or not editor.source_collision_button.disabled:
+        _fail("Source collision mode must exist and default to disabled")
+        return
+    var cache_path := "user://fixture_source_collision_pick.json"
+    var fixture_file := FileAccess.open(cache_path, FileAccess.WRITE)
+    if fixture_file == null:
+        _fail("Unable to write private synthetic collision picker sidecar")
+        return
+    fixture_file.store_string(JSON.stringify(_fixture()))
+    fixture_file.close()
+    editor.current_source_map_name = "Fixture.gmp"
+    editor.source_gamesys_sha256 = SHA
+    editor.source_collision_button.disabled = false
+    editor._activate_source_collision_cache(ProjectSettings.globalize_path(cache_path))
+    if (not editor.source_collision_mode or not editor.source_collision_picker.ready
+        or not editor.source_collision_button.button_pressed
+        or not editor.source_collision_details.visible
+        or not editor.source_collision_details.text.contains("READ-ONLY")):
+        _fail("DX2Ed did not enable source collision inspector on authenticated fixture")
+        return
+    editor.source_collision_button.set_pressed_no_signal(false)
+    editor._toggle_source_collision_inspection()
+    if (editor.source_collision_mode or editor.source_collision_picker.ready
+        or editor.source_collision_details.visible):
+        _fail("Turning off collision inspect must restore independent actor selection")
+        return
+    editor.queue_free()
+    DirAccess.remove_absolute(ProjectSettings.globalize_path(cache_path))
     print("DX2Ed source collision picker fixture: PASS")
     quit(0)
