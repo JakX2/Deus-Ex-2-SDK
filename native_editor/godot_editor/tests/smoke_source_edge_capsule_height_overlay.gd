@@ -131,7 +131,7 @@ func _run() -> void:
         _fail("Worker returned a height not in the submitted profile")
         return
     var nan_time := _document()
-    nan_time["profile_samples"][0]["first_contact_path_t"] = float("nan")
+    nan_time["profile_samples"][0]["first_contact_path_t"] = NAN
     if _accept(visual, nan_time):
         _fail("Nonfinite first-contact time accepted")
         return
