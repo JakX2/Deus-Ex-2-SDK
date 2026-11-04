@@ -19,8 +19,9 @@ RESEARCH = ROOT / "research" / "dx2"
 if str(RESEARCH) not in sys.path:
     sys.path.insert(0, str(RESEARCH))
 import export_level_mopp_triangle_debug_mesh as debug
+import dx2_collision_edge_provenance as edge
 
-SCHEMA = "DX2Ed-source-MOPP-collision-selection-cache-v1"
+SCHEMA = "DX2Ed-source-MOPP-collision-selection-cache-v2"
 # Original DX2 render coordinates -> Godot world: x,z,y * 0.01905.
 # Level flattened coordinates = original render XYZ * 0.1905, therefore
 # Level flattened XYZ -> Godot scene preview XYZ = (x,z,y) / 10.
@@ -50,6 +51,7 @@ def prepare_doc(atlas: dict, *, source_name: str, source_sha256: str) -> dict:
             or len(vertices) != atlas.get('source_vertex_count')
             or len(faces) != atlas.get('source_triangle_count')):
         raise ValueError('Source atlas geometry is missing or exceeds safety limits')
+    edges = edge.classify_source_edges(atlas)
     verts = []
     for p in vertices:
         if (not isinstance(p, (tuple, list)) or len(p) != 3 or
@@ -88,6 +90,8 @@ def prepare_doc(atlas: dict, *, source_name: str, source_sha256: str) -> dict:
                 'render_block_ordinal': tri['render_block_ordinal'],
                 'render_section_ordinal': tri['render_section_ordinal'],
                 'render_material_id': mat,
+                # Exact original Level XYZ welding, not Godot-preview rounding.
+                'source_edge_kinds': edges['edge_codes_by_original_triangle_id'][i],
             })
     if (not leaf_faces or len(leaf_faces) != atlas.get('mopp_leaf_triangle_count')
             or len(faces)-len(leaf_faces) != atlas.get('zero_area_nonleaf_triangle_count')):
@@ -106,6 +110,14 @@ def prepare_doc(atlas: dict, *, source_name: str, source_sha256: str) -> dict:
         'vertices_godot_xyz': verts,
         'render_material_names': names,
         'leaf_triangles': leaf_faces,
+        'edge_provenance_schema': edge.SCHEMA,
+        'source_topology_summary': {
+            key: edges[key] for key in (
+                'source_exact_welded_vertex_count', 'unique_source_edges',
+                'open_boundary_edges', 'two_triangle_same_material_edges',
+                'two_triangle_render_material_seams',
+                'three_or_more_triangle_edges', 'max_triangles_using_one_edge')
+        },
     }
 
 
