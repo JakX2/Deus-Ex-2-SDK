@@ -341,7 +341,7 @@ func _refresh() -> void:
             body += "Non-manifold: multiple incident faces, no unique next triangle.\n"
     body += "Capsule chord: both endpoints interior to source-connected triangles; "
     body += "only the full Python oracle tests possible 3D contacts. "
-    body += "No character walkability or Havok runtime verified.\\n"
+    body += "No character walkability or Havok runtime verified.\n"
     body += "Height profile: sample multiple upward Level +Z offsets; "
     body += "contacts alone do not classify movement as blocked or clear."
     note.text = body
