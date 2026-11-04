@@ -12,6 +12,10 @@ const LEAF_LIMIT := 8
 
 var vertices := PackedVector3Array()
 var faces: Array[Dictionary] = []
+# Original Level IDs, not Godot-imported triangle ordinals.
+var face_index_by_id: Dictionary = {}
+# Group by original source block ID + render block/section; no material physics claim.
+var section_triangle_ids: Dictionary = {}
 var materials: Array[String] = []
 var face_bounds: Array[AABB] = []
 var face_centers := PackedVector3Array()
@@ -24,6 +28,8 @@ var ready := false
 func clear() -> void:
     vertices.clear()
     faces.clear()
+    face_index_by_id.clear()
+    section_triangle_ids.clear()
     materials.clear()
     face_bounds.clear()
     face_centers.clear()
@@ -120,12 +126,24 @@ func load_document(doc: Dictionary, expected_hash: String, expected_map: String)
         var upper := Vector3(maxf(v0.x, maxf(v1.x, v2.x)), maxf(v0.y, maxf(v1.y, v2.y)), maxf(v0.z, maxf(v1.z, v2.z)))
         face_bounds.append(AABB(corner, upper-corner))
         face_centers.append((v0+v1+v2)/3.0)
+        var key := "%d/%d/%d" % [
+            int(f["source_block_id"]), int(f["render_block_ordinal"]),
+            int(f["render_section_ordinal"])]
+        # Every triangle with the same original section must share its material.
+        var group: Array = section_triangle_ids.get(key, [])
+        if not group.is_empty():
+            var first_face: Dictionary = faces[int(face_index_by_id[group[0]])]
+            if int(first_face["render_material_id"]) != int(mat):
+                return _fail("Contradictory render material within one original section")
+        face_index_by_id[int(tid)] = faces.size()
         faces.append({"triangle_id": int(tid),
             "vertex_indices": [int(ids[0]), int(ids[1]), int(ids[2])],
             "source_block_id": int(f["source_block_id"]),
             "render_block_ordinal": int(f["render_block_ordinal"]),
             "render_section_ordinal": int(f["render_section_ordinal"]),
-            "render_material_id": int(mat)})
+            "render_material_id": int(mat), "source_section_key": key})
+        group.append(int(tid))
+        section_triangle_ids[key] = group
         previous_id = int(tid)
     var list: Array[int] = []
     for index in faces.size():
@@ -236,3 +254,67 @@ func ray_pick(origin: Vector3, direction: Vector3, max_distance: float = 100000.
                 "query_is_havok_runtime": false,
             }
     return best
+
+
+# Triangles are arranged in original Level order, not nearest-neighbor order.
+# Navigating by original section is an inspection convenience, NOT Havok topology.
+func triangle_details(original_id: int) -> Dictionary:
+    if not ready or not face_index_by_id.has(original_id):
+        return {}
+    var face: Dictionary = faces[int(face_index_by_id[original_id])]
+    var ids: Array = face["vertex_indices"]
+    var a: Vector3 = vertices[ids[0]]
+    var b: Vector3 = vertices[ids[1]]
+    var c: Vector3 = vertices[ids[2]]
+    return {
+        "original_level_triangle_id": original_id,
+        "source_block_id": face["source_block_id"],
+        "render_block_ordinal": face["render_block_ordinal"],
+        "render_section_ordinal": face["render_section_ordinal"],
+        "render_material_name": materials[int(face["render_material_id"])],
+        "render_material_is_physics_material": false,
+        "point_godot": (a+b+c)/3.0,
+        "normal_godot": (c-a).cross(b-a).normalized(),
+        "vertices_godot": [a, b, c],
+        "distance_godot_units": -1.0,
+        "selection_is_ray_hit": false,
+        "query_is_havok_runtime": false,
+    }
+
+
+func section_details(original_id: int, preview_cap: int = 1024) -> Dictionary:
+    if (not ready or not face_index_by_id.has(original_id)
+        or preview_cap < 1 or preview_cap > 4096):
+        return {}
+    var face: Dictionary = faces[int(face_index_by_id[original_id])]
+    var key: String = face["source_section_key"]
+    var ids: Array = section_triangle_ids.get(key, [])
+    if ids.is_empty():
+        return {}
+    var at: int = ids.find(original_id)
+    if at < 0:
+        return {}
+    var total := ids.size()
+    var limited := total > preview_cap
+    var edge_points := PackedVector3Array()
+    if not limited:
+        for tid in ids:
+            var source_face: Dictionary = faces[int(face_index_by_id[tid])]
+            var corners: Array = source_face["vertex_indices"]
+            for edge in 3:
+                edge_points.append(vertices[int(corners[edge])])
+                edge_points.append(vertices[int(corners[(edge+1) % 3])])
+    return {
+        "source_block_id": face["source_block_id"],
+        "render_block_ordinal": face["render_block_ordinal"],
+        "render_section_ordinal": face["render_section_ordinal"],
+        "render_material_name": materials[int(face["render_material_id"])],
+        "triangle_count": total,
+        "triangle_index_in_section": at,
+        "previous_triangle_id": ids[(at+total-1) % total],
+        "next_triangle_id": ids[(at+1) % total],
+        "outline_vertices_godot": edge_points,
+        "preview_skipped_for_size": limited,
+        "preview_triangle_cap": preview_cap,
+        "not_a_havok_contact_or_native_surface": true,
+    }
