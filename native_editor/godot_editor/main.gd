@@ -7254,8 +7254,9 @@ func _source_collision_evidence_json() -> String:
         "render_material_name": str(hit["render_material_name"]),
         "source_edge_kinds_ab_bc_ca": hit.get("source_edge_kinds", []).duplicate(),
         "source_edge_names_ab_bc_ca": [
-            SourceCollisionPicker.EDGE_NAMES[int(kind)]
-            for kind in hit.get("source_edge_kinds", [])
+            SourceCollisionPicker.EDGE_NAMES[int(hit["source_edge_kinds"][0])],
+            SourceCollisionPicker.EDGE_NAMES[int(hit["source_edge_kinds"][1])],
+            SourceCollisionPicker.EDGE_NAMES[int(hit["source_edge_kinds"][2])]
         ],
         "source_exact_edge_topology": true,
         "source_section_triangle_count": int(section["triangle_count"]),
