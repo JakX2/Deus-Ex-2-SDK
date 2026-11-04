@@ -59,8 +59,12 @@ class OriginalEdgeCapsuleHeightProfileTests(unittest.TestCase):
     def test_offsets_are_relative_upward_original_level_z_not_godot_y(self):
         result = profile((0., .25, 2.))
         self.assertEqual(result["height_direction_original_Level"], "positive Z")
-        self.assertEqual(result["baseline_capsule_start_godot_xyz"], [.05, .02, .05])
-        self.assertEqual(result["baseline_capsule_end_godot_xyz"], [.06, .02, .05])
+        for got, expected in zip(result["baseline_capsule_start_godot_xyz"],
+                                 [.05, .02, .05]):
+            self.assertAlmostEqual(got, expected)
+        for got, expected in zip(result["baseline_capsule_end_godot_xyz"],
+                                 [.06, .02, .05]):
+            self.assertAlmostEqual(got, expected)
         self.assertEqual([s["relative_height_level_units"]
                           for s in result["profile_samples"]], [0., .25, 2.])
 
