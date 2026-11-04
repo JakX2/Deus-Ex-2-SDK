@@ -102,7 +102,7 @@ func _refresh() -> void:
     if note != null:
         note.text = picks.description()
         if not profile_summary.is_empty():
-            note.text += "\\n\\n" + profile_summary
+            note.text += "\n\n" + profile_summary
     var disabled := not _active() or worker != null
     if start_button != null:
         start_button.disabled = disabled
@@ -355,8 +355,8 @@ func _research_finished(code: int, output_text: String, output: String,
         if typeof(samples) != TYPE_ARRAY or samples.size() != pending_profile_offsets.size():
             _status("Height profile refused: incomplete original source samples.")
             return
-        var summary := "CAPSULE HEIGHT PROFILE | geometric contacts only\\n"
-        summary += "Offsets relative to authenticated baseline (original Level +Z):\\n"
+        var summary := "CAPSULE HEIGHT PROFILE | geometric contacts only\n"
+        summary += "Offsets relative to authenticated baseline (original Level +Z):\n"
         var valid_ids: Dictionary = _picker().get("face_index_by_id")
         for i in samples.size():
             var sample: Variant = samples[i]
@@ -369,15 +369,19 @@ func _research_finished(code: int, output_text: String, output: String,
             if (typeof(height) not in [TYPE_INT,TYPE_FLOAT]
                 or not is_finite(float(height))
                 or absf(float(height)-float(pending_profile_offsets[i])) > .0001
-                or typeof(number) != TYPE_INT or int(number) < 0
-                or (hit != null and (typeof(hit) != TYPE_INT or not valid_ids.has(hit)))
+                or typeof(number) not in [TYPE_INT,TYPE_FLOAT]
+                or not is_finite(float(number)) or float(number) != float(int(number))
+                or int(number) < 0
+                or (hit != null and (typeof(hit) not in [TYPE_INT,TYPE_FLOAT]
+                    or not is_finite(float(hit)) or float(hit) != float(int(hit))
+                    or not valid_ids.has(int(hit))))
                 or (int(number) == 0 and hit != null)
                 or (int(number) > 0 and hit == null)):
                 _status("Height profile refused: invalid offset or source triangle ID.")
                 return
             var contact := "no geometric contact" if int(number) == 0 else (
                 "%d source contacts; first triangle #%d" % [int(number), int(hit)])
-            summary += "+%.2f Level u: %s\\n" % [float(height), contact]
+            summary += "+%.2f Level u: %s\n" % [float(height), contact]
         summary += "Floor support may count as contact; no Havok walkability inferred."
         profile_summary = summary
         _refresh()
