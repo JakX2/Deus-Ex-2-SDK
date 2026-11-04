@@ -83,6 +83,48 @@ func capture_hit(hit: Dictionary, face_ids: Dictionary, map_name: String,
     picking = 0
     return true
 
+# Edge source crossings are analytically generated from two authenticated
+# original triangles. They are NOT mouse-ray samples; never fake that flag.
+func load_exact_edge_chord(chord: Dictionary, face_ids: Dictionary,
+                           map_name: String, sha: String) -> bool:
+    last_error = ""
+    if (not _identity(map_name, sha)
+        or chord.get("schema","") != "DX2Ed-source-exact-edge-capsule-chord-v1"
+        or chord.get("source_map","") != map_name
+        or chord.get("source_sha256","") != sha
+        or chord.get("source_exact_welded_connectivity",false) != true
+        or chord.get("horizontal_opposite_side_test","") != "opposite sides"
+        or chord.get("walkability_or_Havok_runtime_verified",true) != false
+        or chord.get("swept_capsule_contact_tested",true) != false
+        or chord.get("game_original_assets_written",true) != false
+        or typeof(chord.get("source_original_triangle_id")) != TYPE_INT
+        or typeof(chord.get("neighbor_original_triangle_id")) != TYPE_INT
+        or not face_ids.has(chord["source_original_triangle_id"])
+        or not face_ids.has(chord["neighbor_original_triangle_id"])
+        or not (chord.get("start_godot_xyz") is Vector3)
+        or not (chord.get("end_godot_xyz") is Vector3)):
+        last_error = "Unverified original edge-crossing source chord"
+        return false
+    var a: Vector3 = chord["start_godot_xyz"]
+    var b: Vector3 = chord["end_godot_xyz"]
+    if (not a.is_finite() or not b.is_finite()
+        or a.length() > 100000. or b.length() > 100000.
+        or a.distance_to(b) <= MIN_SEGMENT_PREVIEW):
+        last_error = "Degenerate or unsafe source edge-crossing path"
+        return false
+    # This is an already source-validated geometric chord, not a fake ray hit.
+    clear()
+    source_map = map_name
+    source_sha256 = sha
+    start_preview = a
+    end_preview = b
+    start_triangle_id = int(chord["source_original_triangle_id"])
+    end_triangle_id = int(chord["neighbor_original_triangle_id"])
+    start_set = true
+    end_set = true
+    return true
+
+
 func can_run() -> bool:
     return (start_set and end_set and picking == 0
         and _identity(source_map, source_sha256)
