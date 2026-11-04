@@ -71,6 +71,19 @@ python research/dx2/audit_mopp_swept_aabb.py "C:\DX2\Maps\M1_Seattle_hub.gmp" --
 
 The CLI never overwrites source GMP/IBD or an existing JSON report.
 
+## Additional box-scale sensitivity checks
+
+Two smaller read-only owner-map audits used the same deterministic sampler but **64 independent-bounds and 64 aimed segments per map**, rather than 128+128 in the baseline. The fixed random seed and original-GMP-SHA mixing were held constant. The first 64 samples are a prefix of the baseline 128 for each stratum, so the three experiments are **not statistically independent samples**; only the moving shape dimensions differ.
+
+| Moving AABB half-extents in original Level XYZ | Sweeps across 19 maps | Independently hit source triangle IDs | MOPP candidate comparisons (both modes) | Missed geometry comparisons |
+|---|---:|---:|---:|---:|
+| Tiny: (0.02, 0.02, 0.02) | 2,432 | 2,930 | 4,864 | 0 |
+| Baseline: (0.2, 0.2, 0.3) | 4,864 | 7,578 | 9,728 | 0 |
+| Large: (1.0, 1.0, 1.5) | 2,432 | 7,334 | 4,864 | 0 |
+| **Aggregate test invocations** | **9,728** | **17,842** | **19,456** | **0** |
+
+The larger AABB naturally hits more geometry per path. This checks that the box-extent expansion survives changes of scale, not that the box sizes reflect an actual DX2 player or NPC collision body. A future validation should vary sweep direction, scale, offset, tangent configurations, and seed independently.
+
 ## Unresolved gates
 
 - Repeat with different size scales, long paths, grazing/tangent cases and independent randomized SAT oracles.
