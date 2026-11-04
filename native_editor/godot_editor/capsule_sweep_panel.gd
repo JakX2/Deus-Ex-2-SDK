@@ -162,8 +162,16 @@ func prepare_exact_edge_chord(chord: Dictionary) -> bool:
     if (recomputed.is_empty()
         or recomputed["neighbor_original_triangle_id"] != chord.get("neighbor_original_triangle_id")
         or recomputed["source_sha256"] != chord.get("source_sha256")
-        or recomputed["start_godot_xyz"].distance_to(chord.get("start_godot_xyz", Vector3.INF)) > .000001
-        or recomputed["end_godot_xyz"].distance_to(chord.get("end_godot_xyz", Vector3.INF)) > .000001):
+        or not (chord.get("start_godot_xyz") is Vector3)
+        or not (chord.get("end_godot_xyz") is Vector3)):
+        _status("Edge crossing rejected: not reproducible from current exact source cache.")
+        return false
+    var original_start: Vector3 = chord["start_godot_xyz"]
+    var original_end: Vector3 = chord["end_godot_xyz"]
+    var expected_start: Vector3 = recomputed["start_godot_xyz"]
+    var expected_end: Vector3 = recomputed["end_godot_xyz"]
+    if (expected_start.distance_to(original_start) > .000001
+        or expected_end.distance_to(original_end) > .000001):
         _status("Edge crossing rejected: not reproducible from current exact source cache.")
         return false
     var face_ids: Dictionary = selection.get("face_index_by_id")
