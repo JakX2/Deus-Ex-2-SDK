@@ -197,8 +197,8 @@ func _run() -> void:
         or editor.source_collision_details.visible
         or editor.source_collision_section_actions.visible
         or not editor.source_collision_last_hit.is_empty()
-        or is_instance_valid(editor.source_collision_marker)
-        or is_instance_valid(editor.source_collision_section_marker)):
+        or editor.source_collision_marker != null
+        or editor.source_collision_section_marker != null):
         _fail("Turning off collision inspect must clean up source-only overlays and navigation")
         return
     editor.queue_free()
