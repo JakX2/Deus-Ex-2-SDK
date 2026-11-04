@@ -204,11 +204,18 @@ func _run() -> void:
         _fail("Editor source-section controls did not activate on ray selection")
         return
     var evidence: Variant = JSON.parse_string(editor._source_collision_evidence_json())
+    var json_edges: Variant = evidence.get("source_edge_kinds_ab_bc_ca", null) if typeof(evidence) == TYPE_DICTIONARY else null
+    var correct_edge_codes := false
+    if typeof(json_edges) == TYPE_ARRAY and json_edges.size() == 3:
+        correct_edge_codes = (
+            int(json_edges[0]) == 1 and int(json_edges[1]) == 2
+            and int(json_edges[2]) == 1
+        )
     if (typeof(evidence) != TYPE_DICTIONARY
         or evidence.get("original_level_triangle_id", -1) != 0
         or evidence.get("source_sha256", "") != SHA
         or evidence.get("render_material_name", "") != "MatA"
-        or evidence.get("source_edge_kinds_ab_bc_ca", []) != [1,2,1]
+        or not correct_edge_codes
         or evidence.get("render_material_is_physics_material", true) != false):
         _fail("Copyable evidence mismatch: " + JSON.stringify(evidence))
         return
