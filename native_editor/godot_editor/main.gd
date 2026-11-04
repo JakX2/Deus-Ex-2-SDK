@@ -7017,8 +7017,8 @@ func _activate_source_collision_cache(cache: String) -> void:
         + "Render material names are NOT verified Havok physical materials."
     )
     status_label.text = (
-        "Collision inspection enabled: %d source MOPP-linked triangles. "
-        + "Click to inspect; toggle off to restore actor picking." %
+        ("Collision inspection enabled: %d source MOPP-linked triangles. "
+        + "Click to inspect; toggle off to restore actor picking.") %
         source_collision_picker.faces.size()
     )
 
