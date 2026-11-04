@@ -6,6 +6,7 @@ extends VBoxContainer
 const PickState = preload("res://capsule_sweep_picks.gd")
 const ExactChord = preload("res://source_edge_capsule_chord.gd")
 const HeightOverlay = preload("res://source_edge_capsule_height_overlay.gd")
+const HeightReplay = preload("res://source_edge_capsule_height_replay.gd")
 
 var editor_host: Control
 var picks = PickState.new()
@@ -31,6 +32,12 @@ var pending_profile_start := Vector3.ZERO
 var pending_profile_end := Vector3.ZERO
 var pending_profile_radius := 0.0
 var pending_profile_half_axis := 0.0
+var pending_profile_chord: Dictionary = {}
+var profile_chord: Dictionary = {}
+var pending_replay_plan: Dictionary = {}
+var replay_checker = HeightReplay.new()
+var replay_choice: OptionButton
+var replay_button: Button
 
 func initialize(host: Control) -> void:
     editor_host = host
@@ -62,6 +69,16 @@ func initialize(host: Control) -> void:
         "Remove the editor-only multi-height lines; never changes source assets.")
     clear_profile_button.pressed.connect(clear_profile_display)
     actions.add_child(clear_profile_button)
+    replay_choice = OptionButton.new()
+    replay_choice.tooltip_text = "Choose a verified capsule height to replay at full contact detail."
+    actions.add_child(replay_choice)
+    replay_button = Button.new()
+    replay_button.text = "Inspect selected height"
+    replay_button.tooltip_text = (
+        "Re-run the independent original-GMP capsule oracle for one height. "
+        + "Show detailed first-contact wireframe; never Havok walkability.")
+    replay_button.pressed.connect(_replay_selected_height)
+    actions.add_child(replay_button)
     var controls := HFlowContainer.new()
     add_child(controls)
     start_offset = _number(controls, "Start offset", -100.0, 100.0, 2.0, .1)
@@ -125,7 +142,11 @@ func _refresh() -> void:
     if run_button != null:
         run_button.disabled = disabled or not picks.can_run()
     if clear_profile_button != null:
-        clear_profile_button.disabled = not height_overlay.ready
+        clear_profile_button.disabled = worker != null or not height_overlay.ready
+    if replay_choice != null:
+        replay_choice.disabled = disabled or not height_overlay.ready
+    if replay_button != null:
+        replay_button.disabled = disabled or not height_overlay.ready
 
 func activate() -> void:
     clear_profile_display()
@@ -214,6 +235,9 @@ func prepare_exact_edge_chord(chord: Dictionary) -> bool:
 # The profile preview never enters the imported GLB, actor drafts, or collision.
 func clear_profile_display() -> void:
     height_overlay.clear()
+    profile_chord.clear()
+    if replay_choice != null:
+        replay_choice.clear()
     if is_instance_valid(height_overlay_marker):
         height_overlay_marker.queue_free()
     height_overlay_marker = null
@@ -243,6 +267,43 @@ func _show_height_overlay() -> bool:
     height_overlay_marker = marker
     return true
 
+func _replay_selected_height() -> void:
+    if replay_choice == null:
+        return
+    _run_research([], replay_choice.get_selected_id())
+
+# The profile path must still be reproducible from current authenticated
+# original source-edge connectivity. No UI-selected or JSON-supplied chord is trusted.
+func prepare_height_replay(index: int, output: String) -> Dictionary:
+    if (not _active() or worker != null or not height_overlay.ready
+        or profile_chord.is_empty() or not picks.can_run()
+        or picks.source_map != height_overlay.source_map
+        or picks.source_sha256 != height_overlay.source_sha256
+        or picks.start_preview.distance_to(height_overlay.start) > .00001
+        or picks.end_preview.distance_to(height_overlay.finish) > .00001):
+        return {}
+    var source := str(editor_host.get("last_gmp_path"))
+    var selection := _picker()
+    var current: Dictionary = ExactChord.new().build(
+        selection, int(profile_chord.get("source_original_triangle_id", -1)),
+        int(profile_chord.get("source_edge_slot", -1)),
+        float(profile_chord.get("interior_fraction", -1.)),
+        float(profile_chord.get("above_face_vertical_offset_level_units", -1.)),
+        float(profile_chord.get("radius_level_units", -1.)),
+        float(profile_chord.get("axis_half_length_level_units", -1.)),
+        float(profile_chord.get("bend_limit_degrees", -1.)),
+        float(profile_chord.get("slope_limit_degrees", -1.)))
+    if (current.is_empty()
+        or current.get("neighbor_original_triangle_id") != profile_chord.get("neighbor_original_triangle_id")
+        or current.get("source_sha256") != height_overlay.source_sha256
+        or (current["start_godot_xyz"] as Vector3).distance_to(height_overlay.start) > .000001
+        or (current["end_godot_xyz"] as Vector3).distance_to(height_overlay.finish) > .000001):
+        return {}
+    return replay_checker.plan(
+        height_overlay, index, source, output,
+        str(editor_host.get("current_source_map_name")),
+        str(editor_host.get("source_gamesys_sha256")), current)
+
 func run_exact_edge_chord(chord: Dictionary) -> void:
     if prepare_exact_edge_chord(chord):
         _run_research()
@@ -268,7 +329,7 @@ func run_exact_edge_profile(chord: Dictionary, count: int, step: float) -> void:
     if offsets.is_empty():
         _status("Profile refused: height range must remain inside source chord bounds.")
         return
-    _run_research(offsets)
+    _run_research(offsets, -1, chord)
 
 
 func capture_pending() -> bool:
@@ -291,7 +352,8 @@ func accept_source_hit(hit: Dictionary) -> bool:
            int(hit.get("original_level_triangle_id", -1))])
     return true
 
-func _run_research(height_offsets: Array = []) -> void:
+func _run_research(height_offsets: Array = [], replay_index: int = -1,
+                   original_chord: Dictionary = {}) -> void:
     if not _active() or worker != null or not picks.can_run():
         _status("Pick two distinct source collision points before running a sweep.")
         return
@@ -320,8 +382,16 @@ func _run_research(height_offsets: Array = []) -> void:
     if output.is_empty():
         _status("Unable to allocate a fresh private capsule preview JSON.")
         return
-    var options: PackedStringArray = picks.export_arguments(
-        source, output, radius.value, half_axis.value)
+    var replay_plan: Dictionary = {}
+    var options := PackedStringArray()
+    if replay_index >= 0:
+        replay_plan = prepare_height_replay(replay_index, output)
+        if replay_plan.is_empty():
+            _status("Height replay refused: source edge, hash, path or sample changed.")
+            return
+        options = replay_plan["arguments"]
+    else:
+        options = picks.export_arguments(source, output, radius.value, half_axis.value)
     if options.is_empty():
         _status("Capsule shape/path rejected: " + picks.last_error)
         return
@@ -335,7 +405,10 @@ func _run_research(height_offsets: Array = []) -> void:
     pending_hash = sha
     pending_folder = folder
     pending_output = output
-    clear_profile_display()
+    if replay_index < 0:
+        clear_profile_display()
+    pending_replay_plan = replay_plan.duplicate(true)
+    pending_profile_chord = original_chord.duplicate(true)
     pending_profile_offsets = height_offsets.duplicate()
     pending_profile_start = picks.start_preview
     pending_profile_end = picks.end_preview
@@ -391,6 +464,19 @@ func _research_finished(code: int, output_text: String, output: String,
     if not FileAccess.file_exists(output):
         _status("Research solver reported success without producing a sidecar.")
         return
+    if not pending_replay_plan.is_empty():
+        var raw: Variant = JSON.parse_string(FileAccess.get_file_as_string(output))
+        if (typeof(raw) != TYPE_DICTIONARY or not height_overlay.ready
+            or height_overlay.source_map != str(editor_host.get("current_source_map_name"))
+            or height_overlay.source_sha256 != sha
+            or not replay_checker.verify_replay_document(
+                raw, pending_replay_plan, _picker().get("face_index_by_id"))):
+            _status("Detailed replay refused: geometry differs from original profile.")
+            return
+        editor_host.call("_load_capsule_research_preview", output)
+        _refresh()
+        _status("Original source capsule height replay verified; NOT Havok gameplay.")
+        return
     if not pending_profile_offsets.is_empty():
         var document: Variant = JSON.parse_string(
             FileAccess.get_file_as_string(output))
@@ -445,6 +531,14 @@ func _research_finished(code: int, output_text: String, output: String,
             summary += "+%.2f Level u: %s\n" % [float(height), contact]
         summary += "Floor support may count as contact; no Havok walkability inferred."
         profile_summary = summary + "\n" + height_overlay.description()
+        profile_chord = pending_profile_chord.duplicate(true)
+        if replay_choice != null:
+            replay_choice.clear()
+            for row in height_overlay.profile_rows:
+                var desc := ("+%.2f Level u | %d source contacts"
+                    % [float(row["offset"]), int(row["count"])])
+                replay_choice.add_item(desc)
+            replay_choice.select(0)
         if not _show_height_overlay():
             clear_profile_display()
             _status("Height profile lines unavailable: no authenticated 3D editor scene.")
