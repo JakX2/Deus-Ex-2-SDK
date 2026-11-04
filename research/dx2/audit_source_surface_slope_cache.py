@@ -18,7 +18,7 @@ from pathlib import Path
 import sys
 
 SCHEMA = "DX2SDK-source-Level-slope-histogram-from-private-cache-v1"
-CACHE_SCHEMA = "DX2Ed-source-MOPP-collision-selection-cache-v2"
+CACHE_SCHEMA = "DX2Ed-source-MOPP-collision-selection-cache-v3"
 EDGE_SCHEMA = "DX2Ed-MOPP-source-exact-edge-provenance-v1"
 COORD = "Godot preview (Level.x/10, Level.z/10, Level.y/10)"
 MAX_CACHE_BYTES = 40_000_000
@@ -61,6 +61,7 @@ def inspect_document(doc: dict, expected_sha256: str):
             or doc.get("physics_materials_verified") is not False
             or doc.get("coordinate_system") != COORD
             or doc.get("edge_provenance_schema") != EDGE_SCHEMA
+            or doc.get("source_edge_welding") != "exact_original_Level_XYZ_no_epsilon"
             or not isinstance(doc.get("source_map"), str)
             or not doc["source_map"].lower().endswith(".gmp")
             or Path(doc["source_map"]).name != doc["source_map"]):
@@ -90,6 +91,8 @@ def inspect_document(doc: dict, expected_sha256: str):
     if (topo["unique_source_edges"] !=
             sum(topo[name] for name in names[:4])):
         raise ValueError("Source edge provenance totals inconsistent")
+    if not _whole(topo.get("source_exact_welded_vertex_count"), 3, len(vertices)):
+        raise ValueError("Missing exact source welded vertex count")
     coords = [_xyz(value) for value in vertices]
     result = Counter()
     edges = Counter()
@@ -100,12 +103,16 @@ def inspect_document(doc: dict, expected_sha256: str):
         tid = face.get("triangle_id")
         ids = face.get("vertex_indices")
         kinds = face.get("source_edge_kinds")
+        weld = face.get("source_weld_ids")
         if (not _whole(tid, 0, doc["source_triangle_count"]-1)
                 or tid <= last_id
                 or not isinstance(ids, list) or len(ids) != 3
                 or any(not _whole(i, 0, len(coords)-1) for i in ids)
                 or not isinstance(kinds, list) or len(kinds) != 3
-                or any(not _whole(k, 0, 3) for k in kinds)):
+                or any(not _whole(k, 0, 3) for k in kinds)
+                or not isinstance(weld, list) or len(weld) != 3
+                or any(not _whole(w, 0, topo["source_exact_welded_vertex_count"]-1) for w in weld)
+                or len(set(weld)) != 3):
             raise ValueError("Malformed original source triangle ID/index/edge class")
         last_id = tid
         a,b,c = [coords[i] for i in ids]

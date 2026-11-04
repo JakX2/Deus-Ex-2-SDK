@@ -44,6 +44,8 @@ class CollisionCacheTests(unittest.TestCase):
         self.assertEqual(doc['leaf_triangles'][0]['source_edge_kinds'],[1,1,2])
         self.assertEqual(doc['leaf_triangles'][1]['source_edge_kinds'],[2,1,1])
         self.assertEqual(doc['source_topology_summary']['open_boundary_edges'],4)
+        self.assertEqual(doc['source_edge_welding'], 'exact_original_Level_XYZ_no_epsilon')
+        self.assertEqual(len(doc['leaf_triangles'][0]['source_weld_ids']),3)
         self.assertEqual(doc['source_topology_summary']['two_triangle_render_material_seams'],1)
 
     def test_preserves_gapped_triangle_ids_after_degenerate_omission(self):
@@ -137,11 +139,11 @@ class CollisionCacheTests(unittest.TestCase):
         self.assertEqual(doc['source_topology_summary']['two_triangle_render_material_seams'],1)
         self.assertIs(doc['physics_materials_verified'],False)
 
-    def test_exclusive_cache_schema_version_prevents_old_edge_free_adoption(self):
-        self.assertEqual(selector.SCHEMA,'DX2Ed-source-MOPP-collision-selection-cache-v2')
+    def test_exclusive_v3_schema_for_exact_source_welded_adjacency(self):
+        self.assertEqual(selector.SCHEMA,'DX2Ed-source-MOPP-collision-selection-cache-v3')
         doc=selector.prepare_doc(fixture_atlas(),source_name='Fixture.gmp',source_sha256=HASH)
         self.assertEqual(doc['schema'],selector.SCHEMA)
-        self.assertTrue(all(len(face['source_edge_kinds'])==3
+        self.assertTrue(all(len(face['source_edge_kinds'])==3 and len(face['source_weld_ids'])==3
                             for face in doc['leaf_triangles']))
 
     def test_source_hash_is_not_mutated_by_preparation(self):

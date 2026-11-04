@@ -21,7 +21,7 @@ if str(RESEARCH) not in sys.path:
 import export_level_mopp_triangle_debug_mesh as debug
 import dx2_collision_edge_provenance as edge
 
-SCHEMA = "DX2Ed-source-MOPP-collision-selection-cache-v2"
+SCHEMA = "DX2Ed-source-MOPP-collision-selection-cache-v3"
 # Original DX2 render coordinates -> Godot world: x,z,y * 0.01905.
 # Level flattened coordinates = original render XYZ * 0.1905, therefore
 # Level flattened XYZ -> Godot scene preview XYZ = (x,z,y) / 10.
@@ -86,6 +86,8 @@ def prepare_doc(atlas: dict, *, source_name: str, source_sha256: str) -> dict:
             leaf_faces.append({
                 'triangle_id': i,
                 'vertex_indices': ids,
+                # Source-original exact float32 Level coordinate welding, not preview float rounding.
+                'source_weld_ids': [edges['exact_source_weld_id_by_vertex_index'][v] for v in ids],
                 'source_block_id': tri['source_block_id'],
                 'render_block_ordinal': tri['render_block_ordinal'],
                 'render_section_ordinal': tri['render_section_ordinal'],
@@ -111,6 +113,7 @@ def prepare_doc(atlas: dict, *, source_name: str, source_sha256: str) -> dict:
         'render_material_names': names,
         'leaf_triangles': leaf_faces,
         'edge_provenance_schema': edge.SCHEMA,
+        'source_edge_welding': 'exact_original_Level_XYZ_no_epsilon',
         'source_topology_summary': {
             key: edges[key] for key in (
                 'source_exact_welded_vertex_count', 'unique_source_edges',

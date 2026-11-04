@@ -113,6 +113,8 @@ def classify_source_edges(atlas: dict) -> dict:
     return {
         'schema': SCHEMA,
         'edge_codes_by_original_triangle_id': codes,
+        # Stable exact-original-Level-XYZ weld IDs, independent of preview f32 rounding.
+        'exact_source_weld_id_by_vertex_index': weld_id,
         'source_exact_welded_vertex_count': len(exact_welds),
         'unique_source_edges': len(incident),
         'open_boundary_edges': counts[CODE_NAMES[EDGE_BOUNDARY]],
