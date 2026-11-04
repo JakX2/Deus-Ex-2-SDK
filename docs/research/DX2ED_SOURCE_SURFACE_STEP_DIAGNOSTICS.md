@@ -33,6 +33,20 @@ Existing source-authoritative Level XYZ is shown as Godot XYZ = (Level X/10, Lev
 
 This is Godot local source geometry analysis and generates no proprietary report or retail bytes.
 
+## Aggregate original-map slope histogram (private cache, not raw GMP)
+
+The additional Python research command reads DX2Ed's **existing validated original-source collision cache-v2**, not raw GMP bytes. It requires the caller to supply the original GMP SHA-256, rejects wrong source/hash, contradictory original topology and invalid original triangle IDs, and computes only anonymous counts of source MOPP-leaf triangle slopes (0-5, 5-30, 30-45, 45-75 and 75-90 degrees), face winding signs and existing edge classes.
+
+From the full SDK checkout, after activating Inspect source collision for an original map:
+
+~~~powershell
+python research/dx2/audit_source_surface_slope_cache.py --cache "C:\DX2EdPrivateCache\source_collision_selection_v2.json" --expected-sha256 "INSERT_ORIGINAL_GMP_SHA256" --report "C:\DX2Research\source_slope_counts.json"
+~~~
+
+Use your real DX2Ed cache path and the original GMP hash. The report must be NEW and outside the private cache directory. It contains no vertices, triangle IDs, or contact XYZ. Cache JSON is private and must not be published. The output is a **geometric distribution**, not a validated game walkability threshold or physics response. SHA binding prevents accidental cross-map analysis but does not cryptographically sign a manually edited cache.
+
+This PR includes **nine new fixture-only Python audit tests**. We have **not** executed this new cache histogram against the full owner-provided 19 original maps in public CI; real-map histogram counts are not claimed here.
+
 ## Implementation and verification
 
 - native_editor/godot_editor/source_surface_diagnostics.gd: slope, nearest edge, exact source edge classes, per-edge rise/incline and constrained two-sample height comparison
