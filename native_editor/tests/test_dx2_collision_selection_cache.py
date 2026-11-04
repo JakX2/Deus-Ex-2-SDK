@@ -39,6 +39,12 @@ class CollisionCacheTests(unittest.TestCase):
         self.assertEqual(doc['render_material_names'],['MatA','MatB'])
         self.assertFalse(doc['physics_materials_verified'])
         self.assertTrue(doc['not_a_native_collision_writer'])
+        self.assertEqual(doc['edge_provenance_schema'],
+                         'DX2Ed-MOPP-source-exact-edge-provenance-v1')
+        self.assertEqual(doc['leaf_triangles'][0]['source_edge_kinds'],[1,2,1])
+        self.assertEqual(doc['leaf_triangles'][1]['source_edge_kinds'],[1,1,2])
+        self.assertEqual(doc['source_topology_summary']['open_boundary_edges'],4)
+        self.assertEqual(doc['source_topology_summary']['two_triangle_render_material_seams'],1)
 
     def test_preserves_gapped_triangle_ids_after_degenerate_omission(self):
         doc=selector.prepare_doc(fixture_atlas(degenerate=True),source_name='Fixture.gmp',source_sha256=HASH)
@@ -46,6 +52,8 @@ class CollisionCacheTests(unittest.TestCase):
         self.assertEqual(doc['mopp_leaf_triangle_count'],1)
         self.assertEqual(doc['leaf_triangles'][0]['triangle_id'],1)
         self.assertEqual(doc['leaf_triangles'][0]['render_section_ordinal'],1)
+        self.assertEqual(doc['leaf_triangles'][0]['source_edge_kinds'],[1,1,1])
+        self.assertEqual(doc['source_topology_summary']['open_boundary_edges'],3)
 
     def test_source_material_identifiers_never_promoted_to_physics(self):
         doc=selector.prepare_doc(fixture_atlas(),source_name='Fixture.gmp',source_sha256=HASH)
@@ -122,6 +130,19 @@ class CollisionCacheTests(unittest.TestCase):
             cache=base/'cache'/'collision.json';cache.parent.mkdir();cache.write_text('{}')
             with self.assertRaisesRegex(ValueError,'stale'):
                 selector.build(p,cache,expected_sha256=sha)
+
+    def test_original_render_seam_classification_cannot_be_physics_assignment(self):
+        doc=selector.prepare_doc(fixture_atlas(),source_name='Fixture.gmp',source_sha256=HASH)
+        self.assertNotIn('physics_material_id',json.dumps(doc))
+        self.assertEqual(doc['source_topology_summary']['two_triangle_render_material_seams'],1)
+        self.assertIs(doc['physics_materials_verified'],False)
+
+    def test_exclusive_cache_schema_version_prevents_old_edge_free_adoption(self):
+        self.assertEqual(selector.SCHEMA,'DX2Ed-source-MOPP-collision-selection-cache-v2')
+        doc=selector.prepare_doc(fixture_atlas(),source_name='Fixture.gmp',source_sha256=HASH)
+        self.assertEqual(doc['schema'],selector.SCHEMA)
+        self.assertTrue(all(len(face['source_edge_kinds'])==3
+                            for face in doc['leaf_triangles']))
 
     def test_source_hash_is_not_mutated_by_preparation(self):
         atlas=fixture_atlas();before=json.dumps(atlas,sort_keys=True)
