@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Conservative *hypothesis* for point candidates in original DX2 MOPP bytecode.
+"""Conservative / optionally derived diagonal point candidates for DX2 MOPP.
 
-Uses documented axis tests, f32 source envelope quantization, and rescaling.
-Diagonal 0x13..0x1c splits are ALWAYS followed down both branches: their
-precise Havok arithmetic is not verified for Deus Ex: Invisible War.
+Uses source-observed axis tests, f32 envelope quantization and rescaling.
+The default explores BOTH sides of 0x13..0x1c diagonal branches. An explicit
+research-only mode tests geometry-derived projection formulas (0x1b still
+explores BOTH). No diagonal formula is asserted to match Havok runtime.
 
 This is a read-only broadphase research experiment, NOT Havok ray casting,
 triangle contacts, a physics-material reader, or a native collision writer.
@@ -26,6 +27,30 @@ SOURCE_SCALE_DIVISOR = 65536.0
 DEFAULT_TOLERANCE = 1.0  # one quantization unit; EMPIRICALLY chosen, not Havok policy
 MAX_QUERY_STATES = 200_000
 MAX_MAPS = mopp.flatcheck.MAX_MAPS
+DIAGONAL_MODES = ("conservative", "derived_diagonals")
+DIAGONAL_EVIDENCE_SCHEMA = "DX2SDK-MOPP-diagonal-projection-hypotheses-v1"
+
+
+def _diagonal_projection(opcode: int, coords: tuple[float, float, float]) -> float | None:
+    """Source-corpus-calibrated hypothesis, NOT an engine-verified expression.
+
+    0x14 and 0x1c differ substantially from published NIF formulas; the
+    original DX2 triangle paths were used to falsify those reference guesses.
+    0x1b was not observed in the 19-map corpus and MUST NOT be guessed.
+    Coordinates are the current rescaled MOPP query state, not Level XYZ.
+    """
+    x, y, z = coords
+    return {
+        0x13: (y + z) / 2,
+        0x14: 127 + (y - z) / 2,
+        0x15: (x + z) / 2,
+        0x16: 127 + (x - z) / 2,
+        0x17: (x + y) / 2,
+        0x18: 127 + (x - y) / 2,
+        0x19: (x + y + z) / 3,
+        0x1a: 254 / 3 + (x + y - z) / 3,
+        0x1c: 508 / 3 + (x - y - z) / 3,
+    }.get(opcode)
 
 
 def _finite_xyz(value: object, *, label: str) -> tuple[float, float, float]:
@@ -41,7 +66,9 @@ class ConservativeMoppPointCandidates:
 
     The prior source-observed symbolic tracer validates all opcode lengths and
     branch destinations once. Each query may only prune *axis-aligned* branches.
-    An unknown diagonal calculation must never be silently guessed.
+    By default unknown diagonal calculations are not pruned. The explicit
+    derived_diagonals mode is an OFFLINE EXPERIMENT only, not a sound Havok
+    broadphase for arbitrary points/shapes/rays.
     """
 
     def __init__(self, code: bytes, triangle_count: int,
@@ -61,7 +88,8 @@ class ConservativeMoppPointCandidates:
         self.complete_leaf_set = frozenset(self.reference[
             "reachable_terminal_triangle_ids"])
 
-    def point(self, xyz: object, *, tolerance_units: float = DEFAULT_TOLERANCE) -> dict:
+    def point(self, xyz: object, *, tolerance_units: float = DEFAULT_TOLERANCE,
+              diagonal_mode: str = "conservative") -> dict:
         """Return conservative candidate triangle IDs for a POINT, not a ray.
 
         IMPORTANT: the margin is a hypothesis that was tested against retail
@@ -73,6 +101,8 @@ class ConservativeMoppPointCandidates:
                 or not math.isfinite(tolerance_units)
                 or not 0 <= tolerance_units <= 4):
             raise ValueError("Tolerance must be a finite 0..4 quantization units")
+        if diagonal_mode not in DIAGONAL_MODES:
+            raise ValueError("Unknown diagonal projection mode; default is conservative")
         margin = float(tolerance_units)
         scaled = tuple((q[i] - self.origin[i]) * self.scale /
                        SOURCE_SCALE_DIVISOR for i in range(3))
@@ -132,11 +162,20 @@ class ConservativeMoppPointCandidates:
                         route(right)
                     counters["axis_dual_split"] += 1
                 else:
-                    # UNKNOWN body/face diagonal arithmetic in DX2:
-                    # following both yields a superset of either hypothesis.
-                    route(left)
-                    route(right)
-                    counters["diagonal_opaque_both_branches"] += 1
+                    projection = (_diagonal_projection(op, coords)
+                                  if diagonal_mode == "derived_diagonals" else None)
+                    if projection is None:
+                        # 0x1b unobserved in the original 19-map corpus.
+                        # All diagonals remain unpruned by default.
+                        route(left)
+                        route(right)
+                        counters["diagonal_opaque_both_branches"] += 1
+                    else:
+                        if projection < low + margin:
+                            route(left)
+                        if projection >= high - margin:
+                            route(right)
+                        counters["diagonal_hypothesized_branch_decisions"] += 1
             elif 0x20 <= op <= 0x22:
                 threshold, delta = code[pc+1:pc+3]
                 coordinate = coords[op-0x20]
@@ -188,12 +227,18 @@ class ConservativeMoppPointCandidates:
             "query_is_a_havok_runtime_result": False,
             "narrowphase_triangle_intersections_computed": False,
             "diagonal_filter_arithmetic_resolved": False,
+            "diagonal_projection_mode": diagonal_mode,
+            "diagonal_projection_hypotheses_are_runtime_verified": False,
+            "hypothesized_diagonal_branch_decisions": counters[
+                "diagonal_hypothesized_branch_decisions"],
+            "unobserved_opcode_0x1b_explored_both": True,
         }
 
 
 def inspect_source_level(level: bytes, blocks: list[dict], *,
                          max_centroids: int = 0,
-                         tolerance_units: float = DEFAULT_TOLERANCE) -> dict:
+                         tolerance_units: float = DEFAULT_TOLERANCE,
+                         diagonal_mode: str = "conservative") -> dict:
     """Validate original Level→mesh→MOPP then probe selected triangle centroids.
 
     max_centroids=0 means ALL original nondegenerate triangle centroids.
@@ -201,6 +246,8 @@ def inspect_source_level(level: bytes, blocks: list[dict], *,
     """
     if type(max_centroids) is not int or not 0 <= max_centroids <= 300_000:
         raise ValueError("Invalid centroid sample bound")
+    if diagonal_mode not in DIAGONAL_MODES:
+        raise ValueError("Unknown diagonal projection mode")
     validated = mopp.inspect_mopp_link(level, blocks)
     flat = mopp.flatcheck.inspect_level_flattened_mesh(level, blocks)
     nverts = flat["render_and_flat_vertex_count"]
@@ -217,7 +264,7 @@ def inspect_source_level(level: bytes, blocks: list[dict], *,
     tri = struct.unpack_from("<" + str(3*ntri)+"I", level, indices_at)
     excluded = set(validated["omitted_zero_area_triangle_ids"])
     samples = misses = total_candidates = max_candidates = 0
-    diagonal_steps = rescale_steps = 0
+    diagonal_steps = rescale_steps = inferred_steps = 0
     first_missed = []
     for tid in range(ntri):
         if tid in excluded:
@@ -226,13 +273,15 @@ def inspect_source_level(level: bytes, blocks: list[dict], *,
             break
         points = [verts[tri[3*tid+i]] for i in range(3)]
         xyz = tuple(sum(p[axis] for p in points)/3.0 for axis in range(3))
-        answer = walker.point(xyz, tolerance_units=tolerance_units)
+        answer = walker.point(xyz, tolerance_units=tolerance_units,
+                              diagonal_mode=diagonal_mode)
         candidates = answer["candidate_triangle_ids"]
         samples += 1
         total_candidates += len(candidates)
         max_candidates = max(max_candidates, len(candidates))
         diagonal_steps += answer["opaque_diagonal_decisions_explored_both"]
         rescale_steps += answer["rescale_instructions_applied"]
+        inferred_steps += answer["hypothesized_diagonal_branch_decisions"]
         if tid not in candidates:
             misses += 1
             if len(first_missed) < 8:
@@ -251,6 +300,9 @@ def inspect_source_level(level: bytes, blocks: list[dict], *,
         "mean_candidate_triangles": (total_candidates / samples if samples else 0.0),
         "maximum_candidate_triangles": max_candidates,
         "total_opaque_diagonal_both_branch_decisions": diagonal_steps,
+        "total_hypothesized_diagonal_branch_decisions": inferred_steps,
+        "diagonal_projection_mode": diagonal_mode,
+        "diagonal_projection_evidence_schema": DIAGONAL_EVIDENCE_SCHEMA,
         "total_rescale_instructions_executed": rescale_steps,
         "tolerance_quantization_units": tolerance_units,
         "all_centroids_checked": (samples ==
@@ -263,7 +315,8 @@ def inspect_source_level(level: bytes, blocks: list[dict], *,
 
 
 def audit_map(path: Path, *, max_centroids: int = 0,
-              tolerance_units: float = DEFAULT_TOLERANCE) -> dict:
+              tolerance_units: float = DEFAULT_TOLERANCE,
+              diagonal_mode: str = "conservative") -> dict:
     if (not isinstance(path, Path) or not path.is_file()
             or path.suffix.casefold() != ".gmp"
             or path.stat().st_size > mopp.flatcheck.MAX_MAP_BYTES):
@@ -283,7 +336,8 @@ def audit_map(path: Path, *, max_centroids: int = 0,
         raise ValueError("Expected exactly one original Level export")
     result = inspect_source_level(
         pkg.payload(levels[0]), find_bsp(pkg),
-        max_centroids=max_centroids, tolerance_units=tolerance_units)
+        max_centroids=max_centroids, tolerance_units=tolerance_units,
+        diagonal_mode=diagonal_mode)
     return {"file": path.name,
             "source_sha256": hashlib.sha256(pkg.data).hexdigest(),
             "licensee": pkg.licensee, **result}
@@ -297,6 +351,9 @@ def main(argv=None) -> int:
     parser.add_argument("--tolerance-units", type=float,
                         default=DEFAULT_TOLERANCE,
                         help="Conservative quantization tolerance, default 1.0")
+    parser.add_argument("--diagonal-mode", choices=DIAGONAL_MODES,
+                        default="conservative",
+                        help="Default never prunes diagonal branches; explicit research mode tests inferred formulas")
     parser.add_argument("--report", type=Path,
                         help="Write fresh JSON outside original game map directories")
     args = parser.parse_args(argv)
@@ -307,7 +364,8 @@ def main(argv=None) -> int:
         if len(set(paths)) != len(paths):
             raise ValueError("Duplicate original map paths")
         rows = [audit_map(p, max_centroids=args.max_centroids,
-                          tolerance_units=args.tolerance_units) for p in paths]
+                          tolerance_units=args.tolerance_units,
+                          diagonal_mode=args.diagonal_mode) for p in paths]
         summary = {
             "maps": len(rows),
             "triangle_centroid_queries": sum(
@@ -319,12 +377,16 @@ def main(argv=None) -> int:
                     for row in rows) /
                 sum(row["nondegenerate_centroid_probes"] for row in rows)),
             "all_samples_checked": all(row["all_centroids_checked"] for row in rows),
+            "diagonal_projection_mode": args.diagonal_mode,
+            "runtime_havok_compatibility_proven": False,
         }
         result = {
             "schema": SCHEMA, "read_only": True, "summary": summary,
             "maps": rows, "original_game_files_modified": False,
             "havok_query_runtime_verified": False,
-            "unknown_diagonal_filters_are_conservatively_unpruned": True,
+            "unknown_diagonal_filters_are_conservatively_unpruned": (
+                args.diagonal_mode == "conservative"),
+            "derived_projections_experimental_only": True,
         }
         if args.report:
             out = args.report.resolve()
