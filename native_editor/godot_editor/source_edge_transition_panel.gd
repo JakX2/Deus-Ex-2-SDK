@@ -99,7 +99,8 @@ func observe_hit(hit: Dictionary) -> void:
         _refresh()
         return
     var tid := int(raw_id)
-    if not source_picker.face_index_by_id.has(tid):
+    var source_ids: Dictionary = source_picker.get("face_index_by_id")
+    if not source_ids.has(tid):
         current.clear()
         last_id = -1
         _refresh()
@@ -138,7 +139,8 @@ func follow_neighbor() -> void:
     if linked.size()!=1:
         return
     var next_id: int = int(linked[0])
-    if not source_picker.face_index_by_id.has(next_id):
+    var source_ids: Dictionary = source_picker.get("face_index_by_id")
+    if not source_ids.has(next_id):
         return
     var face: Dictionary = source_picker.triangle_details(next_id)
     if face.is_empty() or bool(face.get("selection_is_ray_hit", true)):
