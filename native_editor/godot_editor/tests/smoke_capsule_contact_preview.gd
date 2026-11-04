@@ -50,7 +50,8 @@ func _fixture() -> Dictionary:
 func _run() -> void:
     var overlay = Preview.new()
     var data: Variant = JSON.parse_string(JSON.stringify(_fixture()))
-    var known_faces := {3: 0, 7: 1}
+    # One original terminal leaf in this fixture, matching the sidecar metadata.
+    var known_faces := {3: 0}
     if not overlay.load_document(data, SHA, "Fixture.gmp", known_faces):
         _fail("Valid source-hash-bound research preview refused: " + overlay.last_error)
         return
