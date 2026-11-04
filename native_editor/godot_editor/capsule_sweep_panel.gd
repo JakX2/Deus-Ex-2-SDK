@@ -146,7 +146,7 @@ func accept_source_hit(hit: Dictionary) -> bool:
     if not _active() or picks.picking == 0 or worker != null:
         return false
     var selection := _picker()
-    var which := picks.picking
+    var which: int = int(picks.picking)
     var offset := start_offset.value if which == 1 else end_offset.value
     if not picks.capture_hit(hit, selection.get("face_index_by_id"),
         str(editor_host.get("current_source_map_name")),
