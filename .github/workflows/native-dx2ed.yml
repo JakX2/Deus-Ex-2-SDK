@@ -35,3 +35,5 @@ jobs:
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_triangle_picking.gd
       - name: Run source collision picking smoke test
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_source_collision_picker.gd
+      - name: Run capsule contact research overlay smoke test
+        run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_capsule_contact_preview.gd
