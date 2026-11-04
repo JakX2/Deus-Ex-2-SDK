@@ -7080,7 +7080,7 @@ func _toggle_source_collision_inspection() -> void:
         _reset_source_collision_inspection()
         status_label.text = "Open an authenticated original DX2 GMP before collision inspection."
         return
-    var cache := current_folder.path_join("source_collision_selection_v2.json")
+    var cache := current_folder.path_join("source_collision_selection_v3.json")
     if FileAccess.file_exists(cache):
         _activate_source_collision_cache(cache)
         return
