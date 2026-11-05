@@ -94,6 +94,14 @@ class ScriptIbdResourceBridgeTests(unittest.TestCase):
                     "original_game_assets_modified",
                     "gameplay_runtime_verified"):
             self.assertFalse(evidence[key], key)
+        # This test GMP is not a real UE v95 package: the optional actor
+        # slot probe must fail closed while exact TSD/IBD evidence survives.
+        self.assertEqual(evidence["original_actor_name_slot_probe"]["status"],
+                         "source_package_unavailable")
+        self.assertFalse(evidence["original_actor_name_slot_probe"][
+            "actor_to_script_binding_verified"])
+        self.assertFalse(evidence["original_actor_name_slot_probe"][
+            "name_table_indices_semantics_verified"])
         self.assertEqual([hashlib.sha256(f.read_bytes()).hexdigest()
                           for f in originals], before)
 

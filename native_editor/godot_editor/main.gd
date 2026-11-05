@@ -154,6 +154,9 @@ var gameplay_ibd_button: Button
 var gameplay_ibd_status: Label
 var gameplay_ibd_evidence: Dictionary = {}
 var gameplay_ibd_by_id: Dictionary = {}
+# Verified independent GameSys property 92 re-decoding, plus *coincidental*
+# package-name-table slot lookups. NEVER a proven FName/actor script binding.
+var gameplay_actor_name_slots_by_export: Dictionary = {}
 # Editable private mission-logic DESIGN ONLY. Never consumed by native GMP
 # Save As; original actor TriggerScript binary indices remain unresolved.
 var mission_logic_draft = MissionLogicDraft.new()
@@ -2123,6 +2126,7 @@ func _clear_current_scene() -> void:
     gameplay_script_zip_path = ""
     gameplay_ibd_evidence.clear()
     gameplay_ibd_by_id.clear()
+    gameplay_actor_name_slots_by_export.clear()
     if gameplay_ibd_button != null:
         gameplay_ibd_button.disabled = true
     if gameplay_ibd_status != null:
@@ -2375,6 +2379,7 @@ func _original_gameplay_scripts_finished(code: int, response: String,
     gameplay_script_zip_path = archive
     gameplay_ibd_evidence.clear()
     gameplay_ibd_by_id.clear()
+    gameplay_actor_name_slots_by_export.clear()
     if gameplay_ibd_button != null:
         gameplay_ibd_button.disabled = false
     if gameplay_ibd_status != null:
@@ -2568,8 +2573,79 @@ func _script_ibd_finished(code: int, response: String, source: String,
             status_label.text = "Original IBD evidence contains false byte-match claim."
             return
         exact[key] = item
+    # Optional actor raw-array probe must satisfy its own fail-closed
+    # schema and match the current native-cache actors exactly. It is only
+    # provenance: even an exact name-table + ZIP + IBD triple remains an
+    # unverified possible runtime association, never a script assignment.
+    var validated_name_slots: Dictionary = {}
+    var slot_probe: Variant = doc.get("original_actor_name_slot_probe", {})
+    if typeof(slot_probe) == TYPE_DICTIONARY and not slot_probe.is_empty():
+        if (slot_probe.get("read_only") != true
+            or slot_probe.get("actor_to_script_binding_verified") != false
+            or slot_probe.get("name_table_indices_semantics_verified") != false
+            or slot_probe.get("native_script_writer_enabled") != false
+            or slot_probe.get("status") not in [
+                "source_package_unavailable",
+                "original_package_name_slots_inspected"]
+            or typeof(slot_probe.get("actors")) != TYPE_ARRAY
+            or slot_probe["actors"].size() > 30000):
+            status_label.text = "Unverifiable original actor script name-slot probe."
+            return
+        var source_exports: Dictionary = {}
+        for original_actor in actors:
+            if (typeof(original_actor) == TYPE_DICTIONARY
+                and typeof(original_actor.get("export")) in [TYPE_INT, TYPE_FLOAT]):
+                source_exports[int(original_actor["export"])] = original_actor
+        for entry in slot_probe["actors"]:
+            if (typeof(entry) != TYPE_DICTIONARY
+                or typeof(entry.get("export")) not in [TYPE_INT, TYPE_FLOAT]
+                or not is_finite(float(entry["export"]))
+                or float(entry["export"]) < 1.0
+                or float(entry["export"]) > 2147483647.0
+                or float(int(entry["export"])) != float(entry["export"])
+                or typeof(entry.get("candidates")) != TYPE_ARRAY
+                or entry["candidates"].size() > 256
+                or entry.get("numeric_slots_are_name_references_verified") != false):
+                status_label.text = "Malformed actor script name-slot evidence."
+                return
+            var number := int(entry["export"])
+            var source_actor: Dictionary = source_exports.get(number, {})
+            if (source_actor.is_empty()
+                or entry.get("actor") != source_actor.get("name")
+                or entry.get("class") != source_actor.get("class")
+                or validated_name_slots.has(number)):
+                status_label.text = "Actor script name-slot source identity mismatch."
+                return
+            if entry.get("native_game_property_92_verified") == true:
+                var src: Variant = source_actor.get("trigger_script_serialized")
+                if typeof(src) != TYPE_DICTIONARY:
+                    status_label.text = "No source raw script property for validated actor."
+                    return
+                var elements: Variant = src.get("items", [])
+                if entry["status"] == "numeric_array_redecoded":
+                    if (typeof(elements) != TYPE_ARRAY
+                        or elements.size() != entry["candidates"].size()):
+                        status_label.text = "Original script array candidate length changed."
+                        return
+                    for item_index in entry["candidates"].size():
+                        if entry["candidates"][item_index].get(
+                            "raw_compact_integer") != elements[item_index]:
+                            status_label.text = "Original script array integer changed."
+                            return
+            for candidate in entry["candidates"]:
+                if (typeof(candidate) != TYPE_DICTIONARY
+                    or candidate.get("actor_runtime_link_verified") != false
+                    or typeof(candidate.get("slot_in_package_name_table")) != TYPE_BOOL
+                    or typeof(candidate.get("same_name_in_original_tsd_archive")) != TYPE_BOOL
+                    or candidate.get("ibd_resource_payload_status") not in [
+                        "not_found", "exact_payload", "different_payload",
+                        "not_in_original_zip"]):
+                    status_label.text = "Malformed original name-slot candidate."
+                    return
+            validated_name_slots[number] = entry
     gameplay_ibd_evidence = doc
     gameplay_ibd_by_id = exact
+    gameplay_actor_name_slots_by_export = validated_name_slots
     var counts: Dictionary = doc.get("counts", {})
     var summary := (
         "IBD source resource evidence: %d exact payloads, %d different payloads, "
@@ -2837,15 +2913,44 @@ func _inspect_selected_actor_scripts() -> void:
         gameplay_details.text = "First select an original actor in the Hierarchy."
         return
     var raw: Variant = actor.get("trigger_script_serialized", null)
-    gameplay_details.text = (
-        "Original actor: " + str(actor.get("name", "?"))
-        + "\nClass: " + str(actor.get("class", "?"))
-        + "\nExport: " + str(actor.get("export", "?"))
-        + "\nOriginal AI layer: " + str(_actor_on_original_ai_layer(actor))
-        + "\nSerialized TriggerScript data: " + JSON.stringify(raw, "  ")
-        + "\n\nRaw integer indices are NOT verified TS_ IDs."
-        + "\nNo NPC spawning or script assignment is enabled."
-    )
+    var lines: PackedStringArray = [
+        "Original actor: " + str(actor.get("name", "?")),
+        "Class: " + str(actor.get("class", "?")),
+        "Export: " + str(actor.get("export", "?")),
+        "Original AI layer: " + str(_actor_on_original_ai_layer(actor)),
+        "Serialized TriggerScript data: " + JSON.stringify(raw, "  "),
+        "",
+        "Raw integer indices are NOT verified TS_ IDs.",
+    ]
+    var export_value: Variant = actor.get("export", -1)
+    if typeof(export_value) in [TYPE_INT, TYPE_FLOAT]:
+        var row: Dictionary = gameplay_actor_name_slots_by_export.get(
+            int(export_value), {})
+        if (not row.is_empty() and row.get("actor") == actor.get("name")
+            and row.get("class") == actor.get("class")):
+            lines.append("")
+            lines.append("ORIGINAL GMP GAMEPROPERTY 92 / NAME-SLOT RESEARCH:")
+            lines.append("Native block re-decode: " +
+                str(row.get("status", "unverified_native_actor")))
+            for candidate in row.get("candidates", []):
+                var slot := str(candidate.get("raw_compact_integer", "?"))
+                var found := str(candidate.get(
+                    "name_at_same_numeric_slot", "<no original name in that slot>"))
+                var source_state := (
+                    "ZIP name match" if candidate.get(
+                        "same_name_in_original_tsd_archive") == true
+                        else "no ZIP name match")
+                lines.append(
+                    "  Raw integer " + slot + " | package slot name: "
+                    + found + " | " + source_state
+                    + " | IBD: " + str(candidate.get(
+                        "ibd_resource_payload_status", "not_found")))
+            lines.append(
+                "Names at equal numeric slots are CANDIDATES, not proved FName references.")
+            lines.append(
+                "Even a ZIP + IBD byte match does NOT verify an actor executes that script.")
+    lines.append("No NPC spawning or script assignment is enabled.")
+    gameplay_details.text = "\n".join(lines)
 
 
 

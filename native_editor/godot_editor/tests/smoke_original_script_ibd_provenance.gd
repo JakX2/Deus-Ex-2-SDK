@@ -66,6 +66,50 @@ func _run() -> void:
     if not editor.gameplay_list.get_item_text(0).begins_with("[IBD differs]"):
         _fail("Content mismatch was incorrectly presented as exact evidence")
         return
+    # The same Scripts tab also exposes original GameSys 92 compact-int
+    # name-table-slot candidates, but explicitly refuses a runtime binding.
+    editor.selected_actor = {
+        "name": "SyntheticActor__1", "class": "D_527", "export": 7,
+        "game_properties": [], "trigger_script_serialized": {
+            "interpretation": "index", "items": [1, 2]}}
+    editor.gameplay_actor_name_slots_by_export = {
+        7: {
+            "actor": "SyntheticActor__1", "class": "D_527",
+            "export": 7, "status": "numeric_array_redecoded",
+            "native_game_property_92_verified": true,
+            "numeric_slots_are_name_references_verified": false,
+            "candidates": [
+                {"raw_compact_integer": 1,
+                 "name_at_same_numeric_slot": "TS_Synthetic",
+                 "same_name_in_original_tsd_archive": true,
+                 "ibd_resource_payload_status": "exact_payload",
+                 "actor_runtime_link_verified": false},
+                {"raw_compact_integer": 2,
+                 "name_at_same_numeric_slot": "NotAScript",
+                 "same_name_in_original_tsd_archive": false,
+                 "ibd_resource_payload_status": "not_found",
+                 "actor_runtime_link_verified": false}
+            ]
+        }
+    }
+    editor._inspect_selected_actor_scripts()
+    var evidence_text: String = editor.gameplay_details.text
+    if (not evidence_text.contains("ORIGINAL GMP GAMEPROPERTY 92")
+        or not evidence_text.contains("Raw integer 1")
+        or not evidence_text.contains("TS_Synthetic")
+        or not evidence_text.contains("ZIP name match")
+        or not evidence_text.contains("IBD: exact_payload")
+        or not evidence_text.contains("CANDIDATES, not proved FName references")
+        or not evidence_text.contains("does NOT verify an actor executes")
+        or not evidence_text.contains("No NPC spawning or script assignment")):
+        _fail("Actor name-slot inference failed to preserve non-runtime-binding warnings")
+        return
+    editor.gameplay_actor_name_slots_by_export[7]["actor"] = "ForgedActor"
+    editor._inspect_selected_actor_scripts()
+    if editor.gameplay_details.text.contains(
+            "ORIGINAL GMP GAMEPROPERTY 92"):
+        _fail("Forged actor name leaked name-slot inference across source identities")
+        return
     editor.free()
-    print("DX2Ed original TriggerScript ZIP to IBD evidence UI: PASS")
+    print("DX2Ed original TriggerScript ZIP to IBD and actor name-slot evidence UI: PASS")
     quit(0)
