@@ -273,9 +273,18 @@ def audit(manifest_path: Path, output_path: Path, *,
     report = _redacted_counts(verified, len(unique_hashes))
     # Use exclusive creation to avoid overwriting an owner file. No private
     # sample data appears in the output or in any progress/log message.
-    with output_path.open("x", encoding="utf-8") as handle:
-        json.dump(report, handle, indent=2, sort_keys=True, allow_nan=False)
-        handle.write("\n")
+    payload = json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    created = False
+    try:
+        with output_path.open("x", encoding="utf-8") as handle:
+            created = True
+            handle.write(payload)
+    except BaseException:
+        # An interrupted/disk-full report must not look like a successful
+        # completed audit. Never unlink an existing file if open("x") refused.
+        if created:
+            output_path.unlink(missing_ok=True)
+        raise
     return report
 
 
