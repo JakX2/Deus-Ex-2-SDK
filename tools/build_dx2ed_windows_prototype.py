@@ -58,6 +58,8 @@ REQUIRED = (
     "native_editor/godot_editor/startup_route.gd",
     "native_editor/godot_editor/mission_logic_draft.gd",
     "native_editor/godot_editor/tests/smoke_mission_logic_draft.gd",
+    "native_editor/godot_editor/dialogue_design_draft.gd",
+    "native_editor/godot_editor/tests/smoke_dialogue_design_draft.gd",
     "native_editor/package_writer/dx2_actor_clone_probe.py",
     "map_exporter/dx2_map_exporter.py",
     "actor_explorer/dx2_actor_explorer.py",
