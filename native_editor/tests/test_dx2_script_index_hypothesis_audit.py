@@ -89,9 +89,12 @@ class MapWideScriptReferenceAuditTests(unittest.TestCase):
         self.assertEqual(direct["repeated_name_slot_occurrences"], 1)
         self.assertFalse(direct["name_table_mapping_proven"])
         self.assertFalse(direct["actor_script_runtime_binding_proven"])
-        self.assertEqual(indexed[-1]["original_zip_script_name_hits"], 1)
+        # Shifted controls can match real TSD names too. They deliberately
+        # do not establish a winning runtime encoding.
+        self.assertEqual(indexed[-2]["original_zip_script_name_hits"], 2)
+        self.assertEqual(indexed[-1]["original_zip_script_name_hits"], 0)
         self.assertEqual(indexed[1]["original_zip_script_name_hits"], 1)
-        self.assertEqual(indexed[2]["original_zip_script_name_hits"], 1)
+        self.assertEqual(indexed[2]["original_zip_script_name_hits"], 2)
 
     def test_partial_audit_counts_unverified_actors_without_guessing(self):
         missing = row(9, [1])
