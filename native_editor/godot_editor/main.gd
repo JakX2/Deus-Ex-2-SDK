@@ -1,6 +1,7 @@
 extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
 const PythonRuntime = preload("res://python_runtime.gd")
+const StartupRoute = preload("res://startup_route.gd")
 const SourceCollisionPicker = preload("res://collision_source_picker.gd")
 const CapsuleContactPreview = preload("res://capsule_contact_preview.gd")
 const CapsuleSweepPanel = preload("res://capsule_sweep_panel.gd")
@@ -329,9 +330,20 @@ func _ready() -> void:
     _make_material()
     _update_camera()
     status_label.text = "Ready. Open an original DX2 .gmp map (Python 3 required) or an existing GLB."
-    var args := OS.get_cmdline_user_args()
-    if args.size() > 0:
-        call_deferred("open_export_folder", str(args[0]))
+    var requested: Dictionary = StartupRoute.resolve(OS.get_cmdline_user_args())
+    match str(requested.get("kind", "invalid_args")):
+        "gmp":
+            # A dropped owner GMP uses the identical guarded UI import path.
+            call_deferred("open_gmp", str(requested["path"]))
+        "export_folder":
+            # Backward-compatible existing manually exported GLB scene folder.
+            call_deferred("open_export_folder", str(requested["path"]))
+        "invalid_gmp":
+            status_label.text = "Startup GMP refused: select an existing original .gmp file."
+        "invalid_args":
+            status_label.text = "Startup arguments refused. Use --gmp <original.gmp>."
+        _:
+            pass
 
 func _make_ui() -> void:
     var base := VBoxContainer.new()
