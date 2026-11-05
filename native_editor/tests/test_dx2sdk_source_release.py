@@ -249,6 +249,55 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
         self.assertEqual(source.read_bytes(), original)
         self.assertNotEqual(output.read_bytes(), original)
 
+    def test_extracted_source_archive_applies_three_source_locked_native_clones(self):
+        # Verify the distributed standalone SDK CLI can make a reusable
+        # original-source-bound JSON clone plan, dry-run it, then create and
+        # independently validate a native GMP with three new source exports.
+        build(ROOT, self.first)
+        with ZipFile(self.first) as archive:
+            archive.extractall(self.root / "standalone_multi_clone")
+        sdk = self.root / "standalone_multi_clone" / ARCHIVE
+        source = self.root / "OriginalMultiFixture" / "M1_Test.gmp"
+        source.parent.mkdir(parents=True)
+        original = level_fixture(source)
+        plan = self.root / "PrivateClonePlans" / "group.json"
+        output = self.root / "IsolatedGMP" / source.name
+
+        def portable(*args):
+            return subprocess.run(
+                [sys.executable, "-B", "-m", "dx2sdk", *args],
+                cwd=sdk, capture_output=True, text=True, timeout=60)
+
+        created = portable(
+            "make-multi-clone-plan", "--map", str(source),
+            "--copy", "1", "100", "0", "0",
+            "--copy", "1", "0", "100", "50",
+            "--copy", "1", "-50", "0", "75",
+            "--plan", str(plan))
+        self.assertEqual(created.returncode, 0, created.stderr)
+        self.assertEqual(json.loads(created.stdout)[
+            "planned_existing_static_prop_copies"], 3)
+        command = (
+            "apply-multi-clone-plan", "--map", str(source),
+            "--plan", str(plan), "--output", str(output))
+        dry = portable(*command)
+        self.assertEqual(dry.returncode, 0, dry.stderr)
+        self.assertEqual(json.loads(dry.stdout)["status"],
+                         "binary-reparsed-runtime-unverified")
+        self.assertFalse(output.exists())
+        saved = portable(*command, "--write")
+        self.assertEqual(saved.returncode, 0, saved.stderr)
+        self.assertTrue(json.loads(saved.stdout)[
+            "independent_full_binary_verification"])
+        verified = portable(
+            "verify-multi-clone", "--map", str(source),
+            "--output", str(output))
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        self.assertTrue(json.loads(verified.stdout)["verified_binary_structure"])
+        self.assertEqual(json.loads(verified.stdout)["new_actor_count"], 3)
+        self.assertEqual(source.read_bytes(), original)
+        self.assertNotEqual(output.read_bytes(), original)
+
     def test_deterministic_zip_source_hashes(self):
         build(ROOT, self.first)
         build(ROOT, self.second)
