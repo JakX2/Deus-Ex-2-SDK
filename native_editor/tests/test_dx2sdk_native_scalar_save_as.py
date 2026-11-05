@@ -95,6 +95,10 @@ class NativeTaggedScalarWriterTests(unittest.TestCase):
         self.assertFalse(report["runtime_game_verified"])
         self.assertTrue(self.output.exists())
         self.assertTrue(self.private_manifest.exists())
+        private_record = self.private_manifest.read_text("utf8")
+        self.assertNotIn("before_hex", private_record)
+        self.assertNotIn("after_hex", private_record)
+        self.assertNotIn(struct.pack("<i", 98765).hex(), private_record)
         out = Package(self.output)
         self.assertEqual(out.decode_object(out.exports[0])["FixtureFlag"], 123456)
         self.assertEqual(out.decode_object(out.exports[0])["Location"],
