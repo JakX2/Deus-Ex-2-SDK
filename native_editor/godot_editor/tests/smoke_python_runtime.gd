@@ -2,6 +2,7 @@ extends SceneTree
 ## Prove the packaged preflight-selected interpreter really launches the
 ## Python worker from Godot. No original GMP or proprietary resources used.
 const Runtime = preload("res://python_runtime.gd")
+const StartupRoute = preload("res://startup_route.gd")
 
 func _initialize() -> void:
     call_deferred("_run")
@@ -71,5 +72,33 @@ func _run() -> void:
     if load("res://main.gd") == null:
         _fail("Editor main script does not load with verified Python helper")
         return
-    print("DX2Ed verified packaged Python worker: PASS")
+    # A Windows drag/drop GMP path is routed to the existing authenticated
+    # direct importer, not treated as the old exported-GLB folder argument.
+    var synthetic := ProjectSettings.globalize_path("user://DX2Ed_fake_startup.gmp")
+    var owned := FileAccess.open(synthetic, FileAccess.WRITE)
+    if owned == null:
+        _fail("Could not create original-asset-free GMP argument fixture")
+        return
+    owned.store_string("SYNTHETIC PATH ROUTE ONLY, NOT A DEUS EX MAP")
+    owned.close()
+    var requested: Dictionary = StartupRoute.resolve(PackedStringArray([
+        "--gmp", synthetic]))
+    if (requested.get("kind") != "gmp"
+        or requested.get("path") != synthetic):
+        _fail("Dropped GMP startup path did not reach source map importer")
+        return
+    var old_args: Dictionary = StartupRoute.resolve(PackedStringArray([
+        "C:/Synthetic/ExportFolder"]))
+    if (old_args.get("kind") != "export_folder"
+        or StartupRoute.resolve(PackedStringArray(["--gmp", synthetic + ".missing"]))
+            .get("kind") != "invalid_gmp"
+        or StartupRoute.resolve(PackedStringArray(["--unknown"]))
+            .get("kind") != "invalid_args"
+        or StartupRoute.resolve(PackedStringArray())
+            .get("kind") != "idle"):
+        _fail("Startup argument parser broke legacy mode or invalid path refusal")
+        return
+    DirAccess.remove_absolute(synthetic)
+
+    print("DX2Ed verified packaged Python worker and GMP startup route: PASS")
     quit(0)
