@@ -100,11 +100,26 @@ def _source_actor(world: DX2Map, name: str) -> tuple[dict, dict]:
     actor = matches[0]
     export = actor.get("export")
     if (type(export) is not int or not 1 <= export <= len(world._package.exports)
-            or actor.get("class") != "StaticMeshActor" or not actor.get("mesh")):
-        raise ValueError("Scalar editing requires a source-verified existing rendered StaticMeshActor")
+            or actor.get("class") != "StaticMeshActor"):
+        raise ValueError("Scalar editing requires a source-verified existing StaticMeshActor")
     exp = world._package.exports[export - 1]
     if (exp["name"] != name or world._package.class_name(exp) != "StaticMeshActor"):
         raise ValueError("Original native actor export identity mismatch")
+    # A catalog's mesh display name can be unresolved or user-edited.
+    # Never use it as an authorization criterion for original binary edits.
+    # Verify source actor placement/location against the unchanged GMP itself.
+    scenes, _ = world._package.scene_actors()
+    matches = [item for item in scenes
+               if item["export"] == export and item["name"] == name
+               and item["class"] == "StaticMeshActor"]
+    cached = actor.get("location")
+    if (len(matches) != 1 or not isinstance(cached, list)
+            or len(cached) != 3
+            or any(type(v) not in (int, float) or not math.isfinite(v)
+                   for v in cached)
+            or any(abs(float(cached[i]) - float(matches[0][axis])) > 0.01
+                   for i, axis in enumerate("xyz"))):
+        raise ValueError("Original positioned actor does not match source-native Location identity")
     return actor, exp
 
 
