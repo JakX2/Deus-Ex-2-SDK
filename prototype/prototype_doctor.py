@@ -20,6 +20,7 @@ GODOT = ("Godot_v4.3-stable_win64.exe",
 REQUIRED = (
     "dx2sdk/__init__.py",
     "dx2sdk/api.py",
+    "dx2sdk/catalog.py",
     "dx2sdk/projects.py",
     "dx2sdk/__main__.py",
     "dx2sdk/README.md",
@@ -95,7 +96,7 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("includes_original_dx2_assets") is not False
                 or manifest.get("includes_havok_runtime") is not False
                 or manifest.get("gameplay_physics_or_walkability_verified") is not False
-                or manifest.get("public_dx2sdk_api_version") != "0.1.0"
+                or manifest.get("public_dx2sdk_api_version") != "0.2.0"
                 or manifest.get("public_dx2sdk_cli_included") is not True
                 or manifest.get("public_dx2sdk_gameplay_runtime_verified") is not False):
             issues.append("invalid_prototype_manifest")
