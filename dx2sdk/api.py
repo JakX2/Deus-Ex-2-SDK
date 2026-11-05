@@ -98,6 +98,7 @@ class DX2Map:
             raise ValueError("DX2SDK supports DX2 Ion Storm GMP v95 licensee 68/69 only")
         self.source_sha256 = hashlib.sha256(self._package.data).hexdigest()
         self.actors_file: Path | None = None
+        self._actor_cache_sha256: str | None = None
         self._cache: dict | None = None
         if actors_file is not None:
             cache = Path(actors_file).expanduser().resolve(strict=True)
@@ -117,6 +118,7 @@ class DX2Map:
                         row.get("class") != self._package.class_name(native)):
                     raise ValueError("Original actor cache identity disagrees with GMP")
             self.actors_file = cache
+            self._actor_cache_sha256 = hash_path(cache)
             self._cache = document
 
     @classmethod
@@ -128,6 +130,8 @@ class DX2Map:
         if hash_path(self.source) != self.source_sha256:
             raise ValueError("Original GMP changed since the DX2SDK map session opened")
         if self.actors_file is not None:
+            if hash_path(self.actors_file) != self._actor_cache_sha256:
+                raise ValueError("Original actor cache changed since opening SDK map session")
             audit_actor_cache(self.source, self.actors_file)
 
     def info(self) -> dict:
