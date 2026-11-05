@@ -36,7 +36,7 @@ jobs:
           python -B tools/build_dx2sdk_source_release.py --output "${RUNNER_TEMP}/DX2SDK_Python_0.2.0.zip"
           mkdir -p "${RUNNER_TEMP}/dx2sdk-extracted"
           unzip -q "${RUNNER_TEMP}/DX2SDK_Python_0.2.0.zip" -d "${RUNNER_TEMP}/dx2sdk-extracted"
-          cd "${RUNNER_TEMP}/dx2sdk-extracted/DX2SDK_Python_0.1.0"
+          cd "${RUNNER_TEMP}/dx2sdk-extracted/DX2SDK_Python_0.2.0"
           python -B -m dx2sdk --help
           python -B -m dx2sdk --version
       - name: Upload SDK v0.1 Python-only portable ZIP
@@ -65,7 +65,7 @@ jobs:
         shell: pwsh
         run: |
           Expand-Archive -Path DX2SDK_Python_0.2.0.zip -DestinationPath unpacked
-          Push-Location unpacked/DX2SDK_Python_0.1.0
+          Push-Location unpacked/DX2SDK_Python_0.2.0
           & cmd.exe /d /c "RUN_DX2SDK.cmd --help"
           if ($LASTEXITCODE -ne 0) { throw "DX2SDK Windows source CLI --help failed" }
           & cmd.exe /d /c "RUN_DX2SDK.cmd --version"
