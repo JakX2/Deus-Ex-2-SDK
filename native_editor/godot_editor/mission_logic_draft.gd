@@ -83,16 +83,27 @@ func initialize(catalog: Dictionary, original_actors: Array) -> bool:
     ready = true
     return true
 
+func _valid_export(value: Variant) -> bool:
+    # Godot's JSON parser materializes serialized integer actor exports as
+    # float64. Accept exactly representable whole numbers only; never round.
+    return (typeof(value) in [TYPE_INT, TYPE_FLOAT]
+        and is_finite(float(value))
+        and float(value) >= 1. and float(value) <= 2147483647.
+        and float(int(value)) == float(value))
+
 func _valid_row(row: Variant) -> bool:
-    if (not ready or typeof(row) != TYPE_DICTIONARY
-        or typeof(row.get("script_id")) != TYPE_STRING
+    if not ready or typeof(row) != TYPE_DICTIONARY:
+        return false
+    if not _valid_export(row.get("actor_export")):
+        return false
+    var actor_export := int(row["actor_export"])
+    if (typeof(row.get("script_id")) != TYPE_STRING
         or not definitions.has(row["script_id"])
-        or typeof(row.get("actor_export")) != TYPE_INT
-        or not actors_by_export.has(row["actor_export"])
+        or not actors_by_export.has(actor_export)
         or typeof(row.get("actor_name")) != TYPE_STRING
         or typeof(row.get("actor_class")) != TYPE_STRING
-        or row["actor_name"] != actors_by_export[row["actor_export"]]["name"]
-        or row["actor_class"] != actors_by_export[row["actor_export"]]["class"]
+        or row["actor_name"] != actors_by_export[actor_export]["name"]
+        or row["actor_class"] != actors_by_export[actor_export]["class"]
         or typeof(row.get("note")) != TYPE_STRING
         or str(row["note"]).length() > MAX_NOTE):
         return false
@@ -173,7 +184,7 @@ func load_document(doc: Dictionary) -> bool:
         seen[key] = true
         accepted.append({
             "script_id": row["script_id"],
-            "actor_export": row["actor_export"],
+            "actor_export": int(row["actor_export"]),
             "actor_name": row["actor_name"],
             "actor_class": row["actor_class"],
             "note": row["note"],
