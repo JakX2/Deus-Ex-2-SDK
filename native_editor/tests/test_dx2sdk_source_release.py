@@ -44,6 +44,7 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
             self.assertIn(f"{ARCHIVE}/dx2sdk/__main__.py", names)
             self.assertIn(f"{ARCHIVE}/RUN_DX2SDK.cmd", names)
             self.assertIn(f"{ARCHIVE}/third_party/t3sdk_assets/LICENSE", names)
+            self.assertIn(f"{ARCHIVE}/third_party/t3sdk_assets/formats.json", names)
             self.assertNotIn(f"{ARCHIVE}/runtime/Godot_v4.3-stable_win64.exe", names)
             self.assertFalse(any(Path(n).suffix.casefold() in RETAIL_EXT
                                  for n in names))
