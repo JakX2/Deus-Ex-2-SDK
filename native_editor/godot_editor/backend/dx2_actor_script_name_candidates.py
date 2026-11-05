@@ -13,6 +13,7 @@ actor->script runtime binding. This module never emits native write plans.
 from __future__ import annotations
 
 from pathlib import Path
+import struct
 import sys
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -97,7 +98,8 @@ def inspect_name_candidates(
             continue
         try:
             _tagged, blocks = decoder(package, original, {})
-        except (ValueError, IndexError, KeyError, TypeError, OverflowError):
+        except (ValueError, IndexError, KeyError, TypeError,
+                OverflowError, struct.error):
             continue
         props = [b for b in blocks
                  if type(b) is dict and b.get("id") == 92]
