@@ -1,0 +1,97 @@
+name: DX2Ed Windows prototype ZIP and executable smoke
+
+on:
+  push:
+    paths:
+      - 'prototype/**'
+      - 'tools/build_dx2ed_windows_prototype.py'
+      - 'native_editor/**'
+      - 'map_exporter/**'
+      - 'actor_explorer/**'
+      - 'research/dx2/**'
+      - 'third_party/t3sdk_assets/**'
+      - '.github/workflows/dx2ed-windows-prototype.yml'
+  pull_request:
+    paths:
+      - 'prototype/**'
+      - 'tools/build_dx2ed_windows_prototype.py'
+      - 'native_editor/**'
+      - 'map_exporter/**'
+      - 'actor_explorer/**'
+      - 'research/dx2/**'
+      - 'third_party/t3sdk_assets/**'
+      - '.github/workflows/dx2ed-windows-prototype.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build no-retail Windows prototype
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test offline archive builder with invented PE fixtures
+        run: python -m unittest discover -s native_editor/tests -p 'test_dx2_windows_prototype_bundle.py' -v
+      - name: Download and verify official Godot 4.3 Standard Windows x64
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/dx2ed-godot
+          base='https://github.com/godotengine/godot-builds/releases/download/4.3-stable'
+          curl -fL --retry 3 --retry-delay 3 \
+            -o /tmp/dx2ed-godot/Godot_v4.3-stable_win64.exe.zip \
+            "$base/Godot_v4.3-stable_win64.exe.zip"
+          curl -fL --retry 3 --retry-delay 3 \
+            -o /tmp/dx2ed-godot/SHA512-SUMS.txt \
+            "$base/SHA512-SUMS.txt"
+          grep -F 'Godot_v4.3-stable_win64.exe.zip' /tmp/dx2ed-godot/SHA512-SUMS.txt \
+            > /tmp/dx2ed-godot/Godot_required.sha512
+          test "$(wc -l < /tmp/dx2ed-godot/Godot_required.sha512)" -eq 1
+          (cd /tmp/dx2ed-godot && sha512sum -c Godot_required.sha512)
+          curl -fL --retry 3 --retry-delay 3 \
+            -o /tmp/dx2ed-godot/GODOT_LICENSE.txt \
+            'https://raw.githubusercontent.com/godotengine/godot/4.3-stable/LICENSE.txt'
+      - name: Assemble launchable ZIP with generated synthetic cubes
+        run: |
+          python tools/build_dx2ed_windows_prototype.py \
+            --godot-archive /tmp/dx2ed-godot/Godot_v4.3-stable_win64.exe.zip \
+            --godot-license /tmp/dx2ed-godot/GODOT_LICENSE.txt \
+            --output DX2Ed_Windows_Prototype.zip
+      - name: Upload Windows alpha for direct test
+        uses: actions/upload-artifact@v4
+        with:
+          name: DX2Ed_Windows_Prototype_Godot43
+          path: DX2Ed_Windows_Prototype.zip
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  windows-smoke:
+    name: Launch prototype on Windows with Godot 4.3
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: DX2Ed_Windows_Prototype_Godot43
+          path: .
+      - name: Extract and run bundled preflight and all nine Godot fixtures
+        shell: pwsh
+        run: |
+          Expand-Archive -Path DX2Ed_Windows_Prototype.zip -DestinationPath unpacked
+          Push-Location unpacked/DX2Ed_Windows_Prototype
+          & cmd.exe /d /c "START_DX2ED.cmd --self-test"
+          $exitCode = $LASTEXITCODE
+          Pop-Location
+          if ($exitCode -ne 0) {
+            throw "DX2Ed bundled Windows prototype smoke failed with exit code $exitCode"
+          }
