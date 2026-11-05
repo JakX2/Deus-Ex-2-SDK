@@ -20,6 +20,7 @@ GODOT = ("Godot_v4.3-stable_win64.exe",
 REQUIRED = (
     "dx2sdk/__init__.py",
     "dx2sdk/api.py",
+    "dx2sdk/projects.py",
     "dx2sdk/__main__.py",
     "dx2sdk/README.md",
     "DX2SDK_CONSOLE.cmd",
