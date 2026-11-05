@@ -27,6 +27,8 @@ REQUIRED = (
     "native_editor/godot_editor/source_edge_capsule_height_replay.gd",
     "native_editor/godot_editor/python_runtime.gd",
     "native_editor/godot_editor/startup_route.gd",
+    "native_editor/godot_editor/mission_logic_draft.gd",
+    "native_editor/godot_editor/tests/smoke_mission_logic_draft.gd",
     "native_editor/godot_editor/demo/scene.glb",
     "native_editor/godot_editor/demo/actors.json",
     "native_editor/package_writer/dx2_actor_clone_probe.py",
