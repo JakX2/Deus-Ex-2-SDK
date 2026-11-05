@@ -63,8 +63,7 @@ func initialize(catalog: Dictionary, original_actors: Array) -> bool:
     var validated_actors: Dictionary = {}
     for actor in original_actors:
         if (typeof(actor) != TYPE_DICTIONARY
-            or typeof(actor.get("export")) != TYPE_INT
-            or int(actor["export"]) <= 0
+            or not _valid_export(actor.get("export"))
             or typeof(actor.get("name")) != TYPE_STRING
             or str(actor["name"]).is_empty()
             or typeof(actor.get("class")) != TYPE_STRING
@@ -128,6 +127,9 @@ func plan_actor_script(script_id: String, actor: Dictionary, note: String = "") 
         if (existing["script_id"] == row["script_id"]
             and existing["actor_export"] == row["actor_export"]):
             return _fail("This original actor/script pair is already in the design plan")
+    # Godot JSON actor caches commonly return float64 numeric exports.
+    # Normalize once, never store float actors in the new design schema.
+    row["actor_export"] = int(row["actor_export"])
     rows.append(row)
     return true
 
