@@ -23,6 +23,7 @@ if str(SCRIPT_TOOLS) not in sys.path:
 
 from dx2_script_bundle_probe import parse_tsd_resources
 from dx2_gameplay_catalog import build_catalog
+from dx2_actor_script_name_candidates import inspect_original_package
 
 SCHEMA = "DX2Ed-original-IBD-TriggerScript-resource-evidence-v1"
 MAX_IBD = 512 * 1024 * 1024
@@ -103,6 +104,13 @@ def build_evidence(map_file: Path, actors_file: Path, scripts_file: Path,
     }
     if status_counts["source_definitions_not_in_ibd"] < 0:
         raise ValueError("Duplicate source script identifiers in IBD")
+    # Independent original GMP actor property decoding. A numeric array
+    # slot that happens to match a package name is ONLY a candidate, not a
+    # proven FName/script binding. Preserve exact source resource evidence
+    # even if a particular actor native payload cannot be re-decoded.
+    actor_name_slots = inspect_original_package(
+        map_file, original["actors_with_serialized_script_data"],
+        original["script_definitions"], rows)
     return {
         "schema": SCHEMA, "read_only": True,
         "source_map": original["map"],
@@ -113,6 +121,7 @@ def build_evidence(map_file: Path, actors_file: Path, scripts_file: Path,
         "ibd_sha256": sha256(original_blob),
         "ibd_resource_count": meta["resource_count"],
         "counts": status_counts, "entries": rows,
+        "original_actor_name_slot_probe": actor_name_slots,
         "native_actor_script_indices_resolved": False,
         "actor_to_script_binding_verified": False,
         "native_script_writer_enabled": False,
@@ -121,6 +130,7 @@ def build_evidence(map_file: Path, actors_file: Path, scripts_file: Path,
         "warnings": [
             "Exact payload bytes prove resource identity, NOT that a map actor runs a given script.",
             "Numeric GameSys TriggerScripts array elements remain unresolved original references.",
+            "A name at the same numeric position in the original Unreal name table is not proof this raw array stores FName indices.",
             "This evidence report does not compile or modify DX2 scripts or IBD packages.",
         ],
     }
