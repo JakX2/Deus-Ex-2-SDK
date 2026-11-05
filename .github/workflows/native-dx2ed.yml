@@ -31,6 +31,8 @@ jobs:
             "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip"
           unzip -q /tmp/godot-4.3.zip -d /tmp
           chmod +x /tmp/Godot_v4.3-stable_linux.x86_64
+      - name: Verify original mission versus Kernel TriggerScript payload comparison
+        run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_mission_kernel_script_view.gd
       - name: Verify map-wide original actor script index offset audit
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_script_index_hypothesis_audit.gd
       - name: Verify original TriggerScript IBD evidence presentation

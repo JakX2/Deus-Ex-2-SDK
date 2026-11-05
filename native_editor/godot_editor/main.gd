@@ -5,6 +5,7 @@ const StartupRoute = preload("res://startup_route.gd")
 const MissionLogicDraft = preload("res://mission_logic_draft.gd")
 const DialogueDesignDraft = preload("res://dialogue_design_draft.gd")
 const ScriptIndexAuditView = preload("res://script_index_audit_view.gd")
+const MissionKernelScriptView = preload("res://mission_kernel_script_view.gd")
 const SourceCollisionPicker = preload("res://collision_source_picker.gd")
 const CapsuleContactPreview = preload("res://capsule_contact_preview.gd")
 const CapsuleSweepPanel = preload("res://capsule_sweep_panel.gd")
@@ -157,6 +158,15 @@ var gameplay_index_audit_button: Button
 var gameplay_copy_index_audit_button: Button
 var gameplay_ibd_evidence: Dictionary = {}
 var gameplay_ibd_by_id: Dictionary = {}
+# Separate original mission IBD / shared Kernel_TSDALL bytes. Metadata only,
+# never used by game writers, and never sent out of Godot's private cache.
+var gameplay_verified_mission_ibd_path := ""
+var gameplay_kernel_dialog: FileDialog
+var gameplay_kernel_thread: Thread = null
+var gameplay_kernel_compare_button: Button
+var gameplay_kernel_script_button: Button
+var gameplay_kernel_copy_button: Button
+var gameplay_kernel_comparison: Dictionary = {}
 # Verified independent GameSys property 92 re-decoding, plus *coincidental*
 # package-name-table slot lookups. NEVER a proven FName/actor script binding.
 var gameplay_actor_name_slots_by_export: Dictionary = {}
@@ -356,6 +366,9 @@ func _exit_tree() -> void:
     if gameplay_ibd_thread != null:
         gameplay_ibd_thread.wait_to_finish()
         gameplay_ibd_thread = null
+    if gameplay_kernel_thread != null:
+        gameplay_kernel_thread.wait_to_finish()
+        gameplay_kernel_thread = null
     if environment_light_audit_thread != null:
         environment_light_audit_thread.wait_to_finish()
         environment_light_audit_thread = null
@@ -793,6 +806,28 @@ func _make_ui() -> void:
     gameplay_ibd_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     gameplay_ibd_status.text = "Select your own original TriggerScript ZIP before checking IBD resources."
     gameplay_tab.add_child(gameplay_ibd_status)
+    gameplay_kernel_compare_button = Button.new()
+    gameplay_kernel_compare_button.text = "Compare mission IBD against Kernel_TSDALL..."
+    gameplay_kernel_compare_button.tooltip_text = (
+        "Compare your own original mission resources to Kernel_TSDALL.ibd "
+        + "and standalone TSDs. No game files are modified.")
+    gameplay_kernel_compare_button.disabled = true
+    gameplay_kernel_compare_button.pressed.connect(
+        func(): gameplay_kernel_dialog.popup_centered_ratio(0.75))
+    gameplay_tab.add_child(gameplay_kernel_compare_button)
+    gameplay_kernel_script_button = Button.new()
+    gameplay_kernel_script_button.text = "Inspect selected script's mission / Kernel differences"
+    gameplay_kernel_script_button.disabled = true
+    gameplay_kernel_script_button.pressed.connect(_show_selected_mission_kernel_script_diff)
+    gameplay_tab.add_child(gameplay_kernel_script_button)
+    gameplay_kernel_copy_button = Button.new()
+    gameplay_kernel_copy_button.text = "Copy sanitized mission / Kernel summary"
+    gameplay_kernel_copy_button.disabled = true
+    gameplay_kernel_copy_button.tooltip_text = (
+        "Only aggregate counts and difference offsets. "
+        + "No private game paths, script names, hashes or original bytes.")
+    gameplay_kernel_copy_button.pressed.connect(_copy_mission_kernel_script_diff)
+    gameplay_tab.add_child(gameplay_kernel_copy_button)
     gameplay_index_audit_button = Button.new()
     gameplay_index_audit_button.text = "Show map-wide script index audit"
     gameplay_index_audit_button.disabled = true
@@ -1525,6 +1560,13 @@ func _make_ui() -> void:
         "*.ibd ; Original Deus Ex Invisible War mission/Kernel resource IBD"])
     gameplay_ibd_dialog.file_selected.connect(_open_original_script_ibd)
     add_child(gameplay_ibd_dialog)
+    gameplay_kernel_dialog = FileDialog.new()
+    gameplay_kernel_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    gameplay_kernel_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    gameplay_kernel_dialog.filters = PackedStringArray([
+        "*.ibd ; Original Kernel_TSDALL.ibd shared script bundle"])
+    gameplay_kernel_dialog.file_selected.connect(_open_mission_kernel_script_comparison)
+    add_child(gameplay_kernel_dialog)
     _make_lighting_dialog()
     skeletal_zip_dialog = FileDialog.new()
     skeletal_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -2147,6 +2189,14 @@ func _clear_current_scene() -> void:
     gameplay_ibd_evidence.clear()
     gameplay_ibd_by_id.clear()
     gameplay_actor_name_slots_by_export.clear()
+    gameplay_verified_mission_ibd_path = ""
+    gameplay_kernel_comparison.clear()
+    if gameplay_kernel_compare_button != null:
+        gameplay_kernel_compare_button.disabled = true
+    if gameplay_kernel_script_button != null:
+        gameplay_kernel_script_button.disabled = true
+    if gameplay_kernel_copy_button != null:
+        gameplay_kernel_copy_button.disabled = true
     if gameplay_ibd_button != null:
         gameplay_ibd_button.disabled = true
     if gameplay_index_audit_button != null:
@@ -2404,6 +2454,14 @@ func _original_gameplay_scripts_finished(code: int, response: String,
     gameplay_ibd_evidence.clear()
     gameplay_ibd_by_id.clear()
     gameplay_actor_name_slots_by_export.clear()
+    gameplay_verified_mission_ibd_path = ""
+    gameplay_kernel_comparison.clear()
+    if gameplay_kernel_compare_button != null:
+        gameplay_kernel_compare_button.disabled = true
+    if gameplay_kernel_script_button != null:
+        gameplay_kernel_script_button.disabled = true
+    if gameplay_kernel_copy_button != null:
+        gameplay_kernel_copy_button.disabled = true
     if gameplay_ibd_button != null:
         gameplay_ibd_button.disabled = false
     if gameplay_index_audit_button != null:
@@ -2674,6 +2732,16 @@ func _script_ibd_finished(code: int, response: String, source: String,
     gameplay_ibd_evidence = doc
     gameplay_ibd_by_id = exact
     gameplay_actor_name_slots_by_export = validated_name_slots
+    gameplay_verified_mission_ibd_path = ""
+    gameplay_kernel_comparison.clear()
+    if gameplay_kernel_script_button != null:
+        gameplay_kernel_script_button.disabled = true
+    if gameplay_kernel_copy_button != null:
+        gameplay_kernel_copy_button.disabled = true
+    if ibd.get_file().to_lower() != "kernel_tsdall.ibd":
+        gameplay_verified_mission_ibd_path = ibd
+    if gameplay_kernel_compare_button != null:
+        gameplay_kernel_compare_button.disabled = gameplay_verified_mission_ibd_path.is_empty()
     var actor_probe: Variant = doc.get("original_actor_name_slot_probe", {})
     var index_audit: Variant = {}
     if typeof(actor_probe) == TYPE_DICTIONARY:
@@ -2695,6 +2763,157 @@ func _script_ibd_finished(code: int, response: String, source: String,
         gameplay_ibd_status.text = summary
     _refresh_gameplay_script_list()
     status_label.text = "Original script resource comparison complete. No game files written."
+
+
+## Compare two original owner files after the one-IBD source cache
+## verifies the mission IBD. Script refs remain unexecutable hypotheses.
+func _open_mission_kernel_script_comparison(kernel_ibd: String) -> void:
+    var mission := gameplay_verified_mission_ibd_path
+    if (gameplay_kernel_thread != null or gameplay_ibd_thread != null
+        or gameplay_thread != null or build_thread != null
+        or mission.is_empty() or gameplay_catalog.is_empty()
+        or kernel_ibd.get_file().to_lower() != "kernel_tsdall.ibd"
+        or kernel_ibd == mission
+        or last_gmp_path.is_empty() or loaded_actors_json_path.is_empty()
+        or not FileAccess.file_exists(last_gmp_path)
+        or not FileAccess.file_exists(loaded_actors_json_path)
+        or not FileAccess.file_exists(gameplay_script_zip_path)
+        or not FileAccess.file_exists(mission)
+        or FileAccess.get_sha256(last_gmp_path) != source_gamesys_sha256
+        or FileAccess.get_sha256(gameplay_script_zip_path) !=
+            str(gameplay_catalog.get("script_archive_sha256", ""))
+        or FileAccess.get_sha256(mission) !=
+            str(gameplay_ibd_evidence.get("ibd_sha256", ""))):
+        if status_label != null:
+            status_label.text = "Mission/Kernel comparison refused: source identity mismatch."
+        return
+    var script := ProjectSettings.globalize_path(
+        "res://backend/dx2_mission_kernel_script_diff.py")
+    if not FileAccess.file_exists(script):
+        if status_label != null:
+            status_label.text = "Mission/Kernel comparison backend missing."
+        return
+    var output := OS.get_user_data_dir().path_join(
+        "original_mission_kernel_script_diff_%d.json" % Time.get_ticks_usec())
+    var source := last_gmp_path
+    var archive := gameplay_script_zip_path
+    var sha := source_gamesys_sha256
+    gameplay_kernel_thread = Thread.new()
+    var err := gameplay_kernel_thread.start(_mission_kernel_script_worker.bind(
+        script, source, loaded_actors_json_path, archive, mission,
+        kernel_ibd, output, sha))
+    if err != OK:
+        gameplay_kernel_thread = null
+        if status_label != null:
+            status_label.text = "Unable to start original mission/Kernel comparison."
+        return
+    if status_label != null:
+        status_label.text = "Comparing original Club/mission TSD resources with Kernel... read-only."
+
+func _mission_kernel_script_worker(script: String, source: String,
+        actor_path: String, archive: String, mission: String, kernel: String,
+        target: String, sha: String) -> void:
+    var args := PackedStringArray([
+        script, "--map", source, "--actors", actor_path,
+        "--scripts", archive, "--mission-ibd", mission,
+        "--kernel-ibd", kernel, "--output", target])
+    var output: Array = []
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
+    if code == -1:
+        var fallback := PackedStringArray(["-3"])
+        fallback.append_array(args)
+        output.clear()
+        code = OS.execute("py", fallback, output, true)
+    call_deferred("_mission_kernel_script_finished", code, "\n".join(output),
+        source, archive, mission, kernel, target, sha)
+
+func _mission_kernel_script_finished(code: int, response: String,
+        source: String, archive: String, mission: String,
+        kernel: String, target: String, sha: String) -> void:
+    if gameplay_kernel_thread != null:
+        gameplay_kernel_thread.wait_to_finish()
+        gameplay_kernel_thread = null
+    if (source != last_gmp_path or archive != gameplay_script_zip_path
+        or mission != gameplay_verified_mission_ibd_path
+        or sha != source_gamesys_sha256
+        or not FileAccess.file_exists(source)
+        or not FileAccess.file_exists(archive)
+        or not FileAccess.file_exists(mission)
+        or not FileAccess.file_exists(kernel)
+        or FileAccess.get_sha256(source) != sha
+        or FileAccess.get_sha256(archive) !=
+            str(gameplay_catalog.get("script_archive_sha256", ""))
+        or FileAccess.get_sha256(mission) !=
+            str(gameplay_ibd_evidence.get("ibd_sha256", ""))):
+        if status_label != null:
+            status_label.text = "Source changed. Discarded stale mission/Kernel evidence."
+        return
+    var answer: Variant = JSON.parse_string(response.strip_edges())
+    if (code != 0 or typeof(answer) != TYPE_DICTIONARY
+        or answer.get("status") != "ok"
+        or answer.get("schema") != MissionKernelScriptView.SCHEMA
+        or not FileAccess.file_exists(target)):
+        if status_label != null:
+            status_label.text = "Original mission/Kernel source comparison was refused."
+        return
+    var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(target))
+    if (not MissionKernelScriptView.valid(doc)
+        or doc.get("source_map") != current_source_map_name
+        or doc.get("source_map_sha256") != sha
+        or doc.get("script_archive_sha256") !=
+            gameplay_catalog.get("script_archive_sha256")
+        or doc.get("mission_ibd_name") != mission.get_file()
+        or doc.get("mission_ibd_sha256") != FileAccess.get_sha256(mission)
+        or doc.get("kernel_ibd_sha256") != FileAccess.get_sha256(kernel)
+        or doc.get("kernel_ibd_name") != kernel.get_file()):
+        if status_label != null:
+            status_label.text = "Mission/Kernel report source hashes or fields invalid."
+        return
+    var summary := MissionKernelScriptView.summary(doc)
+    if summary.is_empty():
+        if status_label != null:
+            status_label.text = "Original source comparison could not be rendered safely."
+        return
+    gameplay_kernel_comparison = doc
+    if gameplay_kernel_script_button != null:
+        gameplay_kernel_script_button.disabled = false
+    if gameplay_kernel_copy_button != null:
+        gameplay_kernel_copy_button.disabled = false
+    if gameplay_details != null:
+        gameplay_details.text = summary
+    if gameplay_ibd_status != null:
+        gameplay_ibd_status.text = (
+            "Mission / Kernel original-resource comparison ready. "
+            + "Select a script for per-payload diff or copy aggregate summary.")
+    if status_label != null:
+        status_label.text = "Mission/Kernel original IBD comparison completed. No game writes."
+
+func _show_selected_mission_kernel_script_diff() -> void:
+    if gameplay_details == null:
+        return
+    if gameplay_list == null or gameplay_list.get_selected_items().is_empty():
+        gameplay_details.text = "Select a script ID from the original Scripts list first."
+        return
+    var n := int(gameplay_list.get_selected_items()[0])
+    if n < 0 or n >= gameplay_visible.size():
+        gameplay_details.text = "No valid source script selected."
+        return
+    var script_id := str(gameplay_visible[n].get("id", ""))
+    var output := MissionKernelScriptView.script_details(
+        gameplay_kernel_comparison, script_id)
+    gameplay_details.text = output if not output.is_empty() else (
+        "No verified mission/Kernel script comparison for selection.")
+
+func _copy_mission_kernel_script_diff() -> void:
+    var summary := MissionKernelScriptView.summary(gameplay_kernel_comparison)
+    if summary.is_empty():
+        if status_label != null:
+            status_label.text = "No source-verified mission/Kernel summary to copy."
+        return
+    # Only aggregate numbers and offset clusters, NO source names or bytes.
+    DisplayServer.clipboard_set(summary)
+    if status_label != null:
+        status_label.text = "Copied sanitized mission/Kernel counts and offset clusters."
 
 
 ## Map-wide source-based index controls never imply a native FName
