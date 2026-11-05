@@ -15,7 +15,7 @@
 
 **Troubleshooting:** Double-click `CHECK_DX2ED.cmd` for offline preflight, or run `START_DX2ED.cmd --self-test` in a Windows Command Prompt to run **fifteen** completely synthetic Godot 4.3 headless fixture scripts and a project-startup check. Real game maps are not required for these checks. Windows Defender and SmartScreen may warn about a downloaded unsigned experimental executable; the two engine binaries are taken from the **official Godot 4.3 stable Standard Windows release** with upstream release checksum verification during packaging. Check `GODOT_LICENSE.txt` for Godot's separate redistribution notice.
 
-## New: DX2SDK v0.4 public Python API and console
+## New: DX2SDK v0.5 public Python API and console
 
 This Windows source-only prototype now contains **DX2SDK v0.4.0**, a
 public Python package (`dx2sdk/`) and `DX2SDK_CONSOLE.cmd` launcher.
