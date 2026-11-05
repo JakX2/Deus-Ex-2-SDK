@@ -23,6 +23,8 @@ REQUIRED = (
     "native_editor/godot_editor/main.gd",
     "native_editor/godot_editor/backend/dx2_native_backend.py",
     "native_editor/godot_editor/backend/dx2_collision_selection_cache.py",
+    "native_editor/godot_editor/backend/dx2_script_ibd_provenance.py",
+    "tools/scripts/dx2_script_bundle_probe.py",
     "native_editor/godot_editor/capsule_sweep_panel.gd",
     "native_editor/godot_editor/source_edge_capsule_height_replay.gd",
     "native_editor/godot_editor/python_runtime.gd",
