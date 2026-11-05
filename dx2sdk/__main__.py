@@ -175,8 +175,13 @@ def main(argv=None) -> int:
         elif args.command == "native-audit":
             report = project.native_location_audit()
             _json({"read_only": True, "original_map": project.source.name,
-                   "source_actor_count": report.get("actors_total"),
-                   "supported_static_mesh_actors": report.get("writable_location_actors"),
+                   "source_actor_count": report.get("total_actor_records"),
+                   "rendered_static_mesh_candidates":
+                       report.get("rendered_static_mesh_candidates"),
+                   "supported_static_mesh_actors":
+                       report.get("native_location_candidates"),
+                   "unsupported_static_mesh_candidates":
+                       report.get("unsupported_candidates"),
                    "schema": report.get("schema"),
                    "native_editing_supported": "translation_only",
                    "gameplay_runtime_verified": False})
