@@ -15,6 +15,35 @@
 
 **Troubleshooting:** Double-click `CHECK_DX2ED.cmd` for offline preflight, or run `START_DX2ED.cmd --self-test` in a Windows Command Prompt to run **fifteen** completely synthetic Godot 4.3 headless fixture scripts and a project-startup check. Real game maps are not required for these checks. Windows Defender and SmartScreen may warn about a downloaded unsigned experimental executable; the two engine binaries are taken from the **official Godot 4.3 stable Standard Windows release** with upstream release checksum verification during packaging. Check `GODOT_LICENSE.txt` for Godot's separate redistribution notice.
 
+## New: DX2SDK v0.1 public Python API and console
+
+This Windows source-only prototype now contains **DX2SDK v0.1.0**, a
+public Python package (`dx2sdk/`) and `DX2SDK_CONSOLE.cmd` launcher.
+You can use the source-backed SDK without launching Godot:
+
+```bat
+DX2SDK_CONSOLE.cmd --help
+DX2SDK_CONSOLE.cmd info --map "C:\\MyDX2\\Content\\DX2\\Maps\\OriginalMap.gmp"
+DX2SDK_CONSOLE.cmd actors --map "C:\\MyDX2\\Content\\DX2\\Maps\\OriginalMap.gmp" --class StaticMeshActor --limit 20
+```
+
+The SDK also offers original-script/IBD source reads and a **real but
+experimental native edit**: translate existing `StaticMeshActor` locations
+using exact original GMP + private matching `actors.json`, first through
+an automatic **dry run**, then (only with `--write`) a new copy in a
+separate, non-game folder. The isolated copy is re-opened and **every
+changed original byte** checked against allowed serialized Location fields.
+This is **binary verification, not proof that the retail game loads the
+edited map**. No original source GMP or IBD is modified. Arbitrary
+actor placement, BSP compilation, collision regeneration, native script
+writing and dialogue compilation remain unsupported.
+
+See **`dx2sdk/README.md`** in the extracted package for a complete
+Windows command guide, Python API examples, authoring limits and safety
+requirements. The SDK is available from repository checkout as
+`python -B -m dx2sdk` as well. It requires Python 3.11+ and reuses
+the included T3SDK-derived native package reader/writer.
+
 ## What this version can do
 
 - Launch DX2Ed on Windows without opening Godot Project Manager.
@@ -44,6 +73,8 @@ For a **working prototype** rather than a paper research PR, verify this sequenc
 
 - [ ] `CHECK_DX2ED.cmd` passes.
 - [ ] `START_DX2ED.cmd --self-test` passes 15/15 Godot fixtures and project startup.
+- [ ] `DX2SDK_CONSOLE.cmd --help` and `DX2SDK_CONSOLE.cmd info --map <own-original-map.gmp>` work without launching Godot; note the original actor count.
+- [ ] Optional native SDK write: use a SHA-matched DX2Ed actors.json and try `DX2SDK_CONSOLE.cmd move` **without** `--write` first. With a copied installation ready, write a fresh isolated GMP and verify it with `verify-move`. The original game and saves must remain untouched.
 - [ ] `START_DX2ED.cmd` opens a visible DX2Ed window.
 - [ ] **Load demo cubes** displays two colored synthetic cubes; scene selection and camera work.
 - [ ] Open one **owned original GMP** plus IBD resources, observe nonempty rendered geometry and actor list; reopen same map and confirm cache reuse.
@@ -62,13 +93,15 @@ If only the first four items pass, this is a functioning **viewer/synthetic prot
 
 ```text
 DX2Ed_Windows_Prototype/
-    START_DX2ED.cmd            # primary launch
+    START_DX2ED.cmd            # primary Godot GUI launch
+    DX2SDK_CONSOLE.cmd          # public Python SDK CLI launcher (read by default)
     CHECK_DX2ED.cmd            # verified Python interpreter, real worker imports, package doctor
     DIAGNOSE_GMP.cmd           # drag/drop source resource discovery precheck
     map_import_preflight.py    # sanitized local GMP/IBD resource resolver
     python_runtime.gd          # inside Godot project, uses verified Python
     startup_route.gd           # inside Godot project, direct --gmp routing
     prototype_doctor.py        # safe source-only preflight
+    dx2sdk/                    # SDK v0.1 public Python package + examples
     runtime/                   # official Godot 4.3 Standard Windows executables
     native_editor/godot_editor # source Godot project, 15 fixtures, IBD/Kernel script comparisons, index audit and authoring drafts
     native_editor/package_writer/
