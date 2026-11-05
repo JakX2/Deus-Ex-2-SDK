@@ -31,7 +31,7 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
     def test_standalone_source_zip_includes_all_runtime_modules_but_no_assets(self):
         report = build(ROOT, self.first)
         self.assertEqual(report["schema"], SCHEMA)
-        self.assertEqual(report["version"], "0.2.0")
+        self.assertEqual(report["version"], "0.3.0")
         self.assertFalse(report["includes_original_dx2_assets"])
         self.assertFalse(report["gameplay_runtime_verified"])
         self.assertGreater(report["file_count"], 12)
@@ -43,6 +43,7 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
             self.assertIn(f"{ARCHIVE}/dx2sdk/api.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/projects.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/catalog.py", names)
+            self.assertIn(f"{ARCHIVE}/dx2sdk/scalars.py", names)
             self.assertIn(f"{ARCHIVE}/actor_explorer/dx2_actor_explorer.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/__main__.py", names)
             self.assertIn(f"{ARCHIVE}/RUN_DX2SDK.cmd", names)
