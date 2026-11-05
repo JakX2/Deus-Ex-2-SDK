@@ -25,6 +25,8 @@ REQUIRED = (
     "native_editor/godot_editor/backend/dx2_collision_selection_cache.py",
     "native_editor/godot_editor/capsule_sweep_panel.gd",
     "native_editor/godot_editor/source_edge_capsule_height_replay.gd",
+    "native_editor/godot_editor/python_runtime.gd",
+    "native_editor/godot_editor/startup_route.gd",
     "native_editor/godot_editor/demo/scene.glb",
     "native_editor/godot_editor/demo/actors.json",
     "native_editor/package_writer/dx2_actor_clone_probe.py",
@@ -35,6 +37,8 @@ REQUIRED = (
     "third_party/t3sdk_assets/LICENSE",
     "GODOT_LICENSE.txt",
     "prototype-manifest.json",
+    "DIAGNOSE_GMP.cmd",
+    "map_import_preflight.py",
 )
 # Run these actual Python entry points with --help, not just AST.parse.
 # stdlib-only imports should work on a clean machine without any DX2 game
@@ -42,6 +46,7 @@ REQUIRED = (
 PREFLIGHT_WORKERS = (
     "native_editor/godot_editor/backend/dx2_native_backend.py",
     "native_editor/godot_editor/backend/dx2_zip_stage.py",
+    "map_import_preflight.py",
     "native_editor/godot_editor/backend/dx2_collision_selection_cache.py",
     "research/dx2/export_capsule_first_contact_preview.py",
     "native_editor/package_writer/dx2_actor_clone_probe.py",
