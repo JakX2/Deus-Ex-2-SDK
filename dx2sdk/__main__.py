@@ -11,6 +11,7 @@ import json
 import sys
 
 from .api import DX2Map, __version__
+from .projects import write_position_plan, apply_position_plan
 
 
 def _json(document):
@@ -91,6 +92,26 @@ def make_parser():
                       help="Fresh isolated folder/output with same GMP basename")
     move.add_argument("--write", action="store_true",
                       help="Explicitly create new copy (default is dry-run)")
+
+    plan = sub.add_parser(
+        "make-plan", help="Create fresh source-locked editable position plan JSON")
+    _add_source(plan, cache=True)
+    plan.add_argument("--actor", required=True)
+    plan.add_argument("--x", type=float, required=True)
+    plan.add_argument("--y", type=float, required=True)
+    plan.add_argument("--z", type=float, required=True)
+    plan.add_argument("--plan", required=True,
+                      help="Fresh private .json outside original game folders")
+
+    apply = sub.add_parser(
+        "apply-plan", help="Validate editable multi-actor plan and dry-run / write new map")
+    _add_source(apply, cache=True)
+    apply.add_argument("--plan", required=True,
+                       help="Source-locked DX2SDK-position-plan-v1 JSON")
+    apply.add_argument("--output", required=True,
+                       help="Fresh isolated GMP copy with original basename")
+    apply.add_argument("--write", action="store_true",
+                       help="Explicitly write new copy; otherwise dry-run")
 
     verify = sub.add_parser("verify-move",
                             help="Reverify binary integrity of isolated edited GMP")
@@ -198,6 +219,27 @@ def main(argv=None) -> int:
                    "status": report["status"],
                    "source_map": project.source.name,
                    "output_filename": project.source.name,
+                   "translated_existing_actors":
+                       len(report["translated_existing_actors"]),
+                   "independent_binary_verification":
+                       report.get("independent_binary_verification", None),
+                   "gameplay_runtime_verified": False,
+                   "no_original_game_files_modified": True})
+        elif args.command == "make-plan":
+            plan = write_position_plan(
+                project, {args.actor: [args.x, args.y, args.z]},
+                args.plan)
+            _json({"schema": plan["schema"], "status": "private_plan_created",
+                   "source_map": project.source.name,
+                   "planned_existing_actor_moves": len(plan["moves"]),
+                   "gameplay_runtime_verified": False,
+                   "native_script_edits_enabled": False})
+        elif args.command == "apply-plan":
+            report = apply_position_plan(
+                project, args.plan, args.output, write=args.write)
+            _json({"sdk_schema": report["sdk_schema"],
+                   "status": report["status"],
+                   "source_map": project.source.name,
                    "translated_existing_actors":
                        len(report["translated_existing_actors"]),
                    "independent_binary_verification":
