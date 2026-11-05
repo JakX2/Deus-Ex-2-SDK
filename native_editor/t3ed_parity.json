@@ -169,7 +169,7 @@
       "title": "Compile/cook/install and playtest missions",
       "status": "partial",
       "phase": 4,
-      "evidence": "DX2Ed source-only native GMP Location copy verification; DX2SDK v0.3 adds a source-locked public Python/Windows SDK, private actors.json generation, direct native property inspection and experimental isolated top-level int32/float32 tagged scalar editing, all with independent full-file byte validation and synthetic fixtures. Original retail game load remains unverified.",
+      "evidence": "DX2Ed source-only translation-only native GMP Location copy verification; DX2SDK v0.3 adds a source-locked public Python/Windows SDK, private actors.json generation, direct native property inspection and experimental isolated top-level int32/float32 tagged scalar editing, all with independent full-file byte validation and synthetic fixtures. Original retail game load remains unverified.",
       "next_step": "Real v95 retail GMP audit and test in a copied installation; verify map load and actor physics, then research rotation/other native fields and BSP/IBD writing."
     },
     {
