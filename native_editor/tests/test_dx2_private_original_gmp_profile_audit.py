@@ -229,6 +229,20 @@ class PrivateOriginalGmpHeightAuditTests(unittest.TestCase):
             audit.audit(self.manifest, self.output)
         self._assert_no_output_or_private_staging()
 
+    def test_unexpected_decoder_error_suppresses_sensitive_traceback(self):
+        captured_stdout, captured_stderr = io.StringIO(), io.StringIO()
+        with patch.object(audit.preview, "build",
+                          side_effect=RuntimeError("SECRET full retail GMP path and triangle data")):
+            with redirect_stdout(captured_stdout), redirect_stderr(captured_stderr):
+                rc = audit.main(["--manifest", str(self.manifest),
+                                 "--output", str(self.output)])
+        self.assertEqual(rc, 1)
+        self.assertEqual(json.loads(captured_stderr.getvalue()),
+                         {"status":"refused", "code":"source_recomputation_refused"})
+        self.assertEqual(captured_stdout.getvalue(), "")
+        self.assertNotIn("SECRET", captured_stderr.getvalue())
+        self._assert_no_output_or_private_staging()
+
     def test_private_manifest_size_and_invalid_json_refused(self):
         self.manifest.write_text("not JSON at all")
         with self.assertRaisesRegex(audit.AuditRefusal, "invalid_private_json"):
