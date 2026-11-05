@@ -260,7 +260,7 @@ def save_as_scalar_copy(
         "changed_byte_count": len(changed),
         "edits": edits,
         "source_original_modified": False,
-        "independent_byte_validation": not write,
+        "independent_byte_validation": False,
         "runtime_game_verified": False,
         "native_script_writer_enabled": False,
         "bsp_collision_rebuild_enabled": False,
