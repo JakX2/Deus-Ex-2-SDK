@@ -91,7 +91,16 @@ jobs:
           Push-Location unpacked/DX2Ed_Windows_Prototype
           & cmd.exe /d /c "START_DX2ED.cmd --self-test"
           $exitCode = $LASTEXITCODE
-          Pop-Location
           if ($exitCode -ne 0) {
             throw "DX2Ed bundled Windows prototype smoke failed with exit code $exitCode"
           }
+          & cmd.exe /d /c "DX2SDK_CONSOLE.cmd --help"
+          $sdkCode = $LASTEXITCODE
+          if ($sdkCode -ne 0) {
+            throw "DX2SDK public Windows console launcher failed with exit code $sdkCode"
+          }
+          & cmd.exe /d /c "DX2SDK_CONSOLE.cmd --version"
+          if ($LASTEXITCODE -ne 0) {
+            throw "DX2SDK public Windows console version command failed"
+          }
+          Pop-Location
