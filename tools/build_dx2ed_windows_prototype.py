@@ -54,6 +54,7 @@ REQUIRED = (
     "native_editor/godot_editor/backend/dx2_native_backend.py",
     "native_editor/godot_editor/backend/dx2_collision_selection_cache.py",
     "native_editor/godot_editor/backend/dx2_script_ibd_provenance.py",
+    "native_editor/godot_editor/backend/dx2_actor_script_name_candidates.py",
     "native_editor/godot_editor/tests/smoke_original_script_ibd_provenance.gd",
     "tools/scripts/dx2_script_bundle_probe.py",
     "native_editor/godot_editor/capsule_sweep_panel.gd",
