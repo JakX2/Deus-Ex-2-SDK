@@ -1,5 +1,5 @@
 @echo off
-rem DX2SDK v0.1 source-only portable Python CLI. No Godot runtime required.
+rem DX2SDK v0.3 source-only portable Python CLI. No Godot runtime required.
 rem Python 3.11+ is required, using python or the official py launcher.
 setlocal EnableExtensions
 cd /d "%~dp0"
