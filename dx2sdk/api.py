@@ -45,7 +45,7 @@ from dx2_native_save_as import (  # noqa: E402
 )
 from dx2_package_roundtrip import inspect_noop  # noqa: E402
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 SDK_SCHEMA = "DX2SDK-public-api-v0.1"
 MAX_GMP = 256 * 1024 * 1024
 MAX_MOVES = 10000
@@ -156,6 +156,7 @@ class DX2Map:
             "gameplay_runtime_verified": False,
             "native_supported_writer": "existing_StaticMeshActor_Location_only",
             "experimental_native_tagged_scalar_writer": "existing_StaticMeshActor_top_level_int32_float32_only",
+            "experimental_original_static_prop_clone": "source_neutral_unlinked_StaticMeshActor_only",
             "native_gamesys_writer_available": False,
             "script_writer_available": False,
             "dialogue_compiler_available": False,
@@ -319,6 +320,34 @@ class DX2Map:
             self.source, self.actors_file,
             Path(original_trigger_script_zip),
             Path(mission_ibd), Path(kernel_ibd))
+
+    def static_prop_clone_candidates(self, limit: int = 200) -> dict:
+        """Read-only, conservative original T3SDK clone eligibility list."""
+        from .clones import source_clone_candidates
+        return source_clone_candidates(self, limit=limit)
+
+    def clone_existing_static_prop(
+        self, *, original_export: int, original_actor: str,
+        delta_native_xyz: Sequence[float], output: str | Path,
+        write: bool = False,
+    ) -> dict:
+        """Experimental duplicate of one original static-mesh prop only.
+
+        Dry-run by default; new native export + Level ref allowed ONLY for
+        a state-idle unlinked source StaticMeshActor. Never modifies source,
+        never creates arbitrary new class actors or tests game runtime.
+        """
+        from .clones import clone_static_prop
+        return clone_static_prop(
+            self, original_export=original_export,
+            original_actor=original_actor,
+            delta_native_xyz=delta_native_xyz,
+            output=output, write=write)
+
+    def verify_saved_clone(self, output: str | Path) -> dict:
+        """Rebuild original prop clone from source and compare every byte."""
+        from .clones import verify_saved_clone
+        return verify_saved_clone(self, output)
 
     def native_scalar_fields(self, actor_name: str) -> dict:
         """Inspect source-authored, experimental writable numeric tagged fields.

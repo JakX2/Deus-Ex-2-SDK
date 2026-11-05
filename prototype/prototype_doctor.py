@@ -22,6 +22,7 @@ REQUIRED = (
     "dx2sdk/api.py",
     "dx2sdk/catalog.py",
     "dx2sdk/scalars.py",
+    "dx2sdk/clones.py",
     "dx2sdk/projects.py",
     "dx2sdk/__main__.py",
     "dx2sdk/README.md",
@@ -97,7 +98,7 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("includes_original_dx2_assets") is not False
                 or manifest.get("includes_havok_runtime") is not False
                 or manifest.get("gameplay_physics_or_walkability_verified") is not False
-                or manifest.get("public_dx2sdk_api_version") != "0.3.0"
+                or manifest.get("public_dx2sdk_api_version") != "0.4.0"
                 or manifest.get("public_dx2sdk_cli_included") is not True
                 or manifest.get("public_dx2sdk_gameplay_runtime_verified") is not False):
             issues.append("invalid_prototype_manifest")

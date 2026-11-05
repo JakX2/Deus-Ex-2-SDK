@@ -15,9 +15,9 @@
 
 **Troubleshooting:** Double-click `CHECK_DX2ED.cmd` for offline preflight, or run `START_DX2ED.cmd --self-test` in a Windows Command Prompt to run **fifteen** completely synthetic Godot 4.3 headless fixture scripts and a project-startup check. Real game maps are not required for these checks. Windows Defender and SmartScreen may warn about a downloaded unsigned experimental executable; the two engine binaries are taken from the **official Godot 4.3 stable Standard Windows release** with upstream release checksum verification during packaging. Check `GODOT_LICENSE.txt` for Godot's separate redistribution notice.
 
-## New: DX2SDK v0.3 public Python API and console
+## New: DX2SDK v0.4 public Python API and console
 
-This Windows source-only prototype now contains **DX2SDK v0.3.0**, a
+This Windows source-only prototype now contains **DX2SDK v0.4.0**, a
 public Python package (`dx2sdk/`) and `DX2SDK_CONSOLE.cmd` launcher.
 You can use the source-backed SDK without launching Godot:
 
@@ -55,6 +55,21 @@ The original GMP must pass a byte-identical T3SDK no-op reconstruction
 first. This is **not game-runtime tested**, not native GameSys editing,
 and it does not modify original game files, TriggerScripts, brushes or
 Havok collision. Full examples are in `dx2sdk/README.md`.
+
+**Experimental v0.4 original static prop duplicate:** use
+`DX2SDK_CONSOLE.cmd clone-candidates --map ORIGINAL.gmp` to list
+native source actors with the required idle state, no links and no
+unknown native tails. Only a returned **source actor name/export**
+can be passed to `clone-prop --map ORIGINAL.gmp --actor NAME
+--export NUMBER --dx 100 --dy 0 --dz 0 --output NEW_ISOLATED_GMP`.
+A dry-run is the default. Explicit `--write` creates one new
+`StaticMeshActor` export and appends a Level actor-list reference
+in a fresh GMP copy, with existing actor bytes otherwise preserved.
+`verify-clone --map ORIGINAL.gmp --output COPY.gmp` independently
+replays the exact clone from the original GMP and compares the
+entire output byte-for-byte. This is **not arbitrary NPC spawning,
+brush placement, collision rebuild or validated retail gameplay**;
+never install the experiment into your original game.
 
 For reusable projects, **`make-plan`** writes a new source-hash-locked
 editable JSON actor position plan, and **`apply-plan`** validates the

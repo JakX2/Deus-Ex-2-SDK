@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from tools.build_dx2sdk_source_release import build, SCHEMA, ARCHIVE, RETAIL_EXT
 from test_native_save_as import fixture_gmp
+from test_dx2_actor_clone_probe import level_fixture
 
 
 class SDKStandaloneSourceReleaseTests(unittest.TestCase):
@@ -31,7 +32,7 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
     def test_standalone_source_zip_includes_all_runtime_modules_but_no_assets(self):
         report = build(ROOT, self.first)
         self.assertEqual(report["schema"], SCHEMA)
-        self.assertEqual(report["version"], "0.3.0")
+        self.assertEqual(report["version"], "0.4.0")
         self.assertFalse(report["includes_original_dx2_assets"])
         self.assertFalse(report["gameplay_runtime_verified"])
         self.assertGreater(report["file_count"], 12)
@@ -44,6 +45,7 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
             self.assertIn(f"{ARCHIVE}/dx2sdk/projects.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/catalog.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/scalars.py", names)
+            self.assertIn(f"{ARCHIVE}/dx2sdk/clones.py", names)
             self.assertIn(f"{ARCHIVE}/actor_explorer/dx2_actor_explorer.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/__main__.py", names)
             self.assertIn(f"{ARCHIVE}/RUN_DX2SDK.cmd", names)
@@ -206,6 +208,45 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
         self.assertTrue(json.loads(verified.stdout)["verified_binary_structure"])
         self.assertEqual(source.read_bytes(), before)
         self.assertNotEqual(output.read_bytes(), before)
+
+    def test_extracted_source_archive_clones_source_idle_prop_and_verifies_replay(self):
+        # The lightweight source release, with NO repo in cwd, must contain
+        # enough T3SDK/UE95 code to clone exactly one synthetic source prop.
+        build(ROOT, self.first)
+        with ZipFile(self.first) as archive:
+            archive.extractall(self.root / "standalone_clone_extract")
+        sdk = self.root / "standalone_clone_extract" / ARCHIVE
+        source = self.root / "OriginalCloneFixture" / "M1_Test.gmp"
+        source.parent.mkdir(parents=True)
+        original = level_fixture(source)
+        output = self.root / "IsolatedOriginalClone" / source.name
+        def portable(*args):
+            return subprocess.run([
+                sys.executable, "-B", "-m", "dx2sdk", *args],
+                cwd=sdk, capture_output=True, text=True, timeout=60)
+        found = portable("clone-candidates", "--map", str(source),
+                         "--limit", "10")
+        self.assertEqual(found.returncode, 0, found.stderr)
+        self.assertEqual(json.loads(found.stdout)["candidate_count"], 1)
+        command = (
+            "clone-prop", "--map", str(source),
+            "--actor", "StaticMeshActor__1", "--export", "1",
+            "--dx", "100", "--dy", "0", "--dz", "0",
+            "--output", str(output))
+        dry = portable(*command)
+        self.assertEqual(dry.returncode, 0, dry.stderr)
+        self.assertFalse(output.exists())
+        written = portable(*command, "--write")
+        self.assertEqual(written.returncode, 0, written.stderr)
+        self.assertTrue(json.loads(written.stdout)[
+            "independent_full_binary_verification"])
+        checked = portable("verify-clone", "--map", str(source),
+                           "--output", str(output))
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        self.assertTrue(json.loads(checked.stdout)["verified_binary_structure"])
+        self.assertTrue(output.is_file())
+        self.assertEqual(source.read_bytes(), original)
+        self.assertNotEqual(output.read_bytes(), original)
 
     def test_deterministic_zip_source_hashes(self):
         build(ROOT, self.first)
