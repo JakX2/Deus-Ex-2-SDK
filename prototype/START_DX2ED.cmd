@@ -22,6 +22,7 @@ if /I "%~1"=="--self-test" (
     smoke_dialogue_design_draft.gd
     smoke_original_script_ibd_provenance.gd
     smoke_script_index_hypothesis_audit.gd
+    smoke_mission_kernel_script_view.gd
     smoke_triangle_picking.gd
     smoke_source_collision_picker.gd
     smoke_capsule_contact_preview.gd
