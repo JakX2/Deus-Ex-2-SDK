@@ -36,7 +36,7 @@ ZIP_DATE = (2026, 11, 5, 0, 0, 0)
 
 # Explicit source-only allowlist. No reader/user game path is ever traversed.
 ALLOWED = {
-    "native_editor/godot_editor": {".gd", ".tscn", ".godot", ".json", ".md"},
+    "native_editor/godot_editor": {".gd", ".tscn", ".godot", ".json", ".md", ".py"},
     "native_editor/package_writer": {".py", ".md", ".json"},
     "map_exporter": {".py", ".md"},
     "actor_explorer": {".py", ".md"},
