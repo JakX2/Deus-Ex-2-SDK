@@ -117,6 +117,23 @@ class NativeTaggedScalarWriterTests(unittest.TestCase):
         self.assertEqual(before, self.output.read_bytes())
         self.assertEqual(manifest, self.private_manifest.read_bytes())
 
+    def test_generated_source_only_actor_cache_enables_native_scalar_patch(self):
+        # A real user should not need Godot or an invented mesh display name
+        # for a source-verifiable existing authored IntProperty.
+        fresh = DX2Map.open(self.source)
+        auto = self.root / "SDKScanCache" / "actors.json"
+        scan = fresh.export_actor_catalog(auto)
+        self.assertEqual(scan["actor_count"], 1)
+        self.assertEqual(scan["writer_candidate_count"], 0)
+        scanned = DX2Map.open(self.source, auto)
+        fields = scanned.native_scalar_fields("StaticMeshActor__1")["fields"]
+        self.assertEqual(fields[0]["property"], "FixtureFlag")
+        report = scanned.save_as_scalar_changes(self.edits, self.output, write=True)
+        self.assertTrue(report["independent_byte_validation"])
+        self.assertTrue(scanned.verify_saved_scalar_changes(
+            self.output)["verified_binary_structure"])
+        self.assertEqual(self.source.read_bytes(), self.original_bytes)
+
     def test_reject_missing_original_cache_and_unknown_actor(self):
         no_cache = DX2Map.open(self.source)
         with self.assertRaisesRegex(ValueError, "actors.json"):
