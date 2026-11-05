@@ -2,6 +2,7 @@ extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
 const PythonRuntime = preload("res://python_runtime.gd")
 const StartupRoute = preload("res://startup_route.gd")
+const MissionLogicDraft = preload("res://mission_logic_draft.gd")
 const SourceCollisionPicker = preload("res://collision_source_picker.gd")
 const CapsuleContactPreview = preload("res://capsule_contact_preview.gd")
 const CapsuleSweepPanel = preload("res://capsule_sweep_panel.gd")
@@ -143,6 +144,16 @@ var gameplay_filter: LineEdit
 var gameplay_list: ItemList
 var gameplay_details: TextEdit
 var gameplay_visible: Array = []
+# Editable private mission-logic DESIGN ONLY. Never consumed by native GMP
+# Save As; original actor TriggerScript binary indices remain unresolved.
+var mission_logic_draft = MissionLogicDraft.new()
+var mission_plan_list: ItemList
+var mission_plan_note: LineEdit
+var mission_plan_add_button: Button
+var mission_plan_remove_button: Button
+var mission_plan_note_button: Button
+var mission_plan_save_button: Button
+var mission_plan_load_button: Button
 # v12: source AI-layer locations, deliberately NOT reconstructed NPCs.
 # These editor-only capsules never enter the imported GLB or GMP state.
 var ai_proxies_root: Node3D
@@ -747,6 +758,47 @@ func _make_ui() -> void:
     actor_script_button.tooltip_text = "Raw serialized indices are NOT verified TS_ script IDs."
     actor_script_button.pressed.connect(_inspect_selected_actor_scripts)
     gameplay_tab.add_child(actor_script_button)
+
+    var plan_heading := Label.new()
+    plan_heading.text = "TRIGGERSCRIPT DESIGN PLAN | private, not executable"
+    gameplay_tab.add_child(plan_heading)
+    var plan_row := HFlowContainer.new()
+    gameplay_tab.add_child(plan_row)
+    mission_plan_add_button = Button.new()
+    mission_plan_add_button.text = "Plan script on selected actor"
+    mission_plan_add_button.tooltip_text = "Record a hypothetical original script/actor association in a private draft. NOT a native TriggerScript assignment."
+    mission_plan_add_button.pressed.connect(_mission_plan_add)
+    plan_row.add_child(mission_plan_add_button)
+    mission_plan_remove_button = Button.new()
+    mission_plan_remove_button.text = "Remove plan"
+    mission_plan_remove_button.pressed.connect(_mission_plan_remove)
+    plan_row.add_child(mission_plan_remove_button)
+    mission_plan_save_button = Button.new()
+    mission_plan_save_button.text = "Save design"
+    mission_plan_save_button.pressed.connect(_mission_plan_save)
+    plan_row.add_child(mission_plan_save_button)
+    mission_plan_load_button = Button.new()
+    mission_plan_load_button.text = "Load design"
+    mission_plan_load_button.pressed.connect(_mission_plan_load)
+    plan_row.add_child(mission_plan_load_button)
+    mission_plan_list = ItemList.new()
+    mission_plan_list.custom_minimum_size.y = 85
+    mission_plan_list.item_selected.connect(_mission_plan_selected)
+    gameplay_tab.add_child(mission_plan_list)
+    var note_row := HFlowContainer.new()
+    gameplay_tab.add_child(note_row)
+    mission_plan_note = LineEdit.new()
+    mission_plan_note.placeholder_text = "Design note for planned actor/script link (max 400 chars)"
+    mission_plan_note.max_length = 400
+    mission_plan_note.custom_minimum_size.x = 260
+    mission_plan_note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    note_row.add_child(mission_plan_note)
+    mission_plan_note_button = Button.new()
+    mission_plan_note_button.text = "Update note"
+    mission_plan_note_button.pressed.connect(_mission_plan_set_note)
+    note_row.add_child(mission_plan_note_button)
+    _mission_plan_refresh()
+
     gameplay_details = TextEdit.new()
     gameplay_details.editable = false
     gameplay_details.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
@@ -1938,6 +1990,8 @@ func _clear_current_scene() -> void:
     loaded_actors_json_path = ""
     gameplay_catalog.clear()
     gameplay_visible.clear()
+    mission_logic_draft.clear()
+    _mission_plan_refresh()
     if gameplay_list != null:
         gameplay_list.clear()
     if gameplay_details != null:
@@ -2170,8 +2224,16 @@ func _original_gameplay_scripts_finished(code: int, response: String) -> void:
         or typeof(doc.get("script_definitions")) != TYPE_ARRAY):
         status_label.text = "Original gameplay catalog identity failed validation."
         return
+    # No shortcut from raw GMP TriggerScript integer indices to TS_ names:
+    # the draft records author intent only and cannot enter native Save As.
+    if not mission_logic_draft.initialize(doc, actors):
+        status_label.text = (
+            "Original gameplay browser rejected unverifiable actor/script identities: "
+            + mission_logic_draft.last_error)
+        return
     gameplay_catalog = doc
     _refresh_gameplay_script_list()
+    _mission_plan_refresh()
     var counts: Dictionary = doc.get("counts", {})
     status_label.text = (
         "Read-only gameplay: " + str(counts.get("scripts", 0))
@@ -2224,6 +2286,104 @@ func _gameplay_script_selected(index: int) -> void:
     lines.append("")
     lines.append("Not bound to a specific map actor. No executable edits.")
     gameplay_details.text = "\n".join(lines)
+
+
+## Source-verified authoring notes ONLY. Native binary writer and
+## gameplay engine never consume these private project-design rows.
+func _mission_plan_refresh() -> void:
+    if mission_plan_list == null:
+        return
+    mission_plan_list.clear()
+    for row in mission_logic_draft.rows:
+        mission_plan_list.add_item(
+            "Actor #%d %s : %s" % [
+                int(row["actor_export"]), str(row["actor_name"]), str(row["script_id"])
+            ])
+    if mission_plan_add_button != null:
+        mission_plan_add_button.disabled = not mission_logic_draft.ready
+    if mission_plan_save_button != null:
+        mission_plan_save_button.disabled = not mission_logic_draft.ready
+    if mission_plan_load_button != null:
+        mission_plan_load_button.disabled = not mission_logic_draft.ready
+    if mission_plan_remove_button != null:
+        mission_plan_remove_button.disabled = mission_logic_draft.rows.is_empty()
+    if mission_plan_note_button != null:
+        mission_plan_note_button.disabled = mission_logic_draft.rows.is_empty()
+
+func _mission_plan_add() -> void:
+    if not mission_logic_draft.ready or gameplay_list == null:
+        status_label.text = "Load a source-matched original GMP and TriggerScript ZIP first."
+        return
+    var chosen := gameplay_list.get_selected_items()
+    if chosen.is_empty() or int(chosen[0]) >= gameplay_visible.size():
+        status_label.text = "Choose an original TriggerScript from the Scripts list."
+        return
+    var actor: Dictionary = selected_actor
+    if is_instance_valid(selected_mesh) and actors_by_name.has(str(selected_mesh.name)):
+        actor = actors_by_name[str(selected_mesh.name)]
+    var original_script: Dictionary = gameplay_visible[int(chosen[0])]
+    if not mission_logic_draft.plan_actor_script(
+        str(original_script["id"]), actor, mission_plan_note.text):
+        status_label.text = "Design plan refused: " + mission_logic_draft.last_error
+        return
+    _mission_plan_refresh()
+    mission_plan_list.select(mission_logic_draft.rows.size() - 1)
+    status_label.text = (
+        "Added private script-binding DESIGN row. Original GMP/IBD unchanged; "
+        + "no executable script assigned.")
+
+func _mission_plan_selected(index: int) -> void:
+    if index < 0 or index >= mission_logic_draft.rows.size():
+        return
+    var row: Dictionary = mission_logic_draft.rows[index]
+    mission_plan_note.text = str(row["note"])
+    gameplay_details.text = (
+        "MISSION-LOGIC DESIGN ONLY | NOT A COMPILED TRIGGERSCRIPT BINDING"
+        + "\nOriginal actor: " + str(row["actor_name"])
+        + "\nOriginal class: " + str(row["actor_class"])
+        + "\nNative export: " + str(row["actor_export"])
+        + "\nSource script definition: " + str(row["script_id"])
+        + "\nAuthor's note: " + str(row["note"])
+        + "\n\nNot verified by an original mission-logic reference table."
+        + "\nNo GMP, IBD, native actor property or TriggerScript file will be changed.")
+
+func _mission_plan_set_note() -> void:
+    if mission_plan_list == null:
+        return
+    var chosen := mission_plan_list.get_selected_items()
+    if chosen.is_empty() or not mission_logic_draft.change_note(
+        int(chosen[0]), mission_plan_note.text):
+        status_label.text = "Design note update refused: " + mission_logic_draft.last_error
+        return
+    _mission_plan_selected(int(chosen[0]))
+    status_label.text = "Private design note updated in memory. Save design to persist."
+
+func _mission_plan_remove() -> void:
+    if mission_plan_list == null:
+        return
+    var chosen := mission_plan_list.get_selected_items()
+    if chosen.is_empty() or not mission_logic_draft.remove(int(chosen[0])):
+        status_label.text = "No valid design plan row selected for removal."
+        return
+    _mission_plan_refresh()
+    status_label.text = "Removed design-only script/actor plan. Source map unaffected."
+
+func _mission_plan_save() -> void:
+    if not mission_logic_draft.save_private():
+        status_label.text = "Design save refused: " + mission_logic_draft.last_error
+        return
+    status_label.text = (
+        "Saved %d design-only script/actor plans into DX2Ed private user data. "
+        + "No native GMP, IBD or scripts modified.") % mission_logic_draft.rows.size()
+
+func _mission_plan_load() -> void:
+    if not mission_logic_draft.load_private():
+        status_label.text = "Design load refused: " + mission_logic_draft.last_error
+        return
+    _mission_plan_refresh()
+    status_label.text = (
+        "Loaded %d source-matched private script-binding DESIGN rows. "
+        + "No original runtime behavior changed.") % mission_logic_draft.rows.size()
 
 
 func _inspect_selected_actor_scripts() -> void:
