@@ -17,7 +17,7 @@
 
 ## New: DX2SDK v0.4 public Python API and console
 
-This Windows source-only prototype now contains **DX2SDK v0.3.0**, a
+This Windows source-only prototype now contains **DX2SDK v0.4.0**, a
 public Python package (`dx2sdk/`) and `DX2SDK_CONSOLE.cmd` launcher.
 You can use the source-backed SDK without launching Godot:
 
