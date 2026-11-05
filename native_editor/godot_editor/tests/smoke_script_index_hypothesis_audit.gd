@@ -56,7 +56,7 @@ func _run() -> void:
         or not result.contains("OFFSET")
         or not result.contains("0 | 3 | 2 | 1 | 1")
         or not result.contains("No preferred offset is chosen")
-        or not result.contains("does NOT prove")
+        or not result.contains("do NOT prove")
         or not result.contains("Native TriggerScript editing")):
         _fail("Original map offset control counts not safely presented")
         return
