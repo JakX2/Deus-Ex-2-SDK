@@ -6,8 +6,7 @@ Our goal is a practical, UnrealEd-style modding SDK inspired by the original Deu
 
 ## New: DX2SDK v0.1 public Python API and Windows console
 
-A first reusable [DX2SDK API](dx2sdk/README.md) is now available, with a
-Python 3.11+ package (`from dx2sdk import DX2Map`) and a command-line
+DX2SDK v0.2 now has a [standalone Python API](dx2sdk/README.md) with native property inspection and direct original GMP-to-private-actors.json scanning, without Godot. The Python 3.11+ package (`from dx2sdk import DX2Map`) and a command-line
 interface (`python -B -m dx2sdk`). The native-editor Windows prototype
 also packages `DX2SDK_CONSOLE.cmd` next to `START_DX2ED.cmd`.
 A smaller **Python-only portable DX2SDK ZIP** (with `RUN_DX2SDK.cmd`,

@@ -15,12 +15,13 @@ from pathlib import Path
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCHIVE = "DX2SDK_Python_0.1.0"
+ARCHIVE = "DX2SDK_Python_0.2.0"
 SCHEMA = "DX2SDK-source-only-Python-portable-v0.1"
 DATE = (2026, 11, 5, 0, 0, 0)
 
 ALLOWED = {
     "dx2sdk": {".py", ".md"},
+    "actor_explorer": {".py"},
     "map_exporter": {".py"},
     "native_editor/godot_editor/backend": {".py"},
     "native_editor/package_writer": {".py"},
@@ -31,7 +32,10 @@ REQUIRED = (
     "dx2sdk/__init__.py",
     "dx2sdk/__main__.py",
     "dx2sdk/api.py",
+    "dx2sdk/catalog.py",
     "dx2sdk/projects.py",
+    "actor_explorer/dx2_actor_explorer.py",
+    "actor_explorer/dx2catalog.py",
     "dx2sdk/README.md",
     "dx2sdk/RUN_SDK_STANDALONE.cmd",
     "map_exporter/dx2inspect.py",
@@ -112,7 +116,7 @@ def build(source_root: Path, output: Path) -> dict:
     # It never embeds source system or user game paths or proprietary bytes.
     manifest = {
         "schema": SCHEMA,
-        "version": "0.1.0",
+        "version": "0.2.0",
         "python_minimum": "3.11",
         "requires_godot": False,
         "includes_original_dx2_assets": False,
@@ -143,7 +147,7 @@ def build(source_root: Path, output: Path) -> dict:
             raise ValueError("Created SDK ZIP has duplicate archive entries")
     return {
         "schema": SCHEMA,
-        "version": "0.1.0",
+        "version": "0.2.0",
         "file_count": len(files),
         "zip_bytes": target.stat().st_size,
         "includes_original_dx2_assets": False,

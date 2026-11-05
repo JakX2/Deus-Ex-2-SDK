@@ -15,9 +15,9 @@
 
 **Troubleshooting:** Double-click `CHECK_DX2ED.cmd` for offline preflight, or run `START_DX2ED.cmd --self-test` in a Windows Command Prompt to run **fifteen** completely synthetic Godot 4.3 headless fixture scripts and a project-startup check. Real game maps are not required for these checks. Windows Defender and SmartScreen may warn about a downloaded unsigned experimental executable; the two engine binaries are taken from the **official Godot 4.3 stable Standard Windows release** with upstream release checksum verification during packaging. Check `GODOT_LICENSE.txt` for Godot's separate redistribution notice.
 
-## New: DX2SDK v0.1 public Python API and console
+## New: DX2SDK v0.2 public Python API and console
 
-This Windows source-only prototype now contains **DX2SDK v0.1.0**, a
+This Windows source-only prototype now contains **DX2SDK v0.2.0**, a
 public Python package (`dx2sdk/`) and `DX2SDK_CONSOLE.cmd` launcher.
 You can use the source-backed SDK without launching Godot:
 
@@ -25,6 +25,8 @@ You can use the source-backed SDK without launching Godot:
 DX2SDK_CONSOLE.cmd --help
 DX2SDK_CONSOLE.cmd info --map "C:\\MyDX2\\Content\\DX2\\Maps\\OriginalMap.gmp"
 DX2SDK_CONSOLE.cmd actors --map "C:\\MyDX2\\Content\\DX2\\Maps\\OriginalMap.gmp" --class StaticMeshActor --limit 20
+DX2SDK_CONSOLE.cmd scan-map --map "C:\\MyDX2\\Content\\DX2\\Maps\\OriginalMap.gmp" --output "D:\\MyDX2SDK\\OriginalMap\\actors.json"
+DX2SDK_CONSOLE.cmd inspect-actor --map "C:\\MyDX2\\Content\\DX2\\Maps\\OriginalMap.gmp" --export 15
 ```
 
 The SDK also offers original-script/IBD source reads and a **real but
@@ -32,6 +34,14 @@ experimental native edit**: translate existing `StaticMeshActor` locations
 using exact original GMP + private matching `actors.json`, first through
 an automatic **dry run**, then (only with `--write`) a new copy in a
 separate, non-game folder.
+**The source-only `scan-map` command can now create the exact
+original-map-matched private `actors.json` directly from your GMP,
+without the GUI.** It scans native actor identity and property blocks
+and marks unresolved mesh references as non-writable. Original source
+files are read-only, and the new cache must live outside game folders.
+`inspect-actor` shows existing tagged/GameSys property values with
+opaque formats explicitly labeled; it is not a property writer.
+
 For reusable projects, **`make-plan`** writes a new source-hash-locked
 editable JSON actor position plan, and **`apply-plan`** validates the
 original GMP and private actor-cache hashes plus every actor export
