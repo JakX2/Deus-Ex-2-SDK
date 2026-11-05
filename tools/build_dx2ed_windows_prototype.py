@@ -213,8 +213,10 @@ def build(source_root: Path, godot_zip: Path, godot_license: Path,
             members = [x.filename for x in verification.infolist()]
             if len(members) != len(set(members)):
                 raise ValueError("Duplicate paths in prototype ZIP")
+            safe_demo = (f"{ARCHIVE_ROOT}/native_editor/godot_editor/demo/scene.glb")
             forbidden = [x for x in members if Path(x).suffix.lower() in DENIED_EXT
-                         and not x.startswith(f"{ARCHIVE_ROOT}/runtime/")]
+                         and not x.startswith(f"{ARCHIVE_ROOT}/runtime/")
+                         and x != safe_demo]
             if forbidden:
                 raise ValueError("Retail asset or executable outside Godot runtime included")
     except BaseException:
