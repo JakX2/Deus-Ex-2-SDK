@@ -131,10 +131,14 @@ def export_report(map_file: Path, actors_file: Path, scripts_file: Path,
     sources = [Path(p).expanduser().resolve(strict=True)
                for p in (map_file, actors_file, scripts_file, ibd_file)]
     target = Path(output).expanduser().resolve()
+    # Never write into the original game source directory, its descendants
+    # OR its ancestor install/content directories. The actors.json cache is
+    # private editor data, so it need not impose the same ancestor boundary.
+    protected = tuple(p.parent for p in (sources[0], sources[2], sources[3]))
     if (target.suffix.casefold() != ".json" or target.exists()
             or any(target == src for src in sources)
-            or any(parent == target.parent or parent in target.parents
-                   for src in sources for parent in (src.parent,))):
+            or any(folder == target.parent or folder in target.parents
+                   or target.parent in folder.parents for folder in protected)):
         raise ValueError("New private JSON must be outside original source directories")
     doc = build_evidence(*sources)
     target.parent.mkdir(parents=True, exist_ok=True)
