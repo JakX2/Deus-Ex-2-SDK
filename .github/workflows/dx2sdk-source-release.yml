@@ -1,0 +1,73 @@
+name: DX2SDK standalone Python source ZIP and CLI smoke
+
+on:
+  push:
+    paths:
+      - 'dx2sdk/**'
+      - 'map_exporter/**'
+      - 'native_editor/**'
+      - 'tools/**'
+      - 'third_party/t3sdk_assets/**'
+      - '.github/workflows/dx2sdk-source-release.yml'
+  pull_request:
+    paths:
+      - 'dx2sdk/**'
+      - 'map_exporter/**'
+      - 'native_editor/**'
+      - 'tools/**'
+      - 'third_party/t3sdk_assets/**'
+      - '.github/workflows/dx2sdk-source-release.yml'
+  workflow_dispatch:
+
+jobs:
+  source-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test native DX2SDK Python public API and standalone distribution
+        run: python -B -m unittest discover -s native_editor/tests -p 'test_dx2sdk_*.py' -v
+      - name: Build standalone no-retail-assets Python SDK ZIP
+        shell: bash
+        run: |
+          python -B tools/build_dx2sdk_source_release.py --output "${RUNNER_TEMP}/DX2SDK_Python_0.1.0.zip"
+          mkdir -p "${RUNNER_TEMP}/dx2sdk-extracted"
+          unzip -q "${RUNNER_TEMP}/DX2SDK_Python_0.1.0.zip" -d "${RUNNER_TEMP}/dx2sdk-extracted"
+          cd "${RUNNER_TEMP}/dx2sdk-extracted/DX2SDK_Python_0.1.0"
+          python -B -m dx2sdk --help
+          python -B -m dx2sdk --version
+      - name: Upload SDK v0.1 Python-only portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: DX2SDK_Python_v0_1_Portable
+          path: ${{ runner.temp }}/DX2SDK_Python_0.1.0.zip
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  windows-cli:
+    name: Extract standalone DX2SDK and run Python CLI on Windows
+    runs-on: windows-latest
+    timeout-minutes: 10
+    needs: source-release
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: DX2SDK_Python_v0_1_Portable
+          path: .
+      - name: Validate portable ZIP and Windows RUN_DX2SDK.cmd
+        shell: pwsh
+        run: |
+          Expand-Archive -Path DX2SDK_Python_0.1.0.zip -DestinationPath unpacked
+          Push-Location unpacked/DX2SDK_Python_0.1.0
+          & cmd.exe /d /c "RUN_DX2SDK.cmd --help"
+          if ($LASTEXITCODE -ne 0) { throw "DX2SDK Windows source CLI --help failed" }
+          & cmd.exe /d /c "RUN_DX2SDK.cmd --version"
+          if ($LASTEXITCODE -ne 0) { throw "DX2SDK Windows source CLI --version failed" }
+          Pop-Location
