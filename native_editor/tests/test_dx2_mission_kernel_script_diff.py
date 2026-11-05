@@ -156,6 +156,73 @@ class MissionKernelComparisonTests(unittest.TestCase):
         self.assertTrue(identical["byte_equal"])
         self.assertIsNone(identical["first_difference_offset"])
 
+    def test_candidate_word4_only_vs_word4_plus_other_changes(self):
+        original = b"ABCD" + b"\x00\x00\x00\x00" + b"ABCDEFG"
+        only_field = b"ABCD" + b"\x00\x05\x00\x00" + b"ABCDEFG"
+        both_changed = b"ABCD" + b"\x00\x05\x00\x00" + b"AXCDEFG"
+        p = byte_difference(original, only_field)
+        self.assertTrue(p["candidate_word4_4byte_slot_comparable"])
+        self.assertTrue(p["candidate_word4_only_difference"])
+        self.assertFalse(p["candidate_word4_and_other_changes"])
+        self.assertFalse(p["candidate_non_word4_or_length_difference"])
+        self.assertEqual(p["candidate_word4_differing_bytes"], 1)
+        self.assertEqual(p["first_difference_offset"], 5)
+        p = byte_difference(original, both_changed)
+        self.assertFalse(p["candidate_word4_only_difference"])
+        self.assertTrue(p["candidate_word4_and_other_changes"])
+        self.assertEqual(p["overlapping_different_bytes"], 2)
+        shortened = byte_difference(original, only_field[:-1])
+        self.assertFalse(shortened["candidate_word4_only_difference"])
+        self.assertTrue(shortened["candidate_word4_and_other_changes"])
+        same = byte_difference(original, original)
+        self.assertFalse(same["candidate_word4_changed"])
+        self.assertFalse(same["candidate_word4_only_difference"])
+
+    def test_disjoint_mission_kernel_actor_name_slots_are_retained(self):
+        # The native slot probe uses "not_found" for a missing IBD
+        # resource; the comparison rows use "absent" for the same state.
+        def probe(first, second):
+            return {
+                "status": "original_package_name_slots_inspected",
+                "actors": [{
+                    "actor": "Door", "class": "D_1", "export": 7,
+                    "status": "numeric_array_redecoded",
+                    "native_game_property_92_verified": True,
+                    "candidates": [{
+                        "raw_compact_integer": 3,
+                        "name_at_same_numeric_slot": "TS_DOOR",
+                        "same_name_in_original_tsd_archive": True,
+                        "slot_in_package_name_table": True,
+                        "ibd_resource_payload_status": first,
+                        "actor_runtime_link_verified": False,
+                    }, {
+                        "raw_compact_integer": 5,
+                        "name_at_same_numeric_slot": "TS_KERN",
+                        "same_name_in_original_tsd_archive": True,
+                        "slot_in_package_name_table": True,
+                        "ibd_resource_payload_status": second,
+                        "actor_runtime_link_verified": False,
+                    }]
+                }]
+            }
+        left = probe("different_payload", "not_found")
+        right = probe("not_found", "exact_payload")
+        m = {"ts_door": {"status": "different_payload"}}
+        k = {"ts_kern": {"status": "exact_payload"}}
+        result = _actor_reference_summary(left, right, m, k)
+        self.assertEqual(result["status"],
+                         "verified_original_name_slot_candidates_not_runtime_bindings")
+        self.assertEqual(result["raw_name_slot_candidate_occurrences"], 2)
+        self.assertEqual(result["actors_with_verified_numeric_arrays"], 1)
+        self.assertEqual(result["transition_counts"], {
+            "different_payload_to_absent": 1,
+            "absent_to_exact_payload": 1,
+        })
+        self.assertFalse(result["original_actor_script_runtime_links_verified"])
+        forged = probe("different_payload", "exact_payload")
+        invalid = _actor_reference_summary(forged, right, m, k)
+        self.assertEqual(invalid["status"], "source_actor_name_slots_unavailable")
+
     def test_reject_modified_gmp_cache_identity(self):
         self.map.write_bytes(self.map.read_bytes() + b"CHANGED")
         with self.assertRaisesRegex(ValueError, "cache does not match"):

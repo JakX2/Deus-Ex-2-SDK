@@ -55,7 +55,26 @@ def byte_difference(a: bytes, b: bytes) -> dict:
     while (tail < overlap - prefix and a[len(a) - 1 - tail] ==
            b[len(b) - 1 - tail]):
         tail += 1
+    # Header-relative payload bytes 4..7 (little-endian u32-sized slot) are
+    # tested as a *hypothesis only*: no assertion that these bytes are a
+    # checksum/version/size/script reference. Count changes without exporting
+    # the original four-byte field or its integer interpretation.
+    word4_range = range(4, 8)
+    word4_comparable = len(a) >= 8 and len(b) >= 8
+    word4_changed_count = (sum(a[i] != b[i] for i in word4_range)
+                           if word4_comparable else 0)
+    word4_changed = word4_comparable and word4_changed_count > 0
+    other_changed = (
+        len(a) != len(b) or
+        any(a[i] != b[i] for i in range(overlap)
+            if i not in word4_range))
     return {
+        "candidate_word4_4byte_slot_comparable": word4_comparable,
+        "candidate_word4_changed": word4_changed,
+        "candidate_word4_differing_bytes": word4_changed_count,
+        "candidate_word4_only_difference": word4_changed and not other_changed,
+        "candidate_word4_and_other_changes": word4_changed and other_changed,
+        "candidate_non_word4_or_length_difference": other_changed,
         "byte_equal": a == b,
         "left_size": len(a),
         "right_size": len(b),
@@ -145,11 +164,16 @@ def _actor_reference_summary(first: dict, second: dict,
             if not isinstance(name, str):
                 return common
             key = name.casefold()
-            # Validate every counted status against the independent source
-            # IBD resource evidence, NOT labels from untrusted actor rows.
+            # Raw GMP name-slot probes encode missing script resources as
+            # 'not_found'. The cross-bundle comparison report calls the
+            # same missing-resource state 'absent'. Translate only for
+            # validation. This matters when original mission and Kernel IBD
+            # script IDs are DISJOINT, as on the real Club map.
             mstatus, kstatus = _status(mission.get(key)), _status(kernel.get(key))
-            if (x.get("ibd_resource_payload_status") != mstatus
-                    or y.get("ibd_resource_payload_status") != kstatus):
+            m_probe = "not_found" if mstatus == "absent" else mstatus
+            k_probe = "not_found" if kstatus == "absent" else kstatus
+            if (x.get("ibd_resource_payload_status") != m_probe
+                    or y.get("ibd_resource_payload_status") != k_probe):
                 return common
             counts[f"{mstatus}_to_{kstatus}"] += 1
             references += 1
