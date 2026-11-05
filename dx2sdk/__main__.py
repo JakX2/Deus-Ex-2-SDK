@@ -114,6 +114,35 @@ def make_parser():
     _add_source(clone_verify)
     clone_verify.add_argument("--output", required=True)
 
+    multi_plan = sub.add_parser(
+        "make-multi-clone-plan",
+        help="Write a source-locked 2..8 original static prop duplicate plan JSON")
+    _add_source(multi_plan)
+    multi_plan.add_argument(
+        "--copy", action="append", nargs=4,
+        metavar=("EXPORT", "DX", "DY", "DZ"), required=True,
+        help="Repeat 2..8 times. Original export ID and native delta X/Y/Z")
+    multi_plan.add_argument(
+        "--plan", required=True,
+        help="Fresh private .json, never inside game Content/DX2/Maps")
+
+    multi_apply = sub.add_parser(
+        "apply-multi-clone-plan",
+        help="Dry-run or explicitly save 2..8 source-verified prop duplicates")
+    _add_source(multi_apply)
+    multi_apply.add_argument("--plan", required=True,
+                             help="DX2SDK native source-locked clone plan JSON")
+    multi_apply.add_argument("--output", required=True,
+                             help="Fresh isolated GMP with original map basename")
+    multi_apply.add_argument("--write", action="store_true",
+                             help="Explicitly write new GMP; dry-run otherwise")
+
+    multi_verify = sub.add_parser(
+        "verify-multi-clone",
+        help="Recreate original 2..8 source prop copies and check every GMP byte")
+    _add_source(multi_verify)
+    multi_verify.add_argument("--output", required=True)
+
     fields = sub.add_parser(
         "scalar-fields",
         help="List original 4-byte int/float tagged fields eligible for experimental Save As")
@@ -235,6 +264,26 @@ def _compare_summary(doc):
     }
 
 
+def _parse_native_multi_clone_copies(world, groups):
+    if not isinstance(groups, list) or not 2 <= len(groups) <= 8:
+        raise ValueError("Provide 2..8 explicit original --copy EXPORT DX DY DZ rows")
+    result = []
+    for item in groups:
+        try:
+            export = int(item[0], 10)
+            if export < 1 or export > len(world._package.exports):
+                raise ValueError()
+            delta = [float(n) for n in item[1:4]]
+        except (ValueError, OverflowError, TypeError):
+            raise ValueError("Original clone source export or relative delta invalid") from None
+        source = world._package.exports[export - 1]
+        if world._package.class_name(source) != "StaticMeshActor":
+            raise ValueError("Only original native StaticMeshActor exports may be cloned")
+        result.append({"actor": source["name"], "export": export,
+                       "delta": delta})
+    return result
+
+
 def main(argv=None) -> int:
     parser = make_parser()
     args = parser.parse_args(argv)
@@ -307,6 +356,34 @@ def main(argv=None) -> int:
                    "verified_binary_structure": report["verified_binary_structure"],
                    "new_export": report["new_export"],
                    "new_clone_state_normalized": report["new_clone_state_normalized"],
+                   "gameplay_runtime_verified": False})
+        elif args.command == "make-multi-clone-plan":
+            copies = _parse_native_multi_clone_copies(project, args.copy)
+            report = project.write_multi_clone_plan(copies, args.plan)
+            _json({"schema": report["schema"],
+                   "status": "source_locked_private_clone_plan_created",
+                   "source_map": project.source.name,
+                   "planned_existing_static_prop_copies": len(report["copies"]),
+                   "runtime_game_verified": False,
+                   "native_arbitrary_actor_spawning_enabled": False})
+        elif args.command == "apply-multi-clone-plan":
+            report = project.apply_multi_clone_plan(
+                args.plan, args.output, write=args.write)
+            _json({"schema": report["schema"], "status": report["status"],
+                   "existing_static_prop_copies": len(report["copies"]),
+                   "new_export_count": report["new_export_count"],
+                   "independent_full_binary_verification":
+                       report.get("independent_full_binary_verification", False),
+                   "runtime_game_verified": False,
+                   "native_arbitrary_actor_spawning_enabled": False})
+        elif args.command == "verify-multi-clone":
+            report = project.verify_saved_multi_clone(args.output)
+            _json({"schema": report["schema"],
+                   "verified_binary_structure":
+                       report["verified_binary_structure"],
+                   "new_actor_count": report["new_actor_count"],
+                   "new_clones_state_normalized":
+                       report["new_clones_state_normalized"],
                    "gameplay_runtime_verified": False})
         elif args.command == "scalar-fields":
             report = project.native_scalar_fields(args.actor)
