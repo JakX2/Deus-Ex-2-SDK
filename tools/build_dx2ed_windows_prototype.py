@@ -146,7 +146,7 @@ def build(source_root: Path, godot_zip: Path, godot_license: Path,
         raise ValueError("Expected fresh output and official Godot input files")
     license_bytes = godot_license.read_bytes()
     if (not 100 <= len(license_bytes) <= 100_000
-            or b"MIT" not in license_bytes
+            or b"Permission is hereby granted" not in license_bytes
             or b"Godot" not in license_bytes):
         raise ValueError("Missing Godot engine MIT redistribution notice")
 
@@ -174,12 +174,23 @@ def build(source_root: Path, godot_zip: Path, godot_license: Path,
         "native_bsp_or_mopp_writer_available": False,
         "native_gmp_save_as_location_experiment": True,
         "synthetic_scene_included": True,
-        "file_count_excluding_runtime": len(sources) + len(generated) + 5,
+        "file_count_excluding_runtime": len(sources) + len(generated) + 2,
         "read_only_default": True,
     }
     try:
         with ZipFile(godot_zip, "r") as upstream:
             runtime = _godot_zip_entries(upstream)
+            checksums = {}
+            for name in GODOT_BINARIES:
+                digest = hashlib.sha256()
+                with upstream.open(runtime[name]) as file:
+                    if file.read(2) != b"MZ":
+                        raise ValueError("Official Godot binary is not a Windows PE executable")
+                    file.seek(0)
+                    for block in iter(lambda: file.read(1024 * 1024), b""):
+                        digest.update(block)
+                checksums[name] = digest.hexdigest()
+            result["runtime_sha256"] = checksums
             with ZipFile(output, "x", compression=ZIP_DEFLATED, compresslevel=6,
                          allowZip64=True) as archive:
                 for name, src in sources:
