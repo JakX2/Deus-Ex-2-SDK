@@ -19,6 +19,7 @@ if /I "%~1"=="--self-test" (
   for %%S in (
     smoke_python_runtime.gd
     smoke_mission_logic_draft.gd
+    smoke_dialogue_design_draft.gd
     smoke_triangle_picking.gd
     smoke_source_collision_picker.gd
     smoke_capsule_contact_preview.gd

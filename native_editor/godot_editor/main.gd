@@ -3,6 +3,7 @@ const BrushGeometry = preload("res://brush_geometry.gd")
 const PythonRuntime = preload("res://python_runtime.gd")
 const StartupRoute = preload("res://startup_route.gd")
 const MissionLogicDraft = preload("res://mission_logic_draft.gd")
+const DialogueDesignDraft = preload("res://dialogue_design_draft.gd")
 const SourceCollisionPicker = preload("res://collision_source_picker.gd")
 const CapsuleContactPreview = preload("res://capsule_contact_preview.gd")
 const CapsuleSweepPanel = preload("res://capsule_sweep_panel.gd")
@@ -154,6 +155,22 @@ var mission_plan_remove_button: Button
 var mission_plan_note_button: Button
 var mission_plan_save_button: Button
 var mission_plan_load_button: Button
+# Editor-owned conversation graph design. Does NOT change original dialogue,
+# localized text resources, mission logic, speech, or any DX2 game file.
+var dialogue_design = DialogueDesignDraft.new()
+var dialogue_list: ItemList
+var dialogue_speaker_label: Label
+var dialogue_text: TextEdit
+var dialogue_choices_list: ItemList
+var dialogue_choice_caption: LineEdit
+var dialogue_choice_target: SpinBox
+var dialogue_add_button: Button
+var dialogue_update_button: Button
+var dialogue_delete_button: Button
+var dialogue_choice_add_button: Button
+var dialogue_choice_remove_button: Button
+var dialogue_save_button: Button
+var dialogue_load_button: Button
 # v12: source AI-layer locations, deliberately NOT reconstructed NPCs.
 # These editor-only capsules never enter the imported GLB or GMP state.
 var ai_proxies_root: Node3D
@@ -805,6 +822,86 @@ func _make_ui() -> void:
     gameplay_details.custom_minimum_size.y = 180
     gameplay_details.text = "Open a GMP and its original TriggerScript.zip. No native script binding or NPC spawning yet."
     gameplay_tab.add_child(gameplay_details)
+
+    # A separate authored conversation graph. No attempt to decode retail
+    # dialogue resources or treat drafts as a game's spoken conversations.
+    var dialogue_tab := VBoxContainer.new()
+    dialogue_tab.name = "Dialogue"
+    left_tabs.add_child(dialogue_tab)
+    var dialogue_header := Label.new()
+    dialogue_header.text = "DIALOGUE TREE DESIGN | LOCAL ONLY | NOT IN-GAME"
+    dialogue_tab.add_child(dialogue_header)
+    var dialogue_note := Label.new()
+    dialogue_note.text = "Select an ORIGINAL actor in Hierarchy to add a draft line. Branch by line number. Save locally."
+    dialogue_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    dialogue_tab.add_child(dialogue_note)
+    dialogue_list = ItemList.new()
+    dialogue_list.custom_minimum_size.y = 140
+    dialogue_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    dialogue_list.item_selected.connect(_dialogue_line_selected)
+    dialogue_tab.add_child(dialogue_list)
+    dialogue_speaker_label = Label.new()
+    dialogue_speaker_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    dialogue_speaker_label.text = "No source map actor loaded."
+    dialogue_tab.add_child(dialogue_speaker_label)
+    dialogue_text = TextEdit.new()
+    dialogue_text.custom_minimum_size.y = 90
+    dialogue_text.placeholder_text = "Write a draft conversation line. Original DX2 speech/localization is untouched."
+    dialogue_tab.add_child(dialogue_text)
+    var dialogue_tools := HFlowContainer.new()
+    dialogue_tab.add_child(dialogue_tools)
+    dialogue_add_button = Button.new()
+    dialogue_add_button.text = "Add line for selected actor"
+    dialogue_add_button.pressed.connect(_dialogue_add_line)
+    dialogue_tools.add_child(dialogue_add_button)
+    dialogue_update_button = Button.new()
+    dialogue_update_button.text = "Update line text"
+    dialogue_update_button.pressed.connect(_dialogue_update_line)
+    dialogue_tools.add_child(dialogue_update_button)
+    dialogue_delete_button = Button.new()
+    dialogue_delete_button.text = "Delete line"
+    dialogue_delete_button.pressed.connect(_dialogue_delete_line)
+    dialogue_tools.add_child(dialogue_delete_button)
+    var branch_header := Label.new()
+    branch_header.text = "Branches from selected line (authoring only):"
+    dialogue_tab.add_child(branch_header)
+    dialogue_choices_list = ItemList.new()
+    dialogue_choices_list.custom_minimum_size.y = 85
+    dialogue_tab.add_child(dialogue_choices_list)
+    var branch_row := HFlowContainer.new()
+    dialogue_tab.add_child(branch_row)
+    dialogue_choice_caption = LineEdit.new()
+    dialogue_choice_caption.placeholder_text = "Choice text, e.g. Ask about WTO"
+    dialogue_choice_caption.max_length = 160
+    dialogue_choice_caption.custom_minimum_size.x = 160
+    dialogue_choice_caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    branch_row.add_child(dialogue_choice_caption)
+    dialogue_choice_target = SpinBox.new()
+    dialogue_choice_target.prefix = "Target #"
+    dialogue_choice_target.min_value = 1
+    dialogue_choice_target.max_value = 100000
+    dialogue_choice_target.step = 1
+    dialogue_choice_target.rounded = true
+    branch_row.add_child(dialogue_choice_target)
+    var branch_buttons := HFlowContainer.new()
+    dialogue_tab.add_child(branch_buttons)
+    dialogue_choice_add_button = Button.new()
+    dialogue_choice_add_button.text = "Connect choice"
+    dialogue_choice_add_button.pressed.connect(_dialogue_add_choice)
+    branch_buttons.add_child(dialogue_choice_add_button)
+    dialogue_choice_remove_button = Button.new()
+    dialogue_choice_remove_button.text = "Remove choice"
+    dialogue_choice_remove_button.pressed.connect(_dialogue_remove_choice)
+    branch_buttons.add_child(dialogue_choice_remove_button)
+    dialogue_save_button = Button.new()
+    dialogue_save_button.text = "Save dialogue design"
+    dialogue_save_button.pressed.connect(_dialogue_save)
+    branch_buttons.add_child(dialogue_save_button)
+    dialogue_load_button = Button.new()
+    dialogue_load_button.text = "Load dialogue design"
+    dialogue_load_button.pressed.connect(_dialogue_load)
+    branch_buttons.add_child(dialogue_load_button)
+    _dialogue_refresh()
 
     # The v10 visual properties extend the Environment inspector. Keep all
     # previous source controls reachable on smaller Windows screens.
@@ -1921,6 +2018,7 @@ func load_actors(path: String) -> void:
         semi_lit_toggle.disabled = not _semi_lit_has_valid_source_lights()
     _refresh_semi_lit_scene()
     _load_source_gamesys_catalog(path.get_base_dir().path_join("gamesys_inspector.json"))
+    _dialogue_initialize_from_current_map()
     status_label.text = "Loaded %d actors, %d meshes. Click a mesh or select an actor." % [actors.size(), mesh_count]
 
 func _clear_current_scene() -> void:
@@ -1992,6 +2090,8 @@ func _clear_current_scene() -> void:
     gameplay_visible.clear()
     mission_logic_draft.clear()
     _mission_plan_refresh()
+    dialogue_design.clear()
+    _dialogue_refresh()
     if gameplay_list != null:
         gameplay_list.clear()
     if gameplay_details != null:
@@ -2384,6 +2484,151 @@ func _mission_plan_load() -> void:
     status_label.text = (
         "Loaded %d source-matched private script-binding DESIGN rows. "
         + "No original runtime behavior changed.") % mission_logic_draft.rows.size()
+
+
+## Dialogue authoring is a private document bound to an unchanged original
+## GMP, NOT a decoded conversation format or any native game script editor.
+func _dialogue_initialize_from_current_map() -> void:
+    dialogue_design.clear()
+    if (last_gmp_path.is_empty()
+        or not FileAccess.file_exists(last_gmp_path)
+        or current_source_map_name != last_gmp_path.get_file()
+        or source_gamesys_sha256.length() != 64
+        or not source_gamesys_sha256.is_valid_hex_number()
+        or FileAccess.get_sha256(last_gmp_path) != source_gamesys_sha256):
+        _dialogue_refresh()
+        return
+    dialogue_design.initialize(
+        current_source_map_name, source_gamesys_sha256, actors)
+    _dialogue_refresh()
+
+func _dialogue_selected_id() -> int:
+    if dialogue_list == null:
+        return -1
+    var selection := dialogue_list.get_selected_items()
+    if selection.is_empty() or int(selection[0]) >= dialogue_design.nodes.size():
+        return -1
+    return int(dialogue_design.nodes[int(selection[0])]["id"])
+
+func _dialogue_refresh(select_id: int = -1) -> void:
+    if dialogue_list == null:
+        return
+    dialogue_list.clear()
+    var selected_index := -1
+    for i in dialogue_design.nodes.size():
+        var line: Dictionary = dialogue_design.nodes[i]
+        var preview := str(line["text"]).replace("\n", " ").substr(0, 52)
+        dialogue_list.add_item("#%d | %s: %s" % [
+            int(line["id"]), str(line["speaker_name"]), preview])
+        if int(line["id"]) == select_id:
+            selected_index = i
+    if selected_index < 0 and not dialogue_design.nodes.is_empty():
+        selected_index = 0
+    if selected_index >= 0:
+        dialogue_list.select(selected_index)
+        _dialogue_line_selected(selected_index)
+    else:
+        if dialogue_choices_list != null:
+            dialogue_choices_list.clear()
+        if dialogue_speaker_label != null:
+            dialogue_speaker_label.text = (
+                "Select a source map actor in Hierarchy to start a dialogue design."
+                if dialogue_design.ready else
+                "Import an original GMP to enable source-pinned dialogue design.")
+    if dialogue_add_button != null:
+        dialogue_add_button.disabled = not dialogue_design.ready
+    if dialogue_save_button != null:
+        dialogue_save_button.disabled = not dialogue_design.ready
+    if dialogue_load_button != null:
+        dialogue_load_button.disabled = not dialogue_design.ready
+    for b in [dialogue_update_button, dialogue_delete_button,
+              dialogue_choice_add_button, dialogue_choice_remove_button]:
+        if b != null:
+            b.disabled = not dialogue_design.ready or dialogue_design.nodes.is_empty()
+
+func _dialogue_line_selected(index: int) -> void:
+    if index < 0 or index >= dialogue_design.nodes.size():
+        return
+    var line: Dictionary = dialogue_design.nodes[index]
+    if dialogue_text != null:
+        dialogue_text.text = str(line["text"])
+    if dialogue_speaker_label != null:
+        dialogue_speaker_label.text = (
+            "Draft line #%d | Original %s (%s), export #%d" % [
+                int(line["id"]), str(line["speaker_name"]),
+                str(line["speaker_class"]), int(line["speaker_export"])])
+    if dialogue_choices_list != null:
+        dialogue_choices_list.clear()
+        for choice in line["choices"]:
+            dialogue_choices_list.add_item(
+                "%s -> #%d" % [str(choice["caption"]), int(choice["target"])])
+
+func _dialogue_add_line() -> void:
+    if not dialogue_design.ready:
+        status_label.text = "Import an unmodified original GMP with source actors first."
+        return
+    var actor: Dictionary = selected_actor
+    if is_instance_valid(selected_mesh) and actors_by_name.has(str(selected_mesh.name)):
+        actor = actors_by_name[str(selected_mesh.name)]
+    var id := dialogue_design.add_line(actor, dialogue_text.text)
+    if id < 0:
+        status_label.text = "Dialogue design refused: " + dialogue_design.last_error
+        return
+    _dialogue_refresh(id)
+    status_label.text = "Private dialogue line #%d added. Not a DX2 conversation binary." % id
+
+func _dialogue_update_line() -> void:
+    var id := _dialogue_selected_id()
+    if not dialogue_design.update_line(id, dialogue_text.text):
+        status_label.text = "Dialogue design refused: " + dialogue_design.last_error
+        return
+    _dialogue_refresh(id)
+    status_label.text = "Dialogue design line text updated in memory. Save to persist."
+
+func _dialogue_delete_line() -> void:
+    var id := _dialogue_selected_id()
+    if not dialogue_design.remove_line(id):
+        status_label.text = "Dialogue line delete refused: " + dialogue_design.last_error
+        return
+    _dialogue_refresh()
+    status_label.text = (
+        "Removed dialogue design line and branches pointing to it. "
+        + "Original game resources unchanged.")
+
+func _dialogue_add_choice() -> void:
+    var id := _dialogue_selected_id()
+    if not dialogue_design.add_choice(
+        id, int(dialogue_choice_target.value), dialogue_choice_caption.text):
+        status_label.text = "Dialogue design branch refused: " + dialogue_design.last_error
+        return
+    _dialogue_refresh(id)
+    status_label.text = "Conversation design branch added (not compiled)."
+
+func _dialogue_remove_choice() -> void:
+    var id := _dialogue_selected_id()
+    var selection := dialogue_choices_list.get_selected_items()
+    if selection.is_empty() or not dialogue_design.remove_choice(id, int(selection[0])):
+        status_label.text = "Select an existing design branch first."
+        return
+    _dialogue_refresh(id)
+    status_label.text = "Conversation design branch removed. Game assets unchanged."
+
+func _dialogue_save() -> void:
+    if not dialogue_design.save_private():
+        status_label.text = "Dialogue save refused: " + dialogue_design.last_error
+        return
+    status_label.text = (
+        "Saved %d original-map-bound dialogue design lines. "
+        + "Native conversation and voice resources NOT modified.") % dialogue_design.nodes.size()
+
+func _dialogue_load() -> void:
+    if not dialogue_design.load_private():
+        status_label.text = "Dialogue load refused: " + dialogue_design.last_error
+        return
+    _dialogue_refresh()
+    status_label.text = (
+        "Loaded %d source-pinned dialogue design lines. "
+        + "No native conversation export.") % dialogue_design.nodes.size()
 
 
 func _inspect_selected_actor_scripts() -> void:

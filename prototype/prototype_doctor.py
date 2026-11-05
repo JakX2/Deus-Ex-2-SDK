@@ -29,6 +29,8 @@ REQUIRED = (
     "native_editor/godot_editor/startup_route.gd",
     "native_editor/godot_editor/mission_logic_draft.gd",
     "native_editor/godot_editor/tests/smoke_mission_logic_draft.gd",
+    "native_editor/godot_editor/dialogue_design_draft.gd",
+    "native_editor/godot_editor/tests/smoke_dialogue_design_draft.gd",
     "native_editor/godot_editor/demo/scene.glb",
     "native_editor/godot_editor/demo/actors.json",
     "native_editor/package_writer/dx2_actor_clone_probe.py",

@@ -121,8 +121,8 @@
       "title": "TriggerScript logic and gameplay events",
       "status": "partial",
       "phase": 3,
-      "evidence": "User TriggerScript TSD bundle and actor script IDs; T3Ed .tsd assets",
-      "next_step": "Typed trigger graph editor, safe reserialization and round-trip tests"
+      "evidence": "DX2Ed original Defs/*.tsd browser and source-actor inspector plus PR #58 private SHA-pinned authoring-only actor/script binding plans, notes, save/reload. No verified native binding or script binary output.",
+      "next_step": "Recover original mission TriggerScript binding/index tables, then build a type-safe graph editor and native writer verified in copied retail game."
     },
     {
       "id": "ai_npcs",
@@ -143,10 +143,10 @@
     {
       "id": "conversations",
       "title": "Conversation and cinematic authoring",
-      "status": "missing",
+      "status": "partial",
       "phase": 3,
-      "evidence": "T3Ed Conversations/ and ModeMatinee icon",
-      "next_step": "DX2 conversation links/timeline, speech, subtitles, localization"
+      "evidence": "PR #59 source-GMP actor-bound private Godot Dialogue tab: text lines, branch choice links, stable IDs, validation, private JSON save/load; authoring only, not original DX2 conversation format.",
+      "next_step": "Reverse-engineer actual DX2 conversation packages, localization, voice and cutscene references; implement verified native reserialization and game tests."
     },
     {
       "id": "ui_books",
