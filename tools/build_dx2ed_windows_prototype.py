@@ -54,6 +54,8 @@ REQUIRED = (
     "native_editor/godot_editor/backend/dx2_collision_selection_cache.py",
     "native_editor/godot_editor/capsule_sweep_panel.gd",
     "native_editor/godot_editor/source_edge_capsule_height_replay.gd",
+    "native_editor/godot_editor/python_runtime.gd",
+    "native_editor/godot_editor/startup_route.gd",
     "native_editor/package_writer/dx2_actor_clone_probe.py",
     "map_exporter/dx2_map_exporter.py",
     "actor_explorer/dx2_actor_explorer.py",
@@ -63,6 +65,8 @@ REQUIRED = (
     "third_party/t3sdk_assets/LICENSE",
     "prototype/START_DX2ED.cmd",
     "prototype/CHECK_DX2ED.cmd",
+    "prototype/DIAGNOSE_GMP.cmd",
+    "prototype/map_import_preflight.py",
     "prototype/prototype_doctor.py",
     "prototype/README_FIRST.md",
 )
