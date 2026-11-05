@@ -97,7 +97,7 @@ def inspect_name_candidates(
             continue
         try:
             _tagged, blocks = decoder(package, original, {})
-        except (ValueError, IndexError, KeyError, TypeError):
+        except (ValueError, IndexError, KeyError, TypeError, OverflowError):
             continue
         props = [b for b in blocks
                  if type(b) is dict and b.get("id") == 92]
@@ -162,6 +162,9 @@ def inspect_original_package(
         package = Package(Path(map_path))
         return inspect_name_candidates(
             package, source_actor_rows, definitions, ibd_entries)
-    except (OSError, ValueError, IndexError, KeyError, TypeError):
+    except Exception:
+        # Optional research must never make previously verified original
+        # TSD/IBD resource comparisons fail. A malformed or unfamiliar GMP
+        # actor encoding therefore yields *no* candidate links.
         return inspect_name_candidates(
             None, source_actor_rows, definitions, ibd_entries)
