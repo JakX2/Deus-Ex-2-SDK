@@ -138,3 +138,52 @@ including what name-index or resource key must be synthesized for
 a mesh not already placed on the map. Do not enable native
 placement for previously unused meshes until those package links
 are independently reconstructed and runtime tested.
+
+
+## Follow-up: independent GameSys 92 name-table slot evidence (v8, 2026-11-05)
+
+After the original TSD-to-IBD resource comparison in PR #60, DX2Ed now
+also verifies the **original actor's cooked GameSys property 92** against
+the owner-original GMP's native actor binary. The new
+`backend/dx2_actor_script_name_candidates.py` reopens the original
+DX2 Unreal v95 package, checks every original actor export/name/class,
+re-decodes the GameSys property, and requires it to match the source-hash-
+authenticated cached actor property exactly.
+
+For compact-integer arrays only, the research panel compares each raw
+numeric value against the **name in the original GMP package name table
+at the same numeric position**. If present, the inspector also displays:
+
+- whether that name matches an original `Defs/*.tsd` script ID in the
+  owner's unchanged TriggerScript ZIP;
+- whether the name matches a kind-21 script resource in the owner's
+  selected original IBD;
+- whether the standalone TSD payload and IBD payload are exactly equal,
+  different, or the resource is absent from that IBD.
+
+This creates a useful three-source candidate trail:
+**original actor GameSys 92 value → original GMP name-table slot →
+original TSD/IBD resource evidence**. However, the first arrow is
+explicitly **hypothetical**. The generic compact-index array decoder
+does **not** prove that this particular GameSys field stores Unreal
+`FName` indices rather than some other game-defined integer references.
+A coincidental triple match is therefore **not proof that the actor
+executes the named TriggerScript**. The output schema retains
+`name_table_indices_semantics_verified=false` and
+`actor_to_script_binding_verified=false`, even for byte-exact matches.
+
+The probe is best-effort: if an original actor cannot be independently
+decoded or its source cache disagrees with the GMP, that actor's
+candidate list is empty and the already-verified standalone TSD/IBD
+resource results remain available. Report files are private user-data
+JSON and are never input to the experimental native GMP Save As writer.
+
+**Manual owner-map acceptance:** open a source-unmodified DX2 GMP,
+its original TriggerScript ZIP, and one or more matching original IBDs.
+Choose an actor with source GameSys property 92, use **Scripts →
+Inspect selected actor script fields**, and record the per-index
+candidate evidence. To claim a genuine runtime link, the numeric
+reference mechanism must still be independently demonstrated by
+additional native package/script evidence and a disposable retail
+game test. Do not mark script compilation, NPC spawning, or dialogue
+serialization as supported until separately validated.
