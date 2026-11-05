@@ -71,12 +71,19 @@ def examine(root: Path) -> list[str]:
         issues.append("synthetic_demo_missing")
     for name in GODOT:
         binary = root / "runtime" / name
-        if (not binary.is_file() or binary.stat().st_size < 1_000_000
-                or binary.open("rb").read(2) != b"MZ"):
+        minimum = 50_000 if name.endswith("_console.exe") else 1_000_000
+        if not binary.is_file() or binary.stat().st_size < minimum:
             issues.append("godot_runtime_missing_or_invalid:" + name)
-        elif (name not in manifest.get("runtime_sha256", {})
-              or hashlib.sha256(binary.read_bytes()).hexdigest()
-                 != manifest["runtime_sha256"][name]):
+            continue
+        with binary.open("rb") as handle:
+            if handle.read(2) != b"MZ":
+                issues.append("godot_runtime_missing_or_invalid:" + name)
+                continue
+            handle.seek(0)
+            digest = hashlib.sha256()
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+        if digest.hexdigest() != manifest.get("runtime_sha256", {}).get(name):
             issues.append("godot_runtime_checksum_mismatch:" + name)
     try:
         for script in root.rglob("*.py"):
