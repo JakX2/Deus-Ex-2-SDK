@@ -154,6 +154,7 @@ var gameplay_ibd_thread: Thread = null
 var gameplay_ibd_button: Button
 var gameplay_ibd_status: Label
 var gameplay_index_audit_button: Button
+var gameplay_copy_index_audit_button: Button
 var gameplay_ibd_evidence: Dictionary = {}
 var gameplay_ibd_by_id: Dictionary = {}
 # Verified independent GameSys property 92 re-decoding, plus *coincidental*
@@ -800,6 +801,15 @@ func _make_ui() -> void:
         + "five GMP name-table offsets. No offset proves a runtime binding.")
     gameplay_index_audit_button.pressed.connect(_show_original_map_script_index_audit)
     gameplay_tab.add_child(gameplay_index_audit_button)
+    gameplay_copy_index_audit_button = Button.new()
+    gameplay_copy_index_audit_button.text = "Copy sanitized index audit summary"
+    gameplay_copy_index_audit_button.disabled = true
+    gameplay_copy_index_audit_button.tooltip_text = (
+        "Copies aggregate counts and source-evidence warnings ONLY. "
+        + "No actor names, private map paths or original game bytes.")
+    gameplay_copy_index_audit_button.pressed.connect(
+        _copy_original_map_script_index_audit)
+    gameplay_tab.add_child(gameplay_copy_index_audit_button)
     gameplay_filter = LineEdit.new()
     gameplay_filter.placeholder_text = "Search original script ID, title or action..."
     gameplay_filter.text_changed.connect(func(_q): _refresh_gameplay_script_list())
@@ -2141,6 +2151,8 @@ func _clear_current_scene() -> void:
         gameplay_ibd_button.disabled = true
     if gameplay_index_audit_button != null:
         gameplay_index_audit_button.disabled = true
+    if gameplay_copy_index_audit_button != null:
+        gameplay_copy_index_audit_button.disabled = true
     if gameplay_ibd_status != null:
         gameplay_ibd_status.text = "Import your original GMP and TriggerScript ZIP to compare IBD script resources."
     mission_logic_draft.clear()
@@ -2396,6 +2408,8 @@ func _original_gameplay_scripts_finished(code: int, response: String,
         gameplay_ibd_button.disabled = false
     if gameplay_index_audit_button != null:
         gameplay_index_audit_button.disabled = true
+    if gameplay_copy_index_audit_button != null:
+        gameplay_copy_index_audit_button.disabled = true
     if gameplay_ibd_status != null:
         gameplay_ibd_status.text = (
             "Source catalog loaded. Select your original mission/Kernel .ibd to "
@@ -2667,6 +2681,8 @@ func _script_ibd_finished(code: int, response: String, source: String,
     var audit_text := ScriptIndexAuditView.format_audit(index_audit)
     if gameplay_index_audit_button != null:
         gameplay_index_audit_button.disabled = audit_text.is_empty()
+    if gameplay_copy_index_audit_button != null:
+        gameplay_copy_index_audit_button.disabled = audit_text.is_empty()
     var counts: Dictionary = doc.get("counts", {})
     var summary := (
         "IBD source resource evidence: %d exact payloads, %d different payloads, "
@@ -2698,6 +2714,26 @@ func _show_original_map_script_index_audit() -> void:
             + "No runtime actor-to-script links are claimed.")
         return
     gameplay_details.text = summary
+
+
+func _copy_original_map_script_index_audit() -> void:
+    var probe: Variant = gameplay_ibd_evidence.get(
+        "original_actor_name_slot_probe", {})
+    var report: Variant = {}
+    if typeof(probe) == TYPE_DICTIONARY:
+        report = probe.get("map_wide_index_audit", {})
+    var summary := ScriptIndexAuditView.format_audit(report)
+    if summary.is_empty():
+        if status_label != null:
+            status_label.text = "No verified source-only index audit is available to copy."
+        return
+    # This formatter emits aggregate COUNTS and caveats only; no filenames,
+    # original actor/script IDs, original paths, game bytes or source hashes.
+    DisplayServer.clipboard_set(summary)
+    if status_label != null:
+        status_label.text = (
+            "Copied map-wide index audit aggregate only. "
+            + "Original GMP/IBD/ZIP and actor names are excluded.")
 
 
 ## Source-verified authoring notes ONLY. Native binary writer and
