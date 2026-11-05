@@ -20,6 +20,7 @@ import io
 import json
 import math
 from pathlib import Path
+import sys
 import tempfile
 from typing import Any
 
@@ -153,7 +154,7 @@ def _same(left: Any, right: Any) -> bool:
 
 
 def _redacted_counts(documents: list[dict[str, Any]], distinct_maps: int) -> dict:
-    touched = empty = one = few = many = first_hits = 0
+    touched = empty = one = few = many = 0
     cases_with_contact = 0
     for doc in documents:
         case_hit = False
@@ -170,7 +171,6 @@ def _redacted_counts(documents: list[dict[str, Any]], distinct_maps: int) -> dic
                     refuse("invalid_verified_contact_count")
             else:
                 touched += 1
-                first_hits += 1
                 case_hit = True
                 if type(first) is not int or first < 0:
                     refuse("invalid_verified_contact_count")
@@ -262,11 +262,9 @@ def audit(manifest_path: Path, output_path: Path, *,
                 with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
                     preview.build(source, staging, **kwargs)
                 replay = _read_json(staging, MAX_PROFILE_BYTES)
-            except (OSError, ValueError, TypeError, IndexError, OverflowError,
-                    KeyError) as exc:
-                # Explicitly discard detailed path/geometry-bearing exception
-                # text, including that of lower-level retail-map decoders.
-                del exc
+            except Exception:
+                # Decoders may raise struct.error, RuntimeError or diagnostics
+                # embedding owner file names; none can escape the public CLI.
                 refuse("source_recomputation_refused")
             if not _same(profile, replay):
                 refuse("original_profile_replay_mismatch")
@@ -294,11 +292,12 @@ def main(argv=None) -> int:
         report = audit(args.manifest, args.output,
                        allow_small_cohort=args.allow_small_cohort)
     except AuditRefusal as exc:
-        print(json.dumps({"status": "refused", "code": exc.code}), file=__import__("sys").stderr)
+        print(json.dumps({"status": "refused", "code": exc.code}), file=sys.stderr)
         return 1
-    except (OSError, ValueError, TypeError, KeyError, OverflowError):
+    except Exception:
+        # Never expose unexpected private-map exception details/tracebacks.
         print(json.dumps({"status": "refused", "code": "audit_failed"}),
-              file=__import__("sys").stderr)
+              file=sys.stderr)
         return 1
     print(json.dumps({"status": "ok",
                       "verified_original_gmp_count": report["verified_original_gmp_count"],
