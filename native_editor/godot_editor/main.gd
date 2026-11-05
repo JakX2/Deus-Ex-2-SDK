@@ -2599,6 +2599,10 @@ func _script_ibd_finished(code: int, response: String, source: String,
         for entry in slot_probe["actors"]:
             if (typeof(entry) != TYPE_DICTIONARY
                 or typeof(entry.get("export")) not in [TYPE_INT, TYPE_FLOAT]
+                or not is_finite(float(entry["export"]))
+                or float(entry["export"]) < 1.0
+                or float(entry["export"]) > 2147483647.0
+                or float(int(entry["export"])) != float(entry["export"])
                 or typeof(entry.get("candidates")) != TYPE_ARRAY
                 or entry["candidates"].size() > 256
                 or entry.get("numeric_slots_are_name_references_verified") != false):
@@ -2618,11 +2622,16 @@ func _script_ibd_finished(code: int, response: String, source: String,
                     status_label.text = "No source raw script property for validated actor."
                     return
                 var elements: Variant = src.get("items", [])
-                if (typeof(elements) == TYPE_ARRAY
-                    and entry["status"] == "numeric_array_redecoded"
-                    and elements.size() != entry["candidates"].size()):
-                    status_label.text = "Original script array candidate length changed."
-                    return
+                if entry["status"] == "numeric_array_redecoded":
+                    if (typeof(elements) != TYPE_ARRAY
+                        or elements.size() != entry["candidates"].size()):
+                        status_label.text = "Original script array candidate length changed."
+                        return
+                    for item_index in entry["candidates"].size():
+                        if entry["candidates"][item_index].get(
+                            "raw_compact_integer") != elements[item_index]:
+                            status_label.text = "Original script array integer changed."
+                            return
             for candidate in entry["candidates"]:
                 if (typeof(candidate) != TYPE_DICTIONARY
                     or candidate.get("actor_runtime_link_verified") != false
