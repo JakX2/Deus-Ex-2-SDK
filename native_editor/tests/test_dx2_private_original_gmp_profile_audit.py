@@ -156,7 +156,7 @@ class PrivateOriginalGmpHeightAuditTests(unittest.TestCase):
 
     def test_wrong_height_or_coordinate_refuses_replay(self):
         for field, value in [
-            ("relative_height_level_units", .75),
+            ("relative_height_level_units", .01),
             ("first_contact_path_t", .4),
             ("first_contact_initial_overlap", False),
         ]:
