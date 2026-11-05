@@ -174,6 +174,9 @@ def build_comparison(map_file: Path, actors_file: Path, script_zip: Path,
             not 0 < mission_ibd.stat().st_size <= MAX_IBD or
             not 0 < kernel_ibd.stat().st_size <= MAX_IBD):
         raise ValueError("Choose separate original mission and Kernel_TSDALL IBDs")
+    # The private original actor cache itself must stay stable throughout
+    # this two-pass comparison, not merely retain a matching GMP SHA label.
+    actor_cache_sha256 = hash_path(actors_file)
     # Both independent original resource builders recheck SHA-bound GMP/actor
     # cache, entire original ZIP and individual IBD tables.
     mission = build_evidence(map_file, actors_file, script_zip, mission_ibd)
@@ -241,7 +244,8 @@ def build_comparison(map_file: Path, actors_file: Path, script_zip: Path,
         rows.append(row)
     # Source hashes, not just cached metadata, must still match real files
     # after all reads. No result is valid if originals drift during analysis.
-    if (hash_path(map_file) != mission["source_map_sha256"]
+    if (hash_path(actors_file) != actor_cache_sha256
+            or hash_path(map_file) != mission["source_map_sha256"]
             or hash_path(script_zip) != mission["script_archive_sha256"]
             or hash_path(mission_ibd) != mission["ibd_sha256"]
             or hash_path(kernel_ibd) != kernel["ibd_sha256"]):
@@ -254,6 +258,7 @@ def build_comparison(map_file: Path, actors_file: Path, script_zip: Path,
         "read_only": True,
         "source_map": mission["source_map"],
         "source_map_sha256": mission["source_map_sha256"],
+        "original_actor_cache_sha256": actor_cache_sha256,
         "script_archive_name": mission["script_archive_name"],
         "script_archive_sha256": mission["script_archive_sha256"],
         "mission_ibd_name": mission_ibd.name,
