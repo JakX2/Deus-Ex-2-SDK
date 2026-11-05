@@ -145,6 +145,15 @@ var gameplay_filter: LineEdit
 var gameplay_list: ItemList
 var gameplay_details: TextEdit
 var gameplay_visible: Array = []
+# Original IBD script resource evidence: exact TSD payload comparison, not
+# a connection from GameSys actor numeric indices to executable scripts.
+var gameplay_script_zip_path := ""
+var gameplay_ibd_dialog: FileDialog
+var gameplay_ibd_thread: Thread = null
+var gameplay_ibd_button: Button
+var gameplay_ibd_status: Label
+var gameplay_ibd_evidence: Dictionary = {}
+var gameplay_ibd_by_id: Dictionary = {}
 # Editable private mission-logic DESIGN ONLY. Never consumed by native GMP
 # Save As; original actor TriggerScript binary indices remain unresolved.
 var mission_logic_draft = MissionLogicDraft.new()
@@ -338,6 +347,9 @@ func _exit_tree() -> void:
     if gameplay_thread != null:
         gameplay_thread.wait_to_finish()
         gameplay_thread = null
+    if gameplay_ibd_thread != null:
+        gameplay_ibd_thread.wait_to_finish()
+        gameplay_ibd_thread = null
     if environment_light_audit_thread != null:
         environment_light_audit_thread.wait_to_finish()
         environment_light_audit_thread = null
@@ -762,6 +774,19 @@ func _make_ui() -> void:
     open_gameplay_scripts.tooltip_text = "Inspect original Defs/*.tsd. Neither game scripts nor GMPs are changed."
     open_gameplay_scripts.pressed.connect(func(): gameplay_zip_dialog.popup_centered_ratio(0.7))
     gameplay_tab.add_child(open_gameplay_scripts)
+    gameplay_ibd_button = Button.new()
+    gameplay_ibd_button.text = "Verify script resources in original IBD..."
+    gameplay_ibd_button.disabled = true
+    gameplay_ibd_button.tooltip_text = (
+        "Compare original standalone TSD payload bytes against kind-21 IBD resources. "
+        + "This does NOT resolve actor-to-script runtime bindings.")
+    gameplay_ibd_button.pressed.connect(
+        func(): gameplay_ibd_dialog.popup_centered_ratio(0.75))
+    gameplay_tab.add_child(gameplay_ibd_button)
+    gameplay_ibd_status = Label.new()
+    gameplay_ibd_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    gameplay_ibd_status.text = "Select your own original TriggerScript ZIP before checking IBD resources."
+    gameplay_tab.add_child(gameplay_ibd_status)
     gameplay_filter = LineEdit.new()
     gameplay_filter.placeholder_text = "Search original script ID, title or action..."
     gameplay_filter.text_changed.connect(func(_q): _refresh_gameplay_script_list())
@@ -1470,6 +1495,13 @@ func _make_ui() -> void:
     gameplay_zip_dialog.filters = PackedStringArray(["*.zip ; Original TriggerScript definitions ZIP"])
     gameplay_zip_dialog.file_selected.connect(_open_original_gameplay_scripts)
     add_child(gameplay_zip_dialog)
+    gameplay_ibd_dialog = FileDialog.new()
+    gameplay_ibd_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    gameplay_ibd_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    gameplay_ibd_dialog.filters = PackedStringArray([
+        "*.ibd ; Original Deus Ex Invisible War mission/Kernel resource IBD"])
+    gameplay_ibd_dialog.file_selected.connect(_open_original_script_ibd)
+    add_child(gameplay_ibd_dialog)
     _make_lighting_dialog()
     skeletal_zip_dialog = FileDialog.new()
     skeletal_zip_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -2088,6 +2120,13 @@ func _clear_current_scene() -> void:
     loaded_actors_json_path = ""
     gameplay_catalog.clear()
     gameplay_visible.clear()
+    gameplay_script_zip_path = ""
+    gameplay_ibd_evidence.clear()
+    gameplay_ibd_by_id.clear()
+    if gameplay_ibd_button != null:
+        gameplay_ibd_button.disabled = true
+    if gameplay_ibd_status != null:
+        gameplay_ibd_status.text = "Import your original GMP and TriggerScript ZIP to compare IBD script resources."
     mission_logic_draft.clear()
     _mission_plan_refresh()
     dialogue_design.clear()
@@ -2262,8 +2301,8 @@ func _actor_on_original_ai_layer(actor: Dictionary) -> bool:
 
 
 func _open_original_gameplay_scripts(zip_path: String) -> void:
-    if (gameplay_thread != null or build_thread != null
-        or last_gmp_path.is_empty() or loaded_actors_json_path.is_empty()
+    if (gameplay_thread != null or gameplay_ibd_thread != null
+        or build_thread != null or last_gmp_path.is_empty() or loaded_actors_json_path.is_empty()
         or not FileAccess.file_exists(last_gmp_path)
         or not FileAccess.file_exists(loaded_actors_json_path)
         or FileAccess.get_sha256(last_gmp_path) != source_gamesys_sha256):
@@ -2297,10 +2336,11 @@ func _run_original_gameplay_scripts(script: String, map_file: String,
         pyargs.append_array(args)
         output.clear()
         code = OS.execute("py", pyargs, output, true)
-    call_deferred("_original_gameplay_scripts_finished", code, "\n".join(output))
+    call_deferred("_original_gameplay_scripts_finished", code, "\n".join(output), archive)
 
 
-func _original_gameplay_scripts_finished(code: int, response: String) -> void:
+func _original_gameplay_scripts_finished(code: int, response: String,
+        archive: String) -> void:
     if gameplay_thread != null:
         gameplay_thread.wait_to_finish()
         gameplay_thread = null
@@ -2332,6 +2372,15 @@ func _original_gameplay_scripts_finished(code: int, response: String) -> void:
             + mission_logic_draft.last_error)
         return
     gameplay_catalog = doc
+    gameplay_script_zip_path = archive
+    gameplay_ibd_evidence.clear()
+    gameplay_ibd_by_id.clear()
+    if gameplay_ibd_button != null:
+        gameplay_ibd_button.disabled = false
+    if gameplay_ibd_status != null:
+        gameplay_ibd_status.text = (
+            "Source catalog loaded. Select your original mission/Kernel .ibd to "
+            + "verify stored TriggerScript payload bytes; actor bindings remain unresolved.")
     _refresh_gameplay_script_list()
     _mission_plan_refresh()
     var counts: Dictionary = doc.get("counts", {})
@@ -2360,7 +2409,15 @@ func _refresh_gameplay_script_list() -> void:
         if not query.is_empty() and query not in searchable.to_lower():
             continue
         gameplay_visible.append(script)
-        gameplay_list.add_item(str(script.get("id", "?")) + " | " + str(script.get("title", "")))
+        var display := str(script.get("id", "?")) + " | " + str(script.get("title", ""))
+        var evidence: Dictionary = gameplay_ibd_by_id.get(
+            str(script.get("id", "")).to_lower(), {})
+        match str(evidence.get("status", "")):
+            "exact_payload":
+                display = "[IBD exact] " + display
+            "different_payload":
+                display = "[IBD differs] " + display
+        gameplay_list.add_item(display)
     if not gameplay_visible.is_empty():
         gameplay_list.select(0)
         _gameplay_script_selected(0)
@@ -2384,8 +2441,147 @@ func _gameplay_script_selected(index: int) -> void:
     for action in script.get("actions", []):
         lines.append("  " + str(action))
     lines.append("")
+    var proof: Dictionary = gameplay_ibd_by_id.get(
+        str(script.get("id", "")).to_lower(), {})
+    if not proof.is_empty():
+        lines.append("ORIGINAL IBD RESOURCE EVIDENCE:")
+        lines.append("Source: " + str(gameplay_ibd_evidence.get("ibd_name", "")))
+        lines.append("Resource index: " + str(proof.get("ibd_resource_index", -1)))
+        lines.append("Payload result: " + str(proof.get("status", "unknown")))
+        lines.append(
+            "Exact source TSD payload equality does NOT prove actor/runtime bindings.")
+        lines.append("")
+    elif not gameplay_ibd_evidence.is_empty():
+        lines.append("No matching script ID found in selected original IBD.")
+        lines.append("")
     lines.append("Not bound to a specific map actor. No executable edits.")
     gameplay_details.text = "\n".join(lines)
+
+
+## Verifies a standalone original TriggerScript's exact payload against
+## an original IBD kind-21 resource. This does NOT resolve mission-logic
+## integer indices, allow bindings, or write editable scripts to retail.
+func _open_original_script_ibd(ibd_path: String) -> void:
+    if (gameplay_ibd_thread != null or gameplay_thread != null
+        or build_thread != null or gameplay_catalog.is_empty()
+        or gameplay_script_zip_path.is_empty()
+        or not FileAccess.file_exists(gameplay_script_zip_path)
+        or last_gmp_path.is_empty() or loaded_actors_json_path.is_empty()
+        or not FileAccess.file_exists(last_gmp_path)
+        or not FileAccess.file_exists(loaded_actors_json_path)
+        or FileAccess.get_sha256(last_gmp_path) != source_gamesys_sha256
+        or FileAccess.get_sha256(gameplay_script_zip_path)
+            != str(gameplay_catalog.get("script_archive_sha256", ""))):
+        status_label.text = "IBD resource check refused: GMP or source ZIP changed."
+        return
+    var script := ProjectSettings.globalize_path(
+        "res://backend/dx2_script_ibd_provenance.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Original IBD resource verifier is missing from this build."
+        return
+    var target := OS.get_user_data_dir().path_join(
+        "original_ibd_script_evidence_%d.json" % Time.get_ticks_usec())
+    var source := last_gmp_path
+    var sha := source_gamesys_sha256
+    gameplay_ibd_thread = Thread.new()
+    var err := gameplay_ibd_thread.start(_script_ibd_worker.bind(
+        script, source, loaded_actors_json_path,
+        gameplay_script_zip_path, ibd_path, target, sha))
+    if err != OK:
+        gameplay_ibd_thread = null
+        status_label.text = "Unable to launch original IBD resource verifier."
+        return
+    status_label.text = "Comparing original TSD and IBD resource bytes (read-only)..."
+
+func _script_ibd_worker(script: String, source: String, actor_path: String,
+        archive: String, ibd: String, target: String, sha: String) -> void:
+    var args := PackedStringArray([
+        script, "--map", source, "--actors", actor_path,
+        "--scripts", archive, "--ibd", ibd, "--output", target])
+    var output: Array = []
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
+    if code == -1:
+        var launcher := PackedStringArray(["-3"])
+        launcher.append_array(args)
+        output.clear()
+        code = OS.execute("py", launcher, output, true)
+    call_deferred("_script_ibd_finished", code, "\n".join(output),
+        source, sha, archive, ibd, target)
+
+func _script_ibd_finished(code: int, response: String, source: String,
+        sha: String, archive: String, ibd: String, target: String) -> void:
+    if gameplay_ibd_thread != null:
+        gameplay_ibd_thread.wait_to_finish()
+        gameplay_ibd_thread = null
+    if (source != last_gmp_path or sha != source_gamesys_sha256
+        or archive != gameplay_script_zip_path
+        or FileAccess.get_sha256(source) != sha
+        or FileAccess.get_sha256(archive)
+            != str(gameplay_catalog.get("script_archive_sha256", ""))):
+        status_label.text = "Stale IBD resource evidence discarded after source change."
+        return
+    var result: Variant = null
+    if response.strip_edges().begins_with("{"):
+        result = JSON.parse_string(response.strip_edges())
+    if (code != 0 or typeof(result) != TYPE_DICTIONARY
+        or result.get("status") != "ok"
+        or result.get("schema") !=
+            "DX2Ed-original-IBD-TriggerScript-resource-evidence-v1"
+        or not FileAccess.file_exists(target)):
+        status_label.text = "IBD resource verification refused: source or resource mismatch."
+        return
+    var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(target))
+    if (typeof(doc) != TYPE_DICTIONARY
+        or doc.get("schema") !=
+            "DX2Ed-original-IBD-TriggerScript-resource-evidence-v1"
+        or doc.get("read_only") != true
+        or doc.get("source_map") != current_source_map_name
+        or doc.get("source_map_sha256") != sha
+        or doc.get("script_archive_sha256") !=
+            gameplay_catalog.get("script_archive_sha256")
+        or doc.get("ibd_sha256") != FileAccess.get_sha256(ibd)
+        or doc.get("actor_to_script_binding_verified") != false
+        or doc.get("native_actor_script_indices_resolved") != false
+        or doc.get("native_script_writer_enabled") != false
+        or doc.get("original_game_assets_modified") != false
+        or doc.get("gameplay_runtime_verified") != false
+        or typeof(doc.get("entries")) != TYPE_ARRAY
+        or doc["entries"].size() > 6000):
+        status_label.text = "Original IBD evidence rejected: source identity/flags mismatch."
+        return
+    var exact: Dictionary = {}
+    for item in doc["entries"]:
+        if (typeof(item) != TYPE_DICTIONARY
+            or typeof(item.get("script_id")) != TYPE_STRING
+            or typeof(item.get("status")) != TYPE_STRING
+            or item["status"] not in [
+                "exact_payload", "different_payload", "not_in_original_zip"]):
+            status_label.text = "Original IBD evidence contains malformed resource rows."
+            return
+        var key := str(item["script_id"]).to_lower()
+        if exact.has(key):
+            status_label.text = "Original IBD resource IDs are ambiguous."
+            return
+        if (item["status"] == "exact_payload"
+            and item.get("source_payload_sha256") !=
+                item.get("ibd_payload_sha256")):
+            status_label.text = "Original IBD evidence contains false byte-match claim."
+            return
+        exact[key] = item
+    gameplay_ibd_evidence = doc
+    gameplay_ibd_by_id = exact
+    var counts: Dictionary = doc.get("counts", {})
+    var summary := (
+        "IBD source resource evidence: %d exact payloads, %d different payloads, "
+        + "%d names absent in source ZIP. Actor script indices STILL unresolved."
+    ) % [
+        int(counts.get("exact_payload", 0)),
+        int(counts.get("different_payload", 0)),
+        int(counts.get("not_in_original_zip", 0))]
+    if gameplay_ibd_status != null:
+        gameplay_ibd_status.text = summary
+    _refresh_gameplay_script_list()
+    status_label.text = "Original script resource comparison complete. No game files written."
 
 
 ## Source-verified authoring notes ONLY. Native binary writer and
