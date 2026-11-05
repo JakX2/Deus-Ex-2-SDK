@@ -10,5 +10,16 @@ This package does not redistribute original game content or implement native
 TriggerScript compilation, BSP/collision rebuild or arbitrary actor spawning.
 """
 from .api import DX2Map, SDK_SCHEMA, __version__
+from .projects import (
+    SCHEMA as POSITION_PLAN_SCHEMA,
+    build_position_plan,
+    write_position_plan,
+    load_position_plan,
+    apply_position_plan,
+)
 
-__all__ = ("DX2Map", "SDK_SCHEMA", "__version__")
+__all__ = (
+    "DX2Map", "SDK_SCHEMA", "__version__", "POSITION_PLAN_SCHEMA",
+    "build_position_plan", "write_position_plan",
+    "load_position_plan", "apply_position_plan",
+)
