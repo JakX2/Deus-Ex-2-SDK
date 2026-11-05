@@ -23,6 +23,9 @@ REQUIRED = (
     "native_editor/godot_editor/main.gd",
     "native_editor/godot_editor/backend/dx2_native_backend.py",
     "native_editor/godot_editor/backend/dx2_collision_selection_cache.py",
+    "native_editor/godot_editor/backend/dx2_script_ibd_provenance.py",
+    "native_editor/godot_editor/tests/smoke_original_script_ibd_provenance.gd",
+    "tools/scripts/dx2_script_bundle_probe.py",
     "native_editor/godot_editor/capsule_sweep_panel.gd",
     "native_editor/godot_editor/source_edge_capsule_height_replay.gd",
     "native_editor/godot_editor/python_runtime.gd",
@@ -50,6 +53,7 @@ REQUIRED = (
 PREFLIGHT_WORKERS = (
     "native_editor/godot_editor/backend/dx2_native_backend.py",
     "native_editor/godot_editor/backend/dx2_zip_stage.py",
+    "native_editor/godot_editor/backend/dx2_script_ibd_provenance.py",
     "map_import_preflight.py",
     "native_editor/godot_editor/backend/dx2_collision_selection_cache.py",
     "research/dx2/export_capsule_first_contact_preview.py",

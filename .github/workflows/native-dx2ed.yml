@@ -31,6 +31,8 @@ jobs:
             "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip"
           unzip -q /tmp/godot-4.3.zip -d /tmp
           chmod +x /tmp/Godot_v4.3-stable_linux.x86_64
+      - name: Verify original TriggerScript IBD evidence presentation
+        run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_original_script_ibd_provenance.gd
       - name: Verify source-pinned dialogue tree design in Godot
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_dialogue_design_draft.gd
       - name: Verify source-pinned TriggerScript design draft in Godot
