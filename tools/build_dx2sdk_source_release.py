@@ -44,6 +44,7 @@ REQUIRED = (
     "third_party/t3sdk_assets/upkg.py",
     "third_party/t3sdk_assets/upkgwrite.py",
     "third_party/t3sdk_assets/LICENSE",
+    "third_party/t3sdk_assets/formats.json",
     "tools/scripts/dx2_script_bundle_probe.py",
 )
 RETAIL_EXT = {
@@ -82,6 +83,10 @@ def _sources(root: Path) -> dict[str, bytes]:
                 files[rel] = path.read_bytes()
     files["third_party/t3sdk_assets/LICENSE"] = (
         root / "third_party/t3sdk_assets/LICENSE").read_bytes()
+    # The MIT T3SDK t3common.py imports this code/data format table at
+    # module import time. No other original/sample asset JSON is bundled.
+    files["third_party/t3sdk_assets/formats.json"] = (
+        root / "third_party/t3sdk_assets/formats.json").read_bytes()
     # The only CMD script shipped is source-owned and remapped to archive root.
     files["RUN_DX2SDK.cmd"] = (
         root / "dx2sdk/RUN_SDK_STANDALONE.cmd").read_bytes()
