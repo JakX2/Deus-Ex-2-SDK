@@ -187,3 +187,56 @@ reference mechanism must still be independently demonstrated by
 additional native package/script evidence and a disposable retail
 game test. Do not mark script compilation, NPC spawning, or dialogue
 serialization as supported until separately validated.
+
+
+## Follow-up: map-wide native TriggerScripts numeric index hypotheses (v9, 2026-11-05)
+
+The previous original-actor GameSys property 92 inspector exposed only
+single-actor name-table coincidences. DX2Ed now aggregates all original actors
+with independently re-decoded native compact-integer arrays and compares five
+small numeric adjustments (`raw - 2`, `raw - 1`, `raw`, `raw + 1`,
+`raw + 2`) against the **same owner-original GMP name table**.
+
+Choose **Scripts → Show map-wide script index audit** after comparing your
+unchanged original `TriggerScript.zip` to one original mission/kernel IBD.
+The source-pinned report records, for each exploratory shift:
+
+- total raw numeric values and how many positions reference a nonempty
+  original GMP name-table entry;
+- how many positions name an original active `Defs/*.tsd` definition,
+  including the number of **distinct** script names;
+- how many name hits also have an exact, byte-identical original IBD kind-21
+  payload, how many have different payloads, and the numbers of actors with
+  any candidate match;
+- how many repeated candidate-name occurrences could inflate the raw hit
+  totals.
+
+Actors whose source export, class, name, and **exact native GameSys 92
+serialized property** could not be independently verified remain excluded and
+are counted separately. Opaque or string-interpreted arrays are not coerced
+into name indices. The view refuses source-unsupported boolean declarations
+of native writer support, validated actor-runtime links or a preferred offset.
+
+This is a **discrimination experiment**, not a recovered serialization
+contract. Shifted offsets are not necessarily independent statistical control
+groups, and a higher name/TSD/IBD match count is **not** proof that any of
+these offsets is the true runtime interpretation. Even the zero-shift row
+is only a name-table coincidence unless original game behavior or another
+independent native reference table establishes the mapping. The script
+writer, dialogue compiler and actor binding exporter remain disabled.
+
+The implementation is `backend/dx2_script_index_hypothesis_audit.py` plus
+`script_index_audit_view.gd`. The source-only test suite exercises valid
+positive matches, deliberately misleading shifted matches, forged match
+claims, ambiguous script identities, malformed numeric array elements,
+partially decoded original actors, no original package, and GDScript view
+fail-closed behavior. Only aggregate counts are displayed; no original game
+bytes are included in CI or in the user-facing report.
+
+**Suggested real-game research:** compare two **different** owner-original
+GMP maps with their own source-matched actors and IBD resources; examine
+whether the same proposed offset produces coherent candidate trends across
+maps and whether exact-match counts are consistent with source script
+presence. Do not infer a native binding from aggregate trends alone. Before
+enabling script assignment, independently validate GameSys 92 element type
+and mission-scope resource index resolution with retail runtime evidence.
