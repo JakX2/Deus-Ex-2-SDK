@@ -308,3 +308,47 @@ private report non-overwrite/path protection, and deliberate redaction of
 owner-local CLI output. A dedicated Godot fixture tests first-byte
 offset clustering, privacy-safe summaries, detailed script metadata,
 and refusal of forged native runtime flags.
+
+
+## Real Club resource results and candidate-byte-4 follow-up (v11, 2026-11-05)
+
+An owner-original Seattle Club GMP + Club mission IBD + `Kernel_TSDALL.ibd`
+comparison produced **101** named Club kind-21 script resources, **468**
+named Kernel script resources and **zero overlapping script IDs**. Direct
+mission-to-Kernel byte comparisons are consequently unavailable for these
+bundles. Relative to the owner's original `TriggerScript.zip`, the Club
+IBD contained **17 exact / 84 different**, and the Kernel IBD contained
+**172 exact / 296 different** script payloads. Of the differing
+resources, **66 Club** and **135 Kernel** first diverged at payload offset
+4, while only **8 Club** and **6 Kernel** differences involved unequal
+payload sizes. These counts are **unique source script resources**, unlike
+the earlier 103 raw actor-reference occurrences.
+
+**Issue found:** the original per-actor GameSys 92 name-slot verifier
+returns `ibd_resource_payload_status="not_found"` when a matched active
+script ID is missing from the selected IBD. The cross-bundle reporter
+used the equivalent status `"absent"` and formerly rejected all actor
+candidate evidence when a script was missing from either original
+bundle. Since Club and Kernel contain no overlapping IDs, this
+inconsistent missing-resource label explains a plausible
+`source_actor_name_slots_unavailable` result despite the previously
+verified 37/37 native Club actors. The comparison now normalizes
+`absent` to `not_found` **for input validation only**, retaining
+`absent` in user-facing transition counts. A synthetic fixture tests
+genuinely disjoint mission/Kernel references and still refuses forged
+source evidence. Owner-side rerun is required before treating the
+fixed report as real-map verified.
+
+The mismatch-offset histogram does NOT reveal what payload offset 4
+represents. The v11 read-only profile explicitly tests candidate bytes
+**4 through 7** as a contiguous four-byte region and distinguishes
+these classes, with no byte values or inferred native type exported:
+(1) differences **only within bytes 4–7** and identical payload length;
+(2) changes within bytes 4–7 **plus** other payload/length changes;
+(3) changes **without** differences within bytes 4–7;
+(4) source payloads too short to compare that four-byte region.
+This is a controlled byte-range experiment, **not proof of a size,
+checksum, serialized reference, version or constant**. The next owner
+comparison should report these new aggregate counts and a safe actor
+status transition summary. Never enable a native script writer on the
+strength of histogram statistics.
