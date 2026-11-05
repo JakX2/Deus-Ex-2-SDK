@@ -111,6 +111,30 @@ static func _histogram(doc: Dictionary, key: String) -> Array:
         return a["offset"] < b["offset"])
     return [different, changed_size, ordered.slice(0, 5)]
 
+## Byte offsets 4..7 may form a 4-byte field. These bins do not
+## interpret its contents as any native checksum, length or reference.
+static func _word4_control(doc: Dictionary, key: String) -> Array:
+    var field_only := 0
+    var field_and_other := 0
+    var other_only := 0
+    var too_short := 0
+    for r in doc["script_rows"]:
+        if typeof(r) != TYPE_DICTIONARY:
+            continue
+        var d: Variant = r.get(key)
+        if typeof(d) != TYPE_DICTIONARY or d.get("byte_equal") != false:
+            continue
+        if d.get("candidate_word4_4byte_slot_comparable") != true:
+            too_short += 1
+        elif d.get("candidate_word4_only_difference") == true:
+            field_only += 1
+        elif d.get("candidate_word4_and_other_changes") == true:
+            field_and_other += 1
+        else:
+            other_only += 1
+    return [field_only, field_and_other, other_only, too_short]
+
+
 static func summary(doc: Variant) -> String:
     if not valid(doc):
         return ""
@@ -153,6 +177,11 @@ static func summary(doc: Variant) -> String:
             for entry in offsets:
                 lines.append("  byte " + str(entry["offset"]) + ": "
                     + str(entry["count"]) + " scripts")
+        var word4 := _word4_control(doc, str(group[1]))
+        lines.append("  Candidate bytes 4..7 only changed: " + str(word4[0]))
+        lines.append("  Bytes 4..7 and other bytes/length changed: " + str(word4[1]))
+        lines.append("  Other changes without bytes 4..7 changing: " + str(word4[2]))
+        lines.append("  Too short to inspect candidate bytes 4..7: " + str(word4[3]))
     var actor: Dictionary = doc["actor_name_slot_candidates"]
     lines.append("")
     lines.append("ACTOR NAME-SLOT CANDIDATES (not executable bindings):")
@@ -167,6 +196,8 @@ static func summary(doc: Variant) -> String:
             lines.append("  " + str(transition).replace("_", " ") + ": "
                 + str(actor["transition_counts"][transition]))
     lines.append("")
+    lines.append("Original TSD differences in candidate bytes 4..7 do NOT establish")
+    lines.append("a checksum, header field, version, size or runtime reference.")
     lines.append("Original TSD mismatches may be a size/layout change, a version")
     lines.append("difference, or mission-specific data. No cause is assumed.")
     lines.append("These figures count distinct IBD resources, except actor name-slot")
@@ -215,6 +246,10 @@ static func script_details(doc: Variant, script_id: String) -> String:
             lines.append("  Common prefix/suffix bytes: "
                 + str(diff.get("common_prefix_bytes", "?")) + " / "
                 + str(diff.get("common_suffix_bytes", "?")))
+            lines.append("  Only candidate bytes 4..7 differ: "
+                + str(diff.get("candidate_word4_only_difference", false)))
+            lines.append("  Candidate bytes 4..7 plus other differences: "
+                + str(diff.get("candidate_word4_and_other_changes", false)))
         lines.append("")
         lines.append("Byte positions are metadata only; no retail byte values are displayed.")
         lines.append("Matching script names do NOT prove runtime actor bindings.")
