@@ -134,6 +134,44 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
         self.assertEqual(original.read_bytes(), original_bytes)
         self.assertNotEqual(output.read_bytes(), original_bytes)
 
+    def test_extracted_archive_can_scan_native_actors_without_godot(self):
+        build(ROOT, self.first)
+        with ZipFile(self.first) as archive:
+            archive.extractall(self.root / "original_scanner_zip")
+        sdk = self.root / "original_scanner_zip" / ARCHIVE
+        source = self.root / "SyntheticGame" / "Maps" / "M1_Test.gmp"
+        source.parent.mkdir(parents=True)
+        source.write_bytes(fixture_gmp())
+        before = source.read_bytes()
+        cache = self.root / "DX2SDKPrivate" / "Club" / "actors.json"
+        command = [
+            sys.executable, "-B", "-m", "dx2sdk",
+            "scan-map", "--map", str(source), "--output", str(cache),
+        ]
+        result = subprocess.run(
+            command, cwd=sdk, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["actor_count"], 1)
+        self.assertFalse(report["original_source_modified"])
+        self.assertTrue(cache.is_file())
+        self.assertEqual(cache.name, "actors.json")
+        checked = subprocess.run([
+            sys.executable, "-B", "-m", "dx2sdk", "info",
+            "--map", str(source), "--actors", str(cache),
+        ], cwd=sdk, capture_output=True, text=True, timeout=30)
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        self.assertTrue(json.loads(checked.stdout)["source_actor_cache_verified"])
+        inspector = subprocess.run([
+            sys.executable, "-B", "-m", "dx2sdk", "inspect-actor",
+            "--map", str(source), "--export", "1",
+        ], cwd=sdk, capture_output=True, text=True, timeout=30)
+        self.assertEqual(inspector.returncode, 0, inspector.stderr)
+        inspected = json.loads(inspector.stdout)
+        self.assertEqual(inspected["tagged_properties"]["FixtureFlag"], 98765)
+        self.assertFalse(inspected["native_property_writer_enabled"])
+        self.assertEqual(source.read_bytes(), before)
+
     def test_deterministic_zip_source_hashes(self):
         build(ROOT, self.first)
         build(ROOT, self.second)
