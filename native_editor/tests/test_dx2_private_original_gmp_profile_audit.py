@@ -243,6 +243,43 @@ class PrivateOriginalGmpHeightAuditTests(unittest.TestCase):
         self.assertNotIn("SECRET", captured_stderr.getvalue())
         self._assert_no_output_or_private_staging()
 
+    def test_incomplete_aggregate_write_is_removed_and_error_redacted(self):
+        original_open = Path.open
+
+        class BrokenWrite:
+            def __init__(self, inner):
+                self.inner = inner
+
+            def __enter__(self):
+                self.inner.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return self.inner.__exit__(*args)
+
+            def write(self, data):
+                self.inner.write(data[:10])
+                raise OSError("SECRET original GMP path: simulated disk full")
+
+        def broken_open(path, mode="r", *args, **kwargs):
+            f = original_open(path, mode, *args, **kwargs)
+            if Path(path) == self.output and mode == "x":
+                return BrokenWrite(f)
+            return f
+
+        stderr = io.StringIO()
+        with patch.object(audit.preview, "build",
+                          side_effect=self._mock_authenticated_replay):
+            with patch.object(Path, "open", new=broken_open):
+                with redirect_stderr(stderr):
+                    result = audit.main(["--manifest", str(self.manifest),
+                                         "--output", str(self.output)])
+        self.assertEqual(result, 1)
+        self.assertEqual(json.loads(stderr.getvalue()),
+                         {"status":"refused", "code":"audit_failed"})
+        self.assertNotIn("SECRET", stderr.getvalue())
+        self._assert_no_output_or_private_staging()
+
     def test_private_manifest_size_and_invalid_json_refused(self):
         self.manifest.write_text("not JSON at all")
         with self.assertRaisesRegex(audit.AuditRefusal, "invalid_private_json"):
