@@ -258,7 +258,7 @@ class SDKPublicSurfaceTests(unittest.TestCase):
         edited_cache = json.loads(self.cache.read_text("utf8"))
         edited_cache["actors"][0]["mesh"] = "DifferentSyntheticCube"
         self.cache.write_text(json.dumps(edited_cache))
-        with self.assertRaisesRegex(ValueError, "source or binary"):
+        with self.assertRaisesRegex(ValueError, "cache changed|source or binary"):
             load_position_plan(world, path)
 
     def test_position_plan_cannot_be_written_under_retail_content_maps(self):
