@@ -155,6 +155,8 @@ class DX2Map:
             "original_game_assets_modified": False,
             "gameplay_runtime_verified": False,
             "native_supported_writer": "existing_StaticMeshActor_Location_only",
+            "experimental_native_tagged_scalar_writer": "existing_StaticMeshActor_top_level_int32_float32_only",
+            "native_gamesys_writer_available": False,
             "script_writer_available": False,
             "dialogue_compiler_available": False,
             "bsp_or_collision_rebuild_available": False,
