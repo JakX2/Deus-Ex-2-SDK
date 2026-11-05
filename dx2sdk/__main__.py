@@ -84,6 +84,36 @@ def make_parser():
     compare.add_argument("--mission-ibd", required=True)
     compare.add_argument("--kernel-ibd", required=True)
 
+    list_clones = sub.add_parser(
+        "clone-candidates",
+        help="List source-original idle/unlinked StaticMeshActor copies eligible for experimental cloning")
+    _add_source(list_clones)
+    list_clones.add_argument("--limit", type=int, default=100)
+
+    clone = sub.add_parser(
+        "clone-prop",
+        help="Dry-run or explicitly create one isolated static-mesh duplicate using audited T3SDK")
+    _add_source(clone)
+    clone.add_argument("--actor", required=True,
+                       help="Exact existing source StaticMeshActor name")
+    clone.add_argument("--export", type=int, required=True,
+                       help="Original one-based source native export index")
+    clone.add_argument("--dx", type=float, required=True,
+                       help="Native X delta, -4096..4096")
+    clone.add_argument("--dy", type=float, required=True,
+                       help="Native Y delta, -4096..4096")
+    clone.add_argument("--dz", type=float, required=True,
+                       help="Native Z delta, -4096..4096")
+    clone.add_argument("--output", required=True,
+                       help="Fresh isolated GMP path with original basename")
+    clone.add_argument("--write", action="store_true",
+                       help="Explicitly write new native GMP copy; dry-run by default")
+
+    clone_verify = sub.add_parser(
+        "verify-clone", help="Rebuild original static prop clone and verify saved entire GMP")
+    _add_source(clone_verify)
+    clone_verify.add_argument("--output", required=True)
+
     fields = sub.add_parser(
         "scalar-fields",
         help="List original 4-byte int/float tagged fields eligible for experimental Save As")
@@ -250,6 +280,34 @@ def main(argv=None) -> int:
         elif args.command == "compare":
             _json(_compare_summary(project.compare_script_bundles(
                 args.zip, args.mission_ibd, args.kernel_ibd)))
+        elif args.command == "clone-candidates":
+            report = project.static_prop_clone_candidates(limit=args.limit)
+            _json({"schema": report["schema"], "status": report["status"],
+                   "source_map": project.source.name,
+                   "candidate_count": len(report["candidates"]),
+                   "candidates": report["candidates"], "read_only": True,
+                   "gameplay_runtime_verified": False,
+                   "native_arbitrary_actor_spawning_enabled": False})
+        elif args.command == "clone-prop":
+            report = project.clone_existing_static_prop(
+                original_export=args.export, original_actor=args.actor,
+                delta_native_xyz=(args.dx, args.dy, args.dz),
+                output=args.output, write=args.write)
+            _json({"schema": report["schema"], "status": report["status"],
+                   "original_export": report["source_actor_export"],
+                   "new_export": report["new_actor_export"],
+                   "normalized_clone_frame": report["clone_frame_normalized"],
+                   "source_bytes_unchanged": report["original_bytes_unchanged"],
+                   "independent_full_binary_verification":
+                       report.get("independent_verified_binary_structure", False),
+                   "runtime_game_verified": False})
+        elif args.command == "verify-clone":
+            report = project.verify_saved_clone(args.output)
+            _json({"schema": report["schema"],
+                   "verified_binary_structure": report["verified_binary_structure"],
+                   "new_export": report["new_export"],
+                   "new_clone_state_normalized": report["new_clone_state_normalized"],
+                   "gameplay_runtime_verified": False})
         elif args.command == "scalar-fields":
             report = project.native_scalar_fields(args.actor)
             _json({"schema": report["schema"], "actor_name": report["actor_name"],
