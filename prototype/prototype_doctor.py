@@ -18,6 +18,12 @@ SCHEMA = "DX2Ed-Windows-source-prototype-bundle-v1"
 GODOT = ("Godot_v4.3-stable_win64.exe",
          "Godot_v4.3-stable_win64_console.exe")
 REQUIRED = (
+    "dx2sdk/__init__.py",
+    "dx2sdk/api.py",
+    "dx2sdk/projects.py",
+    "dx2sdk/__main__.py",
+    "dx2sdk/README.md",
+    "DX2SDK_CONSOLE.cmd",
     "native_editor/godot_editor/project.godot",
     "native_editor/godot_editor/main.tscn",
     "native_editor/godot_editor/main.gd",
@@ -88,7 +94,10 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("engine") != "Godot 4.3 stable Standard Windows x86_64"
                 or manifest.get("includes_original_dx2_assets") is not False
                 or manifest.get("includes_havok_runtime") is not False
-                or manifest.get("gameplay_physics_or_walkability_verified") is not False):
+                or manifest.get("gameplay_physics_or_walkability_verified") is not False
+                or manifest.get("public_dx2sdk_api_version") != "0.1.0"
+                or manifest.get("public_dx2sdk_cli_included") is not True
+                or manifest.get("public_dx2sdk_gameplay_runtime_verified") is not False):
             issues.append("invalid_prototype_manifest")
     except (OSError, ValueError, TypeError):
         return ["invalid_prototype_manifest"]
@@ -144,6 +153,20 @@ def examine(root: Path) -> list[str]:
             continue
         if process.returncode != 0:
             issues.append("worker_import_failed:" + relative)
+
+    # The SDK is a Python package, not a standalone script: --help must
+    # import all its dependencies from THIS extracted source-only ZIP.
+    try:
+        process = subprocess.run(
+            [sys.executable, "-B", "-m", "dx2sdk", "--help"],
+            cwd=root, capture_output=True, timeout=20, check=False,
+        )
+        if (process.returncode != 0
+                or b"Deus Ex: Invisible War" not in process.stdout
+                or b"move" not in process.stdout):
+            issues.append("public_dx2sdk_cli_import_failed")
+    except (OSError, subprocess.TimeoutExpired):
+        issues.append("public_dx2sdk_cli_import_failed")
 
     # Refuse accidental copied map files inside the distribution. This check
     # is deliberately read-only and does not enumerate outside the prototype.

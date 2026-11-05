@@ -36,6 +36,7 @@ ZIP_DATE = (2026, 11, 5, 0, 0, 0)
 
 # Explicit source-only allowlist. No reader/user game path is ever traversed.
 ALLOWED = {
+    "dx2sdk": {".py", ".md"},
     "native_editor/godot_editor": {".gd", ".tscn", ".godot", ".json", ".md", ".py"},
     "native_editor/package_writer": {".py", ".md", ".json"},
     "map_exporter": {".py", ".md"},
@@ -48,6 +49,12 @@ ALLOWED = {
 }
 EXTRA = ("README.md", "native_editor/README.md", "native_editor/ARCHITECTURE.md")
 REQUIRED = (
+    "dx2sdk/__init__.py",
+    "dx2sdk/__main__.py",
+    "dx2sdk/api.py",
+    "dx2sdk/projects.py",
+    "dx2sdk/README.md",
+    "prototype/DX2SDK_CONSOLE.cmd",
     "native_editor/godot_editor/project.godot",
     "native_editor/godot_editor/main.tscn",
     "native_editor/godot_editor/main.gd",
@@ -193,6 +200,9 @@ def build(source_root: Path, godot_zip: Path, godot_license: Path,
         "gameplay_physics_or_walkability_verified": False,
         "native_bsp_or_mopp_writer_available": False,
         "native_gmp_save_as_location_experiment": True,
+        "public_dx2sdk_api_version": "0.1.0",
+        "public_dx2sdk_cli_included": True,
+        "public_dx2sdk_gameplay_runtime_verified": False,
         "synthetic_scene_included": True,
         "file_count_excluding_runtime": len(sources) + len(generated) + 2,
         "read_only_default": True,

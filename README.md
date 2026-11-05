@@ -4,6 +4,30 @@
 
 Our goal is a practical, UnrealEd-style modding SDK inspired by the original Deus Ex SDK and informed by research into Thief: Deadly Shadows' editor (T3Ed). The engine branches are related, but T3Ed has **not** been successfully ported to DX2.
 
+## New: DX2SDK v0.1 public Python API and Windows console
+
+A first reusable [DX2SDK API](dx2sdk/README.md) is now available, with a
+Python 3.11+ package (`from dx2sdk import DX2Map`) and a command-line
+interface (`python -B -m dx2sdk`). The native-editor Windows prototype
+also packages `DX2SDK_CONSOLE.cmd` next to `START_DX2ED.cmd`.
+A smaller **Python-only portable DX2SDK ZIP** (with `RUN_DX2SDK.cmd`,
+no Godot runtime and no retail data) is built by the separate
+[SDK source release workflow](.github/workflows/dx2sdk-source-release.yml).
+
+You can open original Ion Storm v95 `.gmp` maps, inspect source-positioned
+actors and original TriggerScript/IBD resources, run byte-identical
+T3SDK package audits, and prepare **dry-run or isolated output copies of
+native StaticMeshActor Location translations**. Source-hash-bound
+`actors.json` and the original GMP are required for native writes;
+changes are limited to position X/Y/Z float fields and independently
+verified in the saved copy. No source game file is overwritten.
+
+**This is an experimental SDK foundation**, not a finished native level
+compiler. In-game acceptance of the edited copy is not guaranteed;
+collision/BSP rebuilding, arbitrary actors, native TriggerScript writing
+and dialogue resource serialization are not supported by the new public
+API. See [SDK usage, supported operations, and safety limits](dx2sdk/README.md).
+
 ## Available now: DX2 Map Exporter 0.1
 
 **[Open the standalone map exporter](map_exporter/)** or double-click [START_MAP_EXPORTER.bat](START_MAP_EXPORTER.bat) after cloning the repository and installing Python 3.9+ with Tkinter. This read-only GUI lists your installed `.gmp` maps, detects associated mission and graphics `.ibd` resources, and exports textured `.glb` scenes with JSON reports for Blender. A command-line mode is also included.
