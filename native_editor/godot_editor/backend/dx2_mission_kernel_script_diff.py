@@ -187,6 +187,18 @@ def build_comparison(map_file: Path, actors_file: Path, script_zip: Path,
     k_blob, k_records = _unpack_bundle(kernel_ibd, kernel)
     if set(left) != set(m_records) or set(right) != set(k_records):
         raise ValueError("Original IBD resource tables inconsistent")
+    # Compare original standalone TSD payloads directly too. Record only
+    # byte positions / spans, never sample or serialize proprietary bytes.
+    with ZipFile(script_zip) as archive:
+        source_members = {p.filename.rsplit("/", 1)[-1][:-4].casefold(): p
+                          for p in archive.infolist()
+                          if p.filename.startswith("Defs/") and
+                          p.filename.casefold().endswith(".tsd")}
+        source_payloads = {}
+        for key in set(left) | set(right):
+            member = source_members.get(key)
+            if member is not None:
+                source_payloads[key] = archive.read(member)[12:]
     source_counts = Counter()
     shared_equal = 0
     shared_different = 0
@@ -208,22 +220,17 @@ def build_comparison(map_file: Path, actors_file: Path, script_zip: Path,
             "kernel_vs_standalone": None,
         }
         def source_profile(entry, blob, resource):
-            if entry is None or entry["status"] != "different_payload":
+            if entry is None or key not in source_payloads:
                 return None
-            # It is not sufficient to know SHA equality: collect size and
-            # changed-byte-run metadata, but never sample original bytes.
-            if "source_payload_size" not in entry:
-                return None
-            return {
-                "source_payload_size": entry["source_payload_size"],
-                "ibd_payload_size": entry["ibd_payload_size"],
-                "same_size": (entry["source_payload_size"] ==
-                              entry["ibd_payload_size"]),
-                "size_difference_bytes": (entry["ibd_payload_size"] -
-                                         entry["source_payload_size"]),
-            }
-        row["mission_vs_standalone"] = source_profile(lm, m_blob, m_records.get(key))
-        row["kernel_vs_standalone"] = source_profile(lk, k_blob, k_records.get(key))
+            result = byte_difference(source_payloads[key], _extract(blob, resource))
+            if ((result["byte_equal"] and entry["status"] != "exact_payload")
+                    or (not result["byte_equal"] and entry["status"] != "different_payload")):
+                raise ValueError("Original standalone TSD comparison changed")
+            return result
+        row["mission_vs_standalone"] = source_profile(
+            lm, m_blob, m_records.get(key))
+        row["kernel_vs_standalone"] = source_profile(
+            lk, k_blob, k_records.get(key))
         if lm is not None and lk is not None:
             difference = byte_difference(
                 _extract(m_blob, m_records[key]),
