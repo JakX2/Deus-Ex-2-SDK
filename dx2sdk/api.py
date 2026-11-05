@@ -45,7 +45,7 @@ from dx2_native_save_as import (  # noqa: E402
 )
 from dx2_package_roundtrip import inspect_noop  # noqa: E402
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 SDK_SCHEMA = "DX2SDK-public-api-v0.1"
 MAX_GMP = 256 * 1024 * 1024
 MAX_MOVES = 10000
@@ -157,6 +157,7 @@ class DX2Map:
             "native_supported_writer": "existing_StaticMeshActor_Location_only",
             "experimental_native_tagged_scalar_writer": "existing_StaticMeshActor_top_level_int32_float32_only",
             "experimental_original_static_prop_clone": "source_neutral_unlinked_StaticMeshActor_only",
+            "experimental_multi_prop_clone": "2_to_8_existing_neutral_unlinked_StaticMeshActor_only",
             "native_gamesys_writer_available": False,
             "script_writer_available": False,
             "dialogue_compiler_available": False,
@@ -348,6 +349,44 @@ class DX2Map:
         """Rebuild original prop clone from source and compare every byte."""
         from .clones import verify_saved_clone
         return verify_saved_clone(self, output)
+
+    def build_multi_clone_plan(self, copies: Sequence[dict]) -> dict:
+        """Read-only source-locked 2..8 existing original prop duplicate plan."""
+        from .multi_clones import build_multi_clone_plan
+        return build_multi_clone_plan(self, copies)
+
+    def write_multi_clone_plan(
+        self, copies: Sequence[dict], output: str | Path,
+    ) -> dict:
+        """Save new private source-hash-locked JSON, not a game file."""
+        from .multi_clones import write_multi_clone_plan
+        return write_multi_clone_plan(self, copies, output)
+
+    def duplicate_existing_static_props(
+        self, copies: Sequence[dict], output: str | Path,
+        *, write: bool = False,
+    ) -> dict:
+        """Safely duplicate 2..8 source-eligible props; in-memory by default.
+
+        Explicit isolated writes are binary-provenanced only. The game
+        runtime, physics/collision and arbitrary actor spawning are NOT
+        established by this operation.
+        """
+        from .multi_clones import duplicate_existing_static_props
+        return duplicate_existing_static_props(self, copies, output, write=write)
+
+    def apply_multi_clone_plan(
+        self, plan_file: str | Path, output: str | Path,
+        *, write: bool = False,
+    ) -> dict:
+        """Recheck saved source plan, then dry-run or create new isolated GMP."""
+        from .multi_clones import apply_multi_clone_plan
+        return apply_multi_clone_plan(self, plan_file, output, write=write)
+
+    def verify_saved_multi_clone(self, output: str | Path) -> dict:
+        """Independently re-clone all original source props and compare bytes."""
+        from .multi_clones import verify_saved_multi_clone
+        return verify_saved_multi_clone(self, output)
 
     def native_scalar_fields(self, actor_name: str) -> dict:
         """Inspect source-authored, experimental writable numeric tagged fields.
