@@ -61,6 +61,7 @@ PREFLIGHT_WORKERS = (
     "native_editor/godot_editor/backend/dx2_native_backend.py",
     "native_editor/godot_editor/backend/dx2_zip_stage.py",
     "native_editor/godot_editor/backend/dx2_script_ibd_provenance.py",
+    "native_editor/godot_editor/backend/dx2_mission_kernel_script_diff.py",
     "map_import_preflight.py",
     "native_editor/godot_editor/backend/dx2_collision_selection_cache.py",
     "research/dx2/export_capsule_first_contact_preview.py",
