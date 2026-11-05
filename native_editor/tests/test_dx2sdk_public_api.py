@@ -17,7 +17,11 @@ from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from dx2sdk import DX2Map, SDK_SCHEMA
+from dx2sdk import (
+    DX2Map, SDK_SCHEMA, POSITION_PLAN_SCHEMA,
+    build_position_plan, write_position_plan,
+    load_position_plan, apply_position_plan,
+)
 from dx2inspect import Package
 from test_native_save_as import fixture_gmp
 from test_dx2_script_ibd_provenance import ibd_resource, tsd
@@ -187,6 +191,108 @@ class SDKPublicSurfaceTests(unittest.TestCase):
         self.cache.write_text(json.dumps(document))
         with self.assertRaisesRegex(ValueError, "identity"):
             DX2Map.open(self.source, self.cache)
+
+    def test_authoring_project_position_plan_dry_run_apply_and_verify(self):
+        world = DX2Map.open(self.source, self.cache)
+        plan_path = self.root / "PrivatePlans" / "club_move.json"
+        source_before = self.source.read_bytes()
+        moves = {"StaticMeshActor__1": [111.0, 222.0, 333.0]}
+        proposal = build_position_plan(world, moves)
+        self.assertEqual(proposal["schema"], POSITION_PLAN_SCHEMA)
+        self.assertEqual(proposal["source_map_sha256"], self.original_sha)
+        self.assertFalse(proposal["output_is_gameplay_verified"])
+        self.assertEqual(proposal["moves"][0]["source_actor_export"], 1)
+        self.assertEqual(proposal["moves"][0]["source_native_location"],
+                         [100.0, 200.0, 300.0])
+        saved = write_position_plan(world, moves, plan_path)
+        self.assertTrue(plan_path.exists())
+        self.assertEqual(saved, proposal)
+        self.assertEqual(load_position_plan(world, plan_path), moves)
+        dry = apply_position_plan(world, plan_path, self.output)
+        self.assertEqual(dry["status"], "dry-run")
+        self.assertFalse(self.output.exists())
+        done = apply_position_plan(world, plan_path, self.output, write=True)
+        self.assertEqual(done["status"], "written-unverified")
+        self.assertTrue(done["independent_binary_verification"][
+            "verified_binary_structure"])
+        self.assertEqual(self.source.read_bytes(), source_before)
+        with self.assertRaisesRegex(ValueError, "unused"):
+            write_position_plan(world, moves, plan_path)
+
+    def test_position_plan_forged_original_identity_and_wrong_writer_flags_fail(self):
+        world = DX2Map.open(self.source, self.cache)
+        path = self.root / "my_position_plan.json"
+        write_position_plan(world,
+                            {"StaticMeshActor__1": [111, 222, 333]}, path)
+        original = json.loads(path.read_text("utf8"))
+        mutations = [
+            ("source_map_sha256", "0" * 64),
+            ("source_actor_cache_sha256", "0" * 64),
+            ("native_script_edits_enabled", True),
+            ("native_bsp_collision_writer_enabled", True),
+            ("output_is_gameplay_verified", True),
+            ("read_only_source", False),
+            ("schema", "FAKE"),
+        ]
+        for key, value in mutations:
+            with self.subTest(field=key):
+                changed = dict(original, **{key: value})
+                path.write_text(json.dumps(changed))
+                with self.assertRaises(ValueError):
+                    load_position_plan(world, path)
+        for field, change in [
+            ("source_actor_export", 999),
+            ("source_actor_class", "D_Trigger"),
+            ("source_native_location", [0, 0, 0]),
+            ("new_native_location", [100, 200, 300]),
+        ]:
+            with self.subTest(field=field):
+                changed = json.loads(json.dumps(original))
+                changed["moves"][0][field] = change
+                path.write_text(json.dumps(changed))
+                with self.assertRaises(ValueError):
+                    load_position_plan(world, path)
+        path.write_text(json.dumps(original))
+        # Same SHA-bound actor cache, new file content must still invalidate
+        # this stored plan, never silently reuse outdated GameSys state.
+        edited_cache = json.loads(self.cache.read_text("utf8"))
+        edited_cache["actors"][0]["mesh"] = "DifferentSyntheticCube"
+        self.cache.write_text(json.dumps(edited_cache))
+        with self.assertRaisesRegex(ValueError, "source or binary"):
+            load_position_plan(world, path)
+
+    def test_position_plan_cannot_be_written_under_retail_content_maps(self):
+        world = DX2Map.open(self.source, self.cache)
+        moves = {"StaticMeshActor__1": [111, 222, 333]}
+        for folder in (self.maps,
+                       self.root / "AnotherInstall" / "Content" / "DX2" / "Maps"):
+            with self.subTest(folder=folder), self.assertRaises(ValueError):
+                write_position_plan(world, moves, folder / "plan.json")
+            self.assertFalse((folder / "plan.json").exists())
+
+    def test_batch_plan_cli_creates_dry_run_and_explicit_native_copy(self):
+        plan = self.root / "PlanWorkspace" / "scene_changes.json"
+        create = self.cli("make-plan", "--map", str(self.source),
+                          "--actors", str(self.cache),
+                          "--actor", "StaticMeshActor__1",
+                          "--x", "111", "--y", "222", "--z", "333",
+                          "--plan", str(plan))
+        self.assertEqual(create.returncode, 0, create.stderr)
+        self.assertEqual(json.loads(create.stdout)["status"],
+                         "private_plan_created")
+        self.assertTrue(plan.is_file())
+        arguments = ["apply-plan", "--map", str(self.source),
+                     "--actors", str(self.cache), "--plan", str(plan),
+                     "--output", str(self.output)]
+        dry = self.cli(*arguments)
+        self.assertEqual(dry.returncode, 0, dry.stderr)
+        self.assertEqual(json.loads(dry.stdout)["status"], "dry-run")
+        self.assertFalse(self.output.exists())
+        written = self.cli(*arguments, "--write")
+        self.assertEqual(written.returncode, 0, written.stderr)
+        self.assertTrue(json.loads(written.stdout)[
+            "independent_binary_verification"]["verified_binary_structure"])
+        self.assertTrue(self.output.exists())
 
     def test_open_map_rejects_wrong_licensee_and_source_file_tampering(self):
         project = DX2Map.open(self.source)
