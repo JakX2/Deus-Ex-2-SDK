@@ -217,8 +217,6 @@ def _make_edits(world: DX2Map, changes: Mapping[str, Mapping[str, object]]) -> l
                 "offset": offset,
                 "before_value": tag["source_value"],
                 "after_value": new_value,
-                "before_hex": before.hex(),  # private manifest, original data, never CLI
-                "after_hex": new_bytes.hex(),  # private manifest, original data, never CLI
             })
             if len(edits) > MAX_EDITS:
                 raise ValueError("Native scalar edit plan exceeds 256 fields")
@@ -252,7 +250,7 @@ def save_as_scalar_copy(
     allowed = set()
     for row in edits:
         where = row["offset"]
-        new_bytes = bytes.fromhex(row["after_hex"])
+        new_bytes = _encode(row["after_value"], row["native_kind"])[1]
         if where < 0 or where + 4 > len(patched):
             raise ValueError("Native scalar position is beyond original map extent")
         for pos in range(where, where + 4):
@@ -387,9 +385,8 @@ def verify_scalar_copy(world: DX2Map, output: str | Path) -> dict:
         offset = field["offset"]
         before = original.data[offset:offset + 4]
         after = edited.data[offset:offset + 4]
-        if (row.get("before_hex") != before.hex()
-                or row.get("after_hex") != raw.hex()
-                or after != raw or before == after):
+        before_expected = _encode(field["source_value"], field["kind"])[1]
+        if (before != before_expected or after != raw or before == after):
             raise ValueError("Native scalar original/target bytes differ from manifest")
         for pos in range(offset, offset + 4):
             if pos in accepted:
