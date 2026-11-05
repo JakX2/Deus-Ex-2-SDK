@@ -10,6 +10,9 @@ A first reusable [DX2SDK API](dx2sdk/README.md) is now available, with a
 Python 3.11+ package (`from dx2sdk import DX2Map`) and a command-line
 interface (`python -B -m dx2sdk`). The native-editor Windows prototype
 also packages `DX2SDK_CONSOLE.cmd` next to `START_DX2ED.cmd`.
+A smaller **Python-only portable DX2SDK ZIP** (with `RUN_DX2SDK.cmd`,
+no Godot runtime and no retail data) is built by the separate
+[SDK source release workflow](.github/workflows/dx2sdk-source-release.yml).
 
 You can open original Ion Storm v95 `.gmp` maps, inspect source-positioned
 actors and original TriggerScript/IBD resources, run byte-identical
