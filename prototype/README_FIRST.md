@@ -56,6 +56,21 @@ first. This is **not game-runtime tested**, not native GameSys editing,
 and it does not modify original game files, TriggerScripts, brushes or
 Havok collision. Full examples are in `dx2sdk/README.md`.
 
+**Experimental v0.4 original static prop duplicate:** use
+`DX2SDK_CONSOLE.cmd clone-candidates --map ORIGINAL.gmp` to list
+native source actors with the required idle state, no links and no
+unknown native tails. Only a returned **source actor name/export**
+can be passed to `clone-prop --map ORIGINAL.gmp --actor NAME
+--export NUMBER --dx 100 --dy 0 --dz 0 --output NEW_ISOLATED_GMP`.
+A dry-run is the default. Explicit `--write` creates one new
+`StaticMeshActor` export and appends a Level actor-list reference
+in a fresh GMP copy, with existing actor bytes otherwise preserved.
+`verify-clone --map ORIGINAL.gmp --output COPY.gmp` independently
+replays the exact clone from the original GMP and compares the
+entire output byte-for-byte. This is **not arbitrary NPC spawning,
+brush placement, collision rebuild or validated retail gameplay**;
+never install the experiment into your original game.
+
 For reusable projects, **`make-plan`** writes a new source-hash-locked
 editable JSON actor position plan, and **`apply-plan`** validates the
 original GMP and private actor-cache hashes plus every actor export
