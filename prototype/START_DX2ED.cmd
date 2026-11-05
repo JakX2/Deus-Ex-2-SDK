@@ -46,7 +46,16 @@ if /I "%~1"=="--self-test" (
 echo Starting DX2Ed Windows prototype...
 echo Use Open DX2 map (.gmp) for original owner files, or Load demo cubes.
 echo Original GMP/IBD will not be bundled or uploaded by this launcher.
-start "" "%DX2ED_GODOT_GUI%" --path "%DX2ED_PROJECT%"
+if /I "%~x1"==".gmp" (
+  if not exist "%~f1" (
+    echo Original GMP path not found.
+    exit /b 1
+  )
+  echo Opening dropped original GMP through the normal read-only cache importer.
+  start "" "%DX2ED_GODOT_GUI%" --path "%DX2ED_PROJECT%" -- --gmp "%~f1"
+) else (
+  start "" "%DX2ED_GODOT_GUI%" --path "%DX2ED_PROJECT%"
+)
 if errorlevel 1 (
   echo Could not start bundled Godot 4.3. Try CHECK_DX2ED.cmd.
   pause
