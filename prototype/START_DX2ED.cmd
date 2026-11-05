@@ -1,0 +1,54 @@
+@echo off
+setlocal EnableExtensions
+cd /d "%~dp0"
+call "%~dp0CHECK_DX2ED.cmd"
+if errorlevel 1 (
+  echo.
+  echo DX2Ed cannot launch until the checks above pass.
+  if /I not "%~1"=="--self-test" pause
+  exit /b 1
+)
+
+set "DX2ED_PROJECT=%~dp0native_editor\godot_editor"
+set "DX2ED_GODOT_GUI=%~dp0runtime\Godot_v4.3-stable_win64.exe"
+set "DX2ED_GODOT_CONSOLE=%~dp0runtime\Godot_v4.3-stable_win64_console.exe"
+
+if /I "%~1"=="--self-test" (
+  echo.
+  echo Running asset-free Godot 4.3 DX2Ed source fixtures...
+  for %%S in (
+    smoke_triangle_picking.gd
+    smoke_source_collision_picker.gd
+    smoke_capsule_contact_preview.gd
+    smoke_interactive_capsule_sweep.gd
+    smoke_source_surface_step_diagnostics.gd
+    smoke_exact_source_edge_transitions.gd
+    smoke_source_edge_capsule_probe.gd
+    smoke_source_edge_capsule_height_overlay.gd
+    smoke_source_edge_capsule_height_replay.gd
+  ) do (
+    echo Testing %%S
+    "%DX2ED_GODOT_CONSOLE%" --headless --path "%DX2ED_PROJECT%" --script "res://tests/%%S"
+    if errorlevel 1 (
+      echo FAILED: %%S
+      exit /b 1
+    )
+  )
+  echo.
+  echo Running project startup smoke check...
+  "%DX2ED_GODOT_CONSOLE%" --headless --path "%DX2ED_PROJECT%" --quit-after 3
+  if errorlevel 1 exit /b 1
+  echo DX2Ed Windows prototype self-test: PASS
+  exit /b 0
+)
+
+echo Starting DX2Ed Windows prototype...
+echo Use Open DX2 map (.gmp) for original owner files, or Load demo cubes.
+echo Original GMP/IBD will not be bundled or uploaded by this launcher.
+start "" "%DX2ED_GODOT_GUI%" --path "%DX2ED_PROJECT%"
+if errorlevel 1 (
+  echo Could not start bundled Godot 4.3. Try CHECK_DX2ED.cmd.
+  pause
+  exit /b 1
+)
+exit /b 0
