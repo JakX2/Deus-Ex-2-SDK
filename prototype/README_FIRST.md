@@ -56,6 +56,21 @@ first. This is **not game-runtime tested**, not native GameSys editing,
 and it does not modify original game files, TriggerScripts, brushes or
 Havok collision. Full examples are in `dx2sdk/README.md`.
 
+**Experimental v0.5 source-locked batch prop cloning:** after checking
+original source actors with `clone-candidates`, you can build a
+reusable private plan using `DX2SDK_CONSOLE.cmd make-multi-clone-plan
+--map ORIGINAL.gmp --copy EXPORT DX DY DZ --copy EXPORT DX DY DZ
+--plan PRIVATE/clone_plan.json`. There must be 2–8 copies, each
+referencing an original eligible `StaticMeshActor`. The CLI
+`apply-multi-clone-plan --map ORIGINAL.gmp --plan PRIVATE/clone_plan.json
+--output ISOLATED/ORIGINAL.gmp` is a complete in-memory dry run
+unless explicitly given `--write`. It creates new native exports/Level
+actor references in a separate GMP, never altering the source.
+`verify-multi-clone` recomputes the original-source package changes
+and compares the entire result, byte-for-byte. This is source-only
+binary testing, **not retail gameplay, actor physics or collision
+verification**.
+
 **Experimental v0.4 original static prop duplicate:** use
 `DX2SDK_CONSOLE.cmd clone-candidates --map ORIGINAL.gmp` to list
 native source actors with the required idle state, no links and no
