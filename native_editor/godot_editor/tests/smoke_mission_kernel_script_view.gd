@@ -14,6 +14,16 @@ func _fail(reason: String) -> void:
 func _profile(equal: bool, offset: int = -1, source_bytes: int = 20,
         target_bytes: int = 20) -> Dictionary:
     return {
+        "candidate_word4_4byte_slot_comparable":
+            source_bytes >= 8 and target_bytes >= 8,
+        "candidate_word4_changed": not equal and offset >= 4 and offset <= 7,
+        "candidate_word4_differing_bytes": 1 if not equal and offset >= 4 and offset <= 7 else 0,
+        "candidate_word4_only_difference":
+            not equal and offset >= 4 and offset <= 7 and source_bytes == target_bytes,
+        "candidate_word4_and_other_changes":
+            not equal and offset >= 4 and offset <= 7 and source_bytes != target_bytes,
+        "candidate_non_word4_or_length_difference":
+            not equal and (offset < 4 or offset > 7 or source_bytes != target_bytes),
         "byte_equal": equal,
         "left_size": source_bytes, "right_size": target_bytes,
         "same_size": source_bytes == target_bytes,
@@ -110,6 +120,9 @@ func _run() -> void:
         or not summary.contains("Shared scripts with different mission/kernel payloads: 1")
         or not summary.contains("byte 4: 1 scripts")
         or not summary.contains("different lengths: 1")
+        or not summary.contains("Candidate bytes 4..7 only changed: 1")
+        or not summary.contains("Bytes 4..7 and other bytes/length changed: 0")
+        or not summary.contains("do NOT establish")
         or not summary.contains("Runtime actor-to-script bindings remain UNVERIFIED")):
         _fail("Original resource diff summary or byte-offset histogram incorrect")
         return
