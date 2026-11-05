@@ -13,5 +13,5 @@ if not defined DX2ED_PYTHON (
   echo Install the standard Python distribution and enable Add Python to PATH.
   exit /b 1
 )
-%DX2ED_PYTHON% "%~dp0prototype_doctor.py" --root "%~dp0"
+%DX2ED_PYTHON% "%~dp0prototype_doctor.py" --root "%~dp0."
 exit /b %errorlevel%
