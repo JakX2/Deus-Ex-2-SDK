@@ -103,7 +103,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
             archive.extractall(extracted)
         package = extracted / builder.ARCHIVE_ROOT
         worker = package / "map_import_preflight.py"
-        worker.write_text('raise RuntimeError("PRIVATE_OWNER_PATH_MUST_NOT_LEAK")\\n')
+        worker.write_text('raise RuntimeError("PRIVATE_OWNER_PATH_MUST_NOT_LEAK")\n')
         issues = doctor.examine(package)
         self.assertIn("worker_import_failed:map_import_preflight.py", issues)
         self.assertNotIn("PRIVATE_OWNER_PATH_MUST_NOT_LEAK", json.dumps(issues))
