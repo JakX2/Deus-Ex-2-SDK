@@ -1,5 +1,6 @@
 extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
+const PythonRuntime = preload("res://python_runtime.gd")
 const SourceCollisionPicker = preload("res://collision_source_picker.gd")
 const CapsuleContactPreview = preload("res://capsule_contact_preview.gd")
 const CapsuleSweepPanel = preload("res://capsule_sweep_panel.gd")
@@ -1434,7 +1435,7 @@ func _run_zip_stage(script: String, club: String, shared: String, system_zip: St
     if system_zip != "":
         args.append_array(PackedStringArray(["--system", system_zip]))
     var output: Array = []
-    var code := OS.execute("python", args, output, true)
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
     if code == -1:
         var py_args := PackedStringArray(["-3"])
         py_args.append_array(args)
@@ -1502,7 +1503,7 @@ func _run_backend(script: String, gmp_path: String, cache_root: String, ibd_path
     if auto_roll:
         args.append("--preview-auto-roll")
     var output: Array = []
-    var code := OS.execute("python", args, output, true)
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
     if code == -1:
         # On Windows the Python launcher may be on PATH even if python.exe isn't.
         var py_args := PackedStringArray(["-3"])
@@ -2124,7 +2125,7 @@ func _run_original_gameplay_scripts(script: String, map_file: String,
         "--scripts", archive, "--output", target
     ])
     var output: Array = []
-    var code := OS.execute("python", args, output, true)
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
     if code == -1:
         var pyargs := PackedStringArray(["-3"])
         pyargs.append_array(args)
@@ -3006,7 +3007,7 @@ func _run_environment_light_dependency_audit(script: String, source: String,
         "--actor-export", str(actor_export)
     ])
     var output: Array = []
-    var code := OS.execute("python", args, output, true)
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
     if code == -1:
         var pyargs := PackedStringArray(["-3"])
         pyargs.append_array(args)
@@ -3259,7 +3260,7 @@ func _run_environment_sound_export(script: String, frozen: Dictionary) -> void:
         "--output", str(frozen["destination"])
     ])
     var output: Array = []
-    var code := OS.execute("python", args, output, true)
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
     if code == -1:
         var pyargs := PackedStringArray(["-3"])
         pyargs.append_array(args)
@@ -3648,7 +3649,7 @@ func _run_source_light_bool_export(script: String, source: String, context: Dict
         "--expect", original, "--replace", replacement, "--output", destination
     ])
     var output: Array = []
-    var code := OS.execute("python", args, output, true)
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
     if code == -1:
         var launcher := PackedStringArray(["-3"])
         launcher.append_array(args)
@@ -3807,7 +3808,7 @@ func _open_original_skeletal_zip(path: String) -> void:
         return
     var args := PackedStringArray([script, path])
     var output: Array = []
-    var code := OS.execute("python", args, output, true)
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
     if code == -1:
         output.clear()
         code = OS.execute("py", PackedStringArray(["-3", script, path]), output, true)
@@ -4032,7 +4033,7 @@ func _place_selected_asset() -> void:
 func _run_asset_preview(script: String, catalog: String, name: String) -> void:
     var args := PackedStringArray([script, "--catalog", catalog, "--name", name])
     var output: Array = []
-    var code := OS.execute("python", args, output, true)
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
     if code == -1:
         var launcher := PackedStringArray(["-3"])
         launcher.append_array(args)
@@ -5850,7 +5851,7 @@ func _run_native_verify(script: String, source: String, output_path: String) -> 
         script, "--source", source, "--output", output_path, "--verify"
     ])
     var output: Array = []
-    var code := OS.execute("python", args, output, true)
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
     if code == -1:
         var launcher := PackedStringArray(["-3"])
         launcher.append_array(args)
@@ -5906,7 +5907,7 @@ func _audit_current_native_map() -> void:
 func _run_native_audit(script: String, source: String, actors_path: String) -> void:
     var args := PackedStringArray([script, "--source", source, "--actors", actors_path, "--audit"])
     var output: Array = []
-    var code := OS.execute("python", args, output, true)
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
     if code == -1:
         var py_args := PackedStringArray(["-3"])
         py_args.append_array(args)
@@ -6024,7 +6025,7 @@ func _native_clone_check_actor(script: String, plan: Dictionary) -> Dictionary:
         "--actor-name", str(plan["actor"])
     ])
     var stdout: Array = []
-    var code := OS.execute("python", args, stdout, true)
+    var code := OS.execute(PythonRuntime.executable(), args, stdout, true)
     if code == -1:
         var pyargs := PackedStringArray(["-3"])
         pyargs.append_array(args)
@@ -6149,7 +6150,7 @@ func _run_native_clone_export(script: String, frozen: Dictionary) -> void:
         "--output", str(frozen["destination"])
     ])
     var stdout: Array = []
-    var code := OS.execute("python", args, stdout, true)
+    var code := OS.execute(PythonRuntime.executable(), args, stdout, true)
     if code == -1:
         var pyargs := PackedStringArray(["-3"])
         pyargs.append_array(args)
@@ -6322,7 +6323,7 @@ func _run_native_multi_export(script: String, frozen: Dictionary) -> void:
         "--copies-json", str(frozen["plan_path"]), "--output", str(frozen["destination"])
     ])
     var output: Array = []
-    var status := OS.execute("python", args, output, true)
+    var status := OS.execute(PythonRuntime.executable(), args, output, true)
     if status == -1:
         var pyargs := PackedStringArray(["-3"])
         pyargs.append_array(args)
@@ -6404,7 +6405,7 @@ func _run_native_export(script: String, source: String, actors_path: String, dra
         "--draft", draft, "--output", output
     ])
     var stdout: Array = []
-    var status := OS.execute("python", args, stdout, true)
+    var status := OS.execute(PythonRuntime.executable(), args, stdout, true)
     if status == -1:
         var launcher := PackedStringArray(["-3"])
         launcher.append_array(args)
@@ -7117,7 +7118,7 @@ func _build_source_collision_cache(script: String, source: String, cache: String
     var args := PackedStringArray([
         script, "--map", source, "--output", cache, "--expected-sha256", sha])
     var output: Array = []
-    var code := OS.execute("python", args, output, true)
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
     if code == -1:
         var py_args := PackedStringArray(["-3"])
         py_args.append_array(args)
