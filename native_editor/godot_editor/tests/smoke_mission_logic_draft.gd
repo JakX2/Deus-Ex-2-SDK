@@ -30,10 +30,14 @@ func _catalog() -> Dictionary:
     }
 
 func _actors() -> Array:
-    return [
+    # Read through the same Godot JSON parser as real actors.json. On Godot
+    # 4.3, the native export fields become floating-point numeric values.
+    var source: Array = [
         {"name": "SyntheticSwitch__4", "class": "Trigger", "export": 42},
         {"name": "SyntheticDoor__2", "class": "Mover", "export": 51},
     ]
+    var decoded: Variant = JSON.parse_string(JSON.stringify(source))
+    return decoded
 
 func _run() -> void:
     var model = Draft.new()
