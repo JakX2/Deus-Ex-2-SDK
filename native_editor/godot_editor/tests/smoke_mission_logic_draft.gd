@@ -144,8 +144,14 @@ func _run() -> void:
         _fail("Synthetic private test draft could not be cleaned up")
         return
     var check: Variant = JSON.parse_string(old_text)
-    if typeof(check) != TYPE_DICTIONARY or check != snapshot:
-        _fail("Private saved content changed an authoring-only field")
+    # Godot JSON materializes integer fields as floating-point numbers.
+    # Compare the *source-validated, normalized* reloaded document instead
+    # of byte-for-byte Variant types that JSON does not preserve.
+    if typeof(check) != TYPE_DICTIONARY or not model.load_document(check):
+        _fail("Private on-disk document failed source-identity validation")
+        return
+    if model.make_document() != snapshot:
+        _fail("Private persisted document changed an authoring-only field")
         return
     var from_other_source = Draft.new()
     var foreign := _catalog()
