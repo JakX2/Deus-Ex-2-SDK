@@ -31,7 +31,13 @@ The SDK also offers original-script/IBD source reads and a **real but
 experimental native edit**: translate existing `StaticMeshActor` locations
 using exact original GMP + private matching `actors.json`, first through
 an automatic **dry run**, then (only with `--write`) a new copy in a
-separate, non-game folder. The isolated copy is re-opened and **every
+separate, non-game folder.
+For reusable projects, **`make-plan`** writes a new source-hash-locked
+editable JSON actor position plan, and **`apply-plan`** validates the
+original GMP and private actor-cache hashes plus every actor export
+identity before dry-running or explicitly writing several moves. These
+plans are not native game resources and must not be placed in your
+retail game folders. The isolated copy is re-opened and **every
 changed original byte** checked against allowed serialized Location fields.
 This is **binary verification, not proof that the retail game loads the
 edited map**. No original source GMP or IBD is modified. Arbitrary
