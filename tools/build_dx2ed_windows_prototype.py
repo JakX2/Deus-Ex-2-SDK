@@ -44,6 +44,7 @@ ALLOWED = {
     "third_party/t3sdk_assets": {".py", ".json", ".md"},
     "docs/research": {".md"},
     "prototype": {".cmd", ".py", ".md"},
+    "tools/scripts": {".py"},
 }
 EXTRA = ("README.md", "native_editor/README.md", "native_editor/ARCHITECTURE.md")
 REQUIRED = (
