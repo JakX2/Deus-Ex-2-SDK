@@ -240,3 +240,71 @@ maps and whether exact-match counts are consistent with source script
 presence. Do not infer a native binding from aggregate trends alone. Before
 enabling script assignment, independently validate GameSys 92 element type
 and mission-scope resource index resolution with retail runtime evidence.
+
+
+## Follow-up: mission IBD versus original Kernel_TSDALL binary profiles (v10, November 5, 2026)
+
+User-side Seattle Club evidence already showed **37/37** original actors with
+native GameSys property 92 successfully decoded and **103/103** raw
+compact integers landing on original GMP name-table entries whose names
+match active standalone TriggerScript IDs at offset zero. Shift controls
+(-2, -1, +1, +2) yielded only 29–30 such name matches each. In the
+**selected Club IBD**, the actor-name-slot candidate occurrences were
+**17 exact and 71 different** relative to original standalone TSD
+payloads (with 15 occurrences not in either classification).
+These are **actor candidate *occurrences***, not necessarily unique
+script definitions or evidence of runtime execution.
+
+The v10 native read-only differential builds on that observation. The
+**Scripts → Compare mission IBD against Kernel_TSDALL...** command
+requires the same source-authenticated GMP, original actors.json,
+TriggerScript ZIP, and a previously verified **mission-specific** IBD
+selected via **Verify script resources in original IBD...**. It
+requires a *different* user-owned original IBD named
+`Kernel_TSDALL.ibd`.
+
+The new `dx2_mission_kernel_script_diff.py` independently compares
+three distinct source payload relationships per named script:
+
+1. The mission-specific kind-21 IBD resource versus the original
+   standalone `Defs/*.tsd` bytes after the known 12-byte TSD header.
+2. The same script in the original `Kernel_TSDALL.ibd` versus that
+   standalone TSD payload.
+3. If both IBDs contain the script, mission IBD versus Kernel IBD
+   *directly*, independently of any standalone TSD definition.
+
+Result categories preserve exact matches, differing bytes, a script
+missing from one IBD, and a name found in an IBD but not in the active
+source ZIP. For each comparable pair, the private local JSON contains
+only SHA/provenance metadata, sizes, first different payload byte
+offset, common prefix/suffix lengths, overlapping different-byte count
+and changed-byte-run count. **Original script bytes are never copied
+into the report or published by DX2Ed**.
+
+The Godot UI presents a **sanitized aggregate** of total unique IBD
+resources, shared/mission-only/kernel-only IDs, exact versus different
+copies, and the **five most common first differing offsets** in each
+of the three comparisons. This can distinguish common structural
+divergences from scattered byte changes but **cannot establish their
+cause** without deeper native format research. A user can inspect
+byte-offset metadata for an individual selected original script locally.
+The **Copy sanitized mission / Kernel summary** button deliberately
+excludes source filenames, paths, actor/script names, hashes and binary
+content. Original actor name-table candidate occurrences are tracked
+separately from unique IBD resources to avoid misreporting earlier
+17/71 reference-weighted counts as unique script counts.
+
+These source-derived results do not prove an actor's runtime script
+binding, executable modifications, native bytecode compilation,
+mission-script link installation, or dialogue serialization. The
+existing native GMP Save As and IBD writers are **not** connected to
+this research. Original game input files remain unchanged; only a new
+private JSON report is generated outside the game directories.
+
+This PR includes source-only Python tests with synthetic IBD resource
+tables and differing-length/equal-length binary payloads, original GMP
+cache SHA mismatch, invalid kernel selection and corrupted IBD refusal,
+private report non-overwrite/path protection, and deliberate redaction of
+owner-local CLI output. A dedicated Godot fixture tests first-byte
+offset clustering, privacy-safe summaries, detailed script metadata,
+and refusal of forged native runtime flags.
