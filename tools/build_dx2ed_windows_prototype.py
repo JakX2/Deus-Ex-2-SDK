@@ -52,6 +52,7 @@ REQUIRED = (
     "dx2sdk/__init__.py",
     "dx2sdk/__main__.py",
     "dx2sdk/api.py",
+    "dx2sdk/projects.py",
     "dx2sdk/README.md",
     "prototype/DX2SDK_CONSOLE.cmd",
     "native_editor/godot_editor/project.godot",
