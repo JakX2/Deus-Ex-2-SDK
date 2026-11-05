@@ -63,9 +63,13 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
             self.assertIsNone(archive.testzip())
             files = set(archive.namelist())
             for name in [
-                "START_DX2ED.cmd", "CHECK_DX2ED.cmd", "prototype_doctor.py",
+                "START_DX2ED.cmd", "CHECK_DX2ED.cmd", "DIAGNOSE_GMP.cmd",
+                "prototype_doctor.py", "map_import_preflight.py",
                 "native_editor/godot_editor/project.godot",
                 "native_editor/godot_editor/main.gd",
+                "native_editor/godot_editor/python_runtime.gd",
+                "native_editor/godot_editor/startup_route.gd",
+                "native_editor/godot_editor/tests/smoke_python_runtime.gd",
                 "native_editor/godot_editor/demo/scene.glb",
                 "native_editor/godot_editor/demo/actors.json",
                 "native_editor/godot_editor/tests/smoke_source_edge_capsule_height_replay.gd",
@@ -91,6 +95,27 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
             extracted = Path(self.tmp.name) / "unpacked"
             archive.extractall(extracted)
         self.assertEqual(doctor.examine(extracted / builder.ARCHIVE_ROOT), [])
+
+    def test_doctor_executes_real_worker_import_preflight_not_just_syntax(self):
+        self._build()
+        with ZipFile(self.output) as archive:
+            extracted = Path(self.tmp.name) / "unpacked"
+            archive.extractall(extracted)
+        package = extracted / builder.ARCHIVE_ROOT
+        worker = package / "map_import_preflight.py"
+        worker.write_text('raise RuntimeError("PRIVATE_OWNER_PATH_MUST_NOT_LEAK")\n')
+        issues = doctor.examine(package)
+        self.assertIn("worker_import_failed:map_import_preflight.py", issues)
+        self.assertNotIn("PRIVATE_OWNER_PATH_MUST_NOT_LEAK", json.dumps(issues))
+
+    def test_windows_launchers_preserve_verified_python_and_owner_map_routing(self):
+        check = (ROOT / "prototype/CHECK_DX2ED.cmd").read_text(encoding="utf-8")
+        start = (ROOT / "prototype/START_DX2ED.cmd").read_text(encoding="utf-8")
+        self.assertIn('DX2ED_PYTHON_EXE', check)
+        self.assertIn('print(sys.executable)', check)
+        self.assertIn('smoke_python_runtime.gd', start)
+        self.assertIn('-- --gmp "%~f1"', start)
+        self.assertIn('CHECK_DX2ED.cmd', start)
 
     def test_untrusted_extra_zip_asset_never_copied(self):
         self._runtime_zip(append_game_asset=True)

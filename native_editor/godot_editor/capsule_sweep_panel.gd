@@ -7,6 +7,7 @@ const PickState = preload("res://capsule_sweep_picks.gd")
 const ExactChord = preload("res://source_edge_capsule_chord.gd")
 const HeightOverlay = preload("res://source_edge_capsule_height_overlay.gd")
 const HeightReplay = preload("res://source_edge_capsule_height_replay.gd")
+const PythonRuntime = preload("res://python_runtime.gd")
 
 var editor_host: Control
 var picks = PickState.new()
@@ -430,7 +431,7 @@ func _run_research(height_offsets: Array = [], replay_index: int = -1,
 func _worker_run(args: PackedStringArray, output: String,
                  source: String, sha: String, folder: String) -> void:
     var results: Array = []
-    var code := OS.execute("python", args, results, true)
+    var code := OS.execute(PythonRuntime.executable(), args, results, true)
     if code == -1:
         var windows := PackedStringArray(["-3"])
         windows.append_array(args)
