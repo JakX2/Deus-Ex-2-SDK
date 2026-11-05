@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a Python-only, original-game-file-free DX2SDK v0.1 source ZIP.
+"""Build a Python-only, original-game-file-free DX2SDK v0.3 source ZIP.
 
 No Godot 4.3 binary or interpreter bundled. All imports are local,
 standard-library + the existing audited DX2Ed / MIT T3SDK sources.
