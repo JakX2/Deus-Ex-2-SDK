@@ -122,7 +122,7 @@ func _run() -> void:
     if (not details.contains("Script ID: TS_B")
         or not details.contains("First differing payload byte: 4")
         or not details.contains("Different overlapping bytes: 1")
-        or not details.contains("does NOT prove runtime actor bindings")):
+        or not details.contains("do NOT prove runtime actor bindings")):
         _fail("Per-script source diff metadata / runtime warning missing")
         return
     var forged: Dictionary = sample.duplicate(true)
