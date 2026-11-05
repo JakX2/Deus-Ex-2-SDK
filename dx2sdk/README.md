@@ -108,6 +108,50 @@ coordinates. Python scripts may submit multiple distinct actors in one plan,
 up to the underlying native writer's explicit bound. All basis/rotation data
 are preserved from the exact source map.
 
+### Reusable source-locked batch move projects
+
+DX2SDK can now save a **versioned editable JSON position plan** rather
+than committing a native GMP modification immediately. The plan pins
+the exact original GMP SHA-256, exact DX2Ed actor-cache SHA-256, actor
+export IDs, original locations and requested new native X/Y/Z.
+
+```bat
+DX2SDK_CONSOLE.cmd make-plan --map "D:\\Games\\DXIW\\Content\\DX2\\Maps\\M1_Test.gmp" --actors "D:\\DX2EdPrivateCache\\actors.json" --actor "StaticMeshActor__1" --x 125 --y 275 --z 350 --plan "D:\\DX2SDK_Experiment\\move_plan.json"
+DX2SDK_CONSOLE.cmd apply-plan --map "D:\\Games\\DXIW\\Content\\DX2\\Maps\\M1_Test.gmp" --actors "D:\\DX2EdPrivateCache\\actors.json" --plan "D:\\DX2SDK_Experiment\\move_plan.json" --output "D:\\DX2SDK_Experiment\\M1_Test.gmp"
+```
+
+The second command is still a **dry run**. Append `--write` to
+`apply-plan` only when you have chosen a fresh non-game output path
+and want a new isolated GMP copy. The plan JSON can list multiple
+existing actors, but each row's class, export number and original
+location must agree with the source-authenticated cache. A stale,
+modified or forged actor identity fails closed, even if the plan's
+target coordinates are otherwise plausible.
+
+Python can create multi-actor plans directly:
+
+```python
+from dx2sdk import DX2Map, write_position_plan, apply_position_plan
+
+world = DX2Map.open(source, actors_json)
+write_position_plan(world, {
+    "StaticMeshActor__1": (125.0, 275.0, 350.0),
+    "StaticMeshActor__2": (450.0, 160.0, 75.0),
+}, r"D:\DX2SDK_Experiment\move_plan.json")
+
+# Test first; explicit write=True required for a native output file.
+print(apply_position_plan(
+    world,
+    r"D:\DX2SDK_Experiment\move_plan.json",
+    r"D:\DX2SDK_Experiment\M1_Test.gmp",
+))
+```
+
+The example names and coordinates are illustrative only; your actual
+source map must contain those exact existing actors. JSON plans are
+**private project files** and may include map hashes and actor names.
+Don't publish them without reviewing their contents.
+
 ### Read-only original script resources
 
 ```python
@@ -152,6 +196,8 @@ without owner-original filenames or asset bytes.
 | `native-audit` | GMP + actors.json | Source-backed writable-Location inventory | No |
 | `noop-audit` | GMP | T3SDK/DX2SDK identical package roundtrip | No |
 | `move` | GMP + actors.json + output | Dry-run by default; optional new isolated GMP copy with `--write` | Only new isolated copy |
+| `make-plan` | GMP + actors.json | Write a new SHA-bound editable actor position plan JSON | Private JSON only |
+| `apply-plan` | GMP + actors.json + saved plan + output | Revalidate multi-actor source identity, dry-run or isolated new native GMP with `--write` | Only new isolated copy |
 | `verify-move` | Original GMP + isolated copy | Verify the approved changed native byte ranges | No |
 
 The entry point never downloads, locates or bundles original retail content.
