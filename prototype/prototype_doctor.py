@@ -11,6 +11,7 @@ import ast
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 import sys
 
 SCHEMA = "DX2Ed-Windows-source-prototype-bundle-v1"
@@ -35,6 +36,17 @@ REQUIRED = (
     "GODOT_LICENSE.txt",
     "prototype-manifest.json",
 )
+# Run these actual Python entry points with --help, not just AST.parse.
+# stdlib-only imports should work on a clean machine without any DX2 game
+# assets. The -B flag prevents __pycache__ writes in the extracted ZIP.
+PREFLIGHT_WORKERS = (
+    "native_editor/godot_editor/backend/dx2_native_backend.py",
+    "native_editor/godot_editor/backend/dx2_zip_stage.py",
+    "native_editor/godot_editor/backend/dx2_collision_selection_cache.py",
+    "research/dx2/export_capsule_first_contact_preview.py",
+    "native_editor/package_writer/dx2_actor_clone_probe.py",
+)
+
 RETAIL_EXT = {".gmp", ".ibd", ".d2u", ".t3u", ".ibt", ".pak", ".dds",
               ".mp3", ".wav", ".bik", ".tsd"}
 
@@ -97,6 +109,21 @@ def examine(root: Path) -> list[str]:
             issues.append("godot_license_notice_missing")
     except (OSError, UnicodeError):
         issues.append("godot_license_notice_missing")
+    # A source file can pass syntax validation while its imports fail at
+    # runtime (wrong relative layout, missing source worker, unbundled module).
+    # Capture/suppress private exception text; report a fixed relative filename.
+    for relative in PREFLIGHT_WORKERS:
+        try:
+            process = subprocess.run(
+                [sys.executable, "-B", str(root / relative), "--help"],
+                cwd=root, capture_output=True, timeout=20, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            issues.append("worker_import_failed:" + relative)
+            continue
+        if process.returncode != 0:
+            issues.append("worker_import_failed:" + relative)
+
     # Refuse accidental copied map files inside the distribution. This check
     # is deliberately read-only and does not enumerate outside the prototype.
     for file in root.rglob("*"):
