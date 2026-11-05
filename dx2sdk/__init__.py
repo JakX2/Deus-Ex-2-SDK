@@ -1,4 +1,4 @@
-"""Public DX2SDK v0.3 Python API, built on the open-source DX2Ed research project.
+"""Public DX2SDK v0.4 Python API, built on the open-source DX2Ed research project.
 
 Usage:
     from dx2sdk import DX2Map
