@@ -23,6 +23,9 @@ if str(MAP_EXPORTER) not in sys.path:
 
 from dx2inspect import Package
 from dx2scene import decode_full_actor
+from dx2_script_index_hypothesis_audit import (
+    audit_name_offset_hypotheses, unavailable as index_audit_unavailable,
+)
 
 MAX_NAME_TABLE = 3_000_000
 MAX_ACTORS = 30_000
@@ -53,6 +56,7 @@ def inspect_name_candidates(
         "actor_to_script_binding_verified": False,
         "name_table_indices_semantics_verified": False,
         "native_script_writer_enabled": False,
+        "map_wide_index_audit": index_audit_unavailable("source_package_unavailable"),
         "actors": [],
         "counts": {
             "source_script_actors": len(source_actor_rows),
@@ -148,6 +152,14 @@ def inspect_name_candidates(
     unavailable["status"] = "original_package_name_slots_inspected"
     unavailable["actors"] = actors
     unavailable["counts"] = counts
+    try:
+        unavailable["map_wide_index_audit"] = audit_name_offset_hypotheses(
+            package.names, actors, definitions, ibd_entries)
+    except ValueError:
+        # This is an optional aggregate research layer. Never interpret a
+        # malformed candidate document as support for executable bindings.
+        unavailable["map_wide_index_audit"] = index_audit_unavailable(
+            "source_evidence_inconsistent")
     return unavailable
 
 
