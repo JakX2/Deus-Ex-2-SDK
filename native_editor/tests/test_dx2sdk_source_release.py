@@ -31,7 +31,7 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
     def test_standalone_source_zip_includes_all_runtime_modules_but_no_assets(self):
         report = build(ROOT, self.first)
         self.assertEqual(report["schema"], SCHEMA)
-        self.assertEqual(report["version"], "0.2.0")
+        self.assertEqual(report["version"], "0.3.0")
         self.assertFalse(report["includes_original_dx2_assets"])
         self.assertFalse(report["gameplay_runtime_verified"])
         self.assertGreater(report["file_count"], 12)
@@ -43,6 +43,7 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
             self.assertIn(f"{ARCHIVE}/dx2sdk/api.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/projects.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/catalog.py", names)
+            self.assertIn(f"{ARCHIVE}/dx2sdk/scalars.py", names)
             self.assertIn(f"{ARCHIVE}/actor_explorer/dx2_actor_explorer.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/__main__.py", names)
             self.assertIn(f"{ARCHIVE}/RUN_DX2SDK.cmd", names)
@@ -170,7 +171,41 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
         inspected = json.loads(inspector.stdout)
         self.assertEqual(inspected["tagged_properties"]["FixtureFlag"], 98765)
         self.assertFalse(inspected["native_property_writer_enabled"])
+        scalar_args = ["--map", str(source), "--actors", str(cache),
+                       "--actor", "StaticMeshActor__1"]
+        fields = subprocess.run([
+            sys.executable, "-B", "-m", "dx2sdk", "scalar-fields",
+            *scalar_args,
+        ], cwd=sdk, capture_output=True, text=True, timeout=30)
+        self.assertEqual(fields.returncode, 0, fields.stderr)
+        self.assertEqual(json.loads(fields.stdout)["fields"][0]["property"],
+                         "FixtureFlag")
+        output = self.root / "IsolatedScalar" / source.name
+        command = [
+            sys.executable, "-B", "-m", "dx2sdk", "set-scalar",
+            *scalar_args, "--property", "FixtureFlag",
+            "--value", "13579", "--output", str(output),
+        ]
+        dry = subprocess.run(
+            command, cwd=sdk, capture_output=True, text=True, timeout=30)
+        self.assertEqual(dry.returncode, 0, dry.stderr)
+        self.assertEqual(json.loads(dry.stdout)["status"], "dry-run")
+        self.assertFalse(output.exists())
+        written = subprocess.run(
+            [*command, "--write"], cwd=sdk, capture_output=True,
+            text=True, timeout=30)
+        self.assertEqual(written.returncode, 0, written.stderr)
+        self.assertTrue(json.loads(written.stdout)[
+            "independent_binary_verification"])
+        verified = subprocess.run([
+            sys.executable, "-B", "-m", "dx2sdk", "verify-scalar",
+            "--map", str(source), "--actors", str(cache),
+            "--output", str(output),
+        ], cwd=sdk, capture_output=True, text=True, timeout=30)
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        self.assertTrue(json.loads(verified.stdout)["verified_binary_structure"])
         self.assertEqual(source.read_bytes(), before)
+        self.assertNotEqual(output.read_bytes(), before)
 
     def test_deterministic_zip_source_hashes(self):
         build(ROOT, self.first)

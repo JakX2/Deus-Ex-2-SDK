@@ -45,7 +45,7 @@ from dx2_native_save_as import (  # noqa: E402
 )
 from dx2_package_roundtrip import inspect_noop  # noqa: E402
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 SDK_SCHEMA = "DX2SDK-public-api-v0.1"
 MAX_GMP = 256 * 1024 * 1024
 MAX_MOVES = 10000
@@ -155,6 +155,8 @@ class DX2Map:
             "original_game_assets_modified": False,
             "gameplay_runtime_verified": False,
             "native_supported_writer": "existing_StaticMeshActor_Location_only",
+            "experimental_native_tagged_scalar_writer": "existing_StaticMeshActor_top_level_int32_float32_only",
+            "native_gamesys_writer_available": False,
             "script_writer_available": False,
             "dialogue_compiler_available": False,
             "bsp_or_collision_rebuild_available": False,
@@ -317,6 +319,33 @@ class DX2Map:
             self.source, self.actors_file,
             Path(original_trigger_script_zip),
             Path(mission_ibd), Path(kernel_ibd))
+
+    def native_scalar_fields(self, actor_name: str) -> dict:
+        """Inspect source-authored, experimental writable numeric tagged fields.
+
+        Only original *top-level* int32/float32 tagged values on existing,
+        mesh-resolved source StaticMeshActors are considered. No GameSys
+        block edits, script editing or game runtime guarantees.
+        """
+        from .scalars import original_scalar_fields
+        return original_scalar_fields(self, actor_name)
+
+    def save_as_scalar_changes(
+        self, changes: Mapping[str, Mapping[str, object]],
+        output: str | Path, *, write: bool = False,
+    ) -> dict:
+        """Experimental isolated GMP copy, only explicit typed scalar patches.
+
+        A full independent MIT T3SDK package no-op roundtrip is required
+        before every write. Defaults to dry-run, never modifies source GMP.
+        """
+        from .scalars import save_as_scalar_copy
+        return save_as_scalar_copy(self, changes, output, write=write)
+
+    def verify_saved_scalar_changes(self, output: str | Path) -> dict:
+        """Independent entire-original-byte verification for scalar GMP copy."""
+        from .scalars import verify_scalar_copy
+        return verify_scalar_copy(self, output)
 
     def native_location_audit(self) -> dict:
         """Inventory existing source StaticMeshActor Location writer coverage."""

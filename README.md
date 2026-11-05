@@ -6,7 +6,7 @@ Our goal is a practical, UnrealEd-style modding SDK inspired by the original Deu
 
 ## New: DX2SDK v0.1 public Python API and Windows console
 
-DX2SDK v0.2 now has a [standalone Python API](dx2sdk/README.md) with native property inspection and direct original GMP-to-private-actors.json scanning, without Godot. The Python 3.11+ package (`from dx2sdk import DX2Map`) and a command-line
+DX2SDK v0.3 now has a [standalone Python API](dx2sdk/README.md) with source-verified native property inspection, direct original GMP-to-private-actors.json scanning without Godot, and an **experimental** isolated existing UE95 tagged int32/float32 scalar writer. The Python 3.11+ package (`from dx2sdk import DX2Map`) and a command-line
 interface (`python -B -m dx2sdk`). The native-editor Windows prototype
 also packages `DX2SDK_CONSOLE.cmd` next to `START_DX2ED.cmd`.
 A smaller **Python-only portable DX2SDK ZIP** (with `RUN_DX2SDK.cmd`,
@@ -18,8 +18,11 @@ actors and original TriggerScript/IBD resources, run byte-identical
 T3SDK package audits, and prepare **dry-run or isolated output copies of
 native StaticMeshActor Location translations**. Source-hash-bound
 `actors.json` and the original GMP are required for native writes;
-changes are limited to position X/Y/Z float fields and independently
-verified in the saved copy. No source game file is overwritten.
+existing static-mesh Location edits remain restricted to position X/Y/Z.
+The v0.3 **experimental tagged-scalar** writer separately permits exact
+source-serialized top-level int32/float32 values on original placed
+StaticMeshActors; both writers reparse and byte-audit their isolated GMP
+copies. No source game file is overwritten.
 
 **This is an experimental SDK foundation**, not a finished native level
 compiler. In-game acceptance of the edited copy is not guaranteed;

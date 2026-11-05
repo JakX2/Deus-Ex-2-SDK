@@ -84,6 +84,32 @@ def make_parser():
     compare.add_argument("--mission-ibd", required=True)
     compare.add_argument("--kernel-ibd", required=True)
 
+    fields = sub.add_parser(
+        "scalar-fields",
+        help="List original 4-byte int/float tagged fields eligible for experimental Save As")
+    _add_source(fields, cache=True)
+    fields.add_argument("--actor", required=True,
+                        help="Exact original positioned StaticMeshActor name")
+
+    scalar = sub.add_parser(
+        "set-scalar", help="Dry-run first, then isolated existing native scalar GMP copy")
+    _add_source(scalar, cache=True)
+    scalar.add_argument("--actor", required=True,
+                        help="Original existing StaticMeshActor name")
+    scalar.add_argument("--property", dest="property_name", required=True,
+                        help="Existing authored top-level numeric tag name")
+    scalar.add_argument("--value", required=True,
+                        help="New int32 or float32 value, source type is verified")
+    scalar.add_argument("--output", required=True,
+                        help="Fresh isolated GMP with identical source basename")
+    scalar.add_argument("--write", action="store_true",
+                        help="Explicitly write experimental binary copy, dry-run is default")
+
+    scalar_verify = sub.add_parser(
+        "verify-scalar", help="Independently audit every edited byte of scalar GMP copy")
+    _add_source(scalar_verify, cache=True)
+    scalar_verify.add_argument("--output", required=True)
+
     audit = sub.add_parser("native-audit",
                            help="Find existing source actors with writable Location")
     _add_source(audit, cache=True)
@@ -224,6 +250,41 @@ def main(argv=None) -> int:
         elif args.command == "compare":
             _json(_compare_summary(project.compare_script_bundles(
                 args.zip, args.mission_ibd, args.kernel_ibd)))
+        elif args.command == "scalar-fields":
+            report = project.native_scalar_fields(args.actor)
+            _json({"schema": report["schema"], "actor_name": report["actor_name"],
+                   "fields": report["fields"], "read_only": True,
+                   "runtime_game_verified": False})
+        elif args.command == "set-scalar":
+            fields = project.native_scalar_fields(args.actor)["fields"]
+            selected = [f for f in fields if f["property"] == args.property_name]
+            if len(selected) != 1:
+                raise ValueError("Field not eligible for existing native numeric scalar editing")
+            try:
+                numeric = (int(args.value, 10) if selected[0]["type"] == "int32"
+                           else float(args.value))
+            except (ValueError, OverflowError):
+                raise ValueError("Requested numeric value cannot be parsed as original field type") from None
+            report = project.save_as_scalar_changes(
+                {args.actor: {args.property_name: numeric}},
+                args.output, write=args.write)
+            _json({"schema": report["schema"],
+                   "status": report["status"],
+                   "edited_field_count": report["edited_field_count"],
+                   "changed_byte_count": report["changed_byte_count"],
+                   "independent_binary_verification":
+                       report["independent_byte_validation"],
+                   "runtime_game_verified": False,
+                   "source_original_modified": False})
+        elif args.command == "verify-scalar":
+            report = project.verify_saved_scalar_changes(args.output)
+            _json({"schema": report["schema"],
+                   "verified_binary_structure":
+                       report["verified_binary_structure"],
+                   "changed_fields": report["changed_fields"],
+                   "changed_bytes": report["changed_bytes"],
+                   "unapproved_bytes": report["unapproved_bytes"],
+                   "runtime_game_verified": False})
         elif args.command == "native-audit":
             report = project.native_location_audit()
             _json({"read_only": True, "original_map": project.source.name,

@@ -55,10 +55,10 @@
     {
       "id": "source_project",
       "title": "Editable level project/source format",
-      "status": "missing",
+      "status": "partial",
       "phase": 1,
-      "evidence": "DX2Ed 0.4.3 persists transform, property, IBD mesh placements and source-attributed class templates as private editor-only sidecar JSON; original T3Ed has editable .unr sources.",
-      "next_step": "SDK-owned editable project format; GMP/IBD must remain authoritative for runtime"
+      "evidence": "DX2Ed persists transform/property and IBD placement designs in private JSON. DX2SDK v0.2 independently generates source-verified original GMP actors.json, and v0.1+ exposes source-SHA-bound editable multi-actor native Location plans. These are private editor/SDK project files, not native level sources or an UnrealEd/T3Ed replacement.",
+      "next_step": "Unified authoring project integrating source-verified assets, placements, dialogue and script designs with reversible native writers; GMP/IBD remain authoritative for runtime"
     },
     {
       "id": "brush_primitives",
@@ -169,7 +169,7 @@
       "title": "Compile/cook/install and playtest missions",
       "status": "partial",
       "phase": 4,
-      "evidence": "DX2Ed 0.5.1 guarded translation-only native GMP Location writer, read-only source audit and independent per-byte output verification against original, synthetic parser tests. Runtime game-load still unverified.",
+      "evidence": "DX2Ed source-only translation-only native GMP Location copy verification; DX2SDK v0.3 adds a source-locked public Python/Windows SDK, private actors.json generation, direct native property inspection and experimental isolated top-level int32/float32 tagged scalar editing, all with independent full-file byte validation and synthetic fixtures. Original retail game load remains unverified.",
       "next_step": "Real v95 retail GMP audit and test in a copied installation; verify map load and actor physics, then research rotation/other native fields and BSP/IBD writing."
     },
     {

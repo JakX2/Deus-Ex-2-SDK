@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a Python-only, original-game-file-free DX2SDK v0.1 source ZIP.
+"""Build a Python-only, original-game-file-free DX2SDK v0.3 source ZIP.
 
 No Godot 4.3 binary or interpreter bundled. All imports are local,
 standard-library + the existing audited DX2Ed / MIT T3SDK sources.
@@ -15,7 +15,7 @@ from pathlib import Path
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCHIVE = "DX2SDK_Python_0.2.0"
+ARCHIVE = "DX2SDK_Python_0.3.0"
 SCHEMA = "DX2SDK-source-only-Python-portable-v0.1"
 DATE = (2026, 11, 5, 0, 0, 0)
 
@@ -33,6 +33,7 @@ REQUIRED = (
     "dx2sdk/__main__.py",
     "dx2sdk/api.py",
     "dx2sdk/catalog.py",
+    "dx2sdk/scalars.py",
     "dx2sdk/projects.py",
     "actor_explorer/dx2_actor_explorer.py",
     "actor_explorer/dx2catalog.py",
@@ -116,7 +117,7 @@ def build(source_root: Path, output: Path) -> dict:
     # It never embeds source system or user game paths or proprietary bytes.
     manifest = {
         "schema": SCHEMA,
-        "version": "0.2.0",
+        "version": "0.3.0",
         "python_minimum": "3.11",
         "requires_godot": False,
         "includes_original_dx2_assets": False,
@@ -147,7 +148,7 @@ def build(source_root: Path, output: Path) -> dict:
             raise ValueError("Created SDK ZIP has duplicate archive entries")
     return {
         "schema": SCHEMA,
-        "version": "0.2.0",
+        "version": "0.3.0",
         "file_count": len(files),
         "zip_bytes": target.stat().st_size,
         "includes_original_dx2_assets": False,
