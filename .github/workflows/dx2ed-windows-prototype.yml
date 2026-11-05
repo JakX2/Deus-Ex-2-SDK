@@ -84,7 +84,7 @@ jobs:
         with:
           name: DX2Ed_Windows_Prototype_Godot43
           path: .
-      - name: Extract and run bundled preflight and all nine Godot fixtures
+      - name: Extract and run bundled preflight and all ten Godot fixtures
         shell: pwsh
         run: |
           Expand-Archive -Path DX2Ed_Windows_Prototype.zip -DestinationPath unpacked
