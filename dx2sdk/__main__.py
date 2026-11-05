@@ -47,6 +47,21 @@ def make_parser():
                         help="Exact original actor class, e.g. StaticMeshActor")
     actors.add_argument("--limit", type=int, default=50)
 
+    scanner = sub.add_parser(
+        "scan-map", help="Create source-verified private actors.json directly from original GMP")
+    _add_source(scanner)
+    scanner.add_argument("--output", required=True,
+                         help="NEW private actors.json, outside all game Maps folders")
+    scanner.add_argument("--system",
+                         help="Optional owner-original System directory or DX2 property catalog JSON")
+
+    inspect = sub.add_parser(
+        "inspect-actor", help="Inspect native authored tagged and GameSys properties")
+    _add_source(inspect)
+    selector = inspect.add_mutually_exclusive_group(required=True)
+    selector.add_argument("--actor", help="Exact native actor name")
+    selector.add_argument("--export", type=int, help="Original one-based export ID")
+
     definitions = sub.add_parser(
         "scripts", help="Inspect original source TriggerScript definitions")
     _add_source(definitions, cache=True)
@@ -173,6 +188,22 @@ def main(argv=None) -> int:
             _json(project.info())
         elif args.command == "actors":
             _json(project.actors(actor_class=args.actor_class, limit=args.limit))
+        elif args.command == "scan-map":
+            report = project.export_actor_catalog(
+                args.output, system=args.system)
+            _json({"schema": report["schema"],
+                   "status": report["status"],
+                   "source_map": report["source_map"],
+                   "actor_count": report["actor_count"],
+                   "source_verified_location_candidates":
+                       report["writer_candidate_count"],
+                   "unresolved_source_static_meshes":
+                       report["unresolved_static_mesh_count"],
+                   "gameplay_runtime_verified": False,
+                   "original_source_modified": False})
+        elif args.command == "inspect-actor":
+            _json(project.inspect_actor(
+                export=args.export, name=args.actor))
         elif args.command == "scripts":
             if not 0 <= args.limit <= 5000:
                 raise ValueError("Script list limit must be 0..5000")
