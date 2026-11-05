@@ -96,6 +96,16 @@ func _run() -> void:
         _fail("Unknown native actor export corrupted existing plan")
         return
     altered = snapshot.duplicate(true)
+    altered["rows"][0]["actor_export"] = 42.5
+    if model.load_document(altered) or model.rows.size() != 2:
+        _fail("Fractional native actor export accepted after JSON load")
+        return
+    altered = snapshot.duplicate(true)
+    altered["rows"][0]["actor_export"] = 42.0
+    if not model.load_document(altered) or model.rows[0]["actor_export"] != 42:
+        _fail("Whole JSON number not normalized to original export integer")
+        return
+    altered = snapshot.duplicate(true)
     altered["rows"][1] = altered["rows"][0].duplicate(true)
     if model.load_document(altered) or model.rows.size() != 2:
         _fail("Duplicate pair accepted or caused partial mutation")
