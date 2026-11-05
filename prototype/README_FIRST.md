@@ -15,9 +15,9 @@
 
 **Troubleshooting:** Double-click `CHECK_DX2ED.cmd` for offline preflight, or run `START_DX2ED.cmd --self-test` in a Windows Command Prompt to run **fifteen** completely synthetic Godot 4.3 headless fixture scripts and a project-startup check. Real game maps are not required for these checks. Windows Defender and SmartScreen may warn about a downloaded unsigned experimental executable; the two engine binaries are taken from the **official Godot 4.3 stable Standard Windows release** with upstream release checksum verification during packaging. Check `GODOT_LICENSE.txt` for Godot's separate redistribution notice.
 
-## New: DX2SDK v0.4 public Python API and console
+## New: DX2SDK v0.5 public Python API and console
 
-This Windows source-only prototype now contains **DX2SDK v0.4.0**, a
+This Windows source-only prototype now contains **DX2SDK v0.5.0**, a
 public Python package (`dx2sdk/`) and `DX2SDK_CONSOLE.cmd` launcher.
 You can use the source-backed SDK without launching Godot:
 
@@ -55,6 +55,21 @@ The original GMP must pass a byte-identical T3SDK no-op reconstruction
 first. This is **not game-runtime tested**, not native GameSys editing,
 and it does not modify original game files, TriggerScripts, brushes or
 Havok collision. Full examples are in `dx2sdk/README.md`.
+
+**Experimental v0.5 source-locked batch prop cloning:** after checking
+original source actors with `clone-candidates`, you can build a
+reusable private plan using `DX2SDK_CONSOLE.cmd make-multi-clone-plan
+--map ORIGINAL.gmp --copy EXPORT DX DY DZ --copy EXPORT DX DY DZ
+--plan PRIVATE/clone_plan.json`. There must be 2–8 copies, each
+referencing an original eligible `StaticMeshActor`. The CLI
+`apply-multi-clone-plan --map ORIGINAL.gmp --plan PRIVATE/clone_plan.json
+--output ISOLATED/ORIGINAL.gmp` is a complete in-memory dry run
+unless explicitly given `--write`. It creates new native exports/Level
+actor references in a separate GMP, never altering the source.
+`verify-multi-clone` recomputes the original-source package changes
+and compares the entire result, byte-for-byte. This is source-only
+binary testing, **not retail gameplay, actor physics or collision
+verification**.
 
 **Experimental v0.4 original static prop duplicate:** use
 `DX2SDK_CONSOLE.cmd clone-candidates --map ORIGINAL.gmp` to list
