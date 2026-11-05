@@ -42,6 +42,20 @@ files are read-only, and the new cache must live outside game folders.
 `inspect-actor` shows existing tagged/GameSys property values with
 opaque formats explicitly labeled; it is not a property writer.
 
+**Experimental v0.3 native scalar edit:** `DX2SDK_CONSOLE.cmd
+scalar-fields --map ORIGINAL.gmp --actors PRIVATE/actors.json --actor
+EXACT_STATIC_MESH_ACTOR` lists the existing authored four-byte int32/
+float32 tagged fields eligible for binary patching. After selecting a
+real source field, run `set-scalar --map ... --actors ... --actor ...
+--property ... --value ... --output NEW_ISOLATED_ORIGINAL_NAME.gmp`
+for a **dry run**. Only append `--write` to explicitly create a fresh
+isolated GMP with an independent per-byte verification and a private
+`.dx2sdk-scalar.json` manifest; `verify-scalar` checks that copy again.
+The original GMP must pass a byte-identical T3SDK no-op reconstruction
+first. This is **not game-runtime tested**, not native GameSys editing,
+and it does not modify original game files, TriggerScripts, brushes or
+Havok collision. Full examples are in `dx2sdk/README.md`.
+
 For reusable projects, **`make-plan`** writes a new source-hash-locked
 editable JSON actor position plan, and **`apply-plan`** validates the
 original GMP and private actor-cache hashes plus every actor export
