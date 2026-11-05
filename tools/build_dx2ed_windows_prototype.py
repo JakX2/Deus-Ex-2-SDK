@@ -123,7 +123,8 @@ def _godot_zip_entries(archive: ZipFile) -> dict[str, str]:
             continue
         base = name.rsplit("/", 1)[-1]
         if base in GODOT_BINARIES:
-            if (base in paths or item.file_size < 1_000_000
+            minimum = 50_000 if base.endswith("_console.exe") else 1_000_000
+            if (base in paths or item.file_size < minimum
                     or item.file_size > 250_000_000
                     or item.compress_size > 250_000_000):
                 raise ValueError("Invalid official Godot Windows runtime entry")
