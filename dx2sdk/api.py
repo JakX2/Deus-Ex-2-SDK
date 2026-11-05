@@ -22,6 +22,7 @@ from typing import Mapping, Sequence
 _ROOT = Path(__file__).resolve().parents[1]
 for _folder in (
     _ROOT / "map_exporter",
+    _ROOT / "actor_explorer",
     _ROOT / "native_editor" / "godot_editor" / "backend",
     _ROOT / "native_editor" / "package_writer",
     _ROOT / "third_party" / "t3sdk_assets",
@@ -32,6 +33,8 @@ for _folder in (
         sys.path.insert(0, str(_folder))
 
 from dx2inspect import Package  # noqa: E402
+from dx2scene import decode_full_actor  # noqa: E402
+from dx2_native_save_as import location_float_offsets  # noqa: E402
 from dx2level import SCALE, actor_matrix  # noqa: E402
 from dx2_gameplay_catalog import audit_actor_cache, build_catalog, hash_path  # noqa: E402
 from dx2_script_ibd_provenance import build_evidence  # noqa: E402
@@ -190,6 +193,90 @@ class DX2Map:
             "shown": rows[:limit],
             "read_only": True,
         }
+
+    def inspect_actor(
+        self, *, export: int | None = None, name: str | None = None,
+    ) -> dict:
+        """Inspect original authored tagged/GameSys properties for one actor.
+
+        Property values are decoded directly from the unchanged native GMP.
+        Unsupported blocks are marked opaque, never guessed or interpreted as
+        editable scalar fields. Runtime script binding is not established.
+        """
+        self._check_original_unchanged()
+        if (export is None) == (name is None):
+            raise ValueError("Specify exactly one original actor export or name")
+        native, _ = self._package.scene_actors()
+        if export is not None:
+            if type(export) is not int or export < 1:
+                raise ValueError("Actor export ID must be a positive integer")
+            candidates = [r for r in native if r["export"] == export]
+        else:
+            if type(name) is not str or not name:
+                raise ValueError("Actor name must be a nonempty source string")
+            candidates = [r for r in native if r["name"] == name]
+        if len(candidates) != 1:
+            raise ValueError("Actor name/export was not uniquely found in original GMP")
+        selected = candidates[0]
+        exp = self._package.exports[selected["export"] - 1]
+        if (exp["name"] != selected["name"] or
+                self._package.class_name(exp) != selected["class"]):
+            raise ValueError("Original actor native export identity changed")
+        tagged, raw_gamesys = decode_full_actor(self._package, exp, {})
+        gamesys = []
+        for block in raw_gamesys:
+            val = block["value"]
+            opaque = isinstance(val, dict) and "raw_hex" in val
+            gamesys.append({
+                "id": block["id"],
+                "name": block["name"],
+                "encoding": block["encoding"],
+                "version": block["version"],
+                "runtime_flag": block["runtime"],
+                "decoded": not opaque,
+                "value": (
+                    {"opaque_byte_length": val.get("byte_length"),
+                     "decoded": False}
+                    if opaque else val
+                ),
+                "native_editable": False,
+            })
+        location_layout = False
+        if selected["class"] == "StaticMeshActor":
+            try:
+                location_float_offsets(self._package, exp)
+                location_layout = True
+            except (ValueError, IndexError):
+                pass
+        return {
+            "schema": SDK_SCHEMA,
+            "source_map": self.source.name,
+            "source_map_sha256": self.source_sha256,
+            "actor_name": selected["name"],
+            "actor_class": selected["class"],
+            "actor_export": selected["export"],
+            "original_location_native_xyz": [
+                selected["x"], selected["y"], selected["z"]],
+            "tagged_properties": tagged,
+            "gamesys_blocks": gamesys,
+            "native_location_field_layout_detected": location_layout,
+            "original_values_read_only": True,
+            "actor_runtime_script_binding_verified": False,
+            "native_property_writer_enabled": False,
+            "script_compiler_enabled": False,
+        }
+
+    def build_actor_catalog(self, *, system: str | Path | None = None) -> dict:
+        """Scan original GMP in memory, without Godot or a private actor cache."""
+        from .catalog import scan_original_actor_catalog
+        return scan_original_actor_catalog(self, system=system)
+
+    def export_actor_catalog(
+        self, output: str | Path, *, system: str | Path | None = None,
+    ) -> dict:
+        """Write a new source-verified private actors.json outside game paths."""
+        from .catalog import write_original_actor_catalog
+        return write_original_actor_catalog(self, output, system=system)
 
     def script_definitions(self, original_trigger_script_zip: str | Path) -> dict:
         """Read the original source ZIP; original matching actors cache required."""
