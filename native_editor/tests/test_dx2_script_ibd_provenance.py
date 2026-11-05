@@ -149,6 +149,14 @@ class ScriptIbdResourceBridgeTests(unittest.TestCase):
             export_report(self.map, self.actors, self.zip, self.ibd,
                           self.maps / "should_not_write.json")
         self.assertFalse((self.maps / "should_not_write.json").exists())
+        with self.assertRaises(ValueError):
+            export_report(self.map, self.actors, self.zip, self.ibd,
+                          self.game / "also_protected.json")
+        with self.assertRaises(ValueError):
+            export_report(self.map, self.actors, self.zip, self.ibd,
+                          self.game.parent / "install_root_protected.json")
+        self.assertFalse((self.game / "also_protected.json").exists())
+        self.assertFalse((self.game.parent / "install_root_protected.json").exists())
 
     def test_cli_outputs_aggregate_report_without_original_paths_or_bytes(self):
         exe = ROOT / "native_editor/godot_editor/backend/dx2_script_ibd_provenance.py"
