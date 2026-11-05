@@ -60,6 +60,17 @@ func _run() -> void:
         or not result.contains("Native TriggerScript editing")):
         _fail("Original map offset control counts not safely presented")
         return
+    # Only the sanitized aggregate returned by the formatter is copied.
+    # Original owner data can appear in a private report but never in text.
+    var private_source: Dictionary = source.duplicate(true)
+    private_source["source_map"] = "C:/Private/DX2/SecretOwnerMap.gmp"
+    private_source["original_actor_names"] = ["PrivateActorName"]
+    private_source["original_script_names"] = ["TS_OwnerPrivate"]
+    var safe_text := View.format_audit(private_source)
+    for secret in ["SecretOwnerMap", "PrivateActorName", "TS_OwnerPrivate"]:
+        if safe_text.contains(secret):
+            _fail("Aggregate script-index diagnostic exposed original source identity")
+            return
     var altered: Dictionary = source.duplicate(true)
     altered["preferred_index_offset"] = 0
     if not View.format_audit(altered).is_empty():
