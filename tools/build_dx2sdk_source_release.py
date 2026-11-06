@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a Python-only, original-game-file-free DX2SDK v0.11 source ZIP.
+"""Build a Python-only, original-game-file-free DX2SDK v0.12 source ZIP.
 
 No Godot 4.3 binary or interpreter bundled. All imports are local,
 standard-library + the existing audited DX2Ed / MIT T3SDK sources.
@@ -15,9 +15,9 @@ from pathlib import Path
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCHIVE = "DX2SDK_Python_0.11.0"
+ARCHIVE = "DX2SDK_Python_0.12.0"
 SCHEMA = "DX2SDK-source-only-Python-portable-v0.1"
-DATE = (2026, 11, 6, 5, 0, 0)
+DATE = (2026, 11, 6, 6, 0, 0)
 
 ALLOWED = {
     "dx2sdk": {".py", ".md"},
@@ -56,6 +56,7 @@ REQUIRED = (
     "research/dx2/inspect_world_bsp_zone_relations.py",
     "native_editor/godot_editor/backend/dx2_native_save_as.py",
     "native_editor/godot_editor/backend/dx2_gameplay_catalog.py",
+    "native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_script_ibd_provenance.py",
     "native_editor/godot_editor/backend/dx2_mission_kernel_script_diff.py",
     "native_editor/package_writer/dx2_package_roundtrip.py",
@@ -133,7 +134,7 @@ def build(source_root: Path, output: Path) -> dict:
     # It never embeds source system or user game paths or proprietary bytes.
     manifest = {
         "schema": SCHEMA,
-        "version": "0.11.0",
+        "version": "0.12.0",
         "python_minimum": "3.11",
         "requires_godot": False,
         "includes_original_dx2_assets": False,
@@ -142,6 +143,7 @@ def build(source_root: Path, output: Path) -> dict:
         "native_light_creation_enabled": False,
         "experimental_bLightOn_bool_writer": True,
         "experimental_existing_LightColor_byte_writer": True,
+        "source_LightColor_Godot_gui_bridge": True,
         "native_light_region_reconstruction_available": False,
         "original_bsp_plane_side_diagnostic_only": True,
         "source_Light_anchor_epsilon_atlas_only": True,
@@ -175,7 +177,7 @@ def build(source_root: Path, output: Path) -> dict:
             raise ValueError("Created SDK ZIP has duplicate archive entries")
     return {
         "schema": SCHEMA,
-        "version": "0.11.0",
+        "version": "0.12.0",
         "file_count": len(files),
         "zip_bytes": target.stat().st_size,
         "includes_original_dx2_assets": False,
