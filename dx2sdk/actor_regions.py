@@ -44,10 +44,11 @@ def _validate_options(limit: object, actor_class: object,
     return limit, actor_class, _epsilons(epsilons)
 
 
-def _native_region_row(pkg: T3Package, export: int, members: list[int]) -> dict:
+def _native_region_row(pkg: T3Package, export: int,
+                       members: list[int], membership: set[int]) -> dict:
     """Original tagged property proof, without guessing inherited/default Region."""
     exp = pkg.exports[export-1]
-    if members.count(export) != 1 or exp.index + 1 != export:
+    if export not in membership or exp.index + 1 != export:
         raise ValueError("Native actor must have unique original Level membership")
     if not exp.serial_size:
         raise ValueError("No original native actor bytes")
@@ -116,6 +117,7 @@ def _original_actor_rows(
             or len(pkg.names) != len(world._package.names)
             or len(pkg.imports) != len(world._package.imports)):
         raise ValueError("Independent source original package readers disagree on tables")
+    membership = set(members)
     valid = []
     reasons = Counter()
     selected_count = 0
@@ -133,7 +135,7 @@ def _original_actor_rows(
         selected_count += 1
         source_classes[cls] += 1
         try:
-            row = _native_region_row(pkg, export, members)
+            row = _native_region_row(pkg, export, members, membership)
         except (ValueError, IndexError, EOFError, KeyError, TypeError):
             reasons["missing_or_unusable_explicit_Region_or_source_links"] += 1
             continue
