@@ -37,34 +37,34 @@ artifact retention limit; **copies you download do not expire**.
 
 DX2SDK now exposes the prior source-only Light dependency inspector and
 a deliberately restricted existing GameSys Boolean editing workflow without
-Godot or an \`actors.json\` cache.
+Godot or an `actors.json` cache.
 
-- \`audit-lights\` checks native Light actor class/export, Level membership,
-  \`Region.iLeaf\`, \`Region.ZoneNumberLow\`, LevelInfo and PhysicsVolume
-  references, and the original state frame. Add \`--export\` for one original
-  Light or \`--output\` to create a new private JSON audit.
-- \`light-switches\` lists *existing* non-runtime, one-byte authored
-  \`Engine.Actor.bLightOn\` GameSys values (original property ID **1487**).
+- `audit-lights` checks native Light actor class/export, Level membership,
+  `Region.iLeaf`, `Region.ZoneNumberLow`, LevelInfo and PhysicsVolume
+  references, and the original state frame. Add `--export` for one original
+  Light or `--output` to create a new private JSON audit.
+- `light-switches` lists *existing* non-runtime, one-byte authored
+  `Engine.Actor.bLightOn` GameSys values (original property ID **1487**).
   These often belong to fixture actors, which are **not** necessarily native
-  \`Light\` actors.
-- \`set-light-switch\` flips only one verified existing \`bLightOn\` Boolean.
-  It defaults to an in-memory **dry run**. An explicit \`--write\` produces
+  `Light` actors.
+- `set-light-switch` flips only one verified existing `bLightOn` Boolean.
+  It defaults to an in-memory **dry run**. An explicit `--write` produces
   a new isolated same-basename GMP and a separate verification manifest.
-- \`verify-light-switch\` independently reconstructs the whole output GMP
+- `verify-light-switch` independently reconstructs the whole output GMP
   from the unchanged original and confirms exactly one authorized byte
   changed. A forged manifest hash cannot authorize extra changes.
 
 Example commands from an extracted portable SDK:
 
-\`\`\`bat
+```bat
 RUN_DX2SDK.cmd audit-lights --map "C:\DXIW\Content\DX2\Maps\M1_Seattle_Hub_WTOterminal.gmp" --export 132
 RUN_DX2SDK.cmd light-switches --map "C:\DXIW\Content\DX2\Maps\M1_Seattle_Hub_WTOterminal.gmp"
 RUN_DX2SDK.cmd set-light-switch --map "C:\DXIW\Content\DX2\Maps\M1_Seattle_Hub_WTOterminal.gmp" --actor "D_298__4" --export 426 --expect true --output "D:\SDKResearch\WTO\M1_Seattle_Hub_WTOterminal.gmp"
 RUN_DX2SDK.cmd verify-light-switch --map "C:\DXIW\Content\DX2\Maps\M1_Seattle_Hub_WTOterminal.gmp" --output "D:\SDKResearch\WTO\M1_Seattle_Hub_WTOterminal.gmp"
-\`\`\`
+```
 
-The \`set-light-switch\` example does nothing to disk without \`--write\`.
-Outputs cannot overwrite originals or target a retail \`Content/DX2/Maps\`
+The `set-light-switch` example does nothing to disk without `--write`.
+Outputs cannot overwrite originals or target a retail `Content/DX2/Maps`
 directory. Original-game files are not distributed.
 
 **Limits:** no native Light spawning/relocation, region leaf/zone
@@ -75,11 +75,11 @@ because existing map illumination can be baked or initialized elsewhere.
 Retain these as experimental draft features until copied-install retail A/B
 tests establish the effect.
 
-Python: \`DX2Map.audit_original_lights()\`,
-\`DX2Map.export_original_lights(path)\`,
-\`DX2Map.original_light_switches()\`,
-\`DX2Map.set_existing_light_switch(export=426, actor="D_298__4", expected=True, output=path)\`,
-and \`DX2Map.verify_saved_light_switch(path)\`.
+Python: `DX2Map.audit_original_lights()`,
+`DX2Map.export_original_lights(path)`,
+`DX2Map.original_light_switches()`,
+`DX2Map.set_existing_light_switch(export=426, actor="D_298__4", expected=True, output=path)`,
+and `DX2Map.verify_saved_light_switch(path)`.
 
 ## Generate your own actor catalog without Godot (v0.2)
 
