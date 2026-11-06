@@ -62,6 +62,37 @@ def make_parser():
     selector.add_argument("--actor", help="Exact native actor name")
     selector.add_argument("--export", type=int, help="Original one-based export ID")
 
+    lights = sub.add_parser(
+        "audit-lights", help="Audit original Light BSP/zone/frame dependencies (read-only)")
+    _add_source(lights)
+    lights.add_argument("--export", type=int, help="Optional original Light export")
+    lights.add_argument("--output", help="Fresh private JSON report outside game Maps")
+
+    switches = sub.add_parser(
+        "light-switches", help="List source-authored one-byte GameSys bLightOn fields")
+    _add_source(switches)
+    switches.add_argument("--limit", type=int, default=50)
+
+    toggle = sub.add_parser(
+        "set-light-switch",
+        help="Dry-run or isolated Save As of an existing bLightOn Boolean, not a new Light")
+    _add_source(toggle)
+    toggle.add_argument("--actor", required=True, help="Exact original fixture actor name")
+    toggle.add_argument("--export", type=int, required=True,
+                        help="Original placed actor one-based export")
+    toggle.add_argument("--expect", required=True, choices=("true", "false"),
+                        help="Pinned original bLightOn value; replacement is opposite")
+    toggle.add_argument("--output", required=True,
+                        help="Fresh isolated GMP with original basename")
+    toggle.add_argument("--write", action="store_true",
+                        help="Explicitly write isolated GMP; default dry-run")
+
+    switch_verify = sub.add_parser(
+        "verify-light-switch",
+        help="Independently replay and verify saved bLightOn GMP, one byte only")
+    _add_source(switch_verify)
+    switch_verify.add_argument("--output", required=True)
+
     definitions = sub.add_parser(
         "scripts", help="Inspect original source TriggerScript definitions")
     _add_source(definitions, cache=True)
@@ -309,6 +340,27 @@ def main(argv=None) -> int:
         elif args.command == "inspect-actor":
             _json(project.inspect_actor(
                 export=args.export, name=args.actor))
+        elif args.command == "audit-lights":
+            result = (project.export_original_lights(args.output, export=args.export)
+                      if args.output else project.audit_original_lights(export=args.export))
+            if args.output:
+                _json({"schema": result["schema"], "status": result["status"],
+                       "source_map": project.source.name,
+                       "source_light_count": result["source_light_count"],
+                       "selected_light_count": len(result["lights"]),
+                       "native_light_spawn_enabled": False,
+                       "original_source_modified": False})
+            else:
+                _json(result)
+        elif args.command == "light-switches":
+            _json(project.original_light_switches(limit=args.limit))
+        elif args.command == "set-light-switch":
+            _json(project.set_existing_light_switch(
+                export=args.export, actor=args.actor,
+                expected=args.expect == "true",
+                output=args.output, write=args.write))
+        elif args.command == "verify-light-switch":
+            _json(project.verify_saved_light_switch(args.output))
         elif args.command == "scripts":
             if not 0 <= args.limit <= 5000:
                 raise ValueError("Script list limit must be 0..5000")
