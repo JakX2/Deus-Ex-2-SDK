@@ -45,7 +45,7 @@ from dx2_native_save_as import (  # noqa: E402
 )
 from dx2_package_roundtrip import inspect_noop  # noqa: E402
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 SDK_SCHEMA = "DX2SDK-public-api-v0.1"
 MAX_GMP = 256 * 1024 * 1024
 MAX_MOVES = 10000
@@ -162,6 +162,7 @@ class DX2Map:
             "native_light_creation_enabled": False,
             "experimental_existing_LightColor_byte_writer": "preexisting_three_byte_tagged_struct_only",
             "native_light_region_reconstruction_available": False,
+            "experimental_source_multi_LightColor_plan": "2_to_8_original_authored_actors_only",
             "native_gamesys_writer_available": False,
             "script_writer_available": False,
             "dialogue_compiler_available": False,
@@ -338,6 +339,35 @@ class DX2Map:
         """Independently replay 1..3 original nested LightColor Byte changes."""
         from .light_colors import verify_saved_light_color
         return verify_saved_light_color(self, output)
+
+    def build_lightcolor_plan(self, edits: Sequence[dict]) -> dict:
+        """Validate 2..8 original source-authored LightColor actor changes."""
+        from .multi_light_colors import build_lightcolor_plan
+        return build_lightcolor_plan(self, edits)
+
+    def write_lightcolor_plan(
+        self, edits: Sequence[dict], output: str | Path,
+    ) -> dict:
+        """Write a new private source-bound LightColor project plan JSON."""
+        from .multi_light_colors import write_lightcolor_plan
+        return write_lightcolor_plan(self, edits, output)
+
+    def load_lightcolor_plan(self, plan: str | Path) -> list[dict]:
+        """Revalidate every actor and source byte of an existing plan."""
+        from .multi_light_colors import load_lightcolor_plan
+        return load_lightcolor_plan(self, plan)
+
+    def apply_lightcolor_plan(
+        self, plan: str | Path, output: str | Path, *, write: bool = False,
+    ) -> dict:
+        """In-memory group dry-run, or explicit isolated native multi-color GMP."""
+        from .multi_light_colors import apply_lightcolor_plan
+        return apply_lightcolor_plan(self, plan, output, write=write)
+
+    def verify_saved_multi_lightcolor(self, output: str | Path) -> dict:
+        """Rebuild source original edits and compare entire multi-color GMP."""
+        from .multi_light_colors import verify_saved_multi_lightcolor
+        return verify_saved_multi_lightcolor(self, output)
 
     def script_definitions(self, original_trigger_script_zip: str | Path) -> dict:
         """Read the original source ZIP; original matching actors cache required."""

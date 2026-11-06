@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a Python-only, original-game-file-free DX2SDK v0.7 source ZIP.
+"""Build a Python-only, original-game-file-free DX2SDK v0.8 source ZIP.
 
 No Godot 4.3 binary or interpreter bundled. All imports are local,
 standard-library + the existing audited DX2Ed / MIT T3SDK sources.
@@ -15,9 +15,9 @@ from pathlib import Path
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCHIVE = "DX2SDK_Python_0.7.0"
+ARCHIVE = "DX2SDK_Python_0.8.0"
 SCHEMA = "DX2SDK-source-only-Python-portable-v0.1"
-DATE = (2026, 11, 6, 1, 0, 0)
+DATE = (2026, 11, 6, 2, 0, 0)
 
 ALLOWED = {
     "dx2sdk": {".py", ".md"},
@@ -38,6 +38,7 @@ REQUIRED = (
     "dx2sdk/multi_clones.py",
     "dx2sdk/lights.py",
     "dx2sdk/light_colors.py",
+    "dx2sdk/multi_light_colors.py",
     "dx2sdk/projects.py",
     "actor_explorer/dx2_actor_explorer.py",
     "actor_explorer/dx2catalog.py",
@@ -124,7 +125,7 @@ def build(source_root: Path, output: Path) -> dict:
     # It never embeds source system or user game paths or proprietary bytes.
     manifest = {
         "schema": SCHEMA,
-        "version": "0.7.0",
+        "version": "0.8.0",
         "python_minimum": "3.11",
         "requires_godot": False,
         "includes_original_dx2_assets": False,
@@ -134,6 +135,7 @@ def build(source_root: Path, output: Path) -> dict:
         "experimental_bLightOn_bool_writer": True,
         "experimental_existing_LightColor_byte_writer": True,
         "native_light_region_reconstruction_available": False,
+        "experimental_2_to_8_existing_LightColor_batch_plan": True,
         "native_writer_requires_explicit_write": True,
         "bsp_mopp_or_native_script_writer": False,
         "third_party_t3sdk_license": "third_party/t3sdk_assets/LICENSE",
@@ -159,7 +161,7 @@ def build(source_root: Path, output: Path) -> dict:
             raise ValueError("Created SDK ZIP has duplicate archive entries")
     return {
         "schema": SCHEMA,
-        "version": "0.7.0",
+        "version": "0.8.0",
         "file_count": len(files),
         "zip_bytes": target.stat().st_size,
         "includes_original_dx2_assets": False,
