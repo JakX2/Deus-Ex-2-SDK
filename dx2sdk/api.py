@@ -22,6 +22,7 @@ from typing import Mapping, Sequence
 _ROOT = Path(__file__).resolve().parents[1]
 for _folder in (
     _ROOT / "map_exporter",
+    _ROOT / "research" / "dx2",
     _ROOT / "actor_explorer",
     _ROOT / "native_editor" / "godot_editor" / "backend",
     _ROOT / "native_editor" / "package_writer",
@@ -45,7 +46,7 @@ from dx2_native_save_as import (  # noqa: E402
 )
 from dx2_package_roundtrip import inspect_noop  # noqa: E402
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 SDK_SCHEMA = "DX2SDK-public-api-v0.1"
 MAX_GMP = 256 * 1024 * 1024
 MAX_MOVES = 10000
@@ -162,6 +163,8 @@ class DX2Map:
             "native_light_creation_enabled": False,
             "experimental_existing_LightColor_byte_writer": "preexisting_three_byte_tagged_struct_only",
             "native_light_region_reconstruction_available": False,
+            "source_bsp_plane_side_diagnostics": "read_only_hypothetical_branch_trace",
+            "native_bsp_point_to_leaf_or_zone_verified": False,
             "experimental_source_multi_LightColor_plan": "2_to_8_original_authored_actors_only",
             "native_gamesys_writer_available": False,
             "script_writer_available": False,
@@ -368,6 +371,28 @@ class DX2Map:
         """Rebuild source original edits and compare entire multi-color GMP."""
         from .multi_light_colors import verify_saved_multi_lightcolor
         return verify_saved_multi_lightcolor(self, output)
+
+    def trace_bsp_point(
+        self, point_unreal_xyz: tuple[float, float, float], *,
+        epsilon: float = .01,
+    ) -> dict:
+        """Trace candidate source BSP plane-side branches, NOT game leaves."""
+        from .bsp_trace import trace_bsp_point
+        return trace_bsp_point(self, point_unreal_xyz, epsilon=epsilon)
+
+    def trace_original_light_regions(
+        self, *, limit: int = 50, epsilon: float = .01,
+    ) -> dict:
+        """Compare original native Light Region provenance with BSP hypotheses."""
+        from .bsp_trace import trace_original_light_regions
+        return trace_original_light_regions(self, limit=limit, epsilon=epsilon)
+
+    def save_bsp_diagnostic_report(
+        self, report: dict, output: str | Path,
+    ) -> dict:
+        """Write only a NEW private JSON of read-only BSP diagnostics."""
+        from .bsp_trace import save_bsp_diagnostic_report
+        return save_bsp_diagnostic_report(self, report, output)
 
     def script_definitions(self, original_trigger_script_zip: str | Path) -> dict:
         """Read the original source ZIP; original matching actors cache required."""
