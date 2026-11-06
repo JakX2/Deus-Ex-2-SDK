@@ -11,6 +11,7 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -110,6 +111,13 @@ class MultiLightColorSDKTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.world.apply_lightcolor_plan(self.plan, self.output, write=True)
 
+    def test_unrelated_native_decode_failures_do_not_authorize_or_block_selected_source(self):
+        scene, _ = self.world._package.scene_actors()
+        with patch.object(self.world._package, "scene_actors",
+                          return_value=(scene, 3)):
+            result = self.world.build_lightcolor_plan(self.edits)
+            self.assertEqual(len(result["actors"]), 2)
+
     def test_invalid_plan_rows_and_identity_never_write(self):
         for edits in (
             [],
@@ -166,6 +174,13 @@ class MultiLightColorSDKTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "untrusted"):
             self.world.verify_saved_multi_lightcolor(self.output)
         manifest.write_text(original_doc)
+        plan_original = self.plan.read_text()
+        plan_changed = json.loads(plan_original)
+        plan_changed["actors"][0]["changes"]["hue"] = 1
+        self.plan.write_text(json.dumps(plan_changed))
+        with self.assertRaises(ValueError):
+            self.world.verify_saved_multi_lightcolor(self.output)
+        self.plan.write_text(plan_original)
         raw = bytearray(self.output.read_bytes())
         raw[-1] ^= 0x01
         self.output.write_bytes(raw)
@@ -195,9 +210,7 @@ class MultiLightColorSDKTests(unittest.TestCase):
         result = self.cli(*args, cwd=sdk)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["planned_actor_edits"], 2)
-        self.assertEqual(self.world.load_lightcolor_plan(self.plan)["actors"] if
-                         isinstance(self.world.load_lightcolor_plan(self.plan), dict)
-                         else len(self.world.load_lightcolor_plan(self.plan)), 2)
+        self.assertEqual(len(self.world.load_lightcolor_plan(self.plan)), 2)
         apply = ("apply-lightcolor-plan", "--map", str(self.source),
                  "--plan", str(self.plan), "--output", str(self.output))
         dry = self.cli(*apply, cwd=sdk)
