@@ -190,6 +190,29 @@ def make_parser():
                               help="Repeat 2..5 strictly increasing plane tolerances")
     anchor_point.add_argument("--output", help="Fresh private source-replayed JSON only")
 
+    region_atlas = sub.add_parser(
+        "bsp-actor-regions",
+        help="Audit only original Level actors with explicit native Region/Location tags")
+    _add_source(region_atlas)
+    region_atlas.add_argument("--class", dest="actor_class",
+                              help="Exact original native actor class filter")
+    region_atlas.add_argument("--limit", type=int, default=250)
+    region_atlas.add_argument("--epsilon", action="append", type=float,
+                              help="Repeat 2..5 strictly increasing BSP plane tolerances")
+    region_atlas.add_argument("--output", help="Fresh source-replayed private JSON only")
+
+    region_point = sub.add_parser(
+        "bsp-compare-actor-regions",
+        help="Compare one point against authored original Actor Region observations")
+    _add_source(region_point)
+    region_point.add_argument("--x", type=float, required=True)
+    region_point.add_argument("--y", type=float, required=True)
+    region_point.add_argument("--z", type=float, required=True)
+    region_point.add_argument("--class", dest="actor_class")
+    region_point.add_argument("--limit", type=int, default=250)
+    region_point.add_argument("--epsilon", action="append", type=float)
+    region_point.add_argument("--output", help="Fresh private research JSON only")
+
     definitions = sub.add_parser(
         "scripts", help="Inspect original source TriggerScript definitions")
     _add_source(definitions, cache=True)
@@ -523,6 +546,19 @@ def main(argv=None) -> int:
             result = project.compare_point_with_original_light_anchors(
                 (args.x, args.y, args.z), limit=args.limit, epsilons=eps)
             _json(project.save_light_bsp_anchor_report(result, args.output)
+                  if args.output else result)
+        elif args.command == "bsp-actor-regions":
+            eps = tuple(args.epsilon) if args.epsilon is not None else (.001, .01, .1)
+            result = project.original_actor_region_bsp_atlas(
+                limit=args.limit, actor_class=args.actor_class, epsilons=eps)
+            _json(project.save_original_actor_region_atlas(result, args.output)
+                  if args.output else result)
+        elif args.command == "bsp-compare-actor-regions":
+            eps = tuple(args.epsilon) if args.epsilon is not None else (.001, .01, .1)
+            result = project.compare_point_to_original_actor_regions(
+                (args.x, args.y, args.z), limit=args.limit,
+                actor_class=args.actor_class, epsilons=eps)
+            _json(project.save_original_actor_region_atlas(result, args.output)
                   if args.output else result)
         elif args.command == "scripts":
             if not 0 <= args.limit <= 5000:
