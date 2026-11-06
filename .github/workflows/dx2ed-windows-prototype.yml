@@ -84,15 +84,19 @@ jobs:
         with:
           name: DX2Ed_Windows_Prototype_Godot43
           path: .
-      - name: Extract and run bundled preflight and all fifteen Godot fixtures
+      - name: Extract and verify bundled preflight and all sixteen Godot fixtures
         shell: pwsh
         run: |
           Expand-Archive -Path DX2Ed_Windows_Prototype.zip -DestinationPath unpacked
           Push-Location unpacked/DX2Ed_Windows_Prototype
-          & cmd.exe /d /c "START_DX2ED.cmd --self-test"
+          $smokeLog = @(& cmd.exe /d /c "START_DX2ED.cmd --self-test" 2>&1)
           $exitCode = $LASTEXITCODE
-          if ($exitCode -ne 0) {
-            throw "DX2Ed bundled Windows prototype smoke failed with exit code $exitCode"
+          $smokeText = $smokeLog -join "`n"
+          $smokeLog | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0 -or
+              $smokeText -match 'FAILED:|SCRIPT ERROR:|Parse Error:|ERROR: Failed to load script' -or
+              $smokeText -notmatch 'DX2Ed Windows prototype self-test: PASS') {
+            throw "DX2Ed bundled Godot smoke failed, exit=$exitCode or fixture PASS marker missing"
           }
           & cmd.exe /d /c "DX2SDK_CONSOLE.cmd --help"
           $sdkCode = $LASTEXITCODE
