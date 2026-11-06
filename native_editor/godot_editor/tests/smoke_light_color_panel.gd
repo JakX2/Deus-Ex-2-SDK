@@ -1,7 +1,7 @@
 extends SceneTree
 ## v0.12 invented original GMP *identity* only. No DX2 retail data, native
 ## output, external worker launch or Source GameSys bytes are created.
-const Panel = preload("res://light_color_panel.gd")
+const LightColorPanelScript = preload("res://light_color_panel.gd")
 
 
 func _initialize() -> void:
@@ -15,9 +15,9 @@ func _fail(message: String) -> void:
 
 func _fixture(sha: String, name: String) -> Dictionary:
     return {
-        "bridge_schema": Panel.BRIDGE_SCHEMA,
+        "bridge_schema": LightColorPanelScript.BRIDGE_SCHEMA,
         "action": "list",
-        "schema": Panel.SOURCE_SCHEMA,
+        "schema": LightColorPanelScript.SOURCE_SCHEMA,
         "status": "read-only-source-verified",
         "source_map": name,
         "source_sha256": sha,
@@ -56,7 +56,7 @@ func _run() -> void:
     var sha := FileAccess.get_sha256(source).to_lower()
     var script := ProjectSettings.globalize_path(
         "res://backend/dx2_sdk_lightcolor_worker.py")
-    var panel := Panel.new()
+    var panel := LightColorPanelScript.new()
     get_root().add_child(panel)
     if not panel.configure_original(source, sha, script):
         _fail("Original file and SHA cannot configure source UI")
