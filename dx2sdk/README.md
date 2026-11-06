@@ -66,8 +66,10 @@ must match all approved original source byte offsets across the **full
 GMP**, preserve tables/GUID and leave every other byte alone. The
 verifier replays every change from the still-unchanged source and
 rejects unauthorized output, tampered plan identities or forged
-runtime support flags. Game Maps destinations, existing outputs and
-overwrites are refused.
+runtime support flags. Keep the original **private plan JSON** available:
+the saved GMP manifest pins its path and SHA-256, and verification
+refuses a changed or missing plan. Game Maps destinations, existing
+outputs and overwrites are refused.
 
 Python: `DX2Map.build_lightcolor_plan(edits)`,
 `DX2Map.write_lightcolor_plan(edits, json_path)`,
