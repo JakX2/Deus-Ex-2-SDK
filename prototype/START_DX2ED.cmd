@@ -16,6 +16,7 @@ set "DX2ED_GODOT_CONSOLE=%~dp0runtime\Godot_v4.3-stable_win64_console.exe"
 if /I "%~1"=="--self-test" (
   echo.
   echo Running asset-free Godot 4.3 DX2Ed source fixtures...
+  set "DX2ED_SELFTEST_FAILED=0"
   for %%S in (
     smoke_python_runtime.gd
     smoke_light_color_panel.gd
@@ -38,9 +39,10 @@ if /I "%~1"=="--self-test" (
     "%DX2ED_GODOT_CONSOLE%" --headless --path "%DX2ED_PROJECT%" --script "res://tests/%%S"
     if errorlevel 1 (
       echo FAILED: %%S
-      exit /b 1
+      set "DX2ED_SELFTEST_FAILED=1"
     )
   )
+  if "%DX2ED_SELFTEST_FAILED%"=="1" exit /b 1
   echo.
   echo Running project startup smoke check...
   "%DX2ED_GODOT_CONSOLE%" --headless --path "%DX2ED_PROJECT%" --quit-after 3
