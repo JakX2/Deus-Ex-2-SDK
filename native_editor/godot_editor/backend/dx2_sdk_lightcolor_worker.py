@@ -95,7 +95,10 @@ def perform(args) -> dict:
         raise ValueError("Isolated LightColor output was not independently verified")
     verification = world.verify_saved_light_color(args.output)
     if (verification.get("verified_binary_structure") is not True
-            or verification.get("source_sha256") != world.source_sha256):
+            or verification.get("source_map") != world.source.name
+            or verification.get("actor_export") != args.export
+            or verification.get("unapproved_bytes") != 0
+            or verification.get("gameplay_runtime_verified") is not False):
         raise ValueError("Saved LightColor GMP failed final source-independent replay")
     return {
         "bridge_schema": SCHEMA_GUI,
