@@ -12,6 +12,7 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -93,6 +94,26 @@ class LightColorSourceOnlySDKTests(unittest.TestCase):
         self.assertFalse(item["actual_gameplay_effect_for_this_actor_verified"])
         self.assertEqual(self.world.original_light_colors(limit=0)["shown"], [])
         self.assertEqual(self.source.read_bytes(), self.original)
+
+    def test_candidate_listing_only_scans_original_level_members_once(self):
+        source_reader = self.world._package.scene_actors
+        with patch.object(self.world._package, "scene_actors", wraps=source_reader) as call:
+            self.assertEqual(self.world.original_light_colors()["eligible_actor_count"], 1)
+            self.assertEqual(call.call_count, 1)
+
+    def test_dual_writer_mismatch_fails_before_creating_any_output(self):
+        from dx2sdk.light_colors import PackageWriter as CorrectWriter
+        class CorruptWriter(CorrectWriter):
+            def write(self):
+                raw = bytearray(super().write())
+                raw[-1] ^= 0x20
+                return bytes(raw)
+        with patch("dx2sdk.light_colors.PackageWriter", CorruptWriter):
+            with self.assertRaisesRegex(ValueError, "serializers disagree"):
+                self.world.set_existing_light_color(**self.options, write=True)
+        self.assertEqual(self.source.read_bytes(), self.original)
+        self.assertFalse(self.output.exists())
+        self.assertFalse(self.output.with_suffix(".dx2sdk-lightcolor.json").exists())
 
     def test_dryrun_and_optin_write_differ_at_exact_original_fields(self):
         dry = self.world.set_existing_light_color(**self.options)
