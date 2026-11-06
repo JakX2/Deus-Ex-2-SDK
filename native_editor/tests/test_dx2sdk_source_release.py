@@ -32,7 +32,7 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
     def test_standalone_source_zip_includes_all_runtime_modules_but_no_assets(self):
         report = build(ROOT, self.first)
         self.assertEqual(report["schema"], SCHEMA)
-        self.assertEqual(report["version"], "0.6.0")
+        self.assertEqual(report["version"], "0.7.0")
         self.assertFalse(report["includes_original_dx2_assets"])
         self.assertFalse(report["gameplay_runtime_verified"])
         self.assertGreater(report["file_count"], 12)

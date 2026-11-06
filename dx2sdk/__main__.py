@@ -93,6 +93,34 @@ def make_parser():
     _add_source(switch_verify)
     switch_verify.add_argument("--output", required=True)
 
+    colors = sub.add_parser(
+        "light-colors",
+        help="List original source-verified exact 10-byte GameSys LightColor struct actors")
+    _add_source(colors)
+    colors.add_argument("--limit", type=int, default=50)
+
+    color_set = sub.add_parser(
+        "set-light-color",
+        help="Dry-run or isolated exact 1..3 existing LightColor byte replacements")
+    _add_source(color_set)
+    color_set.add_argument("--actor", required=True)
+    color_set.add_argument("--export", type=int, required=True)
+    color_set.add_argument("--expect", nargs=3, type=int, metavar=("B", "H", "S"),
+                           required=True, help="Pin original brightness/hue/saturation bytes")
+    color_set.add_argument("--brightness", type=int, help="New authored brightness byte (0..255)")
+    color_set.add_argument("--hue", type=int, help="New authored hue byte (0..255)")
+    color_set.add_argument("--saturation", type=int, help="New authored saturation byte (0..255)")
+    color_set.add_argument("--output", required=True,
+                           help="Fresh isolated GMP with original source basename")
+    color_set.add_argument("--write", action="store_true",
+                           help="Explicit output creation; dry run otherwise")
+
+    color_verify = sub.add_parser(
+        "verify-light-color",
+        help="Reconstruct saved source-locked LightColor bytes and compare whole GMP")
+    _add_source(color_verify)
+    color_verify.add_argument("--output", required=True)
+
     definitions = sub.add_parser(
         "scripts", help="Inspect original source TriggerScript definitions")
     _add_source(definitions, cache=True)
@@ -361,6 +389,17 @@ def main(argv=None) -> int:
                 output=args.output, write=args.write))
         elif args.command == "verify-light-switch":
             _json(project.verify_saved_light_switch(args.output))
+        elif args.command == "light-colors":
+            _json(project.original_light_colors(limit=args.limit))
+        elif args.command == "set-light-color":
+            changes = {key: getattr(args, key) for key in
+                       ("brightness", "hue", "saturation")
+                       if getattr(args, key) is not None}
+            _json(project.set_existing_light_color(
+                export=args.export, actor=args.actor, expected=tuple(args.expect),
+                changes=changes, output=args.output, write=args.write))
+        elif args.command == "verify-light-color":
+            _json(project.verify_saved_light_color(args.output))
         elif args.command == "scripts":
             if not 0 <= args.limit <= 5000:
                 raise ValueError("Script list limit must be 0..5000")
