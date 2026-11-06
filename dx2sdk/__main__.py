@@ -121,6 +121,32 @@ def make_parser():
     _add_source(color_verify)
     color_verify.add_argument("--output", required=True)
 
+    multi_color = sub.add_parser(
+        "make-lightcolor-plan",
+        help="Create private source-locked 2..8 original LightColor actor plan")
+    _add_source(multi_color)
+    multi_color.add_argument(
+        "--edit", required=True, action="append", nargs=7,
+        metavar=("EXPORT", "OLD_B", "OLD_H", "OLD_S", "NEW_B", "NEW_H", "NEW_S"),
+        help="Repeat 2..8 times: one source actor plus pinned original and target bytes")
+    multi_color.add_argument("--plan", required=True,
+                             help="Fresh private JSON outside all game Maps directories")
+
+    multi_apply = sub.add_parser(
+        "apply-lightcolor-plan",
+        help="Dry-run or explicitly write source-locked 2..8 LightColor actors into one GMP")
+    _add_source(multi_apply)
+    multi_apply.add_argument("--plan", required=True)
+    multi_apply.add_argument("--output", required=True)
+    multi_apply.add_argument("--write", action="store_true",
+                             help="Explicit private GMP Save As; dry-run by default")
+
+    multi_color_verify = sub.add_parser(
+        "verify-multi-lightcolor",
+        help="Independently reconstruct every approved LightColor edit and compare whole GMP")
+    _add_source(multi_color_verify)
+    multi_color_verify.add_argument("--output", required=True)
+
     definitions = sub.add_parser(
         "scripts", help="Inspect original source TriggerScript definitions")
     _add_source(definitions, cache=True)
@@ -400,6 +426,39 @@ def main(argv=None) -> int:
                 changes=changes, output=args.output, write=args.write))
         elif args.command == "verify-light-color":
             _json(project.verify_saved_light_color(args.output))
+        elif args.command == "make-lightcolor-plan":
+            if not 2 <= len(args.edit) <= 8:
+                raise ValueError("LightColor batch plan requires exactly 2..8 source actor rows")
+            copies = []
+            for item in args.edit:
+                values = [int(x, 10) for x in item]
+                export = values[0]
+                if not 1 <= export <= len(project._package.exports):
+                    raise ValueError("Source LightColor export ID outside original map")
+                source = project._package.exports[export - 1]
+                before, after = values[1:4], values[4:7]
+                updates = {name: value for name, old, value in
+                           zip(("brightness", "hue", "saturation"), before, after)
+                           if value != old}
+                copies.append({
+                    "actor": source["name"], "export": export,
+                    "expected": before, "changes": updates})
+            plan = project.write_lightcolor_plan(copies, args.plan)
+            _json({"schema": plan["schema"], "status": "private_source_plan_created",
+                   "planned_actor_edits": len(plan["actors"]),
+                   "gameplay_runtime_verified": False,
+                   "native_bsp_or_zone_rebuild_enabled": False})
+        elif args.command == "apply-lightcolor-plan":
+            report = project.apply_lightcolor_plan(
+                args.plan, args.output, write=args.write)
+            _json({"schema": report["schema"], "status": report["status"],
+                   "edited_actor_count": report["edited_actor_count"],
+                   "changed_bytes": report["changed_bytes"],
+                   "verified_binary_structure":
+                       report.get("verified_binary_structure", False),
+                   "gameplay_runtime_verified": False})
+        elif args.command == "verify-multi-lightcolor":
+            _json(project.verify_saved_multi_lightcolor(args.output))
         elif args.command == "scripts":
             if not 0 <= args.limit <= 5000:
                 raise ValueError("Script list limit must be 0..5000")
