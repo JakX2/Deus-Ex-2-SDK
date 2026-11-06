@@ -45,7 +45,7 @@ from dx2_native_save_as import (  # noqa: E402
 )
 from dx2_package_roundtrip import inspect_noop  # noqa: E402
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 SDK_SCHEMA = "DX2SDK-public-api-v0.1"
 MAX_GMP = 256 * 1024 * 1024
 MAX_MOVES = 10000
@@ -160,6 +160,8 @@ class DX2Map:
             "experimental_multi_prop_clone": "2_to_8_existing_neutral_unlinked_StaticMeshActor_only",
             "experimental_existing_gamesys_bLightOn_bool_writer": "source-authored_nonruntime_one_byte_only",
             "native_light_creation_enabled": False,
+            "experimental_existing_LightColor_byte_writer": "preexisting_three_byte_tagged_struct_only",
+            "native_light_region_reconstruction_available": False,
             "native_gamesys_writer_available": False,
             "script_writer_available": False,
             "dialogue_compiler_available": False,
@@ -315,6 +317,27 @@ class DX2Map:
         """Independently replay original authored bLightOn output across the whole GMP."""
         from .lights import verify_saved_light_switch
         return verify_saved_light_switch(self, output)
+
+    def original_light_colors(self, *, limit: int = 100) -> dict:
+        """Read exact existing authored LightColor 10-byte struct candidates."""
+        from .light_colors import original_light_colors
+        return original_light_colors(self, limit=limit)
+
+    def set_existing_light_color(
+        self, *, export: int, actor: str,
+        expected: tuple[int, int, int], changes: dict[str, int],
+        output: str | Path, write: bool = False,
+    ) -> dict:
+        """Source-locked 1..3 existing LightColor Byte fields, dry run by default."""
+        from .light_colors import set_existing_light_color
+        return set_existing_light_color(
+            self, export=export, actor=actor, expected=expected,
+            changes=changes, output=output, write=write)
+
+    def verify_saved_light_color(self, output: str | Path) -> dict:
+        """Independently replay 1..3 original nested LightColor Byte changes."""
+        from .light_colors import verify_saved_light_color
+        return verify_saved_light_color(self, output)
 
     def script_definitions(self, original_trigger_script_zip: str | Path) -> dict:
         """Read the original source ZIP; original matching actors cache required."""
