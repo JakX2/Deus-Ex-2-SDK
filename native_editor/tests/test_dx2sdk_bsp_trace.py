@@ -171,10 +171,23 @@ class BSPPlaneTraceTests(unittest.TestCase):
         ):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 self.world.save_bsp_diagnostic_report(doc, path)
-        forged = {**doc, "point_to_leaf_verified": True}
+        for changes in (
+            {"point_to_leaf_verified": True},
+            {"point_to_zone_verified": True},
+            {"native_light_placement_enabled": True},
+            {"native_bsp_rebuild_supported": True},
+            {"candidate_terminal_count": 2},
+            {"limitations": []},
+            {"status": "unsupported-synthetic"},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.world.save_bsp_diagnostic_report(
+                    {**doc, **changes}, self.root / "Another" / "forged.json")
+        original_lights = self.world.trace_original_light_regions(limit=1)
         with self.assertRaises(ValueError):
             self.world.save_bsp_diagnostic_report(
-                forged, self.root / "Another" / "forged.json")
+                {**original_lights, "source_zone_matches_terminal_node_fields": 99},
+                self.root / "Another" / "bad-light.json")
         self.assertEqual(self.source.read_bytes(), self.original)
 
     def test_pure_trace_rejects_too_many_ambiguous_endpoints(self):
