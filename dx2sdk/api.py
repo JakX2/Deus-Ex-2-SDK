@@ -45,7 +45,7 @@ from dx2_native_save_as import (  # noqa: E402
 )
 from dx2_package_roundtrip import inspect_noop  # noqa: E402
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 SDK_SCHEMA = "DX2SDK-public-api-v0.1"
 MAX_GMP = 256 * 1024 * 1024
 MAX_MOVES = 10000
@@ -158,6 +158,8 @@ class DX2Map:
             "experimental_native_tagged_scalar_writer": "existing_StaticMeshActor_top_level_int32_float32_only",
             "experimental_original_static_prop_clone": "source_neutral_unlinked_StaticMeshActor_only",
             "experimental_multi_prop_clone": "2_to_8_existing_neutral_unlinked_StaticMeshActor_only",
+            "experimental_existing_gamesys_bLightOn_bool_writer": "source-authored_nonruntime_one_byte_only",
+            "native_light_creation_enabled": False,
             "native_gamesys_writer_available": False,
             "script_writer_available": False,
             "dialogue_compiler_available": False,
@@ -281,6 +283,38 @@ class DX2Map:
         """Write a new source-verified private actors.json outside game paths."""
         from .catalog import write_original_actor_catalog
         return write_original_actor_catalog(self, output, system=system)
+
+    def audit_original_lights(self, *, export: int | None = None) -> dict:
+        """Inspect source Light references, BSP region and native frame (no writes)."""
+        from .lights import audit_original_lights
+        return audit_original_lights(self, export=export)
+
+    def export_original_lights(
+        self, output: str | Path, *, export: int | None = None,
+    ) -> dict:
+        """Create a fresh private source-pinned Light evidence JSON."""
+        from .lights import export_original_lights
+        return export_original_lights(self, output, export=export)
+
+    def original_light_switches(self, *, limit: int = 100) -> dict:
+        """Read only eligible existing authored GameSys bLightOn values."""
+        from .lights import original_light_switches
+        return original_light_switches(self, limit=limit)
+
+    def set_existing_light_switch(
+        self, *, export: int, actor: str, expected: bool,
+        output: str | Path, write: bool = False,
+    ) -> dict:
+        """Dry run by default; optionally isolate a verified one-byte bLightOn change."""
+        from .lights import set_existing_light_switch
+        return set_existing_light_switch(
+            self, export=export, actor=actor,
+            expected=expected, output=output, write=write)
+
+    def verify_saved_light_switch(self, output: str | Path) -> dict:
+        """Independently replay original authored bLightOn output across the whole GMP."""
+        from .lights import verify_saved_light_switch
+        return verify_saved_light_switch(self, output)
 
     def script_definitions(self, original_trigger_script_zip: str | Path) -> dict:
         """Read the original source ZIP; original matching actors cache required."""
