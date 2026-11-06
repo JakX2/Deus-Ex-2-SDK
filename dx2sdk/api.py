@@ -46,7 +46,7 @@ from dx2_native_save_as import (  # noqa: E402
 )
 from dx2_package_roundtrip import inspect_noop  # noqa: E402
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 SDK_SCHEMA = "DX2SDK-public-api-v0.1"
 MAX_GMP = 256 * 1024 * 1024
 MAX_MOVES = 10000
@@ -164,6 +164,7 @@ class DX2Map:
             "experimental_existing_LightColor_byte_writer": "preexisting_three_byte_tagged_struct_only",
             "native_light_region_reconstruction_available": False,
             "source_bsp_plane_side_diagnostics": "read_only_hypothetical_branch_trace",
+            "source_original_Light_BSP_anchor_atlas": "read_only_epsilon_concordance_and_conflicts",
             "native_bsp_point_to_leaf_or_zone_verified": False,
             "experimental_source_multi_LightColor_plan": "2_to_8_original_authored_actors_only",
             "native_gamesys_writer_available": False,
@@ -393,6 +394,30 @@ class DX2Map:
         """Write only a NEW private JSON of read-only BSP diagnostics."""
         from .bsp_trace import save_bsp_diagnostic_report
         return save_bsp_diagnostic_report(self, report, output)
+
+    def original_light_bsp_anchor_atlas(
+        self, *, limit: int = 100,
+        epsilons: tuple[float, ...] = (.001, .01, .1),
+    ) -> dict:
+        """Group source-original Light Region evidence by hypothetical BSP terminals."""
+        from .bsp_anchors import original_light_bsp_anchor_atlas
+        return original_light_bsp_anchor_atlas(self, limit=limit, epsilons=epsilons)
+
+    def compare_point_with_original_light_anchors(
+        self, point_unreal_xyz: tuple[float, float, float], *,
+        limit: int = 100, epsilons: tuple[float, ...] = (.001, .01, .1),
+    ) -> dict:
+        """Read-only original Light evidence overlapping an unassigned BSP point."""
+        from .bsp_anchors import compare_point_with_original_light_anchors
+        return compare_point_with_original_light_anchors(
+            self, point_unreal_xyz, limit=limit, epsilons=epsilons)
+
+    def save_light_bsp_anchor_report(
+        self, report: dict, output: str | Path,
+    ) -> dict:
+        """Reconstruct original Light/BSP evidence before fresh private JSON."""
+        from .bsp_anchors import save_light_bsp_anchor_report
+        return save_light_bsp_anchor_report(self, report, output)
 
     def script_definitions(self, original_trigger_script_zip: str | Path) -> dict:
         """Read the original source ZIP; original matching actors cache required."""
