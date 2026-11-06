@@ -18,6 +18,7 @@ if /I "%~1"=="--self-test" (
   echo Running asset-free Godot 4.3 DX2Ed source fixtures...
   for %%S in (
     smoke_python_runtime.gd
+    smoke_light_color_panel.gd
     smoke_mission_logic_draft.gd
     smoke_dialogue_design_draft.gd
     smoke_original_script_ibd_provenance.gd
