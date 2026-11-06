@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a Python-only, original-game-file-free DX2SDK v0.8 source ZIP.
+"""Build a Python-only, original-game-file-free DX2SDK v0.9 source ZIP.
 
 No Godot 4.3 binary or interpreter bundled. All imports are local,
 standard-library + the existing audited DX2Ed / MIT T3SDK sources.
@@ -15,14 +15,15 @@ from pathlib import Path
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCHIVE = "DX2SDK_Python_0.8.0"
+ARCHIVE = "DX2SDK_Python_0.9.0"
 SCHEMA = "DX2SDK-source-only-Python-portable-v0.1"
-DATE = (2026, 11, 6, 2, 0, 0)
+DATE = (2026, 11, 6, 3, 0, 0)
 
 ALLOWED = {
     "dx2sdk": {".py", ".md"},
     "actor_explorer": {".py"},
     "map_exporter": {".py"},
+    "research/dx2": {".py"},
     "native_editor/godot_editor/backend": {".py"},
     "native_editor/package_writer": {".py"},
     "third_party/t3sdk_assets": {".py"},
@@ -39,6 +40,7 @@ REQUIRED = (
     "dx2sdk/lights.py",
     "dx2sdk/light_colors.py",
     "dx2sdk/multi_light_colors.py",
+    "dx2sdk/bsp_trace.py",
     "dx2sdk/projects.py",
     "actor_explorer/dx2_actor_explorer.py",
     "actor_explorer/dx2catalog.py",
@@ -46,6 +48,10 @@ REQUIRED = (
     "dx2sdk/RUN_SDK_STANDALONE.cmd",
     "map_exporter/dx2inspect.py",
     "map_exporter/dx2level.py",
+    "research/dx2/inspect_level_world_model.py",
+    "research/dx2/inspect_world_bsp_node_boundaries.py",
+    "research/dx2/inspect_world_bsp_tree_links.py",
+    "research/dx2/inspect_world_bsp_zone_relations.py",
     "native_editor/godot_editor/backend/dx2_native_save_as.py",
     "native_editor/godot_editor/backend/dx2_gameplay_catalog.py",
     "native_editor/godot_editor/backend/dx2_script_ibd_provenance.py",
@@ -125,16 +131,18 @@ def build(source_root: Path, output: Path) -> dict:
     # It never embeds source system or user game paths or proprietary bytes.
     manifest = {
         "schema": SCHEMA,
-        "version": "0.8.0",
+        "version": "0.9.0",
         "python_minimum": "3.11",
         "requires_godot": False,
         "includes_original_dx2_assets": False,
         "retail_game_runtime_tested": False,
-        "native_writer_scope": "existing_StaticMeshActor_Location_and_existing_bLightOn_bool_only",
+        "native_writer_scope": "source_pinned_existing_Location_and_preexisting_bLightOn_LightColor_bytes_only",
         "native_light_creation_enabled": False,
         "experimental_bLightOn_bool_writer": True,
         "experimental_existing_LightColor_byte_writer": True,
         "native_light_region_reconstruction_available": False,
+        "original_bsp_plane_side_diagnostic_only": True,
+        "native_point_to_BSP_leaf_verified": False,
         "experimental_2_to_8_existing_LightColor_batch_plan": True,
         "native_writer_requires_explicit_write": True,
         "bsp_mopp_or_native_script_writer": False,
@@ -161,7 +169,7 @@ def build(source_root: Path, output: Path) -> dict:
             raise ValueError("Created SDK ZIP has duplicate archive entries")
     return {
         "schema": SCHEMA,
-        "version": "0.8.0",
+        "version": "0.9.0",
         "file_count": len(files),
         "zip_bytes": target.stat().st_size,
         "includes_original_dx2_assets": False,

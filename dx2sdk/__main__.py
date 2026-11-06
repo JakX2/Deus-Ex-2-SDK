@@ -147,6 +147,26 @@ def make_parser():
     _add_source(multi_color_verify)
     multi_color_verify.add_argument("--output", required=True)
 
+    bsp_point = sub.add_parser(
+        "bsp-trace-point",
+        help="Read only original BSP candidate plane-side routes; NEVER a Region leaf resolver")
+    _add_source(bsp_point)
+    bsp_point.add_argument("--x", type=float, required=True)
+    bsp_point.add_argument("--y", type=float, required=True)
+    bsp_point.add_argument("--z", type=float, required=True)
+    bsp_point.add_argument("--epsilon", type=float, default=.01)
+    bsp_point.add_argument("--output",
+                           help="Optional NEW private diagnostic JSON, outside all game folders")
+
+    bsp_lights = sub.add_parser(
+        "bsp-light-regions",
+        help="Correlate original native Light stored Region with BSP plane-side hypotheses")
+    _add_source(bsp_lights)
+    bsp_lights.add_argument("--limit", type=int, default=50)
+    bsp_lights.add_argument("--epsilon", type=float, default=.01)
+    bsp_lights.add_argument("--output",
+                            help="Optional NEW private diagnostic JSON, outside game Maps")
+
     definitions = sub.add_parser(
         "scripts", help="Inspect original source TriggerScript definitions")
     _add_source(definitions, cache=True)
@@ -459,6 +479,16 @@ def main(argv=None) -> int:
                    "gameplay_runtime_verified": False})
         elif args.command == "verify-multi-lightcolor":
             _json(project.verify_saved_multi_lightcolor(args.output))
+        elif args.command == "bsp-trace-point":
+            report = project.trace_bsp_point(
+                (args.x, args.y, args.z), epsilon=args.epsilon)
+            _json(project.save_bsp_diagnostic_report(report, args.output)
+                  if args.output else report)
+        elif args.command == "bsp-light-regions":
+            report = project.trace_original_light_regions(
+                limit=args.limit, epsilon=args.epsilon)
+            _json(project.save_bsp_diagnostic_report(report, args.output)
+                  if args.output else report)
         elif args.command == "scripts":
             if not 0 <= args.limit <= 5000:
                 raise ValueError("Script list limit must be 0..5000")
