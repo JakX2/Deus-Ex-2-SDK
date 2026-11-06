@@ -130,6 +130,14 @@ class DX2SDKLightTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             world.original_light_switches(limit=1001)
         world.set_existing_light_switch(**opts, output=self.output, write=True)
+        report_path = self.output.with_suffix(".dx2ed-gamesys-bool.json")
+        manifest = json.loads(report_path.read_text())
+        manifest["gameplay_effect_verified"] = True
+        report_path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, "unsafe claims"):
+            world.verify_saved_light_switch(self.output)
+        manifest["gameplay_effect_verified"] = False
+        report_path.write_text(json.dumps(manifest))
         wrong = bytearray(self.output.read_bytes())
         wrong[-1] ^= 1
         self.output.write_bytes(wrong)
