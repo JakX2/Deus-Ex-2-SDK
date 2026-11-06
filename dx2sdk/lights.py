@@ -201,6 +201,9 @@ def verify_saved_light_switch(world: DX2Map, output: str | Path) -> dict:
             or report.get("status") != "isolated-boolean-gmp-written-runtime-unverified"
             or report.get("edited_package_written") is not True
             or report.get("game_runtime_verified") is not False
+            or report.get("gameplay_effect_verified") is not False
+            or report.get("native_godot_gamesys_write_enabled") is not False
+            or report.get("source_modified") is not False
             or report.get("independent_full_package_byte_match") is not True):
         raise ValueError("Saved bLightOn report is not source-bound or has unsafe claims")
     _checked_identity(world, export, actor, before)
