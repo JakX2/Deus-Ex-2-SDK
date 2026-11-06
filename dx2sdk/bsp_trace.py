@@ -299,6 +299,22 @@ def save_bsp_diagnostic_report(
             or report.get("point_to_leaf_verified", False) is not False
             or report.get("native_region_leaf_assignment_verified", False) is not False):
         raise ValueError("BSP diagnostic report source or enabled native capability is invalid")
+    # A caller may pass an arbitrary dictionary. A source SHA and disabled
+    # flags alone cannot authenticate its node paths or original Light values.
+    # Reconstruct from the unchanged native source and require full identity,
+    # including every negative capability, original actor field and branch.
+    if report.get("status") == "read-only-candidate-BSP-plane-paths":
+        regenerated = trace_bsp_point(
+            world, report.get("point_unreal_xyz"),
+            epsilon=report.get("epsilon_unreal_units"))
+    elif report.get("status") == "read-only-original-Light-vs-BSP-plane-correlation":
+        regenerated = trace_original_light_regions(
+            world, limit=report.get("original_lights_sampled"),
+            epsilon=report.get("epsilon_unreal_units"))
+    else:
+        raise ValueError("Unknown BSP report kind, unable to replay source evidence")
+    if report != regenerated:
+        raise ValueError("BSP report differs from independent original-source replay")
     raw = (json.dumps(report, indent=2, sort_keys=True, allow_nan=False)
            + "\n").encode("utf8")
     if len(raw) > 12 * 1024 * 1024:
