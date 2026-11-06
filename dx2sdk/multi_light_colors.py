@@ -54,11 +54,9 @@ def _source_rows(
     if (not isinstance(rows, (list, tuple))
             or not 2 <= len(rows) <= MAX_COPIES):
         raise ValueError("LightColor batch requires 2..8 existing original actors")
-    scenes, failed = world._package.scene_actors()
-    if failed:
-        # An incomplete original placed Level inventory cannot authorize a
-        # multi-actor edit, even when individual target exports appear valid.
-        raise ValueError("Original Level actor position decode is incomplete")
+    # Unrelated undecodable actors must not authorize any edit, but they
+    # also need not block independently verified original target exports.
+    scenes, _ = world._package.scene_actors()
     placed = {(r["export"], r["name"]) for r in scenes}
     if len(placed) != len(scenes):
         raise ValueError("Original Level actors contain duplicate identities")
@@ -244,7 +242,7 @@ def apply_lightcolor_plan(
         recorded = {
             **proof, "status": "isolated-GMP-written-runtime-unverified",
             "output": str(target), "plan_sha256": plan_hash,
-            "edited_package_written": True,
+            "plan_path": str(plan_file), "edited_package_written": True,
         }
         with manifest.open("x", encoding="utf8") as f:
             wrote_manifest = True
@@ -283,8 +281,14 @@ def verify_saved_multi_lightcolor(world: DX2Map, output: str | Path) -> dict:
             or doc.get("native_light_spawn_enabled") is not False
             or doc.get("native_bsp_or_zone_rebuild_enabled") is not False
             or not isinstance(doc.get("plan_sha256"), str)
-            or len(doc["plan_sha256"]) != 64):
+            or len(doc["plan_sha256"]) != 64
+            or any(x not in "0123456789abcdef" for x in doc["plan_sha256"])
+            or not isinstance(doc.get("plan_path"), str)):
         raise ValueError("Multi-LightColor manifest has untrusted source/runtime claims")
+    plan = _plan_path(world, doc["plan_path"], exists=True)
+    if (_sha(plan.read_bytes()) != doc["plan_sha256"]
+            or load_lightcolor_plan(world, plan) != doc.get("actors")):
+        raise ValueError("Saved multi-LightColor manifest is no longer bound to original private plan")
     proof, rebuilt = _proof(world, doc.get("actors"))
     for key in ("actors", "edited_actor_count", "field_edits",
                 "changed_bytes", "output_sha256"):
