@@ -6,7 +6,7 @@ Our goal is a practical, UnrealEd-style modding SDK inspired by the original Deu
 
 ## New: DX2SDK v0.1 public Python API and Windows console
 
-DX2SDK v0.9 now has a [standalone Python API](dx2sdk/README.md) with source-verified native property inspection, direct original GMP-to-private-actors.json scanning without Godot, experimental isolated existing UE95 tagged int32/float32 scalar editing, and conservative single or **2–8 source-locked original StaticMeshActor duplicates**, native Light dependency audits, guarded existing GameSys `bLightOn` Boolean edits, and experimental original-layout LightColor brightness/hue/saturation byte editing. The clones create new exports and Level references, replay original-source serialization to verify every byte, and are NOT retail gameplay tested. The Python 3.11+ package (`from dx2sdk import DX2Map`) and a command-line
+DX2SDK v0.10 now has a [standalone Python API](dx2sdk/README.md) with source-verified native property inspection, direct original GMP-to-private-actors.json scanning without Godot, experimental isolated existing UE95 tagged int32/float32 scalar editing, and conservative single or **2–8 source-locked original StaticMeshActor duplicates**, native Light dependency audits, guarded existing GameSys `bLightOn` Boolean edits, and experimental original-layout LightColor brightness/hue/saturation byte editing. The clones create new exports and Level references, replay original-source serialization to verify every byte, and are NOT retail gameplay tested. The Python 3.11+ package (`from dx2sdk import DX2Map`) and a command-line
 interface (`python -B -m dx2sdk`). The native-editor Windows prototype
 also packages `DX2SDK_CONSOLE.cmd` next to `START_DX2ED.cmd`.
 A smaller **Python-only portable DX2SDK ZIP** (with `RUN_DX2SDK.cmd`,
@@ -41,6 +41,8 @@ DX2SDK v0.7 also supports the **existing, exact 10-byte LightColor** GameSys str
 DX2SDK v0.8 further adds source-locked, reusable **2–8 existing LightColor actor plans** using `make-lightcolor-plan`, `apply-lightcolor-plan` (dry run by default), and `verify-multi-lightcolor`. These remain strict, source-authored byte-only GMP edits, not new Lights or a BSP/collision baker. Full details in `dx2sdk/README.md`.
 
 DX2SDK v0.9 introduces **read-only original World Model BSP plane-side diagnostics** through `bsp-trace-point` and `bsp-light-regions`. The latter compares source-original native `Light` Region fields with hypotheses from the decoded candidate BSP link graph. **No reliable point-to-leaf/zone resolver or new Light actor construction is claimed.** Reports remain private source-hash-bound JSON; no BSP or retail map is written. See `dx2sdk/README.md`.
+
+DX2SDK v0.10 adds a **read-only native Light/BSP source-evidence atlas**, using `bsp-light-atlas` and `bsp-compare-point`. It compares authored Light Regions across hypothetical BSP terminal paths at several plane tolerances and flags contradictory source pairs. This is not a verified native BSP leaf/zone solver or Light spawner; only private, SHA-replayed JSON reports can be written. See [DX2SDK documentation](dx2sdk/README.md).
 
 ## Available now: DX2 Map Exporter 0.1
 

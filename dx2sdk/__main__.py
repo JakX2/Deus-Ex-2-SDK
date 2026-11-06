@@ -167,6 +167,29 @@ def make_parser():
     bsp_lights.add_argument("--output",
                             help="Optional NEW private diagnostic JSON, outside game Maps")
 
+    anchor_atlas = sub.add_parser(
+        "bsp-light-atlas",
+        help="Audit 2..5 plane-epsilon sweeps against original Light Region evidence")
+    _add_source(anchor_atlas)
+    anchor_atlas.add_argument("--limit", type=int, default=100,
+                              help="At most 1000 existing source Light actors")
+    anchor_atlas.add_argument("--epsilon", action="append", type=float,
+                              help="Repeat 2..5 strictly increasing tolerances, default .001/.01/.1")
+    anchor_atlas.add_argument("--output",
+                              help="Fresh private source-replayed JSON, never a GMP")
+
+    anchor_point = sub.add_parser(
+        "bsp-compare-point",
+        help="Compare unassigned point candidate branches with original authored Light anchors")
+    _add_source(anchor_point)
+    anchor_point.add_argument("--x", type=float, required=True)
+    anchor_point.add_argument("--y", type=float, required=True)
+    anchor_point.add_argument("--z", type=float, required=True)
+    anchor_point.add_argument("--limit", type=int, default=100)
+    anchor_point.add_argument("--epsilon", action="append", type=float,
+                              help="Repeat 2..5 strictly increasing plane tolerances")
+    anchor_point.add_argument("--output", help="Fresh private source-replayed JSON only")
+
     definitions = sub.add_parser(
         "scripts", help="Inspect original source TriggerScript definitions")
     _add_source(definitions, cache=True)
@@ -489,6 +512,18 @@ def main(argv=None) -> int:
                 limit=args.limit, epsilon=args.epsilon)
             _json(project.save_bsp_diagnostic_report(report, args.output)
                   if args.output else report)
+        elif args.command == "bsp-light-atlas":
+            eps = tuple(args.epsilon) if args.epsilon is not None else (.001, .01, .1)
+            result = project.original_light_bsp_anchor_atlas(
+                limit=args.limit, epsilons=eps)
+            _json(project.save_light_bsp_anchor_report(result, args.output)
+                  if args.output else result)
+        elif args.command == "bsp-compare-point":
+            eps = tuple(args.epsilon) if args.epsilon is not None else (.001, .01, .1)
+            result = project.compare_point_with_original_light_anchors(
+                (args.x, args.y, args.z), limit=args.limit, epsilons=eps)
+            _json(project.save_light_bsp_anchor_report(result, args.output)
+                  if args.output else result)
         elif args.command == "scripts":
             if not 0 <= args.limit <= 5000:
                 raise ValueError("Script list limit must be 0..5000")
