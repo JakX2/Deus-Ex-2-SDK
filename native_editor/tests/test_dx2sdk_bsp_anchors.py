@@ -24,7 +24,7 @@ from dx2sdk.bsp_anchors import (
 from test_dx2sdk_bsp_trace import synthetic_map_with_bsp_and_light
 from tools.build_dx2sdk_source_release import ARCHIVE, build
 from upkg import Package
-from upkgwrite import ActorEdit, PackageWriter, enc_index
+from upkgwrite import ActorEdit, PackageWriter, parse_fields, enc_index
 
 
 def _add_second_original_light(path: Path, *, leaf: int = 21, zone: int = 9) -> bytes:
@@ -37,7 +37,7 @@ def _add_second_original_light(path: Path, *, leaf: int = 21, zone: int = 9) -> 
     exp = writer.export_view(light)
     edit = ActorEdit(writer, exp)
     region = next(x for x in edit.layout.props.tags if x.name == "Region")
-    fields = {x.name: x for x in region.fields.tags}
+    fields = {x.name: x for x in parse_fields(region, writer.name_text).tags}
     fields["iLeaf"].value = struct.pack("<i", leaf)
     fields["ZoneNumberLow"].value = bytes([zone])
     edit.changes.append("invented second original Light Region evidence")
