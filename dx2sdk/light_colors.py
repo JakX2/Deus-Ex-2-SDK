@@ -55,16 +55,19 @@ def _components(raw: bytes, names: list[str]) -> tuple[dict[str, int], dict[str,
     return values, offsets
 
 
-def _one_original(world: DX2Map, export: int, actor: str, t3: T3Package) -> dict:
+def _one_original(world: DX2Map, export: int, actor: str, t3: T3Package,
+                  placed: set[tuple[int, str]] | None = None) -> dict:
     """Fail closed unless both readers agree on every original field and actor."""
     if (type(export) is not int or export < 1
             or export > len(world._package.exports)
             or type(actor) is not str or not actor):
         raise ValueError("Exact original one-based actor export and name required")
-    scenes, _ = world._package.scene_actors()
-    present = [row for row in scenes if row["export"] == export
-               and row["name"] == actor]
-    if len(present) != 1:
+    if placed is None:
+        scenes, _ = world._package.scene_actors()
+        placed = {(row["export"], row["name"]) for row in scenes}
+        if len(placed) != len(scenes):
+            raise ValueError("Duplicate native source Level-positioned actor entries")
+    if (export, actor) not in placed:
         raise ValueError("LightColor source actor is not uniquely positioned in the original Level")
     dxexp = world._package.exports[export - 1]
     t3exp = t3.exports[export - 1]
@@ -124,10 +127,14 @@ def original_light_colors(world: DX2Map, *, limit: int = 100) -> dict:
     world._check_original_unchanged()
     t3 = T3Package(world.source)
     native, failures = world._package.scene_actors()
+    placed = {(row["export"], row["name"]) for row in native}
+    if len(placed) != len(native):
+        raise ValueError("Duplicate positioned Level actor identities in original GMP")
     rows, blocked = [], 0
     for row in native:
         try:
-            candidate = _one_original(world, row["export"], row["name"], t3)
+            candidate = _one_original(
+                world, row["export"], row["name"], t3, placed=placed)
             rows.append({
                 "actor": candidate["actor"], "export": candidate["export"],
                 "actor_class": candidate["actor_class"],
