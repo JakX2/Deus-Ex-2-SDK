@@ -46,7 +46,7 @@ from dx2_native_save_as import (  # noqa: E402
 )
 from dx2_package_roundtrip import inspect_noop  # noqa: E402
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 SDK_SCHEMA = "DX2SDK-public-api-v0.1"
 MAX_GMP = 256 * 1024 * 1024
 MAX_MOVES = 10000
@@ -165,6 +165,7 @@ class DX2Map:
             "native_light_region_reconstruction_available": False,
             "source_bsp_plane_side_diagnostics": "read_only_hypothetical_branch_trace",
             "source_original_Light_BSP_anchor_atlas": "read_only_epsilon_concordance_and_conflicts",
+            "source_original_cross_class_Actor_Region_atlas": "read_only_explicit_tagged_location_region_and_LevelInfo",
             "native_bsp_point_to_leaf_or_zone_verified": False,
             "experimental_source_multi_LightColor_plan": "2_to_8_original_authored_actors_only",
             "native_gamesys_writer_available": False,
@@ -418,6 +419,33 @@ class DX2Map:
         """Reconstruct original Light/BSP evidence before fresh private JSON."""
         from .bsp_anchors import save_light_bsp_anchor_report
         return save_light_bsp_anchor_report(self, report, output)
+
+    def original_actor_region_bsp_atlas(
+        self, *, limit: int = 250, actor_class: str | None = None,
+        epsilons: tuple[float, ...] = (.001, .01, .1),
+    ) -> dict:
+        """Source-authored Actor Region and candidate BSP terminal cross-class atlas."""
+        from .actor_regions import original_actor_region_bsp_atlas
+        return original_actor_region_bsp_atlas(
+            self, limit=limit, actor_class=actor_class, epsilons=epsilons)
+
+    def compare_point_to_original_actor_regions(
+        self, point_unreal_xyz: tuple[float, float, float], *,
+        limit: int = 250, actor_class: str | None = None,
+        epsilons: tuple[float, ...] = (.001, .01, .1),
+    ) -> dict:
+        """Compare original Actor Region evidence without deriving a new Region."""
+        from .actor_regions import compare_point_to_original_actor_regions
+        return compare_point_to_original_actor_regions(
+            self, point_unreal_xyz, limit=limit, actor_class=actor_class,
+            epsilons=epsilons)
+
+    def save_original_actor_region_atlas(
+        self, report: dict, output: str | Path,
+    ) -> dict:
+        """Regenerate original Actor Region evidence before fresh private JSON output."""
+        from .actor_regions import save_original_actor_region_atlas
+        return save_original_actor_region_atlas(self, report, output)
 
     def script_definitions(self, original_trigger_script_zip: str | Path) -> dict:
         """Read the original source ZIP; original matching actors cache required."""
