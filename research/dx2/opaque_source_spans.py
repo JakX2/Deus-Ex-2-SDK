@@ -12,6 +12,7 @@ from typing import Iterable, Mapping
 
 SCHEMA = "DX2SDK-opaque-source-span-observation-v1"
 MAX_SPANS = 64
+MAX_ENVELOPES = 64
 MAX_PREVIEW = 32
 MAX_SOURCE_BYTES = 128 * 1024 * 1024
 
@@ -33,6 +34,7 @@ def observe_opaque_spans(
     package_identity: str,
     spans: Iterable[Mapping[str, object]],
     preview_bytes: int = 0,
+    export_envelopes: Iterable[Mapping[str, object]] | None = None,
 ) -> dict:
     """Return deterministic, read-only source-bound opaque span metadata.
 
@@ -53,6 +55,31 @@ def observe_opaque_spans(
     preview = _uint(preview_bytes)
     if preview > MAX_PREVIEW:
         raise SpanEvidenceError("hex preview exceeds opt-in bound")
+    # Optional negative-control containment, never an authenticated native
+    # package parser. All caller-declared export owners must be disjoint.
+    owners: dict[int, tuple[int, int]] = {}
+    if export_envelopes is not None:
+        try:
+            owner_iter = iter(export_envelopes)
+        except TypeError as exc:
+            raise SpanEvidenceError("invalid export envelope iterable") from exc
+        for envelope in owner_iter:
+            if len(owners) >= MAX_ENVELOPES:
+                raise SpanEvidenceError("too many export envelopes")
+            if not isinstance(envelope, Mapping):
+                raise SpanEvidenceError("export envelope must be a mapping")
+            export = _uint(envelope.get("export"), positive=True)
+            offset = _uint(envelope.get("offset"))
+            length = _uint(envelope.get("length"), positive=True)
+            if export > 0x7fffffff or export in owners:
+                raise SpanEvidenceError("invalid or duplicate export owner")
+            if offset > len(source) or length > len(source) - offset:
+                raise SpanEvidenceError("export envelope exceeds source bytes")
+            owners[export] = (offset, offset + length)
+        intervals = sorted(owners.values())
+        if any(intervals[i][0] < intervals[i - 1][1]
+               for i in range(1, len(intervals))):
+            raise SpanEvidenceError("ambiguous overlapping export envelopes")
     rows = []
     try:
         iterator = iter(spans)
@@ -74,6 +101,10 @@ def observe_opaque_spans(
             raise SpanEvidenceError("missing independent envelope evidence")
         if offset > len(source) or length > len(source) - offset:
             raise SpanEvidenceError("span exceeds source bytes")
+        if export_envelopes is not None:
+            owner = owners.get(export)
+            if owner is None or offset < owner[0] or offset + length > owner[1]:
+                raise SpanEvidenceError("span escapes its declared export envelope")
         rows.append((offset, offset + length, export, evidence))
     rows.sort()
     seen_evidence = set()
@@ -105,6 +136,8 @@ def observe_opaque_spans(
         "native_bsp_leaf_zone_decoded": False,
         "runtime_game_verified": False,
         "writable": False,
+        "caller_export_envelopes_checked": export_envelopes is not None,
+        "export_envelopes_independently_verified": False,
         "observations": observations,
     }
 
@@ -126,5 +159,5 @@ def observe_opaque_file(
     return observe_opaque_spans(
         source, source_sha256=expected_sha256,
         package_identity=package_identity, spans=spans,
-        preview_bytes=preview_bytes,
+        preview_bytes=preview_bytes, export_envelopes=export_envelopes,
     )
