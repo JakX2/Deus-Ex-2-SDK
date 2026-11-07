@@ -101,7 +101,7 @@ class ExportReaderConcordanceTests(unittest.TestCase):
         # The older Package reader accepts overlapping payloads; strict audit
         # must independently reject them rather than calling them verified.
         samples = [
-            fixture(payload_offsets=(512, 515))[0],
+            fixture(payload_offsets=(512, 511))[0],
             fixture(payload_offsets=(512, 512))[0],
         ]
         for source in samples:
