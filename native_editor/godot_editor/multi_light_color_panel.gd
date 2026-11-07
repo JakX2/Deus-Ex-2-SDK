@@ -362,12 +362,12 @@ func _update_buttons() -> void:
     if clear_button != null:
         clear_button.disabled = busy or staged.is_empty()
     if preview_button != null:
-        preview_button.disabled = busy or not _context_ok() or not 2 <= staged.size() <= MAX_BATCH
+        preview_button.disabled = busy or not _context_ok() or not (staged.size() >= 2 and staged.size() <= MAX_BATCH)
 
 
 func edit_request(target: String) -> Dictionary:
     if (worker != null or not _context_ok() or
-        not 2 <= staged.size() <= MAX_BATCH or
+        not (staged.size() >= 2 and staged.size() <= MAX_BATCH) or
         target.get_file().to_lower() != source_map.get_file().to_lower() or
         target == source_map or FileAccess.file_exists(target)):
         return {}
