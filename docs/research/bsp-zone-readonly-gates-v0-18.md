@@ -91,3 +91,38 @@ invalid types, huge counts, source hash drift and unchanged input bytes.
 byte ranges in the checked-in native reader before permitting a
 `verified-envelope` confidence label. Until then all observed payloads
 remain `unknown-payload` and nonwritable.
+
+
+## v0.20 follow-up: checked-in package reader evidence audit
+
+Source inspected: `map_exporter/dx2inspect.py`, `Package.__init__`,
+`Cursor.ci`, `Package.payload`, and `map_exporter/dx2scene.py::find_bsp`.
+The package reader parses the Unreal header and export table, assigning
+one-based export indices and reading each serialized export's compact-index
+`size` and `offset`. It currently rejects negative lengths/offsets and
+end positions beyond the loaded file. `Package.payload` slices the source
+using these table-derived values. This is concrete source evidence for a
+future export-envelope bridge, **not** an authenticated bridge today.
+
+Additional independent checks required before trusting those ranges in the
+opaque observer:
+
+* Verify exact package format/version and table layout, including header,
+  name/import/export table start/end boundaries. Reject overlapping or
+  duplicate nonempty export payload ranges and payload/table collisions.
+* Validate every compact-index and name/reference lookup before using the
+  export table. The existing reader does not enforce all of these checks
+  during construction and uses some direct list indexing.
+* Reject zero-sized exports as observation owners. Ensure file identity is
+  pinned to the same immutable bytes used for both table parsing and spans.
+* Keep BSP render-block evidence separate from BSP **leaf/zone** evidence.
+  `find_bsp` scans a Level export for validated *render geometry* records;
+  it does not expose independently verified leaf/zone record layouts.
+* Add invented synthetic package fixtures with malformed compact indices,
+  out-of-range name refs, table/payload collisions, duplicate payload ranges,
+  and zero-sized exports. No retail data should be committed.
+
+**Decision:** no `export_envelopes_independently_verified: true` flag,
+no implicit package-reader bridge, and no BSP leaf/zone decoder until the
+above negative controls and source-format evidence exist. The present
+opt-in caller envelopes remain explicitly untrusted.
