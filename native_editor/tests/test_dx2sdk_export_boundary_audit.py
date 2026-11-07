@@ -132,6 +132,13 @@ class ExportBoundaryAuditTests(unittest.TestCase):
         with self.assertRaises(ExportBoundaryError):
             self.audit(bytes(bad))
 
+    def test_reject_zero_length_name_record(self):
+        source, bounds = fixture()
+        bad = bytearray(source)
+        bad[bounds["no"]] = 0  # An invented empty name record.
+        with self.assertRaisesRegex(ExportBoundaryError, "zero-length package name"):
+            self.audit(bytes(bad))
+
     def test_reject_zero_export_owner_but_preserve_other_owners(self):
         source, _ = fixture(payload_lengths=(0, 5))
         report = self.audit(source)
