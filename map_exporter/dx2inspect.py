@@ -71,9 +71,16 @@ class Cursor:
 
 
 class Package:
-    def __init__(self, path):
+    def __init__(self, path, *, data=None):
         self.path = Path(path)
-        self.data = self.path.read_bytes()
+        # Optional immutable in-memory input permits read-only inspection of
+        # ZIP members without extraction. Existing path-only API is unchanged.
+        if data is not None:
+            if type(data) is not bytes or len(data) > 128 * 1024 * 1024:
+                raise ValueError('In-memory package source must be bounded immutable bytes')
+            self.data = data
+        else:
+            self.data = self.path.read_bytes()
         r = Cursor(self.data)
         if r.u32() != TAG: raise ValueError('Not an Unreal Engine package')
         self.version, self.licensee, self.flags = r.u16(), r.u16(), r.u32()
