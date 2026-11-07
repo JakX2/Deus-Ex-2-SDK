@@ -182,8 +182,8 @@ func _run() -> void:
         _fail("Source-vs-staged comparison did not reflect the selected property")
         return
     # Unrecognized or protected native tags must NEVER grant edit eligibility.
-    for action in ("wrong-sha", "claim-new-tags", "protected-editable",
-                   "wrong-original", "duplicate-ordinal", "wrong-count"):
+    for action in ["wrong-sha", "claim-new-tags", "protected-editable",
+                   "wrong-original", "duplicate-ordinal", "wrong-count"]:
         var forged := doc.duplicate(true)
         match action:
             "wrong-sha":
