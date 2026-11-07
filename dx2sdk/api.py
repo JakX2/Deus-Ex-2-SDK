@@ -46,7 +46,7 @@ from dx2_native_save_as import (  # noqa: E402
 )
 from dx2_package_roundtrip import inspect_noop  # noqa: E402
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 SDK_SCHEMA = "DX2SDK-public-api-v0.1"
 MAX_GMP = 256 * 1024 * 1024
 MAX_MOVES = 10000
@@ -163,6 +163,7 @@ class DX2Map:
             "native_light_creation_enabled": False,
             "experimental_existing_LightColor_byte_writer": "preexisting_three_byte_tagged_struct_only",
             "source_LightColor_Godot_gui": "one_existing_actor_preview_and_confirmed_private_save_as",
+            "source_multi_LightColor_Godot_gui": "2_to_8_original_actors_guarded_private_plan_and_save_as",
             "native_light_region_reconstruction_available": False,
             "source_bsp_plane_side_diagnostics": "read_only_hypothetical_branch_trace",
             "source_original_Light_BSP_anchor_atlas": "read_only_epsilon_concordance_and_conflicts",

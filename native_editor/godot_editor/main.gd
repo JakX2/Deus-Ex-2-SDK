@@ -2,6 +2,7 @@ extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
 const PythonRuntime = preload("res://python_runtime.gd")
 const LightColorPanel = preload("res://light_color_panel.gd")
+const MultiLightColorPanel = preload("res://multi_light_color_panel.gd")
 const StartupRoute = preload("res://startup_route.gd")
 const MissionLogicDraft = preload("res://mission_logic_draft.gd")
 const DialogueDesignDraft = preload("res://dialogue_design_draft.gd")
@@ -73,6 +74,7 @@ var source_surface_panel: VBoxContainer
 var source_edge_transition_panel: VBoxContainer
 var source_gamesys_panel: VBoxContainer
 var light_color_panel: VBoxContainer
+var multi_light_color_panel: VBoxContainer
 var source_gamesys_filter: LineEdit
 var source_gamesys_list: ItemList
 var source_gamesys_details: Label
@@ -787,6 +789,10 @@ func _make_ui() -> void:
     # isolated output; this panel never feeds regular actor Save As.
     light_color_panel = LightColorPanel.new()
     left_tabs.add_child(light_color_panel)
+    # v0.13: a separate isolated 2–8 original actor batch workflow, never
+    # mixed into the single-actor Save As or regular transform writer.
+    multi_light_color_panel = MultiLightColorPanel.new()
+    left_tabs.add_child(multi_light_color_panel)
 
     # These original .tsd definitions are source evidence, NOT an actor
     # script binding nor an executable gameplay compiler.
@@ -1752,6 +1758,8 @@ func open_gmp(path: String) -> void:
     last_gmp_path = path
     if light_color_panel != null:
         light_color_panel.reset_context()
+    if multi_light_color_panel != null:
+        multi_light_color_panel.reset_context()
     var cache_root := OS.get_user_data_dir().path_join("map_cache")
     status_label.text = "Processing " + path.get_file() + " ... First load creates a cached 3D scene and actor metadata."
     build_thread = Thread.new()
@@ -2134,12 +2142,23 @@ func load_actors(path: String) -> void:
                 last_gmp_path, source_gamesys_sha256, lightcolor_worker)
         else:
             light_color_panel.reset_context()
+    if multi_light_color_panel != null:
+        var multi_lightcolor_worker := ProjectSettings.globalize_path(
+            "res://backend/dx2_sdk_multi_lightcolor_worker.py")
+        if (last_gmp_path.get_file().to_lower() == current_source_map_name.to_lower()
+            and not source_gamesys_sha256.is_empty()):
+            multi_light_color_panel.configure_original(
+                last_gmp_path, source_gamesys_sha256, multi_lightcolor_worker)
+        else:
+            multi_light_color_panel.reset_context()
     _dialogue_initialize_from_current_map()
     status_label.text = "Loaded %d actors, %d meshes. Click a mesh or select an actor." % [actors.size(), mesh_count]
 
 func _clear_current_scene() -> void:
     if light_color_panel != null:
         light_color_panel.reset_context()
+    if multi_light_color_panel != null:
+        multi_light_color_panel.reset_context()
     _reset_source_collision_inspection()
     if source_collision_button != null:
         source_collision_button.disabled = true

@@ -32,10 +32,15 @@ REQUIRED = (
     "native_editor/godot_editor/main.tscn",
     "native_editor/godot_editor/main.gd",
     "native_editor/godot_editor/light_color_panel.gd",
+    "native_editor/godot_editor/multi_light_color_panel.gd",
+    "native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py",
+    "native_editor/godot_editor/tests/smoke_multi_light_color_panel.gd",
     "native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py",
+    "native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py",
     "native_editor/godot_editor/tests/smoke_light_color_panel.gd",
     "native_editor/godot_editor/backend/dx2_native_backend.py",
     "native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py",
+    "native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_collision_selection_cache.py",
     "native_editor/godot_editor/backend/dx2_script_ibd_provenance.py",
     "native_editor/godot_editor/backend/dx2_mission_kernel_script_diff.py",
@@ -74,6 +79,7 @@ REQUIRED = (
 PREFLIGHT_WORKERS = (
     "native_editor/godot_editor/backend/dx2_native_backend.py",
     "native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py",
+    "native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_zip_stage.py",
     "native_editor/godot_editor/backend/dx2_script_ibd_provenance.py",
     "native_editor/godot_editor/backend/dx2_mission_kernel_script_diff.py",
@@ -104,7 +110,7 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("includes_original_dx2_assets") is not False
                 or manifest.get("includes_havok_runtime") is not False
                 or manifest.get("gameplay_physics_or_walkability_verified") is not False
-                or manifest.get("public_dx2sdk_api_version") != "0.12.0"
+                or manifest.get("public_dx2sdk_api_version") != "0.13.0"
                 or manifest.get("public_dx2sdk_cli_included") is not True
                 or manifest.get("public_dx2sdk_gameplay_runtime_verified") is not False):
             issues.append("invalid_prototype_manifest")

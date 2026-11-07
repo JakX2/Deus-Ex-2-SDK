@@ -20,6 +20,7 @@ if /I "%~1"=="--self-test" (
   for %%S in (
     smoke_python_runtime.gd
     smoke_light_color_panel.gd
+    smoke_multi_light_color_panel.gd
     smoke_mission_logic_draft.gd
     smoke_dialogue_design_draft.gd
     smoke_original_script_ibd_provenance.gd
