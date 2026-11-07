@@ -1,15 +1,24 @@
 """Asset-free tests, plus optional original DX2 integration via environment variables."""
 import json
 import os
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
-ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT/'dx2ed_3d'))
-import dx2ed_3d as app
+# The repository contains both a directory named dx2ed_3d and the runnable
+# script dx2ed_3d/dx2ed_3d.py. Explicitly load the script instead of importing
+# the namespace directory when tests run from the repository root in CI.
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / 'dx2ed_3d.py'
+spec = spec_from_file_location('_dx2ed_3d_viewer_under_test', SCRIPT)
+if spec is None or spec.loader is None:
+    raise ImportError('DX2Ed viewer source unavailable')
+app = module_from_spec(spec)
+sys.modules[spec.name] = app
+spec.loader.exec_module(app)
 
 
 class ViewerTests(unittest.TestCase):
