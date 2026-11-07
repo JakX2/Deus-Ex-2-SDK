@@ -10,7 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "research" / "dx2"))
 from dx2_export_boundary_audit import (  # noqa: E402
-    SCHEMA, ExportBoundaryError, audit_dx2_export_boundaries,
+    SCHEMA, ExportBoundaryError, _Reader, audit_dx2_export_boundaries,
 )
 
 
@@ -138,6 +138,21 @@ class ExportBoundaryAuditTests(unittest.TestCase):
         bad[bounds["no"]] = 0  # An invented empty name record.
         with self.assertRaisesRegex(ExportBoundaryError, "zero-length package name"):
             self.audit(bytes(bad))
+
+    def test_reject_embedded_name_terminators_in_invented_records(self):
+        source, bounds = fixture()
+        bad = bytearray(source)
+        bad[bounds["no"] + 2] = 0  # Internal ANSI NUL, final NUL intact.
+        with self.assertRaisesRegex(ExportBoundaryError, "embedded ANSI"):
+            self.audit(bytes(bad))
+        # Negative compact length denotes UTF16 code units in this candidate layout.
+        for raw in (ci(-3) + b"A\\x00\\x00\\x00\\x00\\x00",
+                    ci(-3) + b"A\\x00B\\x00\\x00\\x00"):
+            if raw[3:5] == b"\\x00\\x00":
+                with self.assertRaisesRegex(ExportBoundaryError, "embedded UTF16"):
+                    _Reader(raw).name()
+            else:
+                _Reader(raw).name()
 
     def test_reject_zero_export_owner_but_preserve_other_owners(self):
         source, _ = fixture(payload_lengths=(0, 5))
