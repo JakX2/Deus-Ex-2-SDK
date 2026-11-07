@@ -1,9 +1,10 @@
 extends "res://native_scalar_panel.gd"
-## DX2Ed v0.17: source-only searchable Actor Workbench plus staged 2..8 numeric tags.
+## DX2Ed v0.18: original actor navigator and searchable source-tag workbench.
 ## Inherits v0.14's source SHA+private actors.json SHA proof, authentic
 ## StaticMeshActor and eligible tagged-property inspection and typed controls.
 ## The Python worker alone decides whether native bytes can be written.
 const WorkbenchView = preload("res://workbench_view_model.gd")
+const ActorNavigation = preload("res://workbench_actor_navigation.gd")
 const BATCH_BRIDGE_SCHEMA := "DX2Ed-GUI-original-multi-native-scalar-worker-v1"
 const WORKBENCH_SCHEMA := "DX2SDK-original-actor-property-workbench-v1"
 const WORKBENCH_CATEGORY_ORDER := [
@@ -29,6 +30,14 @@ var property_statistics: Label
 var property_details: TextEdit
 var selected_tag_ordinal := -1
 var property_catalog: Dictionary = {}
+var actor_search: LineEdit
+var actor_mode: OptionButton
+var actor_navigation_status: Label
+var actor_previous: Button
+var actor_next: Button
+var visible_actor_indices: Array[int] = []
+var pending_staged_focus: Dictionary = {}
+var pending_viewport_request: Dictionary = {}
 
 
 func _ready() -> void:
@@ -42,6 +51,37 @@ func _ready() -> void:
     save_button.hide()
     confirmation.hide()
     save_dialog.hide()
+    var actor_filter_row := HBoxContainer.new()
+    add_child(actor_filter_row)
+    move_child(actor_filter_row, actor_list.get_index())
+    actor_search = LineEdit.new()
+    actor_search.placeholder_text = "Find original actor name or export #..."
+    actor_search.max_length = ActorNavigation.MAX_QUERY
+    actor_search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    actor_search.text_changed.connect(_actor_search_changed)
+    actor_filter_row.add_child(actor_search)
+    actor_mode = OptionButton.new()
+    for mode in ActorNavigation.modes():
+        actor_mode.add_item(mode)
+    actor_mode.select(0)
+    actor_mode.item_selected.connect(_actor_mode_changed)
+    actor_filter_row.add_child(actor_mode)
+    var actor_navigation_row := HBoxContainer.new()
+    add_child(actor_navigation_row)
+    move_child(actor_navigation_row, actor_list.get_index() + 1)
+    actor_previous = Button.new()
+    actor_previous.text = "Previous original"
+    actor_previous.pressed.connect(func(): _navigate_relative_actor(-1))
+    actor_navigation_row.add_child(actor_previous)
+    actor_next = Button.new()
+    actor_next.text = "Next original"
+    actor_next.pressed.connect(func(): _navigate_relative_actor(1))
+    actor_navigation_row.add_child(actor_next)
+    actor_navigation_status = Label.new()
+    actor_navigation_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    actor_navigation_status.text = "No source actors loaded"
+    actor_navigation_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    actor_navigation_row.add_child(actor_navigation_status)
     var browser_title := Label.new()
     browser_title.text = "Source property tree | Original / Staged or access"
     add_child(browser_title)
@@ -95,6 +135,7 @@ func _ready() -> void:
     stage_list.custom_minimum_size.y = 160
     stage_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
     stage_list.item_selected.connect(func(_i): _update_buttons())
+    stage_list.item_activated.connect(_jump_to_staged)
     add_child(stage_list)
     var row := HBoxContainer.new()
     add_child(row)
@@ -131,6 +172,15 @@ func _ready() -> void:
 
 
 func reset_context() -> void:
+    visible_actor_indices.clear()
+    pending_staged_focus.clear()
+    pending_viewport_request.clear()
+    if actor_search != null:
+        actor_search.text = ""
+    if actor_mode != null:
+        actor_mode.select(0)
+    if actor_navigation_status != null:
+        actor_navigation_status.text = "No source actors loaded"
     property_catalog.clear()
     selected_tag_ordinal = -1
     if property_search != null:
@@ -163,11 +213,21 @@ func accept_actor_inventory(doc: Dictionary) -> bool:
             property_details.text = "No source-authenticated property selected."
         staged.clear()
         pending.clear()
+        if actor_search != null:
+            actor_search.text = ""
+        if actor_mode != null:
+            actor_mode.select(0)
         _refresh_staged()
+        _refresh_actor_navigation()
     return result
 
 
 func _pick_actor(index: int) -> void:
+    # ItemList indexes are filtered display positions, NEVER source exports.
+    var original_index := _original_index_at(index)
+    if (worker != null or not _context_ok() or original_index < 0):
+        return
+    pending_staged_focus.clear()
     property_catalog.clear()
     selected_tag_ordinal = -1
     if property_details != null:
@@ -176,8 +236,166 @@ func _pick_actor(index: int) -> void:
         property_statistics.text = "Source actor changed; awaiting source-tag inventory."
     if source_property_tree != null:
         source_property_tree.clear()
-    super._pick_actor(index)
+    super._pick_actor(original_index)
+    _refresh_actor_navigation()
 
+
+
+func _actor_search_changed(_value: String) -> void:
+    _refresh_actor_navigation()
+
+
+func _actor_mode_changed(_index: int) -> void:
+    _refresh_actor_navigation()
+
+
+func _actor_navigation_mode() -> String:
+    if actor_mode == null or actor_mode.selected < 0:
+        return ActorNavigation.MODE_ALL
+    return actor_mode.get_item_text(actor_mode.selected)
+
+
+func _refresh_actor_navigation() -> void:
+    if actor_list == null:
+        return
+    var view := ActorNavigation.projected(
+        original_actors, staged,
+        actor_search.text if actor_search != null else "",
+        _actor_navigation_mode())
+    actor_list.clear()
+    visible_actor_indices.clear()
+    var selected_display := -1
+    for row in view["rows"]:
+        var original_index := int(row["original_index"])
+        visible_actor_indices.append(original_index)
+        actor_list.add_item(str(row["label"]))
+        if original_index == chosen_actor_index:
+            selected_display = visible_actor_indices.size() - 1
+    if selected_display >= 0:
+        actor_list.select(selected_display)
+    if actor_navigation_status != null:
+        var chosen := (
+            " | selected original #" + str(original_actors[chosen_actor_index]["export"])
+            if chosen_actor_index >= 0 and chosen_actor_index < original_actors.size()
+            else " | none selected")
+        actor_navigation_status.text = (
+            "%d/%d original actors%s" % [int(view["visible"]), int(view["total"]), chosen])
+    _update_buttons()
+
+
+func _original_index_at(display_index: int) -> int:
+    if display_index < 0 or display_index >= visible_actor_indices.size():
+        return -1
+    var original_index := visible_actor_indices[display_index]
+    if original_index < 0 or original_index >= original_actors.size():
+        return -1
+    return original_index
+
+
+func _navigate_original_index(original_index: int) -> bool:
+    if (worker != null or not _context_ok()
+        or original_index < 0 or original_index >= original_actors.size()):
+        return false
+    var display := visible_actor_indices.find(original_index)
+    if display < 0:
+        return false
+    actor_list.select(display)
+    _pick_actor(display)
+    return chosen_actor_index == original_index
+
+
+func _original_viewport_index(identity: Dictionary) -> int:
+    if (not _context_ok()
+        or typeof(identity.get("actor")) != TYPE_STRING
+        or typeof(identity.get("export")) != TYPE_INT
+        or identity.get("source_map") != source_map.get_file()
+        or identity.get("source_sha256") != source_sha256):
+        return -1
+    return ActorNavigation.original_index_for_export(
+        original_actors, str(identity["actor"]), int(identity["export"]))
+
+
+func _open_verified_viewport_actor(identity: Dictionary) -> bool:
+    # Never use a filtered row index, visual mesh index or fabricated export.
+    # This must match an actor from the Python original-SHA inventory.
+    if worker != null:
+        return false
+    var index := _original_viewport_index(identity)
+    if index < 0:
+        status.text = "Scene actor refused: no matching original source Actor export/name."
+        return false
+    if chosen_actor_index == index:
+        return true
+    if visible_actor_indices.find(index) < 0:
+        actor_search.text = ""
+        actor_mode.select(0)
+        _refresh_actor_navigation()
+    return _navigate_original_index(index)
+
+
+func request_viewport_actor(identity: Dictionary) -> bool:
+    # Only the main scene's read-only source selection bridge may supply
+    # this request. A successful return merely schedules read-only scanning,
+    # NOT authorizes any native tag edit or Save As.
+    if (not _context_ok()
+        or typeof(identity.get("actor")) != TYPE_STRING
+        or str(identity["actor"]).is_empty()
+        or typeof(identity.get("export")) != TYPE_INT
+        or int(identity["export"]) <= 0
+        or identity.get("source_map") != source_map.get_file()
+        or identity.get("source_sha256") != source_sha256):
+        return false
+    if worker != null:
+        pending_viewport_request = identity.duplicate(true)
+        return true
+    if original_actors.is_empty():
+        pending_viewport_request = identity.duplicate(true)
+        _scan() # Python authenticates map+actors SHA before any actor navigation.
+        return worker != null
+    return _open_verified_viewport_actor(identity)
+
+
+func _drain_viewport_request() -> void:
+    if worker != null or pending_viewport_request.is_empty():
+        return
+    var identity: Dictionary = pending_viewport_request.duplicate(true)
+    pending_viewport_request.clear()
+    _open_verified_viewport_actor(identity)
+
+
+func _navigate_relative_actor(delta: int) -> void:
+    if worker != null or not _context_ok() or visible_actor_indices.is_empty():
+        return
+    var current := visible_actor_indices.find(chosen_actor_index)
+    var next_index := 0 if delta > 0 else visible_actor_indices.size() - 1
+    if current >= 0:
+        next_index = clampi(current + delta, 0, visible_actor_indices.size() - 1)
+    _navigate_original_index(visible_actor_indices[next_index])
+
+
+func _staged_actor_target(row: Dictionary) -> int:
+    if not _context_ok() or row.is_empty():
+        return -1
+    return ActorNavigation.original_index_for_export(
+        original_actors, str(row.get("actor", "")), int(row.get("export", -1)))
+
+
+func _jump_to_staged(stage_index: int) -> void:
+    if (worker != null or not _context_ok()
+        or stage_index < 0 or stage_index >= staged.size()):
+        return
+    var row: Dictionary = staged[stage_index]
+    var target := _staged_actor_target(row)
+    if target < 0:
+        status.text = "Staged actor no longer matches a source-authenticated name/export."
+        return
+    if visible_actor_indices.find(target) < 0:
+        actor_search.text = ""
+        actor_mode.select(0)
+        _refresh_actor_navigation()
+    if _navigate_original_index(target):
+        pending_staged_focus = row.duplicate(true)
+        status.text = "Loading source actor and original numeric tag for staged comparison..."
 
 
 func _start_property_catalog(actor: String, export: int) -> void:
@@ -456,6 +674,7 @@ func _stage() -> void:
 
 
 func _refresh_staged() -> void:
+    _refresh_actor_navigation()
     if not property_catalog.is_empty():
         _render_property_catalog()
     if stage_list != null:
@@ -497,6 +716,10 @@ func _update_buttons() -> void:
         save_button.disabled = true
     var busy := worker != null
     var original_ok := _context_ok()
+    if actor_previous != null:
+        actor_previous.disabled = busy or not original_ok or visible_actor_indices.is_empty()
+    if actor_next != null:
+        actor_next.disabled = busy or not original_ok or visible_actor_indices.is_empty()
     if stage_button != null:
         stage_button.disabled = busy or not original_ok or _current_row().is_empty()
     if remove_button != null and stage_list != null:
@@ -614,6 +837,7 @@ func _finished(code: int, raw: String, action: String, epoch: int) -> void:
                     int(property_catalog["source_top_level_tag_count"]),
                     int(property_catalog["eligible_original_numeric_count"])]
         _update_buttons()
+        _drain_viewport_request()
         return
     if action in ["list", "fields"]:
         var doc: Variant = JSON.parse_string(raw.strip_edges())
@@ -629,7 +853,19 @@ func _finished(code: int, raw: String, action: String, epoch: int) -> void:
             and typeof(doc) == TYPE_DICTIONARY
             and doc.get("status") == "original_scalar_field_inventory"):
             var row: Dictionary = original_actors[chosen_actor_index]
+            if (not pending_staged_focus.is_empty()
+                and pending_staged_focus.get("actor") == row["actor"]
+                and pending_staged_focus.get("export") == row["export"]):
+                for i in range(original_fields.size()):
+                    if (original_fields[i]["property"] == pending_staged_focus.get("property")
+                        and original_fields[i]["source_value"] == pending_staged_focus.get("expected")
+                        and original_fields[i]["type"] == pending_staged_focus.get("type")):
+                        _pick_field(i)
+                        field_value.value = float(pending_staged_focus["replacement"])
+                        break
+                pending_staged_focus.clear()
             _start_property_catalog(str(row["actor"]), int(row["export"]))
+        _drain_viewport_request()
         return
     if worker != null:
         worker.wait_to_finish()

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import sys
 
 from .api import DX2Map, __version__
@@ -35,6 +36,16 @@ def make_parser():
     parser.add_argument("--version", action="version",
                         version="DX2SDK %s" % __version__)
     sub = parser.add_subparsers(dest="command", required=True)
+
+    zip_audit = sub.add_parser(
+        "audit-map-zip",
+        help="Safely inspect a private original DX2 Maps ZIP in memory; aggregate counts only")
+    zip_audit.add_argument("--archive", required=True,
+                           help="Owner-local GMP/D2U ZIP; never extracted or modified")
+    zip_audit.add_argument("--sha256",
+                           help="Optional independently calculated lowercase archive SHA-256")
+    zip_audit.add_argument("--max-files", type=int, default=256,
+                           help="1..512 original package members; never silently truncate")
 
     info = sub.add_parser("info", help="Inspect original GMP package identity")
     _add_source(info)
@@ -446,6 +457,25 @@ def main(argv=None) -> int:
     parser = make_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "audit-map-zip":
+            # The protected archive scan is a source-only reader. Unlike
+            # per-map commands, it cannot assume args.map exists. Its
+            # dependencies live in the same SDK/source ZIP, not site-packages.
+            audit_root = Path(__file__).resolve().parents[1] / "research" / "dx2"
+            if str(audit_root) not in sys.path:
+                sys.path.insert(0, str(audit_root))
+            from private_zip_package_audit import inspect_private_zip_file
+            report = inspect_private_zip_file(
+                Path(args.archive), expected_sha256=args.sha256,
+                max_files=args.max_files)
+            if (report.get("schema") != "DX2SDK-private-zip-package-concordance-v1"
+                    or report.get("status") != "aggregate-only"
+                    or report.get("package_names_and_offsets_emitted") is not False
+                    or report.get("package_files_modified") is not False
+                    or report.get("writable") is not False):
+                raise ValueError("private_map_zip_report_provenance_rejected")
+            _json(report)
+            return 0
         project = DX2Map.open(args.map, getattr(args, "actors", None))
         if args.command == "info":
             _json(project.info())

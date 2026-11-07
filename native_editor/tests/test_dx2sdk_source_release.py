@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 from tools.build_dx2sdk_source_release import build, SCHEMA, ARCHIVE, RETAIL_EXT
 from test_native_save_as import fixture_gmp
 from test_dx2_actor_clone_probe import level_fixture
+from test_dx2sdk_export_boundary_audit import fixture as invented_map_package
 
 
 class SDKStandaloneSourceReleaseTests(unittest.TestCase):
@@ -32,7 +33,7 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
     def test_standalone_source_zip_includes_all_runtime_modules_but_no_assets(self):
         report = build(ROOT, self.first)
         self.assertEqual(report["schema"], SCHEMA)
-        self.assertEqual(report["version"], "0.17.0")
+        self.assertEqual(report["version"], "0.27.0")
         self.assertFalse(report["includes_original_dx2_assets"])
         self.assertFalse(report["gameplay_runtime_verified"])
         self.assertGreater(report["file_count"], 12)
@@ -306,6 +307,55 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
         self.assertEqual(json.loads(verified.stdout)["new_actor_count"], 3)
         self.assertEqual(source.read_bytes(), original)
         self.assertNotEqual(output.read_bytes(), original)
+
+    def test_standalone_unified_sdk_private_zip_audit_without_retail_assets(self):
+        # Exercise BOTH the merged release and v0.26 research from the actual
+        # extracted source ZIP, not from repository imports. No original maps.
+        build(ROOT, self.first)
+        with ZipFile(self.first) as source_zip:
+            names = source_zip.namelist()
+            for rel in (
+                "research/dx2/private_zip_package_audit.py",
+                "research/dx2/dx2_export_boundary_audit.py",
+                "research/dx2/export_reader_concordance.py",
+                "research/dx2/thief3_export_concordance.py",
+                "native_editor/godot_editor/backend/dx2_sdk_multi_scalar_worker.py",
+            ):
+                self.assertIn(f"{ARCHIVE}/{rel}", names)
+            manifest = json.loads(source_zip.read(f"{ARCHIVE}/sdk-manifest.json"))
+            self.assertTrue(manifest["source_viewport_actor_workbench_handoff_Godot_gui"])
+            self.assertTrue(manifest["private_zip_package_aggregate_cli_available"])
+            self.assertFalse(manifest["private_zip_member_extraction_or_writes_enabled"])
+            source_zip.extractall(self.root / "combined_sdk")
+        sdk = self.root / "combined_sdk" / ARCHIVE
+        original_archive = self.root / "owner_private_invented_maps.zip"
+        package, _ = invented_map_package()
+        with ZipFile(original_archive, "w") as local:
+            local.writestr("Invented_Map.gmp", package)
+            local.writestr("Invalid_Map.d2u", b"not a native map")
+        before = original_archive.read_bytes()
+        digest = hashlib.sha256(before).hexdigest()
+        def portable(*args):
+            return subprocess.run(
+                [sys.executable, "-B", "-m", "dx2sdk", "audit-map-zip", *args],
+                cwd=sdk, text=True, capture_output=True, timeout=60)
+        ok = portable("--archive", str(original_archive), "--sha256", digest)
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+        report = json.loads(ok.stdout)
+        self.assertEqual(report["schema"], "DX2SDK-private-zip-package-concordance-v1")
+        self.assertEqual(report["counts"]["eligible_packages"], 2)
+        self.assertEqual(report["counts"]["three_reader_concordant"], 1)
+        self.assertEqual(report["counts"]["legacy_reader_rejected"], 1)
+        self.assertFalse(report["writable"])
+        self.assertFalse(report["runtime_game_verified"])
+        self.assertNotIn("Invented_Map", ok.stdout)
+        self.assertNotIn(str(original_archive), ok.stdout)
+        refused = portable("--archive", str(original_archive),
+                           "--sha256", "0" * 64)
+        self.assertEqual(refused.returncode, 2)
+        self.assertEqual(refused.stdout, "")
+        self.assertNotIn(str(original_archive), refused.stderr)
+        self.assertEqual(original_archive.read_bytes(), before)
 
     def test_deterministic_zip_source_hashes(self):
         build(ROOT, self.first)

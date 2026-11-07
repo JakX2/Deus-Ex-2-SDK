@@ -5,6 +5,7 @@ const LightColorPanel = preload("res://light_color_panel.gd")
 const MultiLightColorPanel = preload("res://multi_light_color_panel.gd")
 const NativeScalarPanel = preload("res://native_scalar_panel.gd")
 const MultiNativeScalarPanel = preload("res://multi_native_scalar_panel.gd")
+const SceneActorWorkbenchBridge = preload("res://scene_actor_workbench_bridge.gd")
 const StartupRoute = preload("res://startup_route.gd")
 const MissionLogicDraft = preload("res://mission_logic_draft.gd")
 const DialogueDesignDraft = preload("res://dialogue_design_draft.gd")
@@ -79,6 +80,8 @@ var light_color_panel: VBoxContainer
 var multi_light_color_panel: VBoxContainer
 var native_scalar_panel: VBoxContainer
 var multi_native_scalar_panel: VBoxContainer
+var workbench_tabs: TabContainer
+var workbench_handoff_button: Button
 var source_gamesys_filter: LineEdit
 var source_gamesys_list: ItemList
 var source_gamesys_details: Label
@@ -685,6 +688,7 @@ func _make_ui() -> void:
     hierarchy_tree.multi_selected.connect(_hierarchy_multi_selected)
     hierarchy_tree.item_activated.connect(func(): focus_selected())
     var left_tabs := TabContainer.new()
+    workbench_tabs = left_tabs
     left_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
     sidebar.add_child(left_tabs)
     var hierarchy_tab := VBoxContainer.new()
@@ -1262,6 +1266,15 @@ func _make_ui() -> void:
     inspector_details.text = "Select an actor or rendered mesh in the Scene or Hierarchy."
     inspector_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     inspector_pane.add_child(inspector_details)
+    workbench_handoff_button = Button.new()
+    workbench_handoff_button.text = "Inspect original actor in Workbench"
+    workbench_handoff_button.tooltip_text = (
+        "Navigate only one source-verified original StaticMeshActor from"
+        + " the 3D selection. Draft clones, BSP, proxies and groups are refused."
+        + " Does not modify the original GMP or stage a numeric edit.")
+    workbench_handoff_button.disabled = true
+    workbench_handoff_button.pressed.connect(_open_selected_source_in_workbench)
+    inspector_pane.add_child(workbench_handoff_button)
     source_collision_details = Label.new()
     source_collision_details.visible = false
     source_collision_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -6089,6 +6102,7 @@ func _refresh_inspector_panel() -> void:
     inspector_transform_section.visible = eligible
     _refresh_actor_property_editor()
     _refresh_source_gamesys_inspector()
+    _update_workbench_handoff_button()
     if nodes.is_empty():
         if selected_actor.is_empty():
             inspector_title.text = "Nothing selected"
@@ -6388,11 +6402,68 @@ func _inspector_transform_changed(value: float, mode: String, axis: int) -> void
     _record_edit("Inspector " + mode + " " + ["X", "Y", "Z"][axis], before)
 
 
+
+func _source_scene_workbench_candidate() -> Dictionary:
+    # Visual preview mesh identity is not enough: source-only native fields
+    # require this exact imported actor, class and original GMP/actors cache.
+    if (multi_native_scalar_panel == null
+        or selected_meshes.size() != 1
+        or not is_instance_valid(selected_mesh)
+        or last_gmp_path.is_empty()
+        or loaded_actors_json_path.is_empty()):
+        return {}
+    var actor_name := str(selected_mesh.name)
+    if (not meshes_by_actor.has(actor_name)
+        or meshes_by_actor[actor_name] != selected_mesh
+        or not actors_by_name.has(actor_name)):
+        return {}
+    return SceneActorWorkbenchBridge.candidate(
+        selected_actor, actors_by_name[actor_name],
+        actor_name, selected_meshes.size(),
+        current_source_map_name, last_gmp_path.get_file(),
+        source_gamesys_sha256, str(multi_native_scalar_panel.source_sha256),
+        loaded_actors_json_path, str(multi_native_scalar_panel.actors_file))
+
+
+func _update_workbench_handoff_button() -> void:
+    if workbench_handoff_button != null:
+        workbench_handoff_button.disabled = _source_scene_workbench_candidate().is_empty()
+
+
+func _open_selected_source_in_workbench() -> void:
+    var source := _source_scene_workbench_candidate()
+    if source.is_empty():
+        status_label.text = (
+            "Actor Workbench requires one original source StaticMeshActor mesh,"
+            + " matching GMP and private actors.json. Draft/BSP/group selection refused.")
+        return
+    if not multi_native_scalar_panel.request_viewport_actor(source):
+        status_label.text = "Actor Workbench refused: source GMP/cache changed or actor not verified."
+        return
+    if workbench_tabs != null:
+        workbench_tabs.current_tab = workbench_tabs.get_tab_idx_from_control(
+            multi_native_scalar_panel)
+    status_label.text = ("Inspecting original source actor " + str(source["actor"])
+        + " export #" + str(source["export"])
+        + " in Actor Workbench (read-only source reload).")
+
+
+func _sync_scene_to_workbench_when_open() -> void:
+    if (multi_native_scalar_panel == null or workbench_tabs == null
+        or workbench_tabs.current_tab !=
+            workbench_tabs.get_tab_idx_from_control(multi_native_scalar_panel)):
+        return
+    var candidate := _source_scene_workbench_candidate()
+    if not candidate.is_empty():
+        multi_native_scalar_panel.request_viewport_actor(candidate)
+
+
 func _select_mesh_only(mesh_instance: MeshInstance3D) -> void:
     _clear_selection()
     _add_selection_mesh(mesh_instance)
     _refresh_selection_inspector()
     _sync_actor_list_selection()
+    _sync_scene_to_workbench_when_open()
 
 
 func _toggle_selection_mesh(mesh_instance: MeshInstance3D) -> void:
@@ -6407,6 +6478,7 @@ func _toggle_selection_mesh(mesh_instance: MeshInstance3D) -> void:
         _add_selection_mesh(mesh_instance)
     _refresh_selection_inspector()
     _sync_actor_list_selection()
+    _sync_scene_to_workbench_when_open()
 
 
 func select_actor(actor: Dictionary) -> void:
@@ -6423,6 +6495,7 @@ func select_actor(actor: Dictionary) -> void:
         _refresh_inspector_panel()
     _sync_actor_list_selection()
     _update_environment_light_selection()
+    _sync_scene_to_workbench_when_open()
 
 
 func _clear_selection() -> void:

@@ -2,6 +2,24 @@
 
 **Target review: November 7, 2026.** This archive is a portable research **prototype**: it contains the original-source DX2Ed Godot project and official Godot 4.3 Standard Windows x64 engine, launched in project-run mode. It is **not** a Godot exported/published standalone game, a production UnrealEd replacement, or a complete engine-native map writer.
 
+## DX2SDK v0.27 unified build: original Actor Workbench + archive audit
+
+This integrated artifact contains the tested v0.19 Godot viewport-to-original
+Actor Workbench source-identity handoff, guarded original `LightColor` and
+`IntProperty`/`FloatProperty` Save As controls, **and** the read-only
+v0.26 three-reader original map ZIP audit on one installable branch.
+Inspect a private owner-original map ZIP without extracting game assets:
+
+```bat
+DX2SDK_CONSOLE.cmd audit-map-zip --archive "D:\\PrivateDX2\\maps.zip" --max-files 512
+```
+
+The command emits aggregate counts to the console and never creates or edits a
+GMP/D2U. Optional `--sha256` pins the ZIP to an independently calculated
+lowercase SHA-256. It does not prove native BSP/zone ownership or retail runtime
+compatibility. Never copy retail maps into the distributed ZIP. The Godot
+editor still uses its existing source-verified per-map import flow.
+
 ## Get running in Windows 10/11, 64-bit
 
 1. **Extract the entire ZIP** to a normal user-writable directory, e.g. `D:\DX2Ed_Prototype\`. Do not run files directly from inside the ZIP. Do not extract it into your game install or `Content\DX2\Maps`.

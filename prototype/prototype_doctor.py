@@ -45,6 +45,10 @@ REQUIRED = (
     "native_editor/godot_editor/tests/smoke_actor_property_workbench.gd",
     "native_editor/godot_editor/workbench_view_model.gd",
     "native_editor/godot_editor/tests/smoke_workbench_filter_view.gd",
+    "native_editor/godot_editor/workbench_actor_navigation.gd",
+    "native_editor/godot_editor/tests/smoke_workbench_actor_navigation.gd",
+    "native_editor/godot_editor/scene_actor_workbench_bridge.gd",
+    "native_editor/godot_editor/tests/smoke_scene_actor_workbench_bridge.gd",
     "native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_scalar_worker.py",
@@ -84,6 +88,10 @@ REQUIRED = (
     "prototype-manifest.json",
     "DIAGNOSE_GMP.cmd",
     "map_import_preflight.py",
+    "research/dx2/private_zip_package_audit.py",
+    "research/dx2/dx2_export_boundary_audit.py",
+    "research/dx2/export_reader_concordance.py",
+    "research/dx2/thief3_export_concordance.py",
 )
 # Run these actual Python entry points with --help, not just AST.parse.
 # stdlib-only imports should work on a clean machine without any DX2 game
@@ -123,8 +131,10 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("includes_original_dx2_assets") is not False
                 or manifest.get("includes_havok_runtime") is not False
                 or manifest.get("gameplay_physics_or_walkability_verified") is not False
-                or manifest.get("public_dx2sdk_api_version") != "0.17.0"
+                or manifest.get("public_dx2sdk_api_version") != "0.27.0"
                 or manifest.get("public_dx2sdk_cli_included") is not True
+                or manifest.get("private_original_map_zip_aggregate_audit_available") is not True
+                or manifest.get("private_original_map_zip_write_enabled") is not False
                 or manifest.get("public_dx2sdk_gameplay_runtime_verified") is not False):
             issues.append("invalid_prototype_manifest")
     except (OSError, ValueError, TypeError):
@@ -195,6 +205,21 @@ def examine(root: Path) -> list[str]:
             issues.append("public_dx2sdk_cli_import_failed")
     except (OSError, subprocess.TimeoutExpired):
         issues.append("public_dx2sdk_cli_import_failed")
+
+    # The private map ZIP audit must be exposed through the unified public
+    # SDK console in the actual extracted Windows prototype, without needing
+    # any commercial files or writing a report during the doctor check.
+    try:
+        audit_help = subprocess.run(
+            [sys.executable, "-B", "-m", "dx2sdk", "audit-map-zip", "--help"],
+            cwd=root, capture_output=True, timeout=20, check=False,
+        )
+        if (audit_help.returncode != 0
+                or b"--archive" not in audit_help.stdout
+                or b"--max-files" not in audit_help.stdout):
+            issues.append("private_map_zip_audit_cli_missing")
+    except (OSError, subprocess.TimeoutExpired):
+        issues.append("private_map_zip_audit_cli_missing")
 
     # Refuse accidental copied map files inside the distribution. This check
     # is deliberately read-only and does not enumerate outside the prototype.
