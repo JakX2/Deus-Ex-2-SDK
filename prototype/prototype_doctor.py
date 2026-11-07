@@ -49,6 +49,8 @@ REQUIRED = (
     "native_editor/godot_editor/tests/smoke_workbench_actor_navigation.gd",
     "native_editor/godot_editor/scene_actor_workbench_bridge.gd",
     "native_editor/godot_editor/tests/smoke_scene_actor_workbench_bridge.gd",
+    "native_editor/godot_editor/orthographic_authoring_guides.gd",
+    "native_editor/godot_editor/tests/smoke_orthographic_authoring_views.gd",
     "native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_scalar_worker.py",
@@ -135,6 +137,8 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("public_dx2sdk_cli_included") is not True
                 or manifest.get("private_original_map_zip_aggregate_audit_available") is not True
                 or manifest.get("private_original_map_zip_write_enabled") is not False
+                or manifest.get("editor_orthographic_planar_grid_preview") is not True
+                or manifest.get("editor_orthographic_source_writes_enabled") is not False
                 or manifest.get("public_dx2sdk_gameplay_runtime_verified") is not False):
             issues.append("invalid_prototype_manifest")
     except (OSError, ValueError, TypeError):
