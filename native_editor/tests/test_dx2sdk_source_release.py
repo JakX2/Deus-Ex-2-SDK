@@ -32,7 +32,7 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
     def test_standalone_source_zip_includes_all_runtime_modules_but_no_assets(self):
         report = build(ROOT, self.first)
         self.assertEqual(report["schema"], SCHEMA)
-        self.assertEqual(report["version"], "0.13.0")
+        self.assertEqual(report["version"], "0.14.0")
         self.assertFalse(report["includes_original_dx2_assets"])
         self.assertFalse(report["gameplay_runtime_verified"])
         self.assertGreater(report["file_count"], 12)
@@ -50,6 +50,7 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
             self.assertIn(f"{ARCHIVE}/dx2sdk/bsp_trace.py", names)
             self.assertIn(f"{ARCHIVE}/native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py", names)
             self.assertIn(f"{ARCHIVE}/native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py", names)
+            self.assertIn(f"{ARCHIVE}/native_editor/godot_editor/backend/dx2_sdk_scalar_worker.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/bsp_anchors.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/actor_regions.py", names)
             self.assertIn(f"{ARCHIVE}/research/dx2/inspect_world_bsp_zone_relations.py", names)
