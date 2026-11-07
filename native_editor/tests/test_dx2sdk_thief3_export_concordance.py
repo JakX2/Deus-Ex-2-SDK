@@ -44,12 +44,18 @@ class Thief3ExportConcordanceTests(unittest.TestCase):
         )
         rows = [
             SimpleNamespace(index=x.index, serial_offset=x.serial_offset,
-                            serial_size=x.serial_size)
+                            serial_size=x.serial_size, class_ref=x.class_ref,
+                            super_ref=x.super_ref, package=x.package,
+                            name=x.name, flags=x.flags)
             for x in obj.exports
         ]
+        imports = [SimpleNamespace(class_package=x.class_package,
+                                   class_name=x.class_name,
+                                   package=x.package, name=x.name)
+                   for x in obj.imports]
         return SimpleNamespace(
             file_version=obj.file_version, licensee_version=obj.licensee_version,
-            names=list(obj.names), imports=list(obj.imports), exports=rows,
+            names=list(obj.names), imports=imports, exports=rows,
             name_offset=obj.name_offset, import_offset=obj.import_offset,
             export_offset=obj.export_offset, header_size=obj.header_size,
             import_end=obj.import_end, export_end=obj.export_end,
@@ -63,6 +69,9 @@ class Thief3ExportConcordanceTests(unittest.TestCase):
         self.assertEqual(result["matched_nonempty_exports"], 2)
         self.assertTrue(result["dx2_legacy_and_strict_concordant"])
         self.assertTrue(result["thief3_reference_table_concordant"])
+        self.assertTrue(result["package_symbol_tables_concordant"])
+        self.assertEqual((result["matched_name_records"], result["matched_import_records"],
+                          result["matched_export_identity_records"]), (5, 1, 2))
         self.assertFalse(result["export_envelopes_independently_verified"])
         self.assertFalse(result["native_bsp_leaf_zone_decoded"])
         self.assertFalse(result["runtime_game_verified"])
@@ -106,6 +115,51 @@ class Thief3ExportConcordanceTests(unittest.TestCase):
                            return_value=SimpleNamespace(Package=lambda *args, **kwargs: fake)):
                     with self.assertRaises(ReaderConcordanceError):
                         compare_thief_reference(self.package(), expected_sha256=self.digest)
+
+    def test_thief_reference_symbol_and_reference_mismatches_rejected(self):
+        # Every mutation preserves byte ranges and table lengths. The new
+        # semantic checks, rather than the old range-only checks, must veto.
+        changes = (
+            (lambda t: t.names.__setitem__(3, "FakeActor"), "name table"),
+            (lambda t: setattr(t.imports[0], "class_package", "FakeClass"), "import symbol"),
+            (lambda t: setattr(t.imports[0], "class_name", "FakeClass"), "import symbol"),
+            (lambda t: setattr(t.imports[0], "package", -1), "import symbol"),
+            (lambda t: setattr(t.imports[0], "name", "WrongName"), "import symbol"),
+            (lambda t: setattr(t.exports[0], "name", "WrongName"), "export symbol"),
+            (lambda t: setattr(t.exports[0], "class_ref", 0), "export symbol"),
+            (lambda t: setattr(t.exports[0], "super_ref", 1), "export symbol"),
+            (lambda t: setattr(t.exports[0], "package", -1), "export symbol"),
+            (lambda t: setattr(t.exports[0], "flags", 1), "export symbol"),
+            (lambda t: setattr(t.exports[0], "flags", True), "export symbol"),
+        )
+        for index, (mutate, reason) in enumerate(changes):
+            fake = self.t3_proxy()
+            mutate(fake)
+            with self.subTest(mutation=index):
+                with patch("thief3_export_concordance._source_module",
+                           return_value=SimpleNamespace(Package=lambda *a, **k: fake)):
+                    with self.assertRaisesRegex(ReaderConcordanceError, reason):
+                        compare_thief_reference(self.package(), expected_sha256=self.digest)
+
+    def test_dx2_legacy_symbol_and_reference_mismatches_rejected(self):
+        changes = (
+            (lambda p: p.names.__setitem__(3, "FakeActor"), "name table"),
+            (lambda p: p.imports[0].__setitem__("class_package", "FakeClass"), "import symbol"),
+            (lambda p: p.imports[0].__setitem__("class", "FakeClass"), "import symbol"),
+            (lambda p: p.imports[0].__setitem__("outer", -1), "import symbol"),
+            (lambda p: p.imports[0].__setitem__("name", "WrongName"), "import symbol"),
+            (lambda p: p.exports[0].__setitem__("name", "WrongName"), "export symbol"),
+            (lambda p: p.exports[0].__setitem__("class_ref", 0), "export symbol"),
+            (lambda p: p.exports[0].__setitem__("super", 1), "export symbol"),
+            (lambda p: p.exports[0].__setitem__("outer", -1), "export symbol"),
+            (lambda p: p.exports[0].__setitem__("flags", 1), "export symbol"),
+        )
+        for index, (mutate, reason) in enumerate(changes):
+            legacy = self.package()
+            mutate(legacy)
+            with self.subTest(mutation=index):
+                with self.assertRaisesRegex(ReaderConcordanceError, reason):
+                    compare_thief_reference(legacy, expected_sha256=self.digest)
 
     def test_strict_boundary_veto_applies_before_thief_reference_acceptance(self):
         source, _ = fixture(payload_offsets=(512, 511))
