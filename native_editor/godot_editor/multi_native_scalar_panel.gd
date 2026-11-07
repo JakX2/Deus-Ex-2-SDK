@@ -1,8 +1,9 @@
 extends "res://native_scalar_panel.gd"
-## DX2Ed v0.15: staged original 2..8 top-level int32 / float32 properties.
+## DX2Ed v0.17: source-only searchable Actor Workbench plus staged 2..8 numeric tags.
 ## Inherits v0.14's source SHA+private actors.json SHA proof, authentic
 ## StaticMeshActor and eligible tagged-property inspection and typed controls.
 ## The Python worker alone decides whether native bytes can be written.
+const WorkbenchView = preload("res://workbench_view_model.gd")
 const BATCH_BRIDGE_SCHEMA := "DX2Ed-GUI-original-multi-native-scalar-worker-v1"
 const WORKBENCH_SCHEMA := "DX2SDK-original-actor-property-workbench-v1"
 const WORKBENCH_CATEGORY_ORDER := [
@@ -22,6 +23,11 @@ var batch_button: Button
 var batch_confirmation: ConfirmationDialog
 var batch_save_dialog: FileDialog
 var source_property_tree: Tree
+var property_search: LineEdit
+var property_mode: OptionButton
+var property_statistics: Label
+var property_details: TextEdit
+var selected_tag_ordinal := -1
 var property_catalog: Dictionary = {}
 
 
@@ -39,6 +45,23 @@ func _ready() -> void:
     var browser_title := Label.new()
     browser_title.text = "Source property tree | Original / Staged or access"
     add_child(browser_title)
+    var filter_row := HBoxContainer.new()
+    add_child(filter_row)
+    property_search = LineEdit.new()
+    property_search.placeholder_text = "Search original tag, kind, category or byte offset..."
+    property_search.max_length = WorkbenchView.MAX_QUERY_LENGTH
+    property_search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    property_search.text_changed.connect(_property_search_changed)
+    filter_row.add_child(property_search)
+    property_mode = OptionButton.new()
+    for mode in WorkbenchView.modes():
+        property_mode.add_item(mode)
+    property_mode.select(0)
+    property_mode.item_selected.connect(_property_mode_changed)
+    filter_row.add_child(property_mode)
+    property_statistics = Label.new()
+    property_statistics.text = "No original tags loaded"
+    add_child(property_statistics)
     source_property_tree = Tree.new()
     source_property_tree.columns = 3
     source_property_tree.column_titles_visible = true
@@ -50,6 +73,16 @@ func _ready() -> void:
     source_property_tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
     source_property_tree.item_selected.connect(_property_tree_selected)
     add_child(source_property_tree)
+    var detail_title := Label.new()
+    detail_title.text = "Selected source tag: serialized evidence (read only)"
+    add_child(detail_title)
+    property_details = TextEdit.new()
+    property_details.editable = false
+    property_details.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+    property_details.custom_minimum_size.y = 130
+    property_details.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    property_details.text = "Choose an original tagged property to see source identity and access."
+    add_child(property_details)
     var title := Label.new()
     title.text = "Original numeric field batch, 2–8 unique tags"
     add_child(title)
@@ -99,6 +132,15 @@ func _ready() -> void:
 
 func reset_context() -> void:
     property_catalog.clear()
+    selected_tag_ordinal = -1
+    if property_search != null:
+        property_search.text = ""
+    if property_mode != null:
+        property_mode.select(0)
+    if property_statistics != null:
+        property_statistics.text = "No original tags loaded"
+    if property_details != null:
+        property_details.text = "No source-authenticated property selected."
     if source_property_tree != null:
         source_property_tree.clear()
     staged.clear()
@@ -112,8 +154,13 @@ func accept_actor_inventory(doc: Dictionary) -> bool:
     var result := super.accept_actor_inventory(doc)
     if result:
         property_catalog.clear()
+        selected_tag_ordinal = -1
         if source_property_tree != null:
             source_property_tree.clear()
+        if property_statistics != null:
+            property_statistics.text = "Select an original actor for native properties"
+        if property_details != null:
+            property_details.text = "No source-authenticated property selected."
         staged.clear()
         pending.clear()
         _refresh_staged()
@@ -122,6 +169,11 @@ func accept_actor_inventory(doc: Dictionary) -> bool:
 
 func _pick_actor(index: int) -> void:
     property_catalog.clear()
+    selected_tag_ordinal = -1
+    if property_details != null:
+        property_details.text = "Loading original actor tagged properties..."
+    if property_statistics != null:
+        property_statistics.text = "Source actor changed; awaiting source-tag inventory."
     if source_property_tree != null:
         source_property_tree.clear()
     super._pick_actor(index)
@@ -229,8 +281,44 @@ func accept_original_property_catalog(doc: Dictionary) -> bool:
         or int(doc.get("read_only_original_tag_count", -1)) != total - editable):
         return false
     property_catalog = doc.duplicate(true)
+    selected_tag_ordinal = -1
     _render_property_catalog()
     return true
+
+
+func _property_search_changed(_value: String) -> void:
+    _render_property_catalog()
+
+
+func _property_mode_changed(_index: int) -> void:
+    _render_property_catalog()
+
+
+func _active_property_mode() -> String:
+    if property_mode == null or property_mode.selected < 0:
+        return WorkbenchView.MODE_ALL
+    return property_mode.get_item_text(property_mode.selected)
+
+
+func _catalog_field(ordinal: int) -> Dictionary:
+    if property_catalog.is_empty():
+        return {}
+    for category in property_catalog["categories"]:
+        for field in category["fields"]:
+            if int(field["tag_ordinal"]) == ordinal:
+                return field
+    return {}
+
+
+func _show_selected_property() -> void:
+    if property_details == null:
+        return
+    var field := _catalog_field(selected_tag_ordinal)
+    if field.is_empty():
+        property_details.text = (
+            "Choose an original tagged property to inspect its bytes, native kind and write scope.")
+    else:
+        property_details.text = WorkbenchView.detail(property_catalog, field, staged)
 
 
 func _render_property_catalog() -> void:
@@ -238,31 +326,39 @@ func _render_property_catalog() -> void:
         return
     source_property_tree.clear()
     if property_catalog.is_empty():
+        if property_statistics != null:
+            property_statistics.text = "No source-authenticated tags for this actor"
+        _show_selected_property()
         return
+    var result := WorkbenchView.filtered(
+        property_catalog,
+        property_search.text if property_search != null else "",
+        _active_property_mode(), staged)
     var root := source_property_tree.create_item()
-    for cat in property_catalog["categories"]:
+    for category in result["groups"]:
         var section := source_property_tree.create_item(root)
-        section.set_text(0, str(cat["label"]) + " (" + str(cat["count"]) + ")")
+        section.set_text(0, str(category["label"]) + " (" + str(category["count"]) + ")")
         section.set_selectable(0, false)
-        for field in cat["fields"]:
+        for field in category["fields"]:
             var entry := source_property_tree.create_item(section)
             var pname := str(field["property"])
             entry.set_text(0, pname + " (kind " + str(field["native_kind"]) + ")")
+            # An ordinal identifies one exact original serialized tag, including
+            # duplicate names. Read-only entries can be SELECTED for inspection,
+            # but never authorize numeric editing.
+            entry.set_metadata(0, int(field["tag_ordinal"]))
             if field["editable_existing_tag"]:
                 entry.set_text(1, str(field["original_value"]))
-                entry.set_metadata(0, pname)
-                var mark := "Eligible original numeric tag"
-                for row in staged:
-                    if (row["actor"] == property_catalog["actor"]
-                        and row["property"] == pname):
-                        mark = "STAGED -> " + str(row["replacement"])
-                        break
-                entry.set_text(2, mark)
+                entry.set_text(2,
+                    ("STAGED -> " + str(field["staged_replacement"])
+                     if field["has_staged_change"] else "Eligible original numeric tag"))
             else:
                 entry.set_text(1, str(field["serialized_payload_size"]) + " bytes (not decoded)")
                 entry.set_text(2, "Read only | " + str(field["category"]))
-                entry.set_metadata(0, "")
-                entry.set_selectable(0, false)
+    if property_statistics != null:
+        property_statistics.text = ("%d of %d original tags visible | %d currently staged" % [
+            int(result["shown"]), int(result["total"]), staged.size()])
+    _show_selected_property()
 
 
 func _property_tree_selected() -> void:
@@ -271,14 +367,30 @@ func _property_tree_selected() -> void:
     var selected := source_property_tree.get_selected()
     if selected == null:
         return
-    var pname: Variant = selected.get_metadata(0)
-    if typeof(pname) != TYPE_STRING or str(pname).is_empty():
+    var ordinal: Variant = selected.get_metadata(0)
+    if typeof(ordinal) != TYPE_INT:
         return
-    for i in range(original_fields.size()):
-        if original_fields[i]["property"] == pname:
-            _pick_field(i)
-            status.text = "Selected original eligible numeric tag from property tree: " + str(pname)
-            return
+    var field := _catalog_field(int(ordinal))
+    if field.is_empty():
+        return
+    selected_tag_ordinal = int(ordinal)
+    _show_selected_property()
+    if field["editable_existing_tag"]:
+        for i in range(original_fields.size()):
+            var approved: Dictionary = original_fields[i]
+            if (approved["property"] == field["property"]
+                and approved["source_value"] == field["original_value"]
+                and approved["type"] == ("int32" if field["native_kind"] == 2 else "float32")):
+                _pick_field(i)
+                status.text = "Original authenticated numeric tag selected: " + str(field["property"])
+                return
+    # A protected/opaque field is selectable for its source layout detail,
+    # never to stage a writer field. Already staged edits are preserved.
+    chosen_field_index = -1
+    field_value.editable = false
+    field_list.deselect_all()
+    _update_buttons()
+    status.text = "Source-native tag is READ ONLY. No numeric writer is authorized."
 
 
 func _current_row() -> Dictionary:
