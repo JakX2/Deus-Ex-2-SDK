@@ -39,6 +39,9 @@ REQUIRED = (
     "native_editor/godot_editor/native_scalar_panel.gd",
     "native_editor/godot_editor/backend/dx2_sdk_scalar_worker.py",
     "native_editor/godot_editor/tests/smoke_native_scalar_panel.gd",
+    "native_editor/godot_editor/multi_native_scalar_panel.gd",
+    "native_editor/godot_editor/backend/dx2_sdk_multi_scalar_worker.py",
+    "native_editor/godot_editor/tests/smoke_multi_native_scalar_panel.gd",
     "native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_scalar_worker.py",
@@ -117,7 +120,7 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("includes_original_dx2_assets") is not False
                 or manifest.get("includes_havok_runtime") is not False
                 or manifest.get("gameplay_physics_or_walkability_verified") is not False
-                or manifest.get("public_dx2sdk_api_version") != "0.14.0"
+                or manifest.get("public_dx2sdk_api_version") != "0.15.0"
                 or manifest.get("public_dx2sdk_cli_included") is not True
                 or manifest.get("public_dx2sdk_gameplay_runtime_verified") is not False):
             issues.append("invalid_prototype_manifest")
