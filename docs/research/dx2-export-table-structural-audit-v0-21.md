@@ -32,3 +32,7 @@ The experimental name-table reader now rejects a zero compact-index name length 
 ## Follow-up: embedded name terminator negative controls
 
 The restricted experimental name-table reader now rejects an ANSI NUL before the declared final byte, or an aligned UTF16 NUL code unit before the declared final code unit. These invented malformed records can otherwise make the declared name body ambiguous even when the final terminator is present. Synthetic tests exercise both forms and a valid terminated UTF16 control. This does not authenticate name semantics, export ownership, BSP leaves/zones, retail compatibility, or writing; reports remain unverified and read-only.
+
+## Follow-up: UTF-16 surrogate negative controls
+
+The restricted candidate name reader now rejects malformed UTF-16LE surrogate sequences using strict decoding after the existing length, terminator, and embedded-NUL checks. Invented in-memory records exercise lone high and low surrogates, a high surrogate followed by a non-low code unit, and a valid surrogate pair. This is deliberately conservative: a name that passes this structural check is **not** authenticated as a native DX2 name, and a retail-specific non-Unicode convention could require separate source evidence. The audit remains SHA-pinned, read-only, research-only, nonwritable, and never asserts BSP leaf/zone identity or actual game compatibility.
