@@ -53,6 +53,17 @@ static func grid_center(mode: String, target: Vector3, step: float) -> Vector3:
         snappedf(target.z, step))
 
 
+static func snapped_preview_position(point: Vector3, step: float) -> Vector3:
+    # The caller must keep all output in editor preview/draft transforms.
+    # This is NOT an original Unreal unit or a source-GMP coordinate writer.
+    if (not point.is_finite() or not is_finite(step)
+        or step < 0.25 or step > 64.0):
+        return point
+    return Vector3(
+        snappedf(point.x, step), snappedf(point.y, step),
+        snappedf(point.z, step))
+
+
 static func _grid_point(mode: String, origin: Vector3,
                         u: float, v: float) -> Vector3:
     match mode:
