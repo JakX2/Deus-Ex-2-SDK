@@ -140,6 +140,29 @@ class PrivateZipPackageAuditTests(unittest.TestCase):
         self.assertEqual(inspect_private_zip_bytes(encrypted)[
             "counts"]["three_reader_concordant"], 1)
 
+    def test_preflight_counts_nonpackage_uncompressed_budget(self):
+        # The budget applies to the entire central directory, not just
+        # eligible map packages. No decompression or extraction is needed.
+        from unittest.mock import patch
+        data = make_zip([
+            ("maps/good.gmp", self.good),
+            ("other/large-unrelated.bin", b"z" * 128),
+        ])
+        with patch("private_zip_package_audit.MAX_TOTAL_UNCOMPRESSED",
+                   len(self.good) + 64):
+            with self.assertRaisesRegex(PrivateZipAuditError, "total ZIP"):
+                inspect_private_zip_bytes(data)
+
+    def test_preflight_still_allows_bounded_unrelated_members(self):
+        data = make_zip([
+            ("maps/good.gmp", self.good),
+            ("other/metadata.txt", b"synthetic only"),
+        ])
+        result = inspect_private_zip_bytes(data)
+        self.assertEqual(result["counts"]["eligible_packages"], 1)
+        self.assertEqual(result["counts"]["three_reader_concordant"], 1)
+        self.assertEqual(result["archive_entries_total"], 2)
+
     def test_cli_readonly_no_paths_names_or_asset_bytes_even_when_denied(self):
         data = make_zip([("private/SourceIdentity.gmp", self.good)])
         self.path.write_bytes(data)
