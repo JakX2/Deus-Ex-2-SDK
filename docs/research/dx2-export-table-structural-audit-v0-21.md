@@ -27,3 +27,8 @@ Cross-check against *private, user-owned* DX2 package headers and export bytes i
 ## Follow-up hardening: empty name records
 
 The experimental name-table reader now rejects a zero compact-index name length before consuming flags or advancing to subsequent records. A zero-byte name is not a valid terminated ANSI or UTF-16 name under this restricted candidate layout; accepting it would make table interpretation ambiguous. A synthetic fixture mutates the first name-length byte to zero and asserts fail-closed rejection. This remains a structural negative control, not proof of DX2 retail-format compatibility or independently authenticated export ownership.
+
+
+## Follow-up: embedded name terminator negative controls
+
+The restricted experimental name-table reader now rejects an ANSI NUL before the declared final byte, or an aligned UTF16 NUL code unit before the declared final code unit. These invented malformed records can otherwise make the declared name body ambiguous even when the final terminator is present. Synthetic tests exercise both forms and a valid terminated UTF16 control. This does not authenticate name semantics, export ownership, BSP leaves/zones, retail compatibility, or writing; reports remain unverified and read-only.
