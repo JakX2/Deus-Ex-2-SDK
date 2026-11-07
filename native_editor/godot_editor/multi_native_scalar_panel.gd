@@ -4,6 +4,12 @@ extends "res://native_scalar_panel.gd"
 ## StaticMeshActor and eligible tagged-property inspection and typed controls.
 ## The Python worker alone decides whether native bytes can be written.
 const BATCH_BRIDGE_SCHEMA := "DX2Ed-GUI-original-multi-native-scalar-worker-v1"
+const WORKBENCH_SCHEMA := "DX2SDK-original-actor-property-workbench-v1"
+const WORKBENCH_CATEGORY_ORDER := [
+    "eligible-original-numeric", "protected-original",
+    "duplicate-original-name", "indexed-or-special",
+    "unsupported-numeric-layout", "opaque-uninterpreted",
+]
 const MAX_BATCH := 8
 const MIN_BATCH := 2
 
@@ -15,19 +21,35 @@ var clear_button: Button
 var batch_button: Button
 var batch_confirmation: ConfirmationDialog
 var batch_save_dialog: FileDialog
+var source_property_tree: Tree
+var property_catalog: Dictionary = {}
 
 
 func _ready() -> void:
     super._ready()
-    name = "Scalar Batch"
-    note.text = ("Stage 2–8 different existing source-authored int32/float32 tags"
-        + " from original positioned StaticMeshActors, possibly across actors."
-        + " Both the original GMP and matching actors.json stay SHA-pinned."
-        + " Save As creates only one isolated GMP plus its native scalar manifest."
-        + " Never writes GameSys, transforms, scripts, BSP or collision.")
+    name = "Actor Workbench"
+    note.text = ("Original Actor Property Workbench: inspect every authored"
+        + " top-level UE95 tag, including protected and opaque fields."
+        + " Stage 2–8 already existing int32/float32 tags for isolated Save As."
+        + " Both original GMP and actors.json are SHA-locked."
+        + " Unknown kinds are read only. No new actor, GameSys or BSP writer.")
     save_button.hide()
     confirmation.hide()
     save_dialog.hide()
+    var browser_title := Label.new()
+    browser_title.text = "Source property tree | Original / Staged or access"
+    add_child(browser_title)
+    source_property_tree = Tree.new()
+    source_property_tree.columns = 3
+    source_property_tree.column_titles_visible = true
+    source_property_tree.set_column_title(0, "Original tag")
+    source_property_tree.set_column_title(1, "Source value / layout")
+    source_property_tree.set_column_title(2, "Staged / access")
+    source_property_tree.hide_root = true
+    source_property_tree.custom_minimum_size.y = 175
+    source_property_tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    source_property_tree.item_selected.connect(_property_tree_selected)
+    add_child(source_property_tree)
     var title := Label.new()
     title.text = "Original numeric field batch, 2–8 unique tags"
     add_child(title)
@@ -76,6 +98,9 @@ func _ready() -> void:
 
 
 func reset_context() -> void:
+    property_catalog.clear()
+    if source_property_tree != null:
+        source_property_tree.clear()
     staged.clear()
     if stage_list != null:
         stage_list.clear()
@@ -86,10 +111,174 @@ func reset_context() -> void:
 func accept_actor_inventory(doc: Dictionary) -> bool:
     var result := super.accept_actor_inventory(doc)
     if result:
+        property_catalog.clear()
+        if source_property_tree != null:
+            source_property_tree.clear()
         staged.clear()
         pending.clear()
         _refresh_staged()
     return result
+
+
+func _pick_actor(index: int) -> void:
+    property_catalog.clear()
+    if source_property_tree != null:
+        source_property_tree.clear()
+    super._pick_actor(index)
+
+
+
+func _start_property_catalog(actor: String, export: int) -> void:
+    if worker != null or not _context_ok():
+        return
+    var argv := PackedStringArray([
+        worker_script, "catalog", "--map", source_map,
+        "--actors", actors_file, "--source-sha256", source_sha256,
+        "--actors-sha256", actors_sha256,
+        "--actor", actor, "--export", str(export),
+    ])
+    worker = Thread.new()
+    _update_buttons()
+    var started := worker.start(_execute.bind(argv, "catalog", generation))
+    if started != OK:
+        worker = null
+        _update_buttons()
+        status.text = "Source tag catalog worker could not be started."
+        return
+    status.text = "Scanning original native tags, protected and opaque layouts (read only)..."
+
+
+func accept_original_property_catalog(doc: Dictionary) -> bool:
+    if (not _context_ok() or chosen_actor_index < 0
+        or chosen_actor_index >= original_actors.size()
+        or doc.get("bridge_schema") != BATCH_BRIDGE_SCHEMA
+        or doc.get("schema") != WORKBENCH_SCHEMA
+        or doc.get("action") != "catalog"
+        or doc.get("status") != "source-original-actor-property-catalog"
+        or doc.get("source_map") != source_map.get_file()
+        or doc.get("source_sha256") != source_sha256
+        or doc.get("actors_sha256") != actors_sha256
+        or doc.get("actor_class") != "StaticMeshActor"
+        or doc.get("actor") != original_actors[chosen_actor_index]["actor"]
+        or doc.get("export") != original_actors[chosen_actor_index]["export"]
+        or doc.get("source_actor_cache_verified") != true
+        or doc.get("read_only") != true
+        or doc.get("no_map_or_cache_mutation") != true
+        or doc.get("new_tag_insertion_enabled") != false
+        or doc.get("arbitrary_gamesys_editing_enabled") != false
+        or doc.get("gameplay_runtime_verified") != false
+        or not _int_in_range(doc.get("source_top_level_tag_count"), 0, 4096)
+        or not _int_in_range(doc.get("eligible_original_numeric_count"), 0, 4096)
+        or typeof(doc.get("categories")) != TYPE_ARRAY
+        or doc["categories"].size() != WORKBENCH_CATEGORY_ORDER.size()):
+        return false
+    var numeric: Dictionary = {}
+    for field in original_fields:
+        numeric[str(field["property"])] = field
+    var total := 0
+    var editable := 0
+    var ordinals := {}
+    var usable_names := {}
+    for i in range(WORKBENCH_CATEGORY_ORDER.size()):
+        var cat: Variant = doc["categories"][i]
+        if (typeof(cat) != TYPE_DICTIONARY
+            or cat.get("key") != WORKBENCH_CATEGORY_ORDER[i]
+            or typeof(cat.get("label")) != TYPE_STRING
+            or typeof(cat.get("fields")) != TYPE_ARRAY
+            or not _int_in_range(cat.get("count"), 0, 4096)
+            or cat["count"] != cat["fields"].size()):
+            return false
+        for field in cat["fields"]:
+            if (typeof(field) != TYPE_DICTIONARY
+                or field.get("category") != cat["key"]
+                or typeof(field.get("property")) != TYPE_STRING
+                or str(field["property"]).is_empty()
+                or not _int_in_range(field.get("tag_ordinal"), 0, 4095)
+                or not _int_in_range(field.get("native_kind"), 0, 15)
+                or not _int_in_range(field.get("serialized_payload_size"), 0, 16777216)
+                or not _int_in_range(field.get("source_byte_offset"), 0, 268435456)
+                or typeof(field.get("indexed_or_special")) != TYPE_BOOL
+                or typeof(field.get("editable_existing_tag")) != TYPE_BOOL
+                or field.get("runtime_effect_verified") != false
+                or field.get("can_insert_property") != false):
+                return false
+            if ordinals.has(field["tag_ordinal"]):
+                return false
+            ordinals[field["tag_ordinal"]] = true
+            total += 1
+            if field["editable_existing_tag"]:
+                var name := str(field["property"])
+                if (cat["key"] != "eligible-original-numeric"
+                    or field["native_kind"] not in [2, 4]
+                    or field["serialized_payload_size"] != 4
+                    or field["indexed_or_special"]
+                    or not numeric.has(name) or usable_names.has(name)):
+                    return false
+                var prior: Dictionary = numeric[name]
+                if (prior["source_value"] != field.get("original_value")
+                    or prior["type"] != ("int32" if field["native_kind"] == 2
+                        else "float32")):
+                    return false
+                usable_names[name] = true
+                editable += 1
+            elif field.get("original_value") != null:
+                return false
+    if (total != int(doc["source_top_level_tag_count"])
+        or editable != int(doc["eligible_original_numeric_count"])
+        or editable != numeric.size()
+        or int(doc.get("read_only_original_tag_count", -1)) != total - editable):
+        return false
+    property_catalog = doc.duplicate(true)
+    _render_property_catalog()
+    return true
+
+
+func _render_property_catalog() -> void:
+    if source_property_tree == null:
+        return
+    source_property_tree.clear()
+    if property_catalog.is_empty():
+        return
+    var root := source_property_tree.create_item()
+    for cat in property_catalog["categories"]:
+        var section := source_property_tree.create_item(root)
+        section.set_text(0, str(cat["label"]) + " (" + str(cat["count"]) + ")")
+        section.set_selectable(0, false)
+        for field in cat["fields"]:
+            var entry := source_property_tree.create_item(section)
+            var pname := str(field["property"])
+            entry.set_text(0, pname + " (kind " + str(field["native_kind"]) + ")")
+            if field["editable_existing_tag"]:
+                entry.set_text(1, str(field["original_value"]))
+                entry.set_metadata(0, pname)
+                var mark := "Eligible original numeric tag"
+                for row in staged:
+                    if (row["actor"] == property_catalog["actor"]
+                        and row["property"] == pname):
+                        mark = "STAGED -> " + str(row["replacement"])
+                        break
+                entry.set_text(2, mark)
+            else:
+                entry.set_text(1, str(field["serialized_payload_size"]) + " bytes (not decoded)")
+                entry.set_text(2, "Read only | " + str(field["category"]))
+                entry.set_metadata(0, "")
+                entry.set_selectable(0, false)
+
+
+func _property_tree_selected() -> void:
+    if source_property_tree == null or worker != null or not _context_ok():
+        return
+    var selected := source_property_tree.get_selected()
+    if selected == null:
+        return
+    var pname: Variant = selected.get_metadata(0)
+    if typeof(pname) != TYPE_STRING or str(pname).is_empty():
+        return
+    for i in range(original_fields.size()):
+        if original_fields[i]["property"] == pname:
+            _pick_field(i)
+            status.text = "Selected original eligible numeric tag from property tree: " + str(pname)
+            return
 
 
 func _current_row() -> Dictionary:
@@ -155,6 +344,8 @@ func _stage() -> void:
 
 
 func _refresh_staged() -> void:
+    if not property_catalog.is_empty():
+        _render_property_catalog()
     if stage_list != null:
         stage_list.clear()
         for item in staged:
@@ -292,6 +483,26 @@ func _start(action: String, request: Dictionary) -> void:
 
 
 func _finished(code: int, raw: String, action: String, epoch: int) -> void:
+    if action == "catalog":
+        if worker != null:
+            worker.wait_to_finish()
+            worker = null
+        if epoch != generation or not _context_ok():
+            reset_context()
+            return
+        var doc: Variant = JSON.parse_string(raw.strip_edges())
+        if (code != 0 or typeof(doc) != TYPE_DICTIONARY
+            or not accept_original_property_catalog(doc)):
+            property_catalog.clear()
+            source_property_tree.clear()
+            status.text = "Original Actor property catalog rejected: invalid source identity or tags."
+        else:
+            status.text = ("Original Actor catalog verified: %d top-level source"
+                + " tags, %d existing eligible numeric fields. Opaque tags are read only.") % [
+                    int(property_catalog["source_top_level_tag_count"]),
+                    int(property_catalog["eligible_original_numeric_count"])]
+        _update_buttons()
+        return
     if action in ["list", "fields"]:
         var doc: Variant = JSON.parse_string(raw.strip_edges())
         if typeof(doc) == TYPE_DICTIONARY and doc.get("bridge_schema") == BATCH_BRIDGE_SCHEMA:
@@ -299,6 +510,14 @@ func _finished(code: int, raw: String, action: String, epoch: int) -> void:
             super._finished(code, JSON.stringify(doc), action, epoch)
         else:
             super._finished(code, raw, action, epoch)
+        if (action == "fields" and code == 0 and epoch == generation
+            and worker == null and _context_ok()
+            and chosen_actor_index >= 0
+            and chosen_actor_index < original_actors.size()
+            and typeof(doc) == TYPE_DICTIONARY
+            and doc.get("status") == "original_scalar_field_inventory"):
+            var row: Dictionary = original_actors[chosen_actor_index]
+            _start_property_catalog(str(row["actor"]), int(row["export"]))
         return
     if worker != null:
         worker.wait_to_finish()
