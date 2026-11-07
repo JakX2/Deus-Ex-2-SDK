@@ -31,3 +31,33 @@ Before implementing a leaf/zone decoder, identify in checked-in parser source th
 ## Explicit non-goals
 
 No leaf/zone editing, CSG, BSP rebuilding, portal generation, collision baking, runtime acceptance assertion, T3Ed binary substitution, or retail-data publishing. This plan changes **zero** serialization paths and is intended to be reviewed before implementing a parser.
+
+## Follow-up v0.19: bounded opaque-span observer (synthetic-only)
+
+The independent source-only helper `research/dx2/opaque_source_spans.py`
+now implements the **generic opaque envelope observation** part of this
+plan. It accepts caller-supplied original bytes, exact SHA-256, ASCII
+package identity, and explicit `{export, offset, length, evidence}`
+records. It rejects bad source hashes, zero-length spans, negative
+offsets, out-of-bounds lengths, overlapping ranges, duplicate evidence,
+nonpositive or oversized exports, and more than 64 spans. Hex previews
+are disabled by default and opt-in capped at 32 bytes per record.
+Results are deterministically sorted by source offset, always marked
+`unknown-payload`, `writable: false`, and
+`native_bsp_leaf_zone_decoded: false`.
+
+The file helper reads at most 128 MiB, verifies the source hash before
+observing, and writes nothing. Synthetic tests in
+`native_editor/tests/test_dx2sdk_opaque_source_spans.py` cover the
+above fail-closed conditions and prove unchanged fixture bytes.
+
+**Crucial trust boundary:** this API **does not authenticate the
+caller-supplied envelope itself** or infer that a span belongs to any
+specific export. The `evidence` field is an opaque caller-provided
+identifier, **not independently validated provenance**. Until a
+separate verified native parser supplies source-bound export ranges
+and independent envelope proof, the helper is suitable for research
+and synthetic fixtures only. It is not exposed as a retail GMP CLI
+or native editor control, and its output must not be described as
+decoded BSP leaf/zone records. No source-asset artifacts are emitted.
+
