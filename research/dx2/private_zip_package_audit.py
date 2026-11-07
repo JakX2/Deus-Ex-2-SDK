@@ -78,12 +78,19 @@ def inspect_private_zip_bytes(
             raise PrivateZipAuditError("too many ZIP directory entries")
         seen = set()
         for info in infos:
-            # Even a normal ZIP can legally repeat names, but that makes
-            # ownership ambiguous, so fail closed without emitting names.
+            # Preflight the entire directory before reading any package.
+            # Unrelated members must not hide malformed metadata or a
+            # duplicate name that would make this archive ambiguous.
             key = info.filename.replace("\\", "/").casefold()
             if key in seen:
                 raise PrivateZipAuditError("ambiguous duplicate ZIP member names")
             seen.add(key)
+            if info.file_size < 0 or info.compress_size < 0:
+                raise PrivateZipAuditError("invalid ZIP entry size")
+            if info.flag_bits & 0x40:
+                raise PrivateZipAuditError("unsupported strong-encryption ZIP flag")
+        if sum(i.file_size for i in infos) > MAX_TOTAL_UNCOMPRESSED:
+            raise PrivateZipAuditError("total ZIP uncompressed budget exceeded")
         eligible = [i for i in infos if not i.is_dir()
                     and i.filename.lower().endswith((".gmp", ".d2u"))]
         if not eligible:
