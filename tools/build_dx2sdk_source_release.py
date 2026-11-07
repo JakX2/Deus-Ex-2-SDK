@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a Python-only, original-game-file-free DX2SDK v0.17 source ZIP.
+"""Build a Python-only, original-game-file-free DX2SDK v0.19 source ZIP.
 
 No Godot 4.3 binary or interpreter bundled. All imports are local,
 standard-library + the existing audited DX2Ed / MIT T3SDK sources.
@@ -15,9 +15,9 @@ from pathlib import Path
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCHIVE = "DX2SDK_Python_0.17.0"
+ARCHIVE = "DX2SDK_Python_0.19.0"
 SCHEMA = "DX2SDK-source-only-Python-portable-v0.1"
-DATE = (2026, 11, 7, 5, 0, 0)
+DATE = (2026, 11, 7, 7, 0, 0)
 
 ALLOWED = {
     "dx2sdk": {".py", ".md"},
@@ -138,7 +138,7 @@ def build(source_root: Path, output: Path) -> dict:
     # It never embeds source system or user game paths or proprietary bytes.
     manifest = {
         "schema": SCHEMA,
-        "version": "0.17.0",
+        "version": "0.19.0",
         "python_minimum": "3.11",
         "requires_godot": False,
         "includes_original_dx2_assets": False,
@@ -153,6 +153,8 @@ def build(source_root: Path, output: Path) -> dict:
         "source_multi_Actor_native_scalar_Godot_gui_bridge": True,
         "source_original_actor_property_workbench": True,
         "source_original_actor_property_search_filter_details_gui": True,
+        "source_original_actor_navigation_Godot_gui": True,
+        "source_viewport_actor_workbench_handoff_Godot_gui": True,
         "native_light_region_reconstruction_available": False,
         "original_bsp_plane_side_diagnostic_only": True,
         "source_Light_anchor_epsilon_atlas_only": True,
@@ -186,7 +188,7 @@ def build(source_root: Path, output: Path) -> dict:
             raise ValueError("Created SDK ZIP has duplicate archive entries")
     return {
         "schema": SCHEMA,
-        "version": "0.17.0",
+        "version": "0.19.0",
         "file_count": len(files),
         "zip_bytes": target.stat().st_size,
         "includes_original_dx2_assets": False,
