@@ -94,6 +94,77 @@ class OpaqueSourceSpanTests(unittest.TestCase):
                 bytearray(self.source), source_sha256=self.digest,
                 package_identity="synthetic-fixture", spans=self.spans)
 
+
+    def test_opt_in_export_containment_rejects_cross_owner_and_gaps(self):
+        owners = [
+            {"export": 3, "offset": 0, "length": 32},
+            {"export": 7, "offset": 48, "length": 32},
+        ]
+        report = self.observe(export_envelopes=owners)
+        self.assertTrue(report["caller_export_envelopes_checked"])
+        self.assertFalse(report["export_envelopes_independently_verified"])
+        self.assertEqual([x["export"] for x in report["observations"]], [3, 7])
+        self.assertEqual(report, self.observe(export_envelopes=list(reversed(owners))))
+        invalid_spans = [
+            [{"export": 3, "offset": 28, "length": 8, "evidence": "escapes"}],
+            [{"export": 7, "offset": 32, "length": 1, "evidence": "gap"}],
+            [{"export": 9, "offset": 50, "length": 1, "evidence": "missing-owner"}],
+            [{"export": 3, "offset": 48, "length": 1, "evidence": "wrong-owner"}],
+        ]
+        for spans in invalid_spans:
+            with self.subTest(spans=spans), self.assertRaises(SpanEvidenceError):
+                self.observe(spans, export_envelopes=owners)
+        with self.assertRaises(SpanEvidenceError):
+            self.observe(export_envelopes=[])
+
+    def test_reject_ambiguous_export_envelopes_and_invalid_types(self):
+        bad = [
+            [{"export": 3, "offset": 0, "length": 20},
+             {"export": 7, "offset": 19, "length": 20}],
+            [{"export": 3, "offset": 0, "length": 20},
+             {"export": 3, "offset": 48, "length": 20}],
+            [{"export": 3, "offset": 0, "length": 0}],
+            [{"export": True, "offset": 0, "length": 10}],
+            [{"export": 3, "offset": 0, "length": 129}],
+            [{"export": 3, "offset": -1, "length": 8}],
+            [{"export": 3, "offset": 2**128, "length": 8}],
+            [{"export": 3, "offset": 0, "length": 2**128}],
+            [{"export": 2**32, "offset": 0, "length": 8}],
+            [{"export": 3, "offset": 0, "length": 8}, "bad"],
+            [None],
+        ]
+        for owners in bad:
+            with self.subTest(owners=owners), self.assertRaises(SpanEvidenceError):
+                self.observe(export_envelopes=owners)
+        with self.assertRaises(SpanEvidenceError):
+            self.observe(export_envelopes=1)
+        with self.assertRaises(SpanEvidenceError):
+            self.observe(export_envelopes=(
+                {"export": i + 1, "offset": i, "length": 1}
+                for i in range(65)
+            ))
+
+    def test_file_containment_does_not_write_or_authenticate_owners(self):
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / "invented.bin"
+            path.write_bytes(self.source)
+            owners = [
+                {"export": 3, "offset": 8, "length": 16},
+                {"export": 7, "offset": 60, "length": 12},
+            ]
+            result = observe_opaque_file(
+                path, expected_sha256=self.digest,
+                package_identity="synthetic-fixture",
+                spans=self.spans, export_envelopes=owners)
+            self.assertTrue(result["caller_export_envelopes_checked"])
+            self.assertFalse(result["export_envelopes_independently_verified"])
+            self.assertEqual(path.read_bytes(), self.source)
+            with self.assertRaises(SpanEvidenceError):
+                observe_opaque_file(
+                    path, expected_sha256="0" * 64,
+                    package_identity="synthetic-fixture",
+                    spans=self.spans, export_envelopes=owners)
+
     def test_file_read_only_and_sha_drift(self):
         with TemporaryDirectory() as temp:
             path = Path(temp) / "invented.bin"
