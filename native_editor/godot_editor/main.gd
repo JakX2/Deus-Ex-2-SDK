@@ -533,6 +533,13 @@ func _make_ui() -> void:
         + "draft prop transforms and preview nudge distance.")
     ortho_grid_spacing_control.value_changed.connect(_grid_spacing_changed)
     toolbar.add_child(ortho_grid_spacing_control)
+    var snap_selection_btn := Button.new()
+    snap_selection_btn.text = "Snap selected"
+    snap_selection_btn.tooltip_text = (
+        "Align selected original prop PREVIEW or draft copies to the Godot grid; "
+        + "undoable. Native GMP, BSP and source actor locations are never saved.")
+    snap_selection_btn.pressed.connect(_snap_selected_preview_to_grid)
+    toolbar.add_child(snap_selection_btn)
     var copy_btn := Button.new()
     copy_btn.text = "Copy mesh info"
     copy_btn.tooltip_text = "Copy selected DX2 actor/mesh name, original rotation and world bounds for reporting an export issue"
@@ -7824,6 +7831,33 @@ func _set_editor_view_mode(mode: String) -> void:
         status_label.text = (
             "Editor-only " + mode + " view. Scroll to zoom, middle-drag to pan."
             + " Ctrl-snapping uses the grid step. No original BSP/actor changes.")
+
+
+func _snap_selected_preview_to_grid() -> void:
+    if not _draft_selected_is_prop():
+        status_label.text = (
+            "Snap selected: choose original rendered prop previews or draft copies, "
+            + "not BSP/collision or native Light geometry.")
+        return
+    var selection := _selection_nodes()
+    var before := _capture_edit_state()
+    var count := 0
+    for node in selection:
+        if not node.global_position.is_finite():
+            continue
+        var snapped_position: Vector3 = OrthoGuides.snapped_preview_position(
+            node.global_position, ortho_grid_step)
+        if not snapped_position.is_equal_approx(node.global_position):
+            node.global_position = snapped_position
+            count += 1
+    if count == 0:
+        status_label.text = "Selected previews already aligned to the editor grid."
+        return
+    _refresh_prop_inspection()
+    _record_edit("Snap " + str(count) + " preview prop(s) to grid", before)
+    status_label.text = (
+        "Snapped " + str(count) + " editor preview prop(s) to "
+        + str(ortho_grid_step) + " m grid. Undo available. Original GMP unchanged.")
 
 
 func _toggle_ortho_grid(enabled: bool) -> void:
