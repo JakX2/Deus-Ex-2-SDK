@@ -79,11 +79,13 @@ func _run() -> void:
     if not panel.accept_actor_inventory(_inventory(map.get_file(),sha,cache_sha)):
         _fail("Source-authenticated actor inventory refused")
         return
+    var forged_export := valid.duplicate(true)
+    forged_export["export"] = 1
+    var forged_sha := valid.duplicate(true)
+    forged_sha["source_sha256"] = "0".repeat(64)
     if (panel._original_viewport_index(valid) != 1
-        or panel._original_viewport_index({
-            **valid, "export":1}) != -1
-        or panel._original_viewport_index({
-            **valid, "source_sha256":"0".repeat(64)}) != -1):
+        or panel._original_viewport_index(forged_export) != -1
+        or panel._original_viewport_index(forged_sha) != -1):
         _fail("Original name/export/SHA was not enforced at Workbench destination")
         return
     panel.actor_search.text = "Original not listed"
@@ -148,11 +150,9 @@ func _run() -> void:
         map.get_file(), sha, sha, cache, source_dir.path_join("other.json")).is_empty():
         _fail("Wrong private actors.json owner accepted")
         return
-    if not panel.request_viewport_actor({
+    if panel.request_viewport_actor({
         "actor":"ForeignActor", "export":7,
         "source_map":map.get_file(), "source_sha256":"0".repeat(64)}):
-        pass # Correctly refused; tests no actor field import or native write.
-    else:
         _fail("Foreign source-SHA actor request unexpectedly queued")
         return
     file = FileAccess.open(cache, FileAccess.WRITE)
