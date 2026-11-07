@@ -76,6 +76,8 @@ class _Reader:
 
     def name(self) -> None:
         size = self.ci()
+        if size == 0:
+            raise ExportBoundaryError("zero-length package name")
         count = size if size > 0 else -2 * size
         if count > MAX_NAME_BYTES:
             raise ExportBoundaryError("name exceeds audit bound")
