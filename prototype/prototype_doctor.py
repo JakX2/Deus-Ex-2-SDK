@@ -88,6 +88,10 @@ REQUIRED = (
     "prototype-manifest.json",
     "DIAGNOSE_GMP.cmd",
     "map_import_preflight.py",
+    "research/dx2/private_zip_package_audit.py",
+    "research/dx2/dx2_export_boundary_audit.py",
+    "research/dx2/export_reader_concordance.py",
+    "research/dx2/thief3_export_concordance.py",
 )
 # Run these actual Python entry points with --help, not just AST.parse.
 # stdlib-only imports should work on a clean machine without any DX2 game
@@ -127,8 +131,10 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("includes_original_dx2_assets") is not False
                 or manifest.get("includes_havok_runtime") is not False
                 or manifest.get("gameplay_physics_or_walkability_verified") is not False
-                or manifest.get("public_dx2sdk_api_version") != "0.19.0"
+                or manifest.get("public_dx2sdk_api_version") != "0.27.0"
                 or manifest.get("public_dx2sdk_cli_included") is not True
+                or manifest.get("private_original_map_zip_aggregate_audit_available") is not True
+                or manifest.get("private_original_map_zip_write_enabled") is not False
                 or manifest.get("public_dx2sdk_gameplay_runtime_verified") is not False):
             issues.append("invalid_prototype_manifest")
     except (OSError, ValueError, TypeError):
