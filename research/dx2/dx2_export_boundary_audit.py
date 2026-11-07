@@ -86,6 +86,12 @@ class _Reader:
             raise ExportBoundaryError("unterminated ANSI name")
         if size < 0 and (len(raw) < 2 or raw[-2:] != b"\0\0"):
             raise ExportBoundaryError("unterminated UTF16 name")
+        # A terminator inside the declared name body makes the record ambiguous.
+        if size > 0 and b"\0" in raw[:-1]:
+            raise ExportBoundaryError("embedded ANSI name terminator")
+        if size < 0 and any(raw[i:i + 2] == b"\0\0"
+                            for i in range(0, len(raw) - 2, 2)):
+            raise ExportBoundaryError("embedded UTF16 name terminator")
 
 
 def _check_ref(value: int, imports: int, exports: int) -> None:
