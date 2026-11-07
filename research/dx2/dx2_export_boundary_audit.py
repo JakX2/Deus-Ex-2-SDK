@@ -92,6 +92,11 @@ class _Reader:
         if size < 0 and any(raw[i:i + 2] == b"\0\0"
                             for i in range(0, len(raw) - 2, 2)):
             raise ExportBoundaryError("embedded UTF16 name terminator")
+        if size < 0:
+            try:
+                raw[:-2].decode("utf-16-le", errors="strict")
+            except UnicodeDecodeError as exc:
+                raise ExportBoundaryError("invalid UTF16 name encoding") from exc
 
 
 def _check_ref(value: int, imports: int, exports: int) -> None:
