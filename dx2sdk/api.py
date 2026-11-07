@@ -46,7 +46,7 @@ from dx2_native_save_as import (  # noqa: E402
 )
 from dx2_package_roundtrip import inspect_noop  # noqa: E402
 
-__version__ = "0.19.0"
+__version__ = "0.27.0"
 SDK_SCHEMA = "DX2SDK-public-api-v0.1"
 MAX_GMP = 256 * 1024 * 1024
 MAX_MOVES = 10000
