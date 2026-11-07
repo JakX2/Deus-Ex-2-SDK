@@ -294,6 +294,13 @@ def make_parser():
     _add_source(multi_verify)
     multi_verify.add_argument("--output", required=True)
 
+    workbench = sub.add_parser(
+        "actor-properties",
+        help="Read-only original positioned StaticMeshActor property categories and edit eligibility")
+    _add_source(workbench, cache=True)
+    workbench.add_argument("--actor", required=True,
+                           help="Exact original positioned StaticMeshActor name")
+
     fields = sub.add_parser(
         "scalar-fields",
         help="List original 4-byte int/float tagged fields eligible for experimental Save As")
@@ -636,6 +643,8 @@ def main(argv=None) -> int:
                    "new_clones_state_normalized":
                        report["new_clones_state_normalized"],
                    "gameplay_runtime_verified": False})
+        elif args.command == "actor-properties":
+            _json(project.original_actor_property_workbench(args.actor))
         elif args.command == "scalar-fields":
             report = project.native_scalar_fields(args.actor)
             _json({"schema": report["schema"], "actor_name": report["actor_name"],
