@@ -46,7 +46,7 @@ from dx2_native_save_as import (  # noqa: E402
 )
 from dx2_package_roundtrip import inspect_noop  # noqa: E402
 
-__version__ = "0.13.0"
+__version__ = "0.14.0"
 SDK_SCHEMA = "DX2SDK-public-api-v0.1"
 MAX_GMP = 256 * 1024 * 1024
 MAX_MOVES = 10000
@@ -157,6 +157,7 @@ class DX2Map:
             "gameplay_runtime_verified": False,
             "native_supported_writer": "existing_StaticMeshActor_Location_only",
             "experimental_native_tagged_scalar_writer": "existing_StaticMeshActor_top_level_int32_float32_only",
+            "source_native_scalar_Godot_gui": "one_existing_tagged_int32_or_float32_field_per_isolated_copy",
             "experimental_original_static_prop_clone": "source_neutral_unlinked_StaticMeshActor_only",
             "experimental_multi_prop_clone": "2_to_8_existing_neutral_unlinked_StaticMeshActor_only",
             "experimental_existing_gamesys_bLightOn_bool_writer": "source-authored_nonruntime_one_byte_only",
