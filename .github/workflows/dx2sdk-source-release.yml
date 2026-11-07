@@ -70,4 +70,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "DX2SDK Windows source CLI --help failed" }
           & cmd.exe /d /c "RUN_DX2SDK.cmd --version"
           if ($LASTEXITCODE -ne 0) { throw "DX2SDK Windows source CLI --version failed" }
+          & cmd.exe /d /c "RUN_DX2SDK.cmd audit-map-zip --help"
+          if ($LASTEXITCODE -ne 0) { throw "DX2SDK Windows private map ZIP audit CLI unavailable" }
           Pop-Location
