@@ -154,6 +154,16 @@ class ExportBoundaryAuditTests(unittest.TestCase):
             else:
                 _Reader(raw).name()
 
+    def test_reject_malformed_utf16_surrogates_without_accepting_unverified_names(self):
+        # Direct invented name records; no game packages or fixture assets.
+        for body in (b"\x00\xd8", b"\x00\xdc", b"\x00\xd8A\x00"):
+            raw = ci(-(len(body) // 2 + 1)) + body + b"\x00\x00"
+            with self.subTest(body=body), self.assertRaisesRegex(
+                    ExportBoundaryError, "invalid UTF16 name encoding"):
+                _Reader(raw).name()
+        # Valid surrogate pair remains structurally admissible, not authenticated.
+        _Reader(ci(-3) + b"\x3d\xd8\x00\xde\x00\x00").name()
+
     def test_reject_zero_export_owner_but_preserve_other_owners(self):
         source, _ = fixture(payload_lengths=(0, 5))
         report = self.audit(source)
