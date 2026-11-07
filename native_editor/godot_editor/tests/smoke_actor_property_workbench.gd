@@ -181,6 +181,62 @@ func _run() -> void:
     if first_field.get_text(2) != "STAGED -> 123456":
         _fail("Source-vs-staged comparison did not reflect the selected property")
         return
+    # v0.17: search, source category, eligibility and staged filters must
+    # change only the presentation, never source SHA or staged authorization.
+    if (panel.property_statistics.text.find("4 of 4") < 0
+        or panel.property_details.text.find("Staged replacement: 123456") < 0):
+        _fail("Workbench original vs staged details were not shown")
+        return
+    panel.property_search.text = "fixturefloat"
+    panel._property_search_changed(panel.property_search.text)
+    root = panel.source_property_tree.get_root()
+    if (root.get_child_count() != 1
+        or root.get_first_child().get_child_count() != 1
+        or panel.property_statistics.text.find("1 of 4") < 0):
+        _fail("Search did not narrow native property tree to FixtureFloat")
+        return
+    panel.property_mode.select(3)  # staged-only
+    panel._property_mode_changed(3)
+    if (panel.property_statistics.text.find("0 of 4") < 0
+        or not panel.staged.size() == 1):
+        _fail("Search and staged-only filters changed original edits")
+        return
+    panel.property_search.text = ""
+    panel._property_search_changed("")
+    root = panel.source_property_tree.get_root()
+    if (root.get_first_child().get_first_child().get_text(0).find("FixtureFlag") < 0
+        or panel.property_statistics.text.find("1 of 4") < 0):
+        _fail("Staged-only original numeric tag not restored")
+        return
+    panel.property_mode.select(2)  # read-only + opaque
+    panel._property_mode_changed(2)
+    root = panel.source_property_tree.get_root()
+    if (panel.property_statistics.text.find("2 of 4") < 0
+        or root.get_child_count() != 2):
+        _fail("Source read-only filter failed to retain opaque/protected")
+        return
+    var protected_tag := root.get_first_child().get_first_child()
+    if protected_tag.get_text(0).find("Location") < 0:
+        _fail("Protected native Location tag absent from read-only category")
+        return
+    protected_tag.select(0)
+    panel._property_tree_selected()
+    if (panel.property_details.text.find("READ ONLY") < 0
+        or panel.property_details.text.find("Location") < 0
+        or panel.chosen_field_index != -1
+        or panel.stage_button.disabled != true):
+        _fail("Protected native tag detail improperly enabled numeric editing")
+        return
+    if panel.staged.size() != 1:
+        _fail("Inspection of read-only tag corrupted prior safe staged edit")
+        return
+    panel.property_mode.select(0)
+    panel._property_mode_changed(0)
+    root = panel.source_property_tree.get_root()
+    if (root.get_child_count() != 6
+        or panel.property_statistics.text.find("4 of 4") < 0):
+        _fail("Unfiltered original tag classification did not restore")
+        return
     # Unrecognized or protected native tags must NEVER grant edit eligibility.
     for action in ["wrong-sha", "claim-new-tags", "protected-editable",
                    "wrong-original", "duplicate-ordinal", "wrong-count"]:
