@@ -20,6 +20,22 @@ lowercase SHA-256. It does not prove native BSP/zone ownership or retail runtime
 compatibility. Never copy retail maps into the distributed ZIP. The Godot
 editor still uses its existing source-verified per-map import flow.
 
+## T3Ed-style viewport controls (v0.28 preview-only)
+
+The embedded Godot 3D viewport now offers **Perspective**, **Top (XZ)**,
+**Front (XY)**, and **Side (ZY)** from its view dropdown. With the pointer
+inside the viewport, press **1–4** to switch views, mouse wheel to zoom,
+**middle drag** (or Alt+left drag in planar mode) to pan, and **F** to frame
+the selected actor. The **Ortho grid** checkbox toggles a source-independent
+planar reference grid. **Grid m** controls spacing (0.25–64 Godot metres) and
+the existing Ctrl-drag move snapping/preview nudge increment.
+**Snap selected** aligns selected rendered prop previews/draft copies to the nearest grid coordinates with a reversible Ctrl+Z / Ctrl+Y history entry. It does not create or edit native actor records.
+
+These are editor-only visual guides and draft preview controls. No native
+DX2 BSP leaf/zone geometry, collision, GameSys or authored map is modified;
+perspective orbit/fly mode remains available. Imported GLB geometry and
+source-original actor identities remain unchanged by switching views.
+
 ## Get running in Windows 10/11, 64-bit
 
 1. **Extract the entire ZIP** to a normal user-writable directory, e.g. `D:\DX2Ed_Prototype\`. Do not run files directly from inside the ZIP. Do not extract it into your game install or `Content\DX2\Maps`.

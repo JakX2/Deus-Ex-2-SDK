@@ -1,5 +1,6 @@
 extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
+const OrthoGuides = preload("res://orthographic_authoring_guides.gd")
 const PythonRuntime = preload("res://python_runtime.gd")
 const LightColorPanel = preload("res://light_color_panel.gd")
 const MultiLightColorPanel = preload("res://multi_light_color_panel.gd")
@@ -25,6 +26,16 @@ var view_container: SubViewportContainer
 var world_root: Node3D
 var scene_root: Node3D
 var camera: Camera3D
+var editor_view_mode := OrthoGuides.PERSPECTIVE
+var editor_view_mode_select: OptionButton
+var ortho_grid_node: MeshInstance3D
+var ortho_grid_toggle: CheckBox
+var ortho_grid_spacing_control: SpinBox
+var ortho_grid_enabled := true
+var ortho_grid_step := 0.25
+var ortho_grid_last_mode := ""
+var ortho_grid_last_center := Vector3(INF, INF, INF)
+var ortho_grid_last_step := -1.0
 var actor_list: ItemList
 var search_box: LineEdit
 var category_filter: OptionButton
@@ -495,6 +506,40 @@ func _make_ui() -> void:
     focus_btn.text = "Focus actor"
     focus_btn.pressed.connect(focus_selected)
     toolbar.add_child(focus_btn)
+    # T3Ed-style planar authoring views; editor preview ONLY.
+    editor_view_mode_select = OptionButton.new()
+    editor_view_mode_select.tooltip_text = (
+        "Perspective / top XZ / front XY / side ZY (keys 1-4 over viewport). "
+        + "Views never change original camera or DX2 geometry.")
+    for mode in OrthoGuides.MODES:
+        editor_view_mode_select.add_item(str(mode))
+    editor_view_mode_select.item_selected.connect(_view_mode_item_selected)
+    toolbar.add_child(editor_view_mode_select)
+    ortho_grid_toggle = CheckBox.new()
+    ortho_grid_toggle.text = "Ortho grid"
+    ortho_grid_toggle.button_pressed = true
+    ortho_grid_toggle.tooltip_text = "Editor-only grid; not DX2 BSP/zone or collision geometry"
+    ortho_grid_toggle.toggled.connect(_toggle_ortho_grid)
+    toolbar.add_child(ortho_grid_toggle)
+    ortho_grid_spacing_control = SpinBox.new()
+    ortho_grid_spacing_control.prefix = "Grid m"
+    ortho_grid_spacing_control.min_value = 0.25
+    ortho_grid_spacing_control.max_value = 64.0
+    ortho_grid_spacing_control.step = 0.25
+    ortho_grid_spacing_control.value = 0.25
+    ortho_grid_spacing_control.custom_minimum_size.x = 103
+    ortho_grid_spacing_control.tooltip_text = (
+        "Preview grid spacing in Godot metres. Matches Ctrl-snapping of "
+        + "draft prop transforms and preview nudge distance.")
+    ortho_grid_spacing_control.value_changed.connect(_grid_spacing_changed)
+    toolbar.add_child(ortho_grid_spacing_control)
+    var snap_selection_btn := Button.new()
+    snap_selection_btn.text = "Snap selected"
+    snap_selection_btn.tooltip_text = (
+        "Align selected original prop PREVIEW or draft copies to the Godot grid; "
+        + "undoable. Native GMP, BSP and source actor locations are never saved.")
+    snap_selection_btn.pressed.connect(_snap_selected_preview_to_grid)
+    toolbar.add_child(snap_selection_btn)
     var copy_btn := Button.new()
     copy_btn.text = "Copy mesh info"
     copy_btn.tooltip_text = "Copy selected DX2 actor/mesh name, original rotation and world bounds for reporting an export issue"
@@ -605,7 +650,7 @@ func _make_ui() -> void:
     prop_bar.add_child(native_multi_button)
     prop_edit_step = SpinBox.new()
     prop_edit_step.min_value = 0.05
-    prop_edit_step.max_value = 10.0
+    prop_edit_step.max_value = 64.0
     prop_edit_step.step = 0.05
     prop_edit_step.value = 0.25
     prop_edit_step.custom_minimum_size.x = 83
@@ -2041,6 +2086,19 @@ func _make_world() -> void:
     camera.near = 0.05
     camera.far = 100000.0
     world_root.add_child(camera)
+    # Grid is a separate editor-only mesh, never a selectable original actor.
+    ortho_grid_node = MeshInstance3D.new()
+    ortho_grid_node.name = "DX2Ed_Planar_Authoring_Grid_EDITOR_ONLY"
+    ortho_grid_node.set_meta("editor_only", true)
+    ortho_grid_node.visible = false
+    ortho_grid_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    var ortho_grid_material := StandardMaterial3D.new()
+    ortho_grid_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    ortho_grid_material.vertex_color_use_as_albedo = true
+    ortho_grid_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    ortho_grid_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    ortho_grid_node.material_override = ortho_grid_material
+    world_root.add_child(ortho_grid_node)
     gizmo_root = Node3D.new()
     gizmo_root.name = "EditorGizmo"
     world_root.add_child(gizmo_root)
@@ -7752,12 +7810,100 @@ func frame_whole_scene() -> void:
         orbit_distance = max(5.0, scene_bounds.size.length() * 1.2)
         _update_camera()
 
+func _view_mode_item_selected(index: int) -> void:
+    if index < 0 or index >= OrthoGuides.MODES.size():
+        return
+    _set_editor_view_mode(str(OrthoGuides.MODES[index]))
+
+
+func _set_editor_view_mode(mode: String) -> void:
+    if not OrthoGuides.valid_mode(mode):
+        return
+    if gizmo_drag_active:
+        _finish_gizmo_drag()
+    _set_fly_mode(false)
+    editor_view_mode = mode
+    if editor_view_mode_select != null:
+        editor_view_mode_select.select(OrthoGuides.MODES.find(mode))
+    ortho_grid_last_mode = ""
+    _update_camera()
+    if status_label != null:
+        status_label.text = (
+            "Editor-only " + mode + " view. Scroll to zoom, middle-drag to pan."
+            + " Ctrl-snapping uses the grid step. No original BSP/actor changes.")
+
+
+func _snap_selected_preview_to_grid() -> void:
+    if not _draft_selected_is_prop():
+        status_label.text = (
+            "Snap selected: choose original rendered prop previews or draft copies, "
+            + "not BSP/collision or native Light geometry.")
+        return
+    var selection := _selection_nodes()
+    var before := _capture_edit_state()
+    var count := 0
+    for node in selection:
+        if not node.global_position.is_finite():
+            continue
+        var snapped_position: Vector3 = OrthoGuides.snapped_preview_position(
+            node.global_position, ortho_grid_step)
+        if not snapped_position.is_equal_approx(node.global_position):
+            node.global_position = snapped_position
+            count += 1
+    if count == 0:
+        status_label.text = "Selected previews already aligned to the editor grid."
+        return
+    _refresh_prop_inspection()
+    _record_edit("Snap " + str(count) + " preview prop(s) to grid", before)
+    status_label.text = (
+        "Snapped " + str(count) + " editor preview prop(s) to "
+        + str(ortho_grid_step) + " m grid. Undo available. Original GMP unchanged.")
+
+
+func _toggle_ortho_grid(enabled: bool) -> void:
+    ortho_grid_enabled = enabled
+    _refresh_ortho_grid()
+
+
+func _grid_spacing_changed(step: float) -> void:
+    if not is_finite(step) or step < 0.25 or step > 64.0:
+        return
+    ortho_grid_step = step
+    if prop_edit_step != null:
+        prop_edit_step.value = step
+    ortho_grid_last_step = -1.0
+    _refresh_ortho_grid()
+
+
+func _refresh_ortho_grid() -> void:
+    if ortho_grid_node == null:
+        return
+    var show_grid := ortho_grid_enabled and editor_view_mode != OrthoGuides.PERSPECTIVE
+    ortho_grid_node.visible = show_grid
+    if not show_grid:
+        return
+    var center: Vector3 = OrthoGuides.grid_center(
+        editor_view_mode, camera_target, ortho_grid_step)
+    if (ortho_grid_last_mode == editor_view_mode
+        and ortho_grid_last_center == center
+        and is_equal_approx(ortho_grid_last_step, ortho_grid_step)):
+        return
+    ortho_grid_node.mesh = OrthoGuides.grid_mesh(
+        editor_view_mode, camera_target, ortho_grid_step, 24)
+    ortho_grid_last_mode = editor_view_mode
+    ortho_grid_last_center = center
+    ortho_grid_last_step = ortho_grid_step
+
+
 func _update_camera() -> void:
+    if not is_instance_valid(camera):
+        return
     orbit_pitch = clamp(orbit_pitch, -1.50, 1.50)
     orbit_distance = clamp(orbit_distance, 0.15, 200000.0)
-    var offset := Vector3(sin(orbit_yaw) * cos(orbit_pitch), sin(orbit_pitch), cos(orbit_yaw) * cos(orbit_pitch)) * orbit_distance
-    camera.global_position = camera_target + offset
-    camera.look_at(camera_target, Vector3.UP)
+    OrthoGuides.apply_camera(
+        camera, editor_view_mode, camera_target,
+        orbit_distance, orbit_yaw, orbit_pitch)
+    _refresh_ortho_grid()
 
 ## The gizmo lives outside the imported GLB and is never included in
 ## actor selection, scene exports, or the original game data.
@@ -8027,7 +8173,8 @@ func _set_editor_tool(tool: String) -> void:
 
 
 func _set_fly_mode(enabled: bool) -> void:
-    fly_looking = enabled
+    # Orthographic projection is fixed-axis: never allow FPS fly rotation.
+    fly_looking = enabled and editor_view_mode == OrthoGuides.PERSPECTIVE
     if enabled:
         # Preserve camera position while turning the view.
         drag_mode = "fly"
@@ -8070,6 +8217,9 @@ func _input(event: InputEvent) -> void:
             elif ke.keycode == KEY_E: _set_editor_tool("rotate")
             elif ke.keycode == KEY_R: _set_editor_tool("scale")
             elif ke.keycode == KEY_F: focus_selected()
+            elif ke.keycode in [KEY_1, KEY_2, KEY_3, KEY_4]:
+                _set_editor_view_mode(
+                    str(OrthoGuides.MODES[ke.keycode - KEY_1]))
             else: return
             get_viewport().set_input_as_handled()
         return
@@ -8104,7 +8254,8 @@ func _input(event: InputEvent) -> void:
                 drag_distance = 0.0
                 if button.alt_pressed:
                     dragging = true
-                    drag_mode = "orbit"
+                    drag_mode = ("orbit" if editor_view_mode == OrthoGuides.PERSPECTIVE
+                                 else "pan")
                 elif _begin_gizmo_drag():
                     dragging = true
                     drag_mode = "gizmo"
