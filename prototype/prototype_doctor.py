@@ -206,6 +206,21 @@ def examine(root: Path) -> list[str]:
     except (OSError, subprocess.TimeoutExpired):
         issues.append("public_dx2sdk_cli_import_failed")
 
+    # The private map ZIP audit must be exposed through the unified public
+    # SDK console in the actual extracted Windows prototype, without needing
+    # any commercial files or writing a report during the doctor check.
+    try:
+        audit_help = subprocess.run(
+            [sys.executable, "-B", "-m", "dx2sdk", "audit-map-zip", "--help"],
+            cwd=root, capture_output=True, timeout=20, check=False,
+        )
+        if (audit_help.returncode != 0
+                or b"--archive" not in audit_help.stdout
+                or b"--max-files" not in audit_help.stdout):
+            issues.append("private_map_zip_audit_cli_missing")
+    except (OSError, subprocess.TimeoutExpired):
+        issues.append("private_map_zip_audit_cli_missing")
+
     # Refuse accidental copied map files inside the distribution. This check
     # is deliberately read-only and does not enumerate outside the prototype.
     for file in root.rglob("*"):
