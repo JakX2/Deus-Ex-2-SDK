@@ -33,17 +33,17 @@ jobs:
       - name: Build standalone no-retail-assets Python SDK ZIP
         shell: bash
         run: |
-          python -B tools/build_dx2sdk_source_release.py --output "${RUNNER_TEMP}/DX2SDK_Python_0.14.0.zip"
+          python -B tools/build_dx2sdk_source_release.py --output "${RUNNER_TEMP}/DX2SDK_Python_0.15.0.zip"
           mkdir -p "${RUNNER_TEMP}/dx2sdk-extracted"
-          unzip -q "${RUNNER_TEMP}/DX2SDK_Python_0.14.0.zip" -d "${RUNNER_TEMP}/dx2sdk-extracted"
-          cd "${RUNNER_TEMP}/dx2sdk-extracted/DX2SDK_Python_0.14.0"
+          unzip -q "${RUNNER_TEMP}/DX2SDK_Python_0.15.0.zip" -d "${RUNNER_TEMP}/dx2sdk-extracted"
+          cd "${RUNNER_TEMP}/dx2sdk-extracted/DX2SDK_Python_0.15.0"
           python -B -m dx2sdk --help
           python -B -m dx2sdk --version
-      - name: Upload SDK v0.14 Python-only portable ZIP
+      - name: Upload SDK v0.15 Python-only portable ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: DX2SDK_Python_v0_14_Portable
-          path: ${{ runner.temp }}/DX2SDK_Python_0.14.0.zip
+          name: DX2SDK_Python_v0_15_Portable
+          path: ${{ runner.temp }}/DX2SDK_Python_0.15.0.zip
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -59,13 +59,13 @@ jobs:
           python-version: '3.11'
       - uses: actions/download-artifact@v4
         with:
-          name: DX2SDK_Python_v0_14_Portable
+          name: DX2SDK_Python_v0_15_Portable
           path: .
       - name: Validate portable ZIP and Windows RUN_DX2SDK.cmd
         shell: pwsh
         run: |
-          Expand-Archive -Path DX2SDK_Python_0.14.0.zip -DestinationPath unpacked
-          Push-Location unpacked/DX2SDK_Python_0.14.0
+          Expand-Archive -Path DX2SDK_Python_0.15.0.zip -DestinationPath unpacked
+          Push-Location unpacked/DX2SDK_Python_0.15.0
           & cmd.exe /d /c "RUN_DX2SDK.cmd --help"
           if ($LASTEXITCODE -ne 0) { throw "DX2SDK Windows source CLI --help failed" }
           & cmd.exe /d /c "RUN_DX2SDK.cmd --version"
