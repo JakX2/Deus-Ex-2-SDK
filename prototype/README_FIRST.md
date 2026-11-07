@@ -29,6 +29,7 @@ inside the viewport, press **1–4** to switch views, mouse wheel to zoom,
 the selected actor. The **Ortho grid** checkbox toggles a source-independent
 planar reference grid. **Grid m** controls spacing (0.25–64 Godot metres) and
 the existing Ctrl-drag move snapping/preview nudge increment.
+**Snap selected** aligns selected rendered prop previews/draft copies to the nearest grid coordinates with a reversible Ctrl+Z / Ctrl+Y history entry. It does not create or edit native actor records.
 
 These are editor-only visual guides and draft preview controls. No native
 DX2 BSP leaf/zone geometry, collision, GameSys or authored map is modified;
