@@ -146,9 +146,9 @@ class ExportBoundaryAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ExportBoundaryError, "embedded ANSI"):
             self.audit(bytes(bad))
         # Negative compact length denotes UTF16 code units in this candidate layout.
-        for raw in (ci(-3) + b"A\\x00\\x00\\x00\\x00\\x00",
-                    ci(-3) + b"A\\x00B\\x00\\x00\\x00"):
-            if raw[3:5] == b"\\x00\\x00":
+        for raw in (ci(-3) + b"A\x00\x00\x00\x00\x00",
+                    ci(-3) + b"A\x00B\x00\x00\x00"):
+            if raw[3:5] == b"\x00\x00":
                 with self.assertRaisesRegex(ExportBoundaryError, "embedded UTF16"):
                     _Reader(raw).name()
             else:
