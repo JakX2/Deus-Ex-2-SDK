@@ -61,3 +61,33 @@ and synthetic fixtures only. It is not exposed as a retail GMP CLI
 or native editor control, and its output must not be described as
 decoded BSP leaf/zone records. No source-asset artifacts are emitted.
 
+
+## Follow-up v0.20: caller-declared export containment negative controls
+
+The experimental `observe_opaque_spans` and `observe_opaque_file` helpers
+accept an optional `export_envelopes` iterable of
+`{export, offset, length}` records. **These are caller declarations, not
+native-parser-verified exports.** With this option, each observed span must
+lie completely inside the sole declared envelope for its positive export
+index. Envelopes must be nonempty, in bounds, unique by export, pairwise
+nonoverlapping and capped at 64. A missing owner, boundary crossing,
+duplicate export, ambiguous overlapping owner, or wrong export ID raises
+`SpanEvidenceError` before any report is returned. An empty envelope list
+cannot authorize nonempty spans. Existing default observations remain
+backward compatible and do not require envelope input.
+
+Reports explicitly distinguish
+`caller_export_envelopes_checked: true/false` from
+`export_envelopes_independently_verified: false` in **all** cases.
+The additional check can reject internally inconsistent hypotheses; it
+**cannot establish** real DX2 package ownership or leaf/zone identity.
+The helper does not parse the GMP export table, does not infer BSP leaves,
+does not write or generate game files, and remains outside the public
+SDK and Godot UI. Synthetic regression tests include reversed envelope
+order, cross-export records, holes, duplicate and overlapping envelopes,
+invalid types, huge counts, source hash drift and unchanged input bytes.
+
+**Next gate:** identify and independently validate actual package export
+byte ranges in the checked-in native reader before permitting a
+`verified-envelope` confidence label. Until then all observed payloads
+remain `unknown-payload` and nonwritable.
