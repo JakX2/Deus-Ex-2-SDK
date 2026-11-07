@@ -42,7 +42,7 @@ static func filtered(catalog: Dictionary, query: String, mode: String,
     for category in catalog.get("categories", []):
         var rows: Array[Dictionary] = []
         for field in category["fields"]:
-            var editable := field["editable_existing_tag"] == true
+            var editable: bool = field["editable_existing_tag"] == true
             var stage := _stage_for(
                 staged, str(catalog["actor"]), int(catalog["export"]), field)
             var changed := not stage.is_empty()
@@ -79,7 +79,7 @@ static func filtered(catalog: Dictionary, query: String, mode: String,
 static func detail(catalog: Dictionary, field: Dictionary, staged: Array) -> String:
     if catalog.is_empty() or field.is_empty():
         return "Choose a source-native tag to inspect its serialized evidence."
-    var eligible := field.get("editable_existing_tag") == true
+    var eligible: bool = field.get("editable_existing_tag") == true
     var stage := _stage_for(
         staged, str(catalog["actor"]), int(catalog["export"]), field)
     var result := (
