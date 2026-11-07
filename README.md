@@ -6,6 +6,13 @@ Our goal is a practical, UnrealEd-style modding SDK inspired by the original Deu
 
 ## New: DX2SDK v0.1 public Python API and Windows console
 
+The [DX2SDK v0.27 unified editor and private map ZIP audit](dx2sdk/README.md)
+combines the v0.19 Actor Workbench/guarded editor source stack and the
+v0.26 read-only UE95/T3SDK cross-reader gates in one portable Godot/Python
+release. Use `DX2SDK_CONSOLE.cmd audit-map-zip --archive <private.zip>` for
+aggregate-only original map archive checks. All retail assets remain external;
+no native BSP/zone writer or retail game runtime validation is claimed.
+
 DX2SDK v0.19 now has a [standalone Python API](dx2sdk/README.md) with source-verified native property inspection, direct original GMP-to-private-actors.json scanning without Godot, experimental isolated existing UE95 tagged int32/float32 scalar editing, and conservative single or **2–8 source-locked original StaticMeshActor duplicates**, native Light dependency audits, guarded existing GameSys `bLightOn` Boolean edits, and experimental original-layout LightColor brightness/hue/saturation byte editing. The clones create new exports and Level references, replay original-source serialization to verify every byte, and are NOT retail gameplay tested. The Python 3.11+ package (`from dx2sdk import DX2Map`) and a command-line
 interface (`python -B -m dx2sdk`). The native-editor Windows prototype
 also packages `DX2SDK_CONSOLE.cmd` next to `START_DX2ED.cmd`.
