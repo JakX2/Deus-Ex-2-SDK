@@ -25,6 +25,7 @@ if /I "%~1"=="--self-test" (
     smoke_multi_native_scalar_panel.gd
     smoke_actor_property_workbench.gd
     smoke_workbench_filter_view.gd
+    smoke_workbench_actor_navigation.gd
     smoke_mission_logic_draft.gd
     smoke_dialogue_design_draft.gd
     smoke_original_script_ibd_provenance.gd
