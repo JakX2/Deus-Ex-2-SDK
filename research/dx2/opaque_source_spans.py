@@ -149,6 +149,7 @@ def observe_opaque_file(
     package_identity: str,
     spans: Iterable[Mapping[str, object]],
     preview_bytes: int = 0,
+    export_envelopes: Iterable[Mapping[str, object]] | None = None,
 ) -> dict:
     """Explicit local read only. Source SHA is rechecked before observing."""
     path = Path(path)
