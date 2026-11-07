@@ -37,6 +37,7 @@ var actor_previous: Button
 var actor_next: Button
 var visible_actor_indices: Array[int] = []
 var pending_staged_focus: Dictionary = {}
+var pending_viewport_request: Dictionary = {}
 
 
 func _ready() -> void:
@@ -173,6 +174,7 @@ func _ready() -> void:
 func reset_context() -> void:
     visible_actor_indices.clear()
     pending_staged_focus.clear()
+    pending_viewport_request.clear()
     if actor_search != null:
         actor_search.text = ""
     if actor_mode != null:
@@ -300,6 +302,65 @@ func _navigate_original_index(original_index: int) -> bool:
     actor_list.select(display)
     _pick_actor(display)
     return chosen_actor_index == original_index
+
+
+func _original_viewport_index(identity: Dictionary) -> int:
+    if (not _context_ok()
+        or typeof(identity.get("actor")) != TYPE_STRING
+        or typeof(identity.get("export")) != TYPE_INT
+        or identity.get("source_map") != source_map.get_file()
+        or identity.get("source_sha256") != source_sha256):
+        return -1
+    return ActorNavigation.original_index_for_export(
+        original_actors, str(identity["actor"]), int(identity["export"]))
+
+
+func _open_verified_viewport_actor(identity: Dictionary) -> bool:
+    # Never use a filtered row index, visual mesh index or fabricated export.
+    # This must match an actor from the Python original-SHA inventory.
+    if worker != null:
+        return false
+    var index := _original_viewport_index(identity)
+    if index < 0:
+        status.text = "Scene actor refused: no matching original source Actor export/name."
+        return false
+    if chosen_actor_index == index:
+        return true
+    if visible_actor_indices.find(index) < 0:
+        actor_search.text = ""
+        actor_mode.select(0)
+        _refresh_actor_navigation()
+    return _navigate_original_index(index)
+
+
+func request_viewport_actor(identity: Dictionary) -> bool:
+    # Only the main scene's read-only source selection bridge may supply
+    # this request. A successful return merely schedules read-only scanning,
+    # NOT authorizes any native tag edit or Save As.
+    if (not _context_ok()
+        or typeof(identity.get("actor")) != TYPE_STRING
+        or str(identity["actor"]).is_empty()
+        or typeof(identity.get("export")) != TYPE_INT
+        or int(identity["export"]) <= 0
+        or identity.get("source_map") != source_map.get_file()
+        or identity.get("source_sha256") != source_sha256):
+        return false
+    if worker != null:
+        pending_viewport_request = identity.duplicate(true)
+        return true
+    if original_actors.is_empty():
+        pending_viewport_request = identity.duplicate(true)
+        _scan() # Python authenticates map+actors SHA before any actor navigation.
+        return worker != null
+    return _open_verified_viewport_actor(identity)
+
+
+func _drain_viewport_request() -> void:
+    if worker != null or pending_viewport_request.is_empty():
+        return
+    var identity: Dictionary = pending_viewport_request.duplicate(true)
+    pending_viewport_request.clear()
+    _open_verified_viewport_actor(identity)
 
 
 func _navigate_relative_actor(delta: int) -> void:
@@ -776,6 +837,7 @@ func _finished(code: int, raw: String, action: String, epoch: int) -> void:
                     int(property_catalog["source_top_level_tag_count"]),
                     int(property_catalog["eligible_original_numeric_count"])]
         _update_buttons()
+        _drain_viewport_request()
         return
     if action in ["list", "fields"]:
         var doc: Variant = JSON.parse_string(raw.strip_edges())
@@ -803,6 +865,7 @@ func _finished(code: int, raw: String, action: String, epoch: int) -> void:
                         break
                 pending_staged_focus.clear()
             _start_property_catalog(str(row["actor"]), int(row["export"]))
+        _drain_viewport_request()
         return
     if worker != null:
         worker.wait_to_finish()

@@ -46,7 +46,7 @@ from dx2_native_save_as import (  # noqa: E402
 )
 from dx2_package_roundtrip import inspect_noop  # noqa: E402
 
-__version__ = "0.18.0"
+__version__ = "0.19.0"
 SDK_SCHEMA = "DX2SDK-public-api-v0.1"
 MAX_GMP = 256 * 1024 * 1024
 MAX_MOVES = 10000
@@ -162,6 +162,7 @@ class DX2Map:
             "original_actor_property_workbench": "read_only_authored_native_tag_catalog_with_explicit_edit_eligibility",
             "original_actor_property_search_filter_detail_gui": "read_only_source_native_tag_visibility_and_staged_comparison",
             "original_actor_workbench_navigation_gui": "source_actor_name_export_search_staged_filter_and_pinned_actor_switching",
+            "original_viewport_actor_workbench_handoff_gui": "single_source_original_StaticMeshActor_SHA_bound_selection_only",
             "experimental_original_static_prop_clone": "source_neutral_unlinked_StaticMeshActor_only",
             "experimental_multi_prop_clone": "2_to_8_existing_neutral_unlinked_StaticMeshActor_only",
             "experimental_existing_gamesys_bLightOn_bool_writer": "source-authored_nonruntime_one_byte_only",
