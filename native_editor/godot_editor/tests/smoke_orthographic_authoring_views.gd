@@ -84,6 +84,39 @@ func _run() -> void:
         or not is_equal_approx(editor.prop_edit_step.value, 2.0)):
         _fail("Grid step did not synchronize preview Ctrl snap increment")
         return
+    var snap_input := Vector3(1.26, -0.4, 0.6)
+    if not Guides.snapped_preview_position(snap_input, 0.5).is_equal_approx(
+            Vector3(1.5, -0.5, 0.5)):
+        _fail("Grid snap did not align world coordinates")
+        return
+    var invented := MeshInstance3D.new()
+    invented.name = "StaticMeshActor__777"
+    invented.mesh = BoxMesh.new()
+    editor.world_root.add_child(invented)
+    invented.global_position = Vector3(1.1, 2.9, -0.9)
+    editor.meshes_by_actor[invented.name] = invented
+    editor.actors_by_name[invented.name] = {
+        "name": invented.name, "class": "StaticMeshActor",
+        "export": 777, "location": [0,0,0],
+        "rotation": [0,0,0], "game_properties": [],
+    }
+    editor.original_mesh_transforms[invented.name] = invented.global_transform
+    editor.selected_meshes[invented.name] = invented
+    editor.selected_mesh = invented
+    var original_preview := invented.global_position
+    editor._snap_selected_preview_to_grid()
+    if (not invented.global_position.is_equal_approx(Vector3(2, 2, 0))
+        or editor.undo_stack.size() != 1):
+        _fail("Real editor did not create undoable preview grid snap")
+        return
+    editor._undo_edit()
+    if not invented.global_position.is_equal_approx(original_preview):
+        _fail("Preview grid snap Ctrl+Z did not restore actor position")
+        return
+    editor._redo_edit()
+    if not invented.global_position.is_equal_approx(Vector3(2, 2, 0)):
+        _fail("Preview grid snap Ctrl+Y did not replay snapped position")
+        return
     editor._toggle_ortho_grid(false)
     if editor.ortho_grid_node.visible:
         _fail("Grid visibility toggle did not hide overlay")
