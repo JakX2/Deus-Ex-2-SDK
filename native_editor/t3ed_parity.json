@@ -1,6 +1,6 @@
 {
   "schema": "DX2Ed-T3Ed-parity-v1",
-  "updated": "2026-11-01",
+  "updated": "2026-11-08",
   "reference_archives": [
     "thief3editorrelease_jan2005(1).zip",
     "T3SDK-Launcher_0.3.1_portable(1).zip"
@@ -25,16 +25,16 @@
       "title": "3D viewport/camera and selection",
       "status": "partial",
       "phase": 1,
-      "evidence": "DX2Ed Godot fly camera and triangle picking",
-      "next_step": "Orthographic viewports, snapping overlays, visibility/isolate controls"
+      "evidence": "DX2Ed v0.28 perspective/top/front/side fixed-axis Godot viewport navigation, preview grid and zoom/pan; previous fly camera, actor triangle picking and scene selection.",
+      "next_step": "Multi-viewport split/quad layout, persistent orthographic settings and source-verified face selection. Preview grid is not BSP/zone editing."
     },
     {
       "id": "transforms",
       "title": "Move/rotate/scale, groups, undo",
       "status": "partial",
       "phase": 1,
-      "evidence": "DX2Ed 0.3.0 through 0.3.2",
-      "next_step": "Parent transforms, grid/pivot configuration, native persistence"
+      "evidence": "DX2Ed 0.3.0 through 0.3.2; v0.28 preview-only grid spacing synchronized with Ctrl transform-gizmo snap increment.",
+      "next_step": "Parent transforms and grid/pivot preferences, consistent authoring-to-native transform verification"
     },
     {
       "id": "asset_browser",
