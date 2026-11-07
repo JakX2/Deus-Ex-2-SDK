@@ -23,3 +23,7 @@ Synthetic tests (`native_editor/tests/test_dx2sdk_export_boundary_audit.py`) cov
 ## Next evidence gate
 
 Cross-check against *private, user-owned* DX2 package headers and export bytes in a local-only read process, without committing the bytes or full reports. Compare the independent table model to the existing `map_exporter/dx2inspect.py::Package` output and Thief 3 reader behavior. Any parse rejection or mismatched table span must remain a hard stop. Only after that can we consider upgrading export evidence, and only after an independent native record format is established can a BSP/zone observer label records as leaves or zones. No edits or retail compatibility claims at this stage.
+
+## Follow-up hardening: empty name records
+
+The experimental name-table reader now rejects a zero compact-index name length before consuming flags or advancing to subsequent records. A zero-byte name is not a valid terminated ANSI or UTF-16 name under this restricted candidate layout; accepting it would make table interpretation ambiguous. A synthetic fixture mutates the first name-length byte to zero and asserts fail-closed rejection. This remains a structural negative control, not proof of DX2 retail-format compatibility or independently authenticated export ownership.
