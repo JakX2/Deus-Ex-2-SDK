@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DX2Ed v0.15: 2..8 original UE95 tagged scalar fields, one isolated GMP.
+"""DX2Ed v0.16: source-authored tagged property catalog and 2..8 safe scalar edits.
 
 This bridge reuses the v0.3 DX2SDK native scalar writer and v0.14 source-
 verified actor/field inspector. Only existing positioned StaticMeshActors,
@@ -131,6 +131,21 @@ def _audit_report(world, report: dict, rows: list[dict], output: Path) -> None:
 
 
 def perform(args: argparse.Namespace) -> dict:
+    if args.action == "catalog":
+        if type(args.actor) is not str or not args.actor or type(args.export) is not int or args.export < 1:
+            raise ValueError("Original actor name/export required for property catalog")
+        world = _original(args)
+        report = world.original_actor_property_workbench(args.actor)
+        if (report.get("schema") != "DX2SDK-original-actor-property-workbench-v1"
+                or report.get("actor") != args.actor
+                or report.get("export") != args.export
+                or report.get("source_sha256") != world.source_sha256
+                or report.get("actors_sha256") != world._actor_cache_sha256
+                or report.get("read_only") is not True
+                or report.get("new_tag_insertion_enabled") is not False
+                or report.get("gameplay_runtime_verified") is not False):
+            raise ValueError("Original source actor property workbench provenance mismatch")
+        return {**report, "bridge_schema": BRIDGE_SCHEMA, "action": "catalog"}
     if args.action in ("list", "fields"):
         single = single_perform(args)
         return {**single, "bridge_schema": BRIDGE_SCHEMA}
@@ -210,7 +225,7 @@ def perform(args: argparse.Namespace) -> dict:
 
 def parser() -> argparse.ArgumentParser:
     cli = argparse.ArgumentParser(description=__doc__)
-    cli.add_argument("action", choices=("list", "fields", "preview", "apply"))
+    cli.add_argument("action", choices=("list", "fields", "catalog", "preview", "apply"))
     cli.add_argument("--map", required=True)
     cli.add_argument("--actors", required=True)
     cli.add_argument("--source-sha256", required=True)
