@@ -94,6 +94,42 @@ def compare_thief_reference(dx2_package: Any, *, expected_sha256: str) -> dict:
         original = strict["table_ranges"][region]
         if type(value) is not int or value != original["offset"] + original["length"]:
             raise ReaderConcordanceError("Thief reference table end disagreement")
+    # A byte-range agreement is insufficient when the two readers disagree
+    # about which native names/classes/owners those ranges represent. Check
+    # symbol tables on the same SHA-pinned source without returning names.
+    for index, (dx_name, t3_name) in enumerate(zip(dx2_package.names, t3.names)):
+        if (type(dx_name) is not str or type(t3_name) is not str
+                or dx_name != t3_name):
+            raise ReaderConcordanceError("package name table disagreement")
+    import_fields = (
+        ("class_package", "class_package", str),
+        ("class", "class_name", str),
+        ("outer", "package", int),
+        ("name", "name", str),
+    )
+    for dx_import, t3_import in zip(dx2_package.imports, t3.imports):
+        if type(dx_import) is not dict:
+            raise ReaderConcordanceError("invalid DX2 import table record")
+        for dx_field, t3_field, kind in import_fields:
+            left = dx_import.get(dx_field)
+            right = getattr(t3_import, t3_field, None)
+            if type(left) is not kind or type(right) is not kind or left != right:
+                raise ReaderConcordanceError("package import symbol/reference disagreement")
+    export_fields = (
+        ("name", "name", str),
+        ("class_ref", "class_ref", int),
+        ("super", "super_ref", int),
+        ("outer", "package", int),
+        ("flags", "flags", int),
+    )
+    for dx_export, t3_export in zip(dx2_package.exports, t3.exports):
+        if type(dx_export) is not dict:
+            raise ReaderConcordanceError("invalid DX2 export table record")
+        for dx_field, t3_field, kind in export_fields:
+            left = dx_export.get(dx_field)
+            right = getattr(t3_export, t3_field, None)
+            if type(left) is not kind or type(right) is not kind or left != right:
+                raise ReaderConcordanceError("package export symbol/reference disagreement")
     expected_owners = {e["export"] - 1: (e["offset"], e["length"])
                        for e in strict["candidate_export_envelopes"]}
     empty = 0
@@ -124,6 +160,10 @@ def compare_thief_reference(dx2_package: Any, *, expected_sha256: str) -> dict:
         "zero_length_exports_not_owners": empty,
         "dx2_legacy_and_strict_concordant": True,
         "thief3_reference_table_concordant": True,
+        "package_symbol_tables_concordant": True,
+        "matched_name_records": counts["names"],
+        "matched_import_records": counts["imports"],
+        "matched_export_identity_records": counts["exports"],
         "source_original_modified": False,
         "export_envelopes_independently_verified": False,
         "native_bsp_leaf_zone_decoded": False,
