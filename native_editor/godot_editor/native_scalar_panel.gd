@@ -276,7 +276,9 @@ func accept_original_fields(doc: Dictionary) -> bool:
             return false
         var name := str(item["property"])
         var old: Variant = item.get("source_value")
-        if names.has(name):
+        if names.has(name) or name.to_lower() in [
+            "location", "rotation", "drawscale3d", "collisionradius",
+            "collisionheight", "physics", "mesh", "staticmesh", "brush"]:
             return false
         if item["type"] == "int32":
             if not _int_in_range(old, -2147483648, 2147483647):
