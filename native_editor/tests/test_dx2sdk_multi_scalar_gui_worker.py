@@ -31,12 +31,12 @@ def invented_two_actor_numeric_gmp():
     ix={name:i for i,name in enumerate(names)}
     def payload(x,y,z,first_int,other_name,other_kind,other_value):
         nested=b"".join(
-            ci(ix[axis])+b"\\x24"+struct.pack("<f",float(value))
+            ci(ix[axis])+b"\x24"+struct.pack("<f",float(value))
             for axis,value in zip("XYZ",(x,y,z))
         )+ci(0)
-        loc=(ci(ix["Location"])+b"\\x7a"+ci(ix["Vector"])
+        loc=(ci(ix["Location"])+b"\x7a"+ci(ix["Vector"])
              +struct.pack("<I",len(nested))+nested)
-        first=ci(ix["FixtureFlag"])+b"\\x22"+struct.pack("<i",first_int)
+        first=ci(ix["FixtureFlag"])+b"\x22"+struct.pack("<i",first_int)
         other=ci(ix[other_name])+bytes([0x20+other_kind])+(
             struct.pack("<f",float(other_value)) if other_kind==4
             else struct.pack("<i",other_value))
@@ -45,7 +45,7 @@ def invented_two_actor_numeric_gmp():
     actor2=payload(400,500,600,43210,"FixtureInt2",2,44)
     names_blob=b"".join(
         ci(len(name.encode("ascii"))+1)+name.encode("ascii")
-        +b"\\x00"+struct.pack("<I",0) for name in names)
+        +b"\x00"+struct.pack("<I",0) for name in names)
     imports=(ci(0)+ci(ix["Class"])+struct.pack("<i",0)
              +ci(ix["StaticMeshActor"]))
     name_offset=76
