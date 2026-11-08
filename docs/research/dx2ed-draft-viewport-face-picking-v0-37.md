@@ -36,6 +36,17 @@ inverse. Six faces use the same order as Inspector. It explicitly gates:
 A ray originating inside a box selects the first exiting face. The returned
 result is the face index and a world-space hit for editor inspection only.
 
+## Selected face visualization
+
+The selected face receives a source-independent **four-edge yellow outline**
+(8 line vertices) parented only to the editor-created draft mesh. The
+overlay is never included in original imported GLB geometry, actor/source
+dictionaries, private brush specifications, native GMP, or collision. It
+updates with local face choice and brush dimensions, follows rotated and
+scaled transforms by normal parent inheritance, and disappears on selection
+change or temporary clone destruction. No face or vertex data from retail
+DX2 BSP is read or modified to build this outline.
+
 ## Verification
 
 A new Godot source-only smoke instantiates the actual DX2Ed UI and checks
