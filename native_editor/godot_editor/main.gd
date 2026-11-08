@@ -7686,6 +7686,45 @@ func _save_prop_draft() -> void:
     output.close()
     status_label.text = "Saved " + str(moved.size()) + " moved props, " + str(copies.size()) + " copies and " + str(document["property_edits"].size()) + " actor property overrides (not GMP)."
 
+## Reject missing, ambiguous and unbuildable private draft records BEFORE clearing
+## current editor state. Source-only validation; never authorizes native GMP writes.
+func _draft_record_preflight(moved: Array, copies: Array) -> String:
+    var seen_moves := {}
+    for entry in moved:
+        if typeof(entry) != TYPE_DICTIONARY or typeof(entry.get("actor", null)) != TYPE_STRING:
+            return "Invalid moved actor identity."
+        var name: String = entry["actor"]
+        if seen_moves.has(name) or not actors_by_name.has(name) or not meshes_by_actor.has(name):
+            return "Duplicate or unmatched moved actor."
+        var node: Variant = meshes_by_actor[name]
+        if not is_instance_valid(node) or not (node is MeshInstance3D):
+            return "Moved actor has no live preview mesh."
+        seen_moves[name] = true
+    var seen_copies := {}
+    for entry in copies:
+        if typeof(entry) != TYPE_DICTIONARY or typeof(entry.get("name", null)) != TYPE_STRING or typeof(entry.get("from_actor", null)) != TYPE_STRING:
+            return "Invalid draft copy identity."
+        var name: String = entry["name"]
+        var source: String = entry["from_actor"]
+        var suffix := name.trim_prefix("DraftProp_")
+        if (not name.begins_with("DraftProp_") or not suffix.is_valid_int()
+            or int(suffix) < 1 or seen_copies.has(name)):
+            return "Duplicate or invalid draft copy name."
+        if not _draft_source_is_valid(source):
+            return "Draft copy source is unavailable."
+        if source.begins_with("AssetMesh::"):
+            # Existing catalog entry alone is insufficient to reconstruct a copy.
+            # A local preview GLB must be available before mutating editor state.
+            if not _load_asset_mesh(source.trim_prefix("AssetMesh::")):
+                return "Draft asset preview mesh is unavailable."
+        elif actors_by_name.has(source):
+            var node: Variant = meshes_by_actor.get(source, null)
+            if not is_instance_valid(node) or not (node is MeshInstance3D) or node.mesh == null:
+                return "Draft original source mesh is unavailable."
+        seen_copies[name] = true
+    return ""
+
+
 func _load_prop_draft(silent_if_absent: bool = false) -> void:
     var path := _draft_file_path()
     if path.is_empty() or not FileAccess.file_exists(path):
@@ -7730,6 +7769,10 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
         if typeof(prov) != TYPE_DICTIONARY or not _valid_template_provenance(prov, str(entry.get("from_actor", ""))):
             status_label.text = "Draft has an untrusted class template attribution; nothing loaded."
             return
+    var record_error := _draft_record_preflight(moved, copies)
+    if not record_error.is_empty():
+        status_label.text = "Prop draft refused: " + record_error + " Nothing loaded."
+        return
     var loaded_properties: Variant = _validate_property_edits(property_rows)
     if loaded_properties == null:
         status_label.text = "Prop draft has invalid or unmatched actor properties; nothing loaded."
