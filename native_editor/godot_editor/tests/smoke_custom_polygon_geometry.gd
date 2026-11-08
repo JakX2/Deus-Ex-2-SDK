@@ -1,5 +1,5 @@
 extends SceneTree
-## DX2Ed v0.38 custom polygon extrusion and real-editor authoring smoke.
+## DX2Ed v0.39 custom polygon viewport vertex editing and private round-trip smoke.
 ## Uses invented assets and an isolated user:// draft. No retail DX2 GMP.
 const Editor = preload("res://main.gd")
 const Brush = preload("res://brush_geometry.gd")
@@ -12,7 +12,7 @@ func _initialize() -> void:
 
 
 func _fail(message: String) -> void:
-    push_error("DX2Ed v0.38 custom polygon geometry: " + message)
+    push_error("DX2Ed v0.39 custom polygon viewport vertex editing: " + message)
     quit(1)
 
 
@@ -130,6 +130,7 @@ func _run() -> void:
     # transaction. Overlay nodes must stay outside actor indexing.
     editor._set_editor_view_mode(Guides.TOP)
     editor._grid_spacing_changed(0.25)
+    editor.view_container.stretch = false
     editor.view_container.size = Vector2(400, 360)
     editor.world_view.size = Vector2i(400, 360)
     editor._refresh_polygon_vertex_handles()
@@ -163,6 +164,9 @@ func _run() -> void:
     var original_drag_z := float(original_drag_outline[0][1])
     var history_before_drag := editor.undo_stack.size()
     editor._set_editor_view_mode(Guides.FRONT)
+    if editor.polygon_vertex_outline_node.mesh == null:
+        _fail("Hidden polygon overlay retained a null mesh resource")
+        return
     if editor._begin_polygon_vertex_drag_at(start_mouse):
         _fail("Front (XY) view unexpectedly enabled XZ footprint vertex drag")
         return
@@ -175,6 +179,19 @@ func _run() -> void:
         return
     if editor.polygon_vertex_selector.selected != 0:
         _fail("Viewport handle click did not select the matching Inspector corner")
+        return
+    var outside_world := drag_node.to_global(Vector3(
+        1.5 * drag_size.x * 0.5,
+        drag_size.y * 0.5 + 0.035,
+        -drag_size.z * 0.5))
+    var outside_pixels: Vector2 = editor.camera.unproject_position(outside_world)
+    var outside_mouse: Vector2 = (
+        outside_pixels * editor.view_container.size / Vector2(editor.world_view.size))
+    editor._apply_polygon_vertex_drag_at(outside_mouse)
+    var after_rejected_drag: Array = editor.draft_brush_specs["DraftProp_38"]["outline"]
+    if (not is_equal_approx(float(after_rejected_drag[0][0]), original_drag_x)
+        or not is_equal_approx(float(after_rejected_drag[0][1]), original_drag_z)):
+        _fail("Out-of-bounds viewport drag replaced the last valid Polygon preview")
         return
     editor._apply_polygon_vertex_drag_at(target_mouse)
     editor._finish_polygon_vertex_drag()
@@ -278,5 +295,5 @@ func _run() -> void:
             DirAccess.remove_absolute(path+suffix)
     DirAccess.remove_absolute(source)
     editor.queue_free()
-    print("DX2Ed v0.38 custom polygon/concave geometry real Godot authoring PASS")
+    print("DX2Ed v0.39 snapped polygon viewport vertex drag and private round-trip PASS")
     quit(0)

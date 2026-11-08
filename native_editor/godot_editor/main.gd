@@ -2222,6 +2222,7 @@ func _make_world() -> void:
     polygon_vertex_outline_node = MeshInstance3D.new()
     polygon_vertex_outline_node.name = "DX2Ed_PolygonFootprintOutline_EDITOR_ONLY"
     polygon_vertex_outline_node.set_meta("editor_only", true)
+    polygon_vertex_outline_node.mesh = ImmediateMesh.new()
     polygon_vertex_outline_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     polygon_vertex_outline_node.visible = false
     polygon_vertex_outline_material = StandardMaterial3D.new()
@@ -7049,7 +7050,7 @@ func _clear_polygon_vertex_handles() -> void:
     if is_instance_valid(polygon_vertex_handle_root):
         polygon_vertex_handle_root.visible = false
     if is_instance_valid(polygon_vertex_outline_node):
-        polygon_vertex_outline_node.mesh = null
+        polygon_vertex_outline_node.mesh = ImmediateMesh.new()
         polygon_vertex_outline_node.visible = false
 
 
@@ -7105,12 +7106,12 @@ func _refresh_polygon_vertex_handles() -> void:
     if is_instance_valid(camera) and is_instance_valid(world_view):
         var viewport_height := maxf(1.0, float(world_view.size.y))
         if camera.projection == Camera3D.PROJECTION_ORTHOGONAL:
-            handle_radius = clampf(camera.size * 6.0 / viewport_height, 0.05, 1.25)
+            handle_radius = clampf(camera.size * 6.0 / viewport_height, 0.002, 1.25)
         else:
             var distance := camera.global_position.distance_to(node.global_position)
             handle_radius = clampf(
                 distance * tan(deg_to_rad(camera.fov * 0.5)) * 6.0 / viewport_height,
-                0.05, 1.25)
+                0.002, 1.25)
     var handle_scale_factor := handle_radius / 0.13
     var transform_changed := polygon_vertex_handles_transform != node.global_transform
     var outline_changed := polygon_vertex_handles_outline != outline
@@ -7303,9 +7304,17 @@ func _apply_polygon_vertex_drag_at(view_mouse_position: Vector2) -> void:
     if size.x <= 0.0 or size.z <= 0.0:
         return
     var candidate: Array = polygon_vertex_drag_outline.duplicate(true)
+    var normalized_x := local_point.x / (size.x * 0.5)
+    var normalized_z := local_point.z / (size.z * 0.5)
+    if (normalized_x < -1.00001 or normalized_x > 1.00001
+        or normalized_z < -1.00001 or normalized_z > 1.00001):
+        status_label.text = (
+            "Corner preview rejected: snapped point falls outside the normalized "
+            + "-1..+1 footprint. The last valid preview is retained.")
+        return
     var row: Array = candidate[polygon_vertex_drag_index].duplicate()
-    row[0] = clampf(local_point.x / (size.x * 0.5), -1.0, 1.0)
-    row[1] = clampf(local_point.z / (size.z * 0.5), -1.0, 1.0)
+    row[0] = clampf(normalized_x, -1.0, 1.0)
+    row[1] = clampf(normalized_z, -1.0, 1.0)
     candidate[polygon_vertex_drag_index] = row
     var updated: Array = CustomPolygon.validate_outline(candidate)
     if updated.is_empty():
