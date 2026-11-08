@@ -317,6 +317,11 @@ var polygon_inspector_panel: VBoxContainer
 var polygon_vertex_selector: OptionButton
 var polygon_vertex_x: SpinBox
 var polygon_vertex_z: SpinBox
+var polygon_surface_selector: OptionButton
+var polygon_surface_preset_selector: OptionButton
+var polygon_surface_uv_controls: Array[SpinBox] = []
+var polygon_surface_slot := 0
+var polygon_uv_preview_texture: Texture2D
 var polygon_selected_name := ""
 var brush_inspector_syncing := false
 # Editor-only top-face handles for the selected private Polygon brush. These
@@ -1632,6 +1637,51 @@ func _make_ui() -> void:
         "Remove selected polygon corner (minimum 3); invalid outlines refused.")
     polygon_remove_button.pressed.connect(_delete_polygon_corner)
     polygon_actions.add_child(polygon_remove_button)
+    var surface_heading := Label.new()
+    surface_heading.text = "Per-surface preview material and UV"
+    polygon_inspector_panel.add_child(surface_heading)
+    var surface_note := Label.new()
+    surface_note.text = (
+        "Top cap, bottom cap and side walls have separate slots. The procedural checker makes "
+        + "UV scale/offset visible; original MatLib shaders and native BSP materials are not written.")
+    surface_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    polygon_inspector_panel.add_child(surface_note)
+    var surface_slot_row := HBoxContainer.new()
+    polygon_inspector_panel.add_child(surface_slot_row)
+    polygon_surface_selector = OptionButton.new()
+    polygon_surface_selector.add_item("Top cap")
+    polygon_surface_selector.add_item("Bottom cap")
+    polygon_surface_selector.add_item("Side walls")
+    polygon_surface_selector.item_selected.connect(_polygon_surface_slot_selected)
+    surface_slot_row.add_child(polygon_surface_selector)
+    polygon_surface_preset_selector = OptionButton.new()
+    for preset in CustomPolygon.SURFACE_PRESETS:
+        polygon_surface_preset_selector.add_item(preset)
+    surface_slot_row.add_child(polygon_surface_preset_selector)
+    var surface_uv_grid := GridContainer.new()
+    surface_uv_grid.columns = 2
+    polygon_inspector_panel.add_child(surface_uv_grid)
+    polygon_surface_uv_controls.clear()
+    for definition in [
+        ["U scale", 0.05, 64.0, 0.05, 1.0],
+        ["V scale", 0.05, 64.0, 0.05, 1.0],
+        ["U offset", -64.0, 64.0, 0.05, 0.0],
+        ["V offset", -64.0, 64.0, 0.05, 0.0]
+    ]:
+        var uv_control := SpinBox.new()
+        uv_control.prefix = str(definition[0]) + " "
+        uv_control.min_value = float(definition[1])
+        uv_control.max_value = float(definition[2])
+        uv_control.step = float(definition[3])
+        uv_control.value = float(definition[4])
+        uv_control.custom_minimum_size.x = 112
+        surface_uv_grid.add_child(uv_control)
+        polygon_surface_uv_controls.append(uv_control)
+    var surface_apply := Button.new()
+    surface_apply.text = "Apply surface style"
+    surface_apply.tooltip_text = "Apply the selected preview preset and UV transform as one undoable private-draft edit."
+    surface_apply.pressed.connect(_apply_polygon_surface_style)
+    polygon_inspector_panel.add_child(surface_apply)
     var property_heading := Label.new()
     property_heading.text = "Source actor details (read-only)"
     inspector_pane.add_child(property_heading)
@@ -6951,15 +7001,150 @@ func _set_brush_spec(name: String, raw: Variant) -> bool:
     if mesh == null:
         return false
     var node: MeshInstance3D = draft_prop_copies[name]
-    node.mesh = mesh
-    var surface_material := StandardMaterial3D.new()
-    surface_material.albedo_color = Color(0.36, 0.72, 0.82, 0.75)
-    surface_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-    surface_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-    node.material_override = surface_material
+    if str(spec["kind"]) == "Polygon":
+        var polygon_mesh := mesh as ArrayMesh
+        if (polygon_mesh == null
+            or polygon_mesh.get_surface_count() != CustomPolygon.SURFACE_SLOTS.size()):
+            return false
+        for surface_index in range(CustomPolygon.SURFACE_SLOTS.size()):
+            var slot: String = CustomPolygon.SURFACE_SLOTS[surface_index]
+            polygon_mesh.surface_set_material(
+                surface_index, _make_polygon_surface_material(spec["surface_style"][slot]))
+        node.mesh = polygon_mesh
+        node.material_override = null
+    else:
+        node.mesh = mesh
+        var surface_material := StandardMaterial3D.new()
+        surface_material.albedo_color = Color(0.36, 0.72, 0.82, 0.75)
+        surface_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+        surface_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+        node.material_override = surface_material
     draft_brush_specs[name] = spec
     pick_faces_by_mesh.clear()
     return true
+
+
+func _polygon_uv_checker_texture() -> Texture2D:
+    if is_instance_valid(polygon_uv_preview_texture):
+        return polygon_uv_preview_texture
+    var image := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+    for y in range(64):
+        for x in range(64):
+            var tile := (int(x / 8) + int(y / 8)) % 2
+            image.set_pixel(x, y,
+                Color(0.88, 0.91, 0.94, 1.0) if tile == 0
+                else Color(0.19, 0.27, 0.35, 1.0))
+    polygon_uv_preview_texture = ImageTexture.create_from_image(image)
+    return polygon_uv_preview_texture
+
+
+func _make_polygon_surface_material(raw: Dictionary) -> StandardMaterial3D:
+    var preset := str(raw.get("preset", "Neutral"))
+    var base_color := Color(0.78, 0.82, 0.86, 1.0)
+    var roughness := 0.82
+    var metallic := 0.0
+    match preset:
+        "Concrete":
+            base_color = Color(0.78, 0.79, 0.77, 1.0)
+            roughness = 0.96
+        "Metal":
+            base_color = Color(0.55, 0.68, 0.82, 1.0)
+            roughness = 0.34
+            metallic = 0.82
+        "Ceramic":
+            base_color = Color(0.94, 0.84, 0.65, 1.0)
+            roughness = 0.22
+            metallic = 0.04
+        "Hazard":
+            base_color = Color(0.98, 0.57, 0.12, 1.0)
+            roughness = 0.68
+            metallic = 0.08
+        _:
+            pass
+    var tint_values: Array = raw.get("tint", [1.0, 1.0, 1.0, 1.0])
+    var tint := Color(float(tint_values[0]), float(tint_values[1]),
+                      float(tint_values[2]), float(tint_values[3]))
+    var material := StandardMaterial3D.new()
+    material.albedo_color = base_color * tint
+    material.albedo_texture = _polygon_uv_checker_texture()
+    material.roughness = roughness
+    material.metallic = metallic
+    material.uv1_scale = Vector3(
+        float(raw["uv_scale"][0]), float(raw["uv_scale"][1]), 1.0)
+    material.uv1_offset = Vector3(
+        float(raw["uv_offset"][0]), float(raw["uv_offset"][1]), 0.0)
+    material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+    material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    return material
+
+
+func _polygon_surface_slot_selected(index: int) -> void:
+    polygon_surface_slot = clampi(index, 0, CustomPolygon.SURFACE_SLOTS.size() - 1)
+    var name := _selected_custom_polygon_name()
+    if not name.is_empty():
+        _refresh_polygon_surface_controls(name)
+
+
+func _refresh_polygon_surface_controls(name: String) -> void:
+    if (polygon_surface_selector == null or polygon_surface_preset_selector == null
+        or polygon_surface_uv_controls.size() != 4 or not draft_brush_specs.has(name)):
+        return
+    var style: Dictionary = CustomPolygon.validate_surface_style(
+        draft_brush_specs[name].get("surface_style", null))
+    if style.is_empty():
+        return
+    var slot_index := clampi(polygon_surface_slot, 0, CustomPolygon.SURFACE_SLOTS.size() - 1)
+    var slot: String = CustomPolygon.SURFACE_SLOTS[slot_index]
+    var row: Dictionary = style[slot]
+    var preset_index := CustomPolygon.SURFACE_PRESETS.find(str(row["preset"]))
+    brush_inspector_syncing = true
+    polygon_surface_preset_selector.select(maxi(0, preset_index))
+    polygon_surface_uv_controls[0].set_value_no_signal(float(row["uv_scale"][0]))
+    polygon_surface_uv_controls[1].set_value_no_signal(float(row["uv_scale"][1]))
+    polygon_surface_uv_controls[2].set_value_no_signal(float(row["uv_offset"][0]))
+    polygon_surface_uv_controls[3].set_value_no_signal(float(row["uv_offset"][1]))
+    brush_inspector_syncing = false
+
+
+func _apply_polygon_surface_style() -> void:
+    if brush_inspector_syncing or polygon_surface_preset_selector == null:
+        return
+    var name := _selected_custom_polygon_name()
+    if name.is_empty() or polygon_surface_uv_controls.size() != 4:
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    var style: Dictionary = CustomPolygon.validate_surface_style(
+        spec.get("surface_style", null))
+    if style.is_empty():
+        status_label.text = "Polygon surface style is invalid; no preview changed."
+        return
+    var slot_index := clampi(polygon_surface_slot, 0, CustomPolygon.SURFACE_SLOTS.size() - 1)
+    var slot: String = CustomPolygon.SURFACE_SLOTS[slot_index]
+    var preset_index := polygon_surface_preset_selector.selected
+    if preset_index < 0 or preset_index >= CustomPolygon.SURFACE_PRESETS.size():
+        return
+    var row: Dictionary = style[slot]
+    row["preset"] = CustomPolygon.SURFACE_PRESETS[preset_index]
+    row["uv_scale"] = [
+        float(polygon_surface_uv_controls[0].value),
+        float(polygon_surface_uv_controls[1].value)]
+    row["uv_offset"] = [
+        float(polygon_surface_uv_controls[2].value),
+        float(polygon_surface_uv_controls[3].value)]
+    style[slot] = row
+    var validated := CustomPolygon.validate_surface_style(style)
+    if validated.is_empty():
+        status_label.text = "Polygon material/UV settings were outside safe bounds."
+        return
+    var before := _capture_edit_state()
+    spec["surface_style"] = validated
+    if _set_brush_spec(name, spec):
+        _record_edit("Set Polygon " + slot + " material/UV", before)
+        _refresh_brush_inspector()
+        _refresh_prop_inspection()
+        status_label.text = (
+            "Applied " + str(validated[slot]["preset"]) + " preview to " + slot
+            + "; UV scale/offset saved in the private draft. No native material changed.")
 
 
 func _refresh_brush_inspector() -> void:
@@ -7033,6 +7218,7 @@ func _refresh_polygon_inspector() -> void:
     polygon_vertex_z.set_value_no_signal(float(outline[wanted][1]))
     polygon_selected_name = name
     brush_inspector_syncing = false
+    _refresh_polygon_surface_controls(name)
 
 
 
