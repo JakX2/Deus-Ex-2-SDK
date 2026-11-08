@@ -1,0 +1,5 @@
+# DX2Ed v0.30: rounded preview brush palette
+
+The Godot Brush tab now offers **Cone** and **Sphere** in addition to Box, Wall, Floor, Stairs and Cylinder. Cone is a closed elliptical 24-sided cone, with X/Z diameters and Y height. Sphere is a closed, fixed 24-longitude by 12-latitude ellipsoid using the existing X/Y/Z dimensions. The existing brush selection, dimension inspector, draft hierarchy, undo, duplicate and private JSON project persistence paths apply without a new binary format. Invalid dimensions, non-finite sizes and non-unit step counts fail closed through the shared brush validator.
+
+The bundled Godot orthographic Windows smoke invokes the actual mesh builder and checks surface vertex counts (144 cone, 1584 ellipsoid) plus malformed-input rejection. This is source-only synthetic verification, not a retail map test. Geometry is editor preview mesh only; it is not native DX2 BSP/CSG, collision, UV unwrap, lightmap cook, actor spawning or game-compatible map export. Original GMP/IBD bytes remain untouched. Exact-head CI must pass before the new feature is considered validated.
