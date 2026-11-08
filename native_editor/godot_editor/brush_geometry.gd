@@ -2,7 +2,7 @@ extends RefCounted
 ## DX2Ed source-only brush primitives. Godot metres, Y-up.
 ## These meshes are NOT Unreal CSG brushes or compiled DX2 BSP.
 
-const TYPES := ["Box", "Wall", "Floor", "Stairs", "Cylinder", "Cone", "Sphere"]
+const TYPES := ["Box", "Wall", "Floor", "Stairs", "Cylinder", "Cone", "Sphere", "Ramp"]
 const MIN_SIZE := 0.05
 const MAX_SIZE := 256.0
 const MAX_STEPS := 64
@@ -17,6 +17,7 @@ static func default_spec(kind: String) -> Dictionary:
         "Cylinder": return {"kind": "Cylinder", "size": [2.0, 3.0, 2.0], "steps": 1}
         "Cone": return {"kind": "Cone", "size": [2.0, 3.0, 2.0], "steps": 1}
         "Sphere": return {"kind": "Sphere", "size": [2.0, 2.0, 2.0], "steps": 1}
+        "Ramp": return {"kind": "Ramp", "size": [3.0, 1.5, 4.0], "steps": 1}
     return {}
 
 
@@ -136,6 +137,27 @@ static func _sphere(st: SurfaceTool, size: Vector3) -> void:
                 _triangle(st, q * scale, u * scale, r * scale, (u - q).cross(r - q).normalized())
 
 
+static func _ramp(st: SurfaceTool, size: Vector3) -> void:
+    # Closed triangular prism, rising from -Z toward +Z. Preview only.
+    var x0 := -size.x * 0.5
+    var x1 := size.x * 0.5
+    var y0 := -size.y * 0.5
+    var y1 := size.y * 0.5
+    var z0 := -size.z * 0.5
+    var z1 := size.z * 0.5
+    var a := Vector3(x0, y0, z0)
+    var b := Vector3(x0, y0, z1)
+    var c := Vector3(x0, y1, z1)
+    var d := Vector3(x1, y0, z0)
+    var e := Vector3(x1, y0, z1)
+    var f := Vector3(x1, y1, z1)
+    _triangle(st, a, b, c, Vector3.LEFT)
+    _triangle(st, d, f, e, Vector3.RIGHT)
+    _quad(st, a, d, e, b)
+    _quad(st, b, e, f, c)
+    _quad(st, a, c, f, d)
+
+
 static func build_mesh(raw: Variant) -> Mesh:
     var spec := validate(raw)
     if spec.is_empty():
@@ -143,7 +165,9 @@ static func build_mesh(raw: Variant) -> Mesh:
     var size := Vector3(spec["size"][0], spec["size"][1], spec["size"][2])
     var st := SurfaceTool.new()
     st.begin(Mesh.PRIMITIVE_TRIANGLES)
-    if spec["kind"] == "Cone":
+    if spec["kind"] == "Ramp":
+        _ramp(st, size)
+    elif spec["kind"] == "Cone":
         _cone(st, size)
     elif spec["kind"] == "Sphere":
         _sphere(st, size)
