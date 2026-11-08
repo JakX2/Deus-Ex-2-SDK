@@ -143,6 +143,26 @@ func _run() -> void:
         "rotation": [0,0,0], "game_properties": [],
     }
     editor.original_mesh_transforms[invented.name] = invented.global_transform
+    # Real editor private draft preflight: malformed identities must never
+    # reach the destructive reset/reconstruction stage.
+    # JSON draft records contain String values; Node.name is a StringName.
+    # Exercise the persisted representation, not the in-memory node type.
+    var actor_id: String = str(invented.name)
+    var valid_move := [{"actor": actor_id}]
+    var valid_copy := [{"name": "DraftProp_1", "from_actor": actor_id}]
+    var preflight_cases := [
+        {"label": "valid original move and draft copy", "moved": valid_move, "copies": valid_copy, "accept": true},
+        {"label": "duplicate original move", "moved": valid_move + valid_move, "copies": [], "accept": false},
+        {"label": "missing original actor", "moved": [{"actor": "missing"}], "copies": [], "accept": false},
+        {"label": "duplicate draft copy", "moved": [], "copies": valid_copy + valid_copy, "accept": false},
+        {"label": "zero draft copy identifier", "moved": [], "copies": [{"name": "DraftProp_0", "from_actor": actor_id}], "accept": false},
+        {"label": "missing draft source", "moved": [], "copies": [{"name": "DraftProp_2", "from_actor": "missing"}], "accept": false},
+    ]
+    for case in preflight_cases:
+        var verdict: String = editor._draft_record_preflight(case["moved"], case["copies"])
+        if verdict.is_empty() != case["accept"]:
+            _fail("Private draft preflight " + case["label"] + ": " + verdict)
+            return
     editor.selected_meshes[invented.name] = invented
     editor.selected_mesh = invented
     var original_preview := invented.global_position
