@@ -7673,7 +7673,7 @@ func _validated_draft_workspace(value: Variant) -> Variant:
 ## write. A successful replacement retains the previous version as .bak.
 ## Only called with a user:// private draft path, never a GMP/IBD path.
 func _write_private_draft_transaction(path: String, payload: String) -> bool:
-    if path.is_empty() or not path.begins_with(ProjectSettings.globalize_path("user://prop_drafts").path_join("")):
+    if path.is_empty() or not path.begins_with(ProjectSettings.globalize_path("user://prop_drafts") + "/") or path.get_extension() != "json":
         return false
     var pending := path + ".pending"
     var backup := path + ".bak"
