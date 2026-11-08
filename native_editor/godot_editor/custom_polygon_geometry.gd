@@ -103,8 +103,8 @@ static func with_moved_vertex(raw: Variant, index: int,
 
 static func with_inserted_vertex(raw: Variant, edge: int) -> Array:
     var rows := validate_outline(raw)
-    if rows.is_empty() or rows.size() >= MAX_VERTICES
-        or edge < 0 or edge >= rows.size():
+    if (rows.is_empty() or rows.size() >= MAX_VERTICES
+        or edge < 0 or edge >= rows.size()):
         return []
     var b: Array = rows[(edge+1) % rows.size()]
     var a: Array = rows[edge]
