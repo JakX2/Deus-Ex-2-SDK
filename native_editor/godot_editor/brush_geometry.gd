@@ -2,7 +2,8 @@ extends RefCounted
 ## DX2Ed source-only brush primitives. Godot metres, Y-up.
 ## These meshes are NOT Unreal CSG brushes or compiled DX2 BSP.
 
-const TYPES := ["Box", "Wall", "Floor", "Stairs", "Cylinder", "Cone", "Sphere", "Ramp"]
+const CustomPolygon = preload("res://custom_polygon_geometry.gd")
+const TYPES := ["Box", "Wall", "Floor", "Stairs", "Cylinder", "Cone", "Sphere", "Ramp", "Polygon"]
 const MIN_SIZE := 0.05
 const MAX_SIZE := 256.0
 const MAX_STEPS := 64
@@ -18,6 +19,9 @@ static func default_spec(kind: String) -> Dictionary:
         "Cone": return {"kind": "Cone", "size": [2.0, 3.0, 2.0], "steps": 1}
         "Sphere": return {"kind": "Sphere", "size": [2.0, 2.0, 2.0], "steps": 1}
         "Ramp": return {"kind": "Ramp", "size": [3.0, 1.5, 4.0], "steps": 1}
+        "Polygon": return {
+            "kind": "Polygon", "size": [4.0, 2.0, 4.0], "steps": 1,
+            "outline": CustomPolygon.default_outline()}
     return {}
 
 
@@ -46,6 +50,11 @@ static func validate(raw: Variant) -> Dictionary:
         return {}
     if kind != "Stairs" and count != 1:
         return {}
+    if kind == "Polygon":
+        var outline: Array = CustomPolygon.validate_outline(raw.get("outline", null))
+        if outline.is_empty():
+            return {}
+        return {"kind": kind, "size": verified, "steps": count, "outline": outline}
     return {"kind": kind, "size": verified, "steps": count}
 
 
@@ -316,6 +325,8 @@ static func build_mesh(raw: Variant) -> Mesh:
     if spec.is_empty():
         return null
     var size := Vector3(spec["size"][0], spec["size"][1], spec["size"][2])
+    if spec["kind"] == "Polygon":
+        return CustomPolygon.build_mesh(size, spec["outline"])
     var st := SurfaceTool.new()
     st.begin(Mesh.PRIMITIVE_TRIANGLES)
     if spec["kind"] == "Ramp":
