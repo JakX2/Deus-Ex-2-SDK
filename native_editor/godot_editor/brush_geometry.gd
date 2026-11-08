@@ -49,6 +49,40 @@ static func validate(raw: Variant) -> Dictionary:
     return {"kind": kind, "size": verified, "steps": count}
 
 
+## Editor-only T3Ed-style *face resize* for axis-aligned draft Box/Wall/Floor.
+## Growing a chosen face by delta enlarges one dimension and displaces its
+## centre by half the delta along its local outward normal. The opposite face
+## stays stationary even after the caller transforms the local offset through
+## the existing preview node's basis (including rotation and scale).
+## Faces: -X, +X, -Y, +Y, -Z, +Z.
+## NO original BSP, CSG, collision or native GMP/IBD writes.
+const FACE_LABELS := ["-X", "+X", "-Y", "+Y", "-Z", "+Z"]
+const FACE_EDIT_KINDS := ["Box", "Wall", "Floor"]
+
+
+static func face_resize(raw: Variant, face: int, delta: float) -> Dictionary:
+    var spec := validate(raw)
+    if (spec.is_empty() or not FACE_EDIT_KINDS.has(str(spec["kind"]))
+        or face < 0 or face >= FACE_LABELS.size()
+        or not is_finite(delta) or is_zero_approx(delta)
+        or abs(delta) > MAX_SIZE):
+        return {}
+    var axis := face / 2
+    var new_size: Array = spec["size"].duplicate()
+    var resized := float(new_size[axis]) + delta
+    if not is_finite(resized) or resized < MIN_SIZE or resized > MAX_SIZE:
+        return {}
+    new_size[axis] = resized
+    spec["size"] = new_size
+    # Every side uses "positive delta = outward".
+    var direction := -1.0 if face % 2 == 0 else 1.0
+    var local_offset := Vector3.ZERO
+    local_offset[axis] = direction * delta * 0.5
+    return {"spec": spec, "center_offset_local": local_offset,
+            "face": FACE_LABELS[face]}
+
+
+
 static func _triangle(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, normal: Vector3) -> void:
     st.set_normal(normal)
     st.set_uv(Vector2(0.0, 0.0))
