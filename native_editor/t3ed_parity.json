@@ -57,7 +57,7 @@
       "title": "Editable level project/source format",
       "status": "partial",
       "phase": 1,
-      "evidence": "DX2Ed persists transform/property and IBD placement designs in private JSON. DX2SDK v0.2 independently generates source-verified original GMP actors.json, and v0.1+ exposes source-SHA-bound editable multi-actor native Location plans. These are private editor/SDK project files, not native level sources or an UnrealEd/T3Ed replacement.",
+      "evidence": "DX2Ed persists transform/property and IBD placement designs in private JSON. DX2SDK v0.2 independently generates source-verified original GMP actors.json, and v0.1+ exposes source-SHA-bound editable multi-actor native Location plans. These are private editor/SDK project files, not native level sources or an UnrealEd/T3Ed replacement.; v0.35 full synthetic project save/reopen smoke covers rotated face-resized brush, original prop preview move and orthographic workspace.",
       "next_step": "Unified authoring project integrating source-verified assets, placements, dialogue and script designs with reversible native writers; GMP/IBD remain authoritative for runtime"
     },
     {
@@ -79,10 +79,10 @@
     {
       "id": "vertex_face",
       "title": "Vertex, face, polygon edit",
-      "status": "missing",
+      "status": "partial",
       "phase": 2,
-      "evidence": "T3Ed ModeVertex/ModeFaceDrag/ModePolygon icons",
-      "next_step": "Reliable original face ownership/UVs, geometry representation"
+      "evidence": "DX2Ed v0.35 editor-only face In/Out on Box/Wall/Floor draft brushes (six local-axis faces) with anchored opposing plane, undo/redo and private JSON project round-trip; source T3Ed ModeFaceDrag reference. Native BSP face/vertex mesh authoring remains missing.",
+      "next_step": "Native DX2 BSP/zone face ownership, editable arbitrary polygons/UVs and collision reconstruction, verified only after real package/runtime tests."
     },
     {
       "id": "materials_uv",
