@@ -36,6 +36,23 @@ DX2 BSP leaf/zone geometry, collision, GameSys or authored map is modified;
 perspective orbit/fly mode remains available. Imported GLB geometry and
 source-original actor identities remain unchanged by switching views.
 
+## v0.35: T3Ed-style draft Brush Face In / Out editing
+
+Create or select an editor-only Box, Wall or Floor draft brush in the
+**Brush** tab, then open its Inspector. Under **Face**, choose one
+local face (-X/+X/-Y/+Y/-Z/+Z) and press **Out** to extend that face
+by the current **Grid m** increment, or **In** to contract it. The
+opposite face stays anchored when the brush is translated, rotated or
+scaled. These changes participate in Ctrl+Z/Ctrl+Y Undo/Redo and the
+existing private project **Save draft / Load draft** workflow.
+
+Other shapes (Ramp, Stairs, Cone, Sphere, Cylinder) remain parameterized
+by size/steps; original imported DX2 BSP faces are read-only. No face
+edits are written into GMP/IBD or compiled to native CSG/physics.
+The packaged Godot test checks a rotated brush, the opposite plane,
+undo/redo, and reopening a private project with a moved original prop
+preview, resized brush and orthographic workspace.
+ 
 ## Get running in Windows 10/11, 64-bit
 
 1. **Extract the entire ZIP** to a normal user-writable directory, e.g. `D:\DX2Ed_Prototype\`. Do not run files directly from inside the ZIP. Do not extract it into your game install or `Content\DX2\Maps`.
