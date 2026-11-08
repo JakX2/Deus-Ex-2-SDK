@@ -212,6 +212,38 @@ func _run() -> void:
         or editor.editor_view_mode_select.selected != 0):
         _fail("Perspective restore leaked grid or toolbar state")
         return
+    # Real private project write path: stage, replace, retain previous version,
+    # and fail closed on an interrupted .pending file without touching the draft.
+    var draft_dir := ProjectSettings.globalize_path("user://prop_drafts")
+    if DirAccess.make_dir_recursive_absolute(draft_dir) != OK:
+        _fail("Could not create isolated private draft smoke directory")
+        return
+    var draft_path := draft_dir.path_join("synthetic_transaction_smoke.json")
+    for suffix in ["", ".bak", ".pending"]:
+        if FileAccess.file_exists(draft_path + suffix):
+            DirAccess.remove_absolute(draft_path + suffix)
+    if not editor._write_private_draft_transaction(draft_path, "draft-1"):
+        _fail("Initial private draft transactional save failed")
+        return
+    if not editor._write_private_draft_transaction(draft_path, "draft-2"):
+        _fail("Second private draft transactional save failed")
+        return
+    var current := FileAccess.get_file_as_string(draft_path)
+    var previous := FileAccess.get_file_as_string(draft_path + ".bak")
+    if current != "draft-2" or previous != "draft-1":
+        _fail("Private draft replacement or previous-version recovery failed")
+        return
+    var interrupted := FileAccess.open(draft_path + ".pending", FileAccess.WRITE)
+    if interrupted == null:
+        _fail("Could not create synthetic interrupted draft")
+        return
+    interrupted.store_string("unfinished")
+    interrupted.close()
+    if editor._write_private_draft_transaction(draft_path, "draft-3") or FileAccess.get_file_as_string(draft_path) != current:
+        _fail("Interrupted private draft save overwrote existing document")
+        return
+    for suffix in ["", ".bak", ".pending"]:
+        DirAccess.remove_absolute(draft_path + suffix)
     editor.queue_free()
     root.queue_free()
     print("DX2Ed v0.28 T3Ed-style orthographic viewport/grid smoke PASS")

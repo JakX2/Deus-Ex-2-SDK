@@ -7668,6 +7668,49 @@ func _validated_draft_workspace(value: Variant) -> Variant:
     return {"view_mode": value["view_mode"], "grid_step": step, "grid_enabled": value["grid_enabled"]}
 
 
+## Transactional private JSON save. Stage and close the entire new document before
+## moving the previous copy aside. Never truncate an existing draft on a failed
+## write. A successful replacement retains the previous version as .bak.
+## Only called with a user:// private draft path, never a GMP/IBD path.
+func _write_private_draft_transaction(path: String, payload: String) -> bool:
+    if path.is_empty() or not path.begins_with(ProjectSettings.globalize_path("user://prop_drafts") + "/") or path.get_extension() != "json":
+        return false
+    var pending := path + ".pending"
+    var backup := path + ".bak"
+    # Do not silently destroy a pending document from a previous interrupted save.
+    if FileAccess.file_exists(pending):
+        return false
+    var output := FileAccess.open(pending, FileAccess.WRITE)
+    if output == null:
+        return false
+    output.store_string(payload)
+    output.flush()
+    output.close()
+    var staged := FileAccess.open(pending, FileAccess.READ)
+    if staged == null:
+        DirAccess.remove_absolute(pending)
+        return false
+    var verified := staged.get_as_text() == payload
+    staged.close()
+    if not verified:
+        DirAccess.remove_absolute(pending)
+        return false
+    var had_original := FileAccess.file_exists(path)
+    if had_original:
+        # Existing backup is superseded only after the new payload is staged.
+        if FileAccess.file_exists(backup) and DirAccess.remove_absolute(backup) != OK:
+            DirAccess.remove_absolute(pending)
+            return false
+        if DirAccess.rename_absolute(path, backup) != OK:
+            DirAccess.remove_absolute(pending)
+            return false
+    if DirAccess.rename_absolute(pending, path) != OK:
+        if had_original:
+            DirAccess.rename_absolute(backup, path)
+        return false
+    return true
+
+
 func _save_prop_draft() -> void:
     var path := _draft_file_path()
     if path.is_empty() or scene_root == null:
@@ -7699,12 +7742,9 @@ func _save_prop_draft() -> void:
         "workspace": {"view_mode": editor_view_mode, "grid_step": ortho_grid_step,
                       "grid_enabled": ortho_grid_enabled}
     }
-    var output := FileAccess.open(path, FileAccess.WRITE)
-    if output == null:
-        status_label.text = "Unable to write private draft: " + path
+    if not _write_private_draft_transaction(path, JSON.stringify(document, "  ")):
+        status_label.text = "Private draft save failed; existing draft preserved: " + path
         return
-    output.store_string(JSON.stringify(document, "  "))
-    output.close()
     status_label.text = "Saved " + str(moved.size()) + " moved props, " + str(copies.size()) + " copies and " + str(document["property_edits"].size()) + " actor property overrides (not GMP)."
 
 ## Reject missing, ambiguous and unbuildable private draft records BEFORE clearing
