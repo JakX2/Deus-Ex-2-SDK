@@ -143,6 +143,18 @@ func _run() -> void:
         "rotation": [0,0,0], "game_properties": [],
     }
     editor.original_mesh_transforms[invented.name] = invented.global_transform
+    # Real editor private draft preflight: malformed identities must never
+    # reach the destructive reset/reconstruction stage.
+    var valid_move := [{"actor": invented.name}]
+    var valid_copy := [{"name": "DraftProp_1", "from_actor": invented.name}]
+    if (not editor._draft_record_preflight(valid_move, valid_copy).is_empty()
+        or editor._draft_record_preflight(valid_move + valid_move, []).is_empty()
+        or editor._draft_record_preflight([{"actor": "missing"}], []).is_empty()
+        or editor._draft_record_preflight([], valid_copy + valid_copy).is_empty()
+        or editor._draft_record_preflight([], [{"name": "DraftProp_0", "from_actor": invented.name}]).is_empty()
+        or editor._draft_record_preflight([], [{"name": "DraftProp_2", "from_actor": "missing"}]).is_empty()):
+        _fail("Private draft preflight accepted missing/duplicate records or rejected valid records")
+        return
     editor.selected_meshes[invented.name] = invented
     editor.selected_mesh = invented
     var original_preview := invented.global_position
