@@ -1652,11 +1652,13 @@ func _make_ui() -> void:
     polygon_surface_selector.add_item("Top cap")
     polygon_surface_selector.add_item("Bottom cap")
     polygon_surface_selector.add_item("Side walls")
+    polygon_surface_selector.select(0)
     polygon_surface_selector.item_selected.connect(_polygon_surface_slot_selected)
     surface_slot_row.add_child(polygon_surface_selector)
     polygon_surface_preset_selector = OptionButton.new()
     for preset in CustomPolygon.SURFACE_PRESETS:
         polygon_surface_preset_selector.add_item(preset)
+    polygon_surface_preset_selector.select(0)
     surface_slot_row.add_child(polygon_surface_preset_selector)
     var surface_uv_grid := GridContainer.new()
     surface_uv_grid.columns = 2
