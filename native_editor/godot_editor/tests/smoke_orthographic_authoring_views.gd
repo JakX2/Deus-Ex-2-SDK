@@ -222,15 +222,15 @@ func _run() -> void:
     for suffix in ["", ".bak", ".pending"]:
         if FileAccess.file_exists(draft_path + suffix):
             DirAccess.remove_absolute(draft_path + suffix)
-    if not editor._write_private_draft_transaction(draft_path, "{\\"draft\\":1}"):
+    if not editor._write_private_draft_transaction(draft_path, "draft-1"):
         _fail("Initial private draft transactional save failed")
         return
-    if not editor._write_private_draft_transaction(draft_path, "{\\"draft\\":2}"):
+    if not editor._write_private_draft_transaction(draft_path, "draft-2"):
         _fail("Second private draft transactional save failed")
         return
     var current := FileAccess.get_file_as_string(draft_path)
     var previous := FileAccess.get_file_as_string(draft_path + ".bak")
-    if current != "{\\"draft\\":2}" or previous != "{\\"draft\\":1}":
+    if current != "draft-2" or previous != "draft-1":
         _fail("Private draft replacement or previous-version recovery failed")
         return
     var interrupted := FileAccess.open(draft_path + ".pending", FileAccess.WRITE)
@@ -239,7 +239,7 @@ func _run() -> void:
         return
     interrupted.store_string("unfinished")
     interrupted.close()
-    if editor._write_private_draft_transaction(draft_path, "{\\"draft\\":3}") or FileAccess.get_file_as_string(draft_path) != current:
+    if editor._write_private_draft_transaction(draft_path, "draft-3") or FileAccess.get_file_as_string(draft_path) != current:
         _fail("Interrupted private draft save overwrote existing document")
         return
     for suffix in ["", ".bak", ".pending"]:
