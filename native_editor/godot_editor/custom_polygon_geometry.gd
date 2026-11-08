@@ -108,9 +108,22 @@ static func with_inserted_vertex(raw: Variant, edge: int) -> Array:
         return []
     var b := rows[(edge+1) % rows.size()]
     var a := rows[edge]
-    var midpoint := [0.5 * (float(a[0]) + float(b[0])),
-                     0.5 * (float(a[1]) + float(b[1]))]
-    rows.insert(edge+1, midpoint)
+    # Add an editable corner slightly INSIDE the original edge; this
+    # avoids a degenerate collinear triangle during initial triangulation.
+    # A narrow/concave polygon can reject it rather than introduce a cut.
+    var p := Vector2(float(a[0]),float(a[1]))
+    var q := Vector2(float(b[0]),float(b[1]))
+    var edge_vector := q - p
+    if edge_vector.length_squared() < MIN_EDGE_LENGTH * MIN_EDGE_LENGTH:
+        return []
+    var packed := PackedVector2Array()
+    for row in rows:
+        packed.append(Vector2(float(row[0]),float(row[1])))
+    var inward := Vector2(-edge_vector.y,edge_vector.x).normalized()
+    if signed_area(packed) < 0.0:
+        inward = -inward
+    var point := (p+q)*0.5 + inward * minf(0.08, edge_vector.length()*0.125)
+    rows.insert(edge+1, [point.x,point.y])
     return validate_outline(rows)
 
 
