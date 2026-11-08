@@ -306,6 +306,10 @@ var brush_steps_control: SpinBox
 var brush_inspector_panel: VBoxContainer
 var brush_inspector_sizes: Array[SpinBox] = []
 var brush_inspector_steps: SpinBox
+var brush_face_controls: HBoxContainer
+var brush_face_selector: OptionButton
+var brush_face_inward_button: Button
+var brush_face_outward_button: Button
 var brush_inspector_syncing := false
 var next_prop_copy_id := 1
 # In-memory session history. Each operation stores only edited actor transforms
@@ -1519,6 +1523,31 @@ func _make_ui() -> void:
     brush_inspector_steps.step = 1
     brush_inspector_steps.value_changed.connect(_change_brush_steps)
     brush_inspector_panel.add_child(brush_inspector_steps)
+    # Original T3Ed ModeFaceDrag-inspired workflow: adjust a single face of
+    # an editor-only box/wall/floor while its opposite face stays anchored.
+    # Never edits native BSP faces, imported map meshes or GMP data.
+    brush_face_controls = HBoxContainer.new()
+    brush_face_controls.visible = false
+    brush_inspector_panel.add_child(brush_face_controls)
+    var face_title := Label.new()
+    face_title.text = "Face"
+    brush_face_controls.add_child(face_title)
+    brush_face_selector = OptionButton.new()
+    brush_face_selector.tooltip_text = "Choose local draft brush face, not original DX2 BSP geometry."
+    for face_label in BrushGeometry.FACE_LABELS:
+        brush_face_selector.add_item(face_label)
+    brush_face_selector.custom_minimum_size.x = 65
+    brush_face_controls.add_child(brush_face_selector)
+    brush_face_inward_button = Button.new()
+    brush_face_inward_button.text = "In"
+    brush_face_inward_button.tooltip_text = "Move this draft face inward by Grid m; preserve opposite face. Ctrl+Z to undo."
+    brush_face_inward_button.pressed.connect(_change_brush_face.bind(-1.0))
+    brush_face_controls.add_child(brush_face_inward_button)
+    brush_face_outward_button = Button.new()
+    brush_face_outward_button.text = "Out"
+    brush_face_outward_button.tooltip_text = "Move this draft face outward by Grid m; preserve opposite face. Ctrl+Z to undo."
+    brush_face_outward_button.pressed.connect(_change_brush_face.bind(1.0))
+    brush_face_controls.add_child(brush_face_outward_button)
     var property_heading := Label.new()
     property_heading.text = "Source actor details (read-only)"
     inspector_pane.add_child(property_heading)
@@ -6829,7 +6858,52 @@ func _refresh_brush_inspector() -> void:
         brush_inspector_sizes[axis].set_value_no_signal(float(spec["size"][axis]))
     brush_inspector_steps.set_value_no_signal(float(spec["steps"]))
     brush_inspector_steps.editable = spec["kind"] == "Stairs"
+    if brush_face_controls != null:
+        brush_face_controls.visible = BrushGeometry.FACE_EDIT_KINDS.has(str(spec["kind"]))
     brush_inspector_syncing = false
+
+
+func _change_brush_face(side: float) -> void:
+    # Only a single editor-created box/wall/floor brush. Never pick a native
+    # BSP triangle or move an imported original StaticMeshActor through here.
+    var nodes := _selection_nodes()
+    if nodes.size() != 1 or brush_face_selector == null:
+        return
+    var node: MeshInstance3D = nodes[0]
+    var name := str(node.name)
+    if (not draft_brush_specs.has(name)
+        or not draft_prop_copies.has(name)
+        or str(draft_prop_sources.get(name, "")) != "Brush::" + str(draft_brush_specs[name].get("kind", ""))):
+        return
+    var step := float(ortho_grid_step)
+    if not is_finite(step) or step < 0.25 or step > 64.0:
+        return
+    if side != -1.0 and side != 1.0:
+        return
+    var face := brush_face_selector.selected
+    var result: Dictionary = BrushGeometry.face_resize(
+        draft_brush_specs[name], face, side * step)
+    if result.is_empty():
+        status_label.text = "Face resize refused: invalid dimension or preview-only brush type."
+        return
+    var before := _capture_edit_state()
+    # Local face center offset follows the preview's existing basis, so even
+    # rotated/scaled draft brushes keep the *opposite local face* in place.
+    var world_offset: Vector3 = node.global_transform.basis * result["center_offset_local"]
+    if not world_offset.is_finite():
+        status_label.text = "Face resize refused: nonfinite preview transform."
+        return
+    if not _set_brush_spec(name, result["spec"]):
+        status_label.text = "Face resize refused: invalid preview brush."
+        return
+    node.global_position += world_offset
+    _refresh_prop_inspection()
+    _record_edit("Face " + str(result["face"]) + " " + (
+        "out" if side > 0.0 else "in") + " (draft only)", before)
+    status_label.text = (
+        "Resized draft face " + str(result["face"]) + " by "
+        + str(side * step) + " m. Opposite face fixed; Undo available. "
+        + "Original DX2 GMP/BSP unchanged.")
 
 
 func _change_brush_dimension(value: float, axis: int) -> void:
