@@ -67,9 +67,9 @@ static func validate_outline(raw: Variant) -> Array:
                 return []
             if not is_finite(float(v)) or abs(float(v)) > 1.0:
                 return []
-        var v := Vector2(float(entry[0]),float(entry[1]))
-        points.append(v)
-        rows.append([v.x,v.y])
+        var corner := Vector2(float(entry[0]),float(entry[1]))
+        points.append(corner)
+        rows.append([corner.x,corner.y])
     var n := points.size()
     for i in range(n):
         var a := points[i]
@@ -152,11 +152,9 @@ static func build_mesh(size: Vector3, raw_outline: Variant) -> Mesh:
     var half := size * 0.5
     for i in range(0, triangles.size(), 3):
         var top: Array[Vector3] = []
-        var bottom: Array[Vector3] = []
         for k in range(3):
             var p := points[triangles[i+k]]
             top.append(Vector3(p.x * half.x, half.y, p.y * half.z))
-            bottom.append(Vector3(p.x * half.x, -half.y, p.y * half.z))
         var a: Vector3 = top[0]
         var b: Vector3 = top[1]
         var c: Vector3 = top[2]
