@@ -2,7 +2,7 @@ extends RefCounted
 ## DX2Ed source-only brush primitives. Godot metres, Y-up.
 ## These meshes are NOT Unreal CSG brushes or compiled DX2 BSP.
 
-const TYPES := ["Box", "Wall", "Floor", "Stairs"]
+const TYPES := ["Box", "Wall", "Floor", "Stairs", "Cylinder"]
 const MIN_SIZE := 0.05
 const MAX_SIZE := 256.0
 const MAX_STEPS := 64
@@ -14,6 +14,7 @@ static func default_spec(kind: String) -> Dictionary:
         "Wall": return {"kind": "Wall", "size": [4.0, 3.0, 0.2], "steps": 1}
         "Floor": return {"kind": "Floor", "size": [4.0, 0.2, 4.0], "steps": 1}
         "Stairs": return {"kind": "Stairs", "size": [2.0, 2.0, 4.0], "steps": 8}
+        "Cylinder": return {"kind": "Cylinder", "size": [2.0, 3.0, 2.0], "steps": 1}
     return {}
 
 
@@ -79,6 +80,24 @@ static func _cuboid(st: SurfaceTool, low: Vector3, high: Vector3) -> void:
     _quad(st, Vector3(x0,y0,z0), Vector3(x1,y0,z0), Vector3(x1,y0,z1), Vector3(x0,y0,z1))
 
 
+static func _cylinder(st: SurfaceTool, size: Vector3) -> void:
+    # Editor-only elliptical cylinder with fixed bounded tessellation.
+    # Closed caps and sides; no native CSG, collision, or UV-unwrapping claim.
+    const SEGMENTS := 24
+    var top_center := Vector3(0.0, size.y * 0.5, 0.0)
+    var bottom_center := Vector3(0.0, -size.y * 0.5, 0.0)
+    for i in range(SEGMENTS):
+        var a := TAU * float(i) / float(SEGMENTS)
+        var b := TAU * float(i + 1) / float(SEGMENTS)
+        var low_a := Vector3(cos(a) * size.x * 0.5, -size.y * 0.5, sin(a) * size.z * 0.5)
+        var low_b := Vector3(cos(b) * size.x * 0.5, -size.y * 0.5, sin(b) * size.z * 0.5)
+        var high_a := Vector3(low_a.x, size.y * 0.5, low_a.z)
+        var high_b := Vector3(low_b.x, size.y * 0.5, low_b.z)
+        _triangle(st, top_center, high_b, high_a, Vector3.UP)
+        _triangle(st, bottom_center, low_a, low_b, Vector3.DOWN)
+        _quad(st, low_a, high_a, high_b, low_b)
+
+
 static func build_mesh(raw: Variant) -> Mesh:
     var spec := validate(raw)
     if spec.is_empty():
@@ -86,7 +105,9 @@ static func build_mesh(raw: Variant) -> Mesh:
     var size := Vector3(spec["size"][0], spec["size"][1], spec["size"][2])
     var st := SurfaceTool.new()
     st.begin(Mesh.PRIMITIVE_TRIANGLES)
-    if spec["kind"] == "Stairs":
+    if spec["kind"] == "Cylinder":
+        _cylinder(st, size)
+    elif spec["kind"] == "Stairs":
         # Rise in +Y, walk in -Z, with complete closed treads.
         # Temporary overlapping step blocks are visual, not CSG union.
         var count: int = spec["steps"]
