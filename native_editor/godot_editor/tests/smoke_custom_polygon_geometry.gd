@@ -1,5 +1,5 @@
 extends SceneTree
-## DX2Ed v0.38 custom polygon extrusion and real-editor authoring smoke.
+## DX2Ed v0.39 custom polygon viewport vertex editing and private round-trip smoke.
 ## Uses invented assets and an isolated user:// draft. No retail DX2 GMP.
 const Editor = preload("res://main.gd")
 const Brush = preload("res://brush_geometry.gd")
@@ -12,7 +12,7 @@ func _initialize() -> void:
 
 
 func _fail(message: String) -> void:
-    push_error("DX2Ed v0.38 custom polygon geometry: " + message)
+    push_error("DX2Ed v0.39 custom polygon viewport vertex editing: " + message)
     quit(1)
 
 
@@ -125,6 +125,110 @@ func _run() -> void:
         _fail("Polygon delete cannot be redone")
         return
 
+    # Exercise the actual Godot editor path: visible handles, Top-view screen
+    # picking, transformed top-plane ray drag, world snapping and one history
+    # transaction. Overlay nodes must stay outside actor indexing.
+    editor._set_editor_view_mode(Guides.TOP)
+    editor._grid_spacing_changed(0.25)
+    editor.view_container.stretch = false
+    editor.view_container.size = Vector2(400, 360)
+    editor.world_view.size = Vector2i(400, 360)
+    editor._refresh_polygon_vertex_handles()
+    if (editor.polygon_vertex_handles.size() != 6
+        or not editor.polygon_vertex_handle_root.visible):
+        _fail("Selected Polygon did not display six viewport corner handles")
+        return
+    var first_handle: MeshInstance3D = editor.polygon_vertex_handles[0]
+    if (not first_handle.get_meta("editor_only", false)
+        or editor.all_mesh_instances.has(first_handle)):
+        _fail("Viewport corner overlay leaked into source actor mesh indexing")
+        return
+    var start_pixels: Vector2 = editor.camera.unproject_position(first_handle.global_position)
+    var start_mouse: Vector2 = (
+        start_pixels * editor.view_container.size / Vector2(editor.world_view.size))
+    var drag_node: MeshInstance3D = editor.draft_prop_copies["DraftProp_38"]
+    var drag_size := Vector3(
+        float(editor.draft_brush_specs["DraftProp_38"]["size"][0]),
+        float(editor.draft_brush_specs["DraftProp_38"]["size"][1]),
+        float(editor.draft_brush_specs["DraftProp_38"]["size"][2]))
+    var target_world := drag_node.to_global(Vector3(
+        -0.75 * drag_size.x * 0.5,
+        drag_size.y * 0.5 + 0.035,
+        -0.75 * drag_size.z * 0.5))
+    var target_pixels: Vector2 = editor.camera.unproject_position(target_world)
+    var target_mouse: Vector2 = (
+        target_pixels * editor.view_container.size / Vector2(editor.world_view.size))
+    var original_drag_outline: Array = (
+        editor.draft_brush_specs["DraftProp_38"]["outline"].duplicate(true))
+    var original_drag_x := float(original_drag_outline[0][0])
+    var original_drag_z := float(original_drag_outline[0][1])
+    var history_before_drag := editor.undo_stack.size()
+    editor._set_editor_view_mode(Guides.FRONT)
+    if editor.polygon_vertex_outline_node.mesh == null:
+        _fail("Hidden polygon overlay retained a null mesh resource")
+        return
+    if editor._begin_polygon_vertex_drag_at(start_mouse):
+        _fail("Front (XY) view unexpectedly enabled XZ footprint vertex drag")
+        return
+    editor._set_editor_view_mode(Guides.TOP)
+    if editor._pick_polygon_vertex_handle_at(start_mouse) != 0:
+        _fail("Top-view screen-space handle picking missed the first corner")
+        return
+    if not editor._begin_polygon_vertex_drag_at(start_mouse):
+        _fail("Could not begin direct viewport drag on the selected Polygon corner")
+        return
+    if editor.polygon_vertex_selector.selected != 0:
+        _fail("Viewport handle click did not select the matching Inspector corner")
+        return
+    var outside_world := drag_node.to_global(Vector3(
+        1.5 * drag_size.x * 0.5,
+        drag_size.y * 0.5 + 0.035,
+        -drag_size.z * 0.5))
+    var outside_pixels: Vector2 = editor.camera.unproject_position(outside_world)
+    var outside_mouse: Vector2 = (
+        outside_pixels * editor.view_container.size / Vector2(editor.world_view.size))
+    editor._apply_polygon_vertex_drag_at(outside_mouse)
+    var after_rejected_drag: Array = editor.draft_brush_specs["DraftProp_38"]["outline"]
+    if (not is_equal_approx(float(after_rejected_drag[0][0]), original_drag_x)
+        or not is_equal_approx(float(after_rejected_drag[0][1]), original_drag_z)):
+        _fail("Out-of-bounds viewport drag replaced the last valid Polygon preview")
+        return
+    editor._apply_polygon_vertex_drag_at(target_mouse)
+    editor._finish_polygon_vertex_drag()
+    var dragged_outline: Array = editor.draft_brush_specs["DraftProp_38"]["outline"]
+    if (is_equal_approx(float(dragged_outline[0][0]), original_drag_x)
+        and is_equal_approx(float(dragged_outline[0][1]), original_drag_z)):
+        _fail("Viewport corner drag did not move the authored footprint")
+        return
+    if editor.undo_stack.size() != history_before_drag + 1:
+        _fail("One viewport drag did not commit exactly one Undo transaction")
+        return
+    var moved_node: MeshInstance3D = editor.draft_prop_copies["DraftProp_38"]
+    var moved_size := Vector3(
+        float(editor.draft_brush_specs["DraftProp_38"]["size"][0]),
+        float(editor.draft_brush_specs["DraftProp_38"]["size"][1]),
+        float(editor.draft_brush_specs["DraftProp_38"]["size"][2]))
+    var moved_world := moved_node.to_global(Vector3(
+        float(dragged_outline[0][0]) * moved_size.x * 0.5,
+        moved_size.y * 0.5 + 0.035,
+        float(dragged_outline[0][1]) * moved_size.z * 0.5))
+    if (not is_equal_approx(snappedf(moved_world.x, 0.25), moved_world.x)
+        or not is_equal_approx(snappedf(moved_world.z, 0.25), moved_world.z)):
+        _fail("Viewport vertex drag did not preserve world X/Z grid snapping")
+        return
+    editor._undo_edit()
+    var undone_outline: Array = editor.draft_brush_specs["DraftProp_38"]["outline"]
+    if (not is_equal_approx(float(undone_outline[0][0]), original_drag_x)
+        or not is_equal_approx(float(undone_outline[0][1]), original_drag_z)):
+        _fail("Viewport vertex drag Undo did not restore the exact original corner")
+        return
+    editor._redo_edit()
+    var redone_outline: Array = editor.draft_brush_specs["DraftProp_38"]["outline"]
+    if (not is_equal_approx(float(redone_outline[0][0]), float(dragged_outline[0][0]))
+        or not is_equal_approx(float(redone_outline[0][1]), float(dragged_outline[0][1]))):
+        _fail("Viewport vertex drag Redo did not restore the snapped corner")
+        return
+
     editor._set_editor_view_mode(Guides.TOP)
     editor._grid_spacing_changed(0.5)
     var path := editor._draft_file_path()
@@ -144,6 +248,8 @@ func _run() -> void:
         or doc["copies"].size() != 1
         or doc["copies"][0]["brush"]["kind"] != "Polygon"
         or doc["copies"][0]["brush"]["outline"].size() != 6
+        or not is_equal_approx(float(doc["copies"][0]["brush"]["outline"][0][0]), float(redone_outline[0][0]))
+        or not is_equal_approx(float(doc["copies"][0]["brush"]["outline"][0][1]), float(redone_outline[0][1]))
         or not is_equal_approx(float(doc["copies"][0]["brush"]["outline"][2][0]),0.75)
         or doc["workspace"]["view_mode"] != Guides.TOP
         or not doc["selection"].has("DraftProp_38")):
@@ -154,6 +260,10 @@ func _run() -> void:
     editor._set_editor_view_mode(Guides.PERSPECTIVE)
     editor._load_prop_draft()
     if (not editor.draft_prop_copies.has("DraftProp_38")
+        or not is_equal_approx(float(
+            editor.draft_brush_specs["DraftProp_38"]["outline"][0][0]), float(redone_outline[0][0]))
+        or not is_equal_approx(float(
+            editor.draft_brush_specs["DraftProp_38"]["outline"][0][1]), float(redone_outline[0][1]))
         or not is_equal_approx(float(
             editor.draft_brush_specs["DraftProp_38"]["outline"][2][0]),0.75)
         or not editor.selected_meshes.has("DraftProp_38")
@@ -172,6 +282,8 @@ func _run() -> void:
     editor._load_prop_draft()
     if (not editor.draft_prop_copies.has("DraftProp_38")
         or not is_equal_approx(float(
+            editor.draft_brush_specs["DraftProp_38"]["outline"][0][0]), float(redone_outline[0][0]))
+        or not is_equal_approx(float(
             editor.draft_brush_specs["DraftProp_38"]["outline"][2][0]),0.75)):
         _fail("Invalid polygon draft destroyed live edited geometry")
         return
@@ -183,5 +295,5 @@ func _run() -> void:
             DirAccess.remove_absolute(path+suffix)
     DirAccess.remove_absolute(source)
     editor.queue_free()
-    print("DX2Ed v0.38 custom polygon/concave geometry real Godot authoring PASS")
+    print("DX2Ed v0.39 snapped polygon viewport vertex drag and private round-trip PASS")
     quit(0)
