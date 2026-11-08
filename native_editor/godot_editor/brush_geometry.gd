@@ -83,6 +83,73 @@ static func face_resize(raw: Variant, face: int, delta: float) -> Dictionary:
 
 
 
+## Local-axis face hit from an actual viewport ray against ONE selected
+## editor-only Box/Wall/Floor draft. Face order matches FACE_LABELS.
+## Ray origin/direction are WORLD values, and the inverse transform handles
+## preview rotation and scale. This is never a native BSP face picker.
+static func pick_draft_face(
+        raw: Variant, world_transform: Transform3D,
+        ray_origin: Vector3, ray_direction: Vector3) -> Dictionary:
+    var spec := validate(raw)
+    if (spec.is_empty() or not FACE_EDIT_KINDS.has(str(spec["kind"]))
+        or not world_transform.origin.is_finite()
+        or not world_transform.basis.x.is_finite()
+        or not world_transform.basis.y.is_finite()
+        or not world_transform.basis.z.is_finite()
+        or abs(world_transform.basis.determinant()) < 0.00000001
+        or not ray_origin.is_finite() or not ray_direction.is_finite()
+        or ray_direction.length_squared() < 0.0000000001):
+        return {}
+    var inverse := world_transform.affine_inverse()
+    var origin := inverse * ray_origin
+    var direction := inverse.basis * ray_direction
+    if not origin.is_finite() or not direction.is_finite():
+        return {}
+    var entry := -INF
+    var leave := INF
+    var entry_face := -1
+    var exit_face := -1
+    for axis in range(3):
+        var half_extent := float(spec["size"][axis]) * 0.5
+        var o := origin[axis]
+        var d := direction[axis]
+        if abs(d) < 0.00000001:
+            if o < -half_extent or o > half_extent:
+                return {}
+            continue
+        var near_t := (-half_extent - o) / d
+        var far_t := (half_extent - o) / d
+        var near_face := axis * 2
+        var far_face := axis * 2 + 1
+        if near_t > far_t:
+            var saved := near_t
+            near_t = far_t
+            far_t = saved
+            near_face = axis * 2 + 1
+            far_face = axis * 2
+        if near_t > entry:
+            entry = near_t
+            entry_face = near_face
+        if far_t < leave:
+            leave = far_t
+            exit_face = far_face
+        if entry > leave:
+            return {}
+    if leave < 0.0:
+        return {}
+    # If the ray originates inside the box, its first visible face is EXIT.
+    var t := entry if entry >= 0.0 else leave
+    var face := entry_face if entry >= 0.0 else exit_face
+    if face < 0 or face >= FACE_LABELS.size() or not is_finite(t):
+        return {}
+    var point := ray_origin + ray_direction * t
+    if not point.is_finite():
+        return {}
+    return {"face_index": face, "label": FACE_LABELS[face],
+            "world_point": point, "ray_parameter": t}
+
+
+
 static func _triangle(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, normal: Vector3) -> void:
     st.set_normal(normal)
     st.set_uv(Vector2(0.0, 0.0))
