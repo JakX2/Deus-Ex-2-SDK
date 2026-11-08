@@ -76,6 +76,18 @@ func _run() -> void:
         or Brush.validate({"kind": "Cylinder", "size": [2.0, 2.0, 2.0], "steps": 2}) != {}):
         _fail("Closed bounded cylinder draft mesh/validation regression")
         return
+    # New draft palette must produce bounded closed meshes through the actual builder.
+    var cone := Brush.build_mesh(Brush.default_spec("Cone"))
+    var sphere := Brush.build_mesh(Brush.default_spec("Sphere"))
+    if (cone == null or sphere == null
+        or cone.get_surface_count() != 1 or sphere.get_surface_count() != 1
+        or cone.surface_get_array_len(0) != 144
+        or sphere.surface_get_array_len(0) != 1584
+        or Brush.validate({"kind": "Cone", "size": [0.0, 2.0, 2.0], "steps": 1}) != {}
+        or Brush.validate({"kind": "Sphere", "size": [2.0, INF, 2.0], "steps": 1}) != {}
+        or Brush.validate({"kind": "Sphere", "size": [2.0, 2.0, 2.0], "steps": 2}) != {}):
+        _fail("Cone/ellipsoid palette mesh or fail-closed validation regression")
+        return
     var editor := Editor.new()
     get_root().add_child(editor)
     if (editor.editor_view_mode_select == null
