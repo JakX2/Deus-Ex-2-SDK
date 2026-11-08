@@ -1,6 +1,7 @@
 extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
 const CustomPolygon = preload("res://custom_polygon_geometry.gd")
+const MatLibBrowser = preload("res://matlib_browser.gd")
 const OrthoGuides = preload("res://orthographic_authoring_guides.gd")
 const PythonRuntime = preload("res://python_runtime.gd")
 const LightColorPanel = preload("res://light_color_panel.gd")
@@ -780,6 +781,10 @@ func _make_ui() -> void:
     var assets_tab := VBoxContainer.new()
     assets_tab.name = "Assets"
     left_tabs.add_child(assets_tab)
+    var materials_tab := MatLibBrowser.new()
+    materials_tab.name = "Materials"
+    materials_tab.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    left_tabs.add_child(materials_tab)
     asset_filter = LineEdit.new()
     asset_filter.placeholder_text = "Search IBD resources..."
     asset_filter.text_changed.connect(func(_text): _refresh_asset_list())

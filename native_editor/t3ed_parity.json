@@ -41,8 +41,8 @@
       "title": "Static mesh and texture browser",
       "status": "partial",
       "phase": 1,
-      "evidence": "0.4.2 DX2Ed asset catalog, searchable Assets tab, async textured GLB preview exporter, placing unused IBD meshes as undoable virtual drafts, local cache and source identity checking",
-      "next_step": "Source-backed MatLib/texture thumbnails and shader-stage interpretation; preview surface overrides remain private editor data."
+      "evidence": "0.4.2 DX2Ed asset catalog, searchable Assets tab, async textured GLB preview exporter, placing unused IBD meshes as undoable virtual drafts, local cache and source identity checking; DX2Ed v0.41 adds a source-backed MatLib/texture browser with nine raw stage slots, resolved-reference filters and SHA-256-verified local PNG thumbnails from user-supplied IBD/Maps ZIP files; read-only",
+      "next_step": "Interpret shader-stage effects/categories and prove source-surface binding semantics before any native BSP material writer."
     },
     {
       "id": "actor_classes",
@@ -89,8 +89,8 @@
       "title": "Material inspector and UV operations",
       "status": "partial",
       "phase": 2,
-      "evidence": "DX2Ed textured IBD rendering; T3Ed TexturePan/TextureRotate icons DX2Ed v0.40: custom Polygon preview mesh now has independent Top/Bottom/Sides material slots, procedural checker texture, per-slot UV scale/offset, Undo/Redo and private JSON persistence; original MatLib shader stages remain metadata-only.",
-      "next_step": "Decode original MatLib stage graphs and IBD texture resources, then prove source-surface binding semantics before any native BSP material writer."
+      "evidence": "DX2Ed textured IBD rendering; T3Ed TexturePan/TextureRotate icons DX2Ed v0.40: custom Polygon preview mesh now has independent Top/Bottom/Sides material slots, procedural checker texture, per-slot UV scale/offset, Undo/Redo and private JSON persistence; original MatLib shader stages remain metadata-only. DX2Ed v0.41 adds source-backed read-only MatLib records, nine stage references and verified decoded texture thumbnails in a separate Materials workspace; shader semantics remain metadata-only.",
+      "next_step": "Interpret DX2 shader-stage graphs and source-surface bindings; keep native BSP material indices disabled until independently verified."
     },
     {
       "id": "lighting",
