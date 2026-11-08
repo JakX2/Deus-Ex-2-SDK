@@ -7649,6 +7649,25 @@ func _native_export_finished(code: int, output: String) -> void:
     status_label.text = "Native GMP Save As refused: " + reason
 
 
+## Editor-only workspace settings are stored alongside private JSON drafts.
+## Never interpreted as source map data or native export instructions.
+func _validated_draft_workspace(value: Variant) -> Variant:
+    if typeof(value) != TYPE_DICTIONARY:
+        return null
+    if value.size() != 3 or not value.has("view_mode") or not value.has("grid_step") or not value.has("grid_enabled"):
+        return null
+    if typeof(value["view_mode"]) != TYPE_STRING or not OrthoGuides.valid_mode(value["view_mode"]):
+        return null
+    if typeof(value["grid_step"]) != TYPE_FLOAT and typeof(value["grid_step"]) != TYPE_INT:
+        return null
+    var step := float(value["grid_step"])
+    if not is_finite(step) or step < 0.25 or step > 64.0:
+        return null
+    if typeof(value["grid_enabled"]) != TYPE_BOOL:
+        return null
+    return {"view_mode": value["view_mode"], "grid_step": step, "grid_enabled": value["grid_enabled"]}
+
+
 func _save_prop_draft() -> void:
     var path := _draft_file_path()
     if path.is_empty() or scene_root == null:
@@ -7676,7 +7695,9 @@ func _save_prop_draft() -> void:
         "read_only_source": true,
         "moved": moved,
         "copies": copies,
-        "property_edits": _serialize_property_edits()
+        "property_edits": _serialize_property_edits(),
+        "workspace": {"view_mode": editor_view_mode, "grid_step": ortho_grid_step,
+                      "grid_enabled": ortho_grid_enabled}
     }
     var output := FileAccess.open(path, FileAccess.WRITE)
     if output == null:
@@ -7773,6 +7794,14 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
     if not record_error.is_empty():
         status_label.text = "Prop draft refused: " + record_error + " Nothing loaded."
         return
+    # Legacy drafts without workspace metadata remain readable.
+    # Refuse malformed workspace records before clearing any editor edits.
+    var workspace: Variant = {}
+    if doc.has("workspace"):
+        workspace = _validated_draft_workspace(doc["workspace"])
+        if workspace == null:
+            status_label.text = "Prop draft has invalid editor workspace settings; nothing loaded."
+            return
     var loaded_properties: Variant = _validate_property_edits(property_rows)
     if loaded_properties == null:
         status_label.text = "Prop draft has invalid or unmatched actor properties; nothing loaded."
@@ -7812,6 +7841,14 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
             var suffix := name.trim_prefix("DraftProp_")
             if suffix.is_valid_int():
                 next_prop_copy_id = max(next_prop_copy_id, int(suffix) + 1)
+    if not workspace.is_empty():
+        ortho_grid_enabled = workspace["grid_enabled"]
+        if ortho_grid_toggle != null:
+            ortho_grid_toggle.set_pressed_no_signal(ortho_grid_enabled)
+        _grid_spacing_changed(workspace["grid_step"])
+        if ortho_grid_spacing_control != null:
+            ortho_grid_spacing_control.set_value_no_signal(ortho_grid_step)
+        _set_editor_view_mode(workspace["view_mode"])
     if not silent_if_absent:
         _record_edit("Load draft", history_before)
     _refresh_hierarchy()

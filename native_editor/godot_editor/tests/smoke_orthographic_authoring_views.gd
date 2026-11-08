@@ -115,6 +115,24 @@ func _run() -> void:
         or editor.camera == null):
         _fail("Real DX2Ed toolbar/camera did not include T3Ed-style views")
         return
+    # Private draft workspace metadata is strict, bounded, and source-independent.
+    var workspace := {"view_mode": Guides.SIDE, "grid_step": 2.0, "grid_enabled": false}
+    var checked: Variant = editor._validated_draft_workspace(workspace)
+    if checked == null or checked["view_mode"] != Guides.SIDE or checked["grid_step"] != 2.0 or checked["grid_enabled"] != false:
+        _fail("Valid private workspace metadata was rejected")
+        return
+    for bad in [
+        {"view_mode": "Unsafe", "grid_step": 2.0, "grid_enabled": true},
+        {"view_mode": Guides.TOP, "grid_step": 0.0, "grid_enabled": true},
+        {"view_mode": Guides.TOP, "grid_step": INF, "grid_enabled": true},
+        {"view_mode": Guides.TOP, "grid_step": 65.0, "grid_enabled": true},
+        {"view_mode": Guides.TOP, "grid_step": 1.0, "grid_enabled": 1},
+        {"view_mode": Guides.TOP, "grid_step": 1.0},
+        {"view_mode": Guides.TOP, "grid_step": 1.0, "grid_enabled": true, "native_writer": true}
+    ]:
+        if editor._validated_draft_workspace(bad) != null:
+            _fail("Invalid private workspace metadata was accepted")
+            return
     editor._set_editor_view_mode(Guides.TOP)
     if (editor.camera.projection != Camera3D.PROJECTION_ORTHOGONAL
         or not editor.ortho_grid_node.visible
