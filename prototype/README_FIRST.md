@@ -58,7 +58,9 @@ preview, resized brush and orthographic workspace.
 Select **one editor-only Box, Wall or Floor** brush. Hold **Alt+Shift** and
 **left-click a visible face** in the Perspective, Top, Front or Side viewport.
 The Inspector's local Face selector will jump to the picked face (-X/+X,
--Y/+Y, -Z/+Z). Click **In** or **Out** to resize that face by Grid m, keeping
+-Y/+Y, -Z/+Z). A **temporary yellow wireframe** outlines the selected draft
+face directly on the brush. It follows resizing and is removed when the brush
+is deselected. Click **In** or **Out** to resize that face by Grid m, keeping
 the opposite plane anchored. Ctrl+Z/Ctrl+Y undo/redo the size change.
 
 The click chooses only a face of your already-selected draft brush. It does
