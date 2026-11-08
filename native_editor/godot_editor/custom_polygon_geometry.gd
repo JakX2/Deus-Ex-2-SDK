@@ -106,8 +106,8 @@ static func with_inserted_vertex(raw: Variant, edge: int) -> Array:
     if rows.is_empty() or rows.size() >= MAX_VERTICES
         or edge < 0 or edge >= rows.size():
         return []
-    var b := rows[(edge+1) % rows.size()]
-    var a := rows[edge]
+    var b: Array = rows[(edge+1) % rows.size()]
+    var a: Array = rows[edge]
     # Add an editable corner slightly INSIDE the original edge; this
     # avoids a degenerate collinear triangle during initial triangulation.
     # A narrow/concave polygon can reject it rather than introduce a cut.
