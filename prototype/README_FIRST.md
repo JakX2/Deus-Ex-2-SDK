@@ -73,6 +73,30 @@ The actual bundled Godot Windows self-test now verifies all six local face
 rays, rotated brushes, miss/invalid gates, the real Inspector selection,
 Undo/Redo, and refusal of imported source-mesh face edits.
 
+## v0.38: Custom concave polygon geometry in DX2Ed
+
+You can now construct **custom 3D polygon brushes** in the editor!
+In **Brush**, select **Polygon**, choose its Size X/Y/Z, and press
+**Create preview brush**. The initial L-shaped footprint has six
+editable corners rather than a box. Select it to open **Custom polygon
+footprint** in Inspector: choose any corner, adjust its local normalized
+**X / Z** coordinates (-1 to +1), or **Insert corner / Delete corner**.
+Size X/Z set physical width/depth and Size Y sets extrusion height.
+All corner editing supports **Undo/Redo** and private **Save draft/Load draft**.
+
+Footprints may be **concave**, allowing custom corridors, platforms and
+nonrectangular floors, with 3 to 32 corners. The outline is triangulated
+into top/bottom caps and connected side faces. Self-intersections,
+duplicate points, invalid/degenerate shapes and excessive geometry
+are refused before the preview mesh changes. Rotation, duplication,
+existing gizmo transforms and private draft persistence still work.
+
+This edits a **Godot preview mesh**, not a native Unreal DX2 BSP/CSG
+brush. There is no new collision cook or playable custom GMP export.
+The Windows executable self-test checks concave mesh construction,
+corner edits, insert/delete, Undo/Redo, full project reopen and
+malicious private draft refusal using invented data only.
+
 ## Get running in Windows 10/11, 64-bit
 
 1. **Extract the entire ZIP** to a normal user-writable directory, e.g. `D:\DX2Ed_Prototype\`. Do not run files directly from inside the ZIP. Do not extract it into your game install or `Content\DX2\Maps`.

@@ -81,8 +81,8 @@
       "title": "Vertex, face, polygon edit",
       "status": "partial",
       "phase": 2,
-      "evidence": "DX2Ed v0.35 editor-only face In/Out on Box/Wall/Floor draft brushes (six local-axis faces) with anchored opposing plane, undo/redo and private JSON project round-trip; source T3Ed ModeFaceDrag reference. Native BSP face/vertex mesh authoring remains missing. v0.37: Alt+Shift viewport click selects local six-axis face of only the already-selected editor-only Box/Wall/Floor, rotation-aware, then Inspector In/Out changes dimensions; real Godot synthetic smoke.",
-      "next_step": "Viewport draggable handles/highlighting; arbitrary polygon face/vertex editing, UV materials, original BSP/zone and collision writer require independent native proof."
+      "evidence": "DX2Ed v0.35 editor-only face In/Out on Box/Wall/Floor draft brushes (six local-axis faces) with anchored opposing plane, undo/redo and private JSON project round-trip; source T3Ed ModeFaceDrag reference. Native BSP face/vertex mesh authoring remains missing. v0.37: Alt+Shift viewport click selects local six-axis face of only the already-selected editor-only Box/Wall/Floor, rotation-aware, then Inspector In/Out changes dimensions; real Godot synthetic smoke. v0.38: custom concave Polygon draft brush with 3-32 editable local footprint vertices, bounded XZ coordinate UI, insertion/deletion, triangulated top/bottom and side preview mesh, Undo/Redo and strict private project save/reopen; synthetic Godot test.",
+      "next_step": "Freeform 3D polyhedral vertex operations, material/UV editing and source-proven native BSP/zone/CSG cooking still missing; custom polygons are Godot drafts only."
     },
     {
       "id": "materials_uv",

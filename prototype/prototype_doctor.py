@@ -53,6 +53,8 @@ REQUIRED = (
     "native_editor/godot_editor/tests/smoke_orthographic_authoring_views.gd",
     "native_editor/godot_editor/tests/smoke_t3ed_face_edit_roundtrip.gd",
     "native_editor/godot_editor/tests/smoke_draft_brush_viewport_face_pick.gd",
+    "native_editor/godot_editor/custom_polygon_geometry.gd",
+    "native_editor/godot_editor/tests/smoke_custom_polygon_geometry.gd",
     "native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_scalar_worker.py",
@@ -142,6 +144,8 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("editor_orthographic_planar_grid_preview") is not True
                 or manifest.get("editor_draft_face_resize_preview") is not True
                 or manifest.get("editor_draft_viewport_face_picking_preview") is not True
+                or manifest.get("editor_custom_polygon_geometry_preview") is not True
+                or manifest.get("editor_custom_polygon_native_csg_writer") is not False
                 or manifest.get("editor_draft_face_resize_native_bsp_writer") is not False
                 or manifest.get("editor_orthographic_source_writes_enabled") is not False
                 or manifest.get("public_dx2sdk_gameplay_runtime_verified") is not False):
