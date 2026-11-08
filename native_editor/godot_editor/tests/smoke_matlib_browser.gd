@@ -133,7 +133,7 @@ func _run() -> void:
     if not browser.load_catalog(tampered_path):
         _fail("Structurally valid tampered catalog should load metadata.")
         return
-    if browser._preview_texture(browser.selected_material.get("stages", stages)[0]) != null:
+    if browser._preview_texture(browser.materials[0]["stages"][0]) != null:
         _fail("Modified thumbnail bytes passed SHA-256 verification.")
         return
 
