@@ -21,7 +21,8 @@ static func default_spec(kind: String) -> Dictionary:
         "Ramp": return {"kind": "Ramp", "size": [3.0, 1.5, 4.0], "steps": 1}
         "Polygon": return {
             "kind": "Polygon", "size": [4.0, 2.0, 4.0], "steps": 1,
-            "outline": CustomPolygon.default_outline()}
+            "outline": CustomPolygon.default_outline(),
+            "surface_style": CustomPolygon.default_surface_style()}
     return {}
 
 
@@ -54,7 +55,12 @@ static func validate(raw: Variant) -> Dictionary:
         var outline: Array = CustomPolygon.validate_outline(raw.get("outline", null))
         if outline.is_empty():
             return {}
-        return {"kind": kind, "size": verified, "steps": count, "outline": outline}
+        var surface_style: Dictionary = CustomPolygon.validate_surface_style(
+            raw.get("surface_style", null))
+        if surface_style.is_empty():
+            return {}
+        return {"kind": kind, "size": verified, "steps": count,
+                "outline": outline, "surface_style": surface_style}
     return {"kind": kind, "size": verified, "steps": count}
 
 

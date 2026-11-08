@@ -1,5 +1,5 @@
 extends SceneTree
-## DX2Ed v0.39 custom polygon viewport vertex editing and private round-trip smoke.
+## DX2Ed v0.40 custom polygon viewport vertex editing and private round-trip smoke.
 ## Uses invented assets and an isolated user:// draft. No retail DX2 GMP.
 const Editor = preload("res://main.gd")
 const Brush = preload("res://brush_geometry.gd")
@@ -12,7 +12,7 @@ func _initialize() -> void:
 
 
 func _fail(message: String) -> void:
-    push_error("DX2Ed v0.39 custom polygon viewport vertex editing: " + message)
+    push_error("DX2Ed v0.40 custom polygon viewport vertex editing: " + message)
     quit(1)
 
 
@@ -22,21 +22,39 @@ func _run() -> void:
         or spec["outline"].size() != 6):
         _fail("Polygon brush missing from validated palette")
         return
-    var mesh := Brush.build_mesh(spec)
-    if (mesh == null or mesh.get_surface_count() != 1
-        or mesh.surface_get_array_len(0) != 60):
-        _fail("L-shaped concave 6-corner polygon did not create a closed mesh")
+    var legacy_spec: Dictionary = spec.duplicate(true)
+    legacy_spec.erase("surface_style")
+    var legacy_valid := Brush.validate(legacy_spec)
+    if (legacy_valid.is_empty()
+        or legacy_valid["surface_style"]["top"]["preset"] != "Concrete"):
+        _fail("Legacy Polygon project without surface style did not receive defaults")
         return
-    var points: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+    var mesh := Brush.build_mesh(spec)
+    if (mesh == null or mesh.get_surface_count() != 3
+        or mesh.surface_get_array_len(0) != 12
+        or mesh.surface_get_array_len(1) != 12
+        or mesh.surface_get_array_len(2) != 36):
+        _fail("Concave polygon did not create separate top/bottom/side surfaces")
+        return
     var bounds := AABB(Vector3(-2.0,-1.0,-2.0), Vector3(4.0,2.0,4.0))
-    for point in points:
-        if not bounds.has_point(point):
-            _fail("Polygon extruded outside configured X/Y/Z dimensions")
+    for surface_index in range(3):
+        var arrays: Array = mesh.surface_get_arrays(surface_index)
+        var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+        var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+        if uvs.size() != points.size() or uvs.is_empty():
+            _fail("Polygon surface did not expose complete UV coordinates")
             return
+        for point in points:
+            if not bounds.has_point(point):
+                _fail("Polygon extruded outside configured X/Y/Z dimensions")
+                return
     var mirrored: Dictionary = spec.duplicate(true)
     mirrored["outline"].reverse()
     var reverse_mesh := Brush.build_mesh(mirrored)
-    if reverse_mesh == null or reverse_mesh.surface_get_array_len(0) != 60:
+    if (reverse_mesh == null or reverse_mesh.get_surface_count() != 3
+        or reverse_mesh.surface_get_array_len(0) != 12
+        or reverse_mesh.surface_get_array_len(1) != 12
+        or reverse_mesh.surface_get_array_len(2) != 36):
         _fail("Clockwise custom polygon refused despite valid simple topology")
         return
 
@@ -59,6 +77,16 @@ func _run() -> void:
     if Polygon.with_moved_vertex(spec["outline"],2,0,0.75).size() != 6:
         _fail("Vertex editing failed for concave polygon")
         return
+    var invalid_style_spec: Dictionary = spec.duplicate(true)
+    invalid_style_spec["surface_style"]["top"]["uv_scale"] = [0.001, 1.0]
+    if not Brush.validate(invalid_style_spec).is_empty():
+        _fail("Out-of-range private surface UV scale passed brush preflight")
+        return
+    invalid_style_spec = spec.duplicate(true)
+    invalid_style_spec["surface_style"]["sides"]["preset"] = "UnverifiedShader"
+    if not Brush.validate(invalid_style_spec).is_empty():
+        _fail("Unknown private surface preset passed brush preflight")
+        return
     if (not Polygon.with_moved_vertex(spec["outline"],2,0,4.0).is_empty()
         or not Polygon.with_inserted_vertex(spec["outline"],-1).is_empty()
         or not Polygon.with_deleted_vertex(spec["outline"],10).is_empty()):
@@ -67,7 +95,7 @@ func _run() -> void:
 
     var editor := Editor.new()
     get_root().add_child(editor)
-    var source := ProjectSettings.globalize_path("user://v038_owner_invented_source.gmp")
+    var source := ProjectSettings.globalize_path("user://v040_owner_invented_source.gmp")
     var content := PackedByteArray([68,88,50,69,100,103,101,111,56])
     var source_file := FileAccess.open(source,FileAccess.WRITE)
     if source_file == null:
@@ -80,7 +108,7 @@ func _run() -> void:
     editor.world_root.add_child(fake_scene)
     editor.scene_root = fake_scene
     editor.current_folder = ProjectSettings.globalize_path(
-        "user://v038_private_custom_polygon_cache")
+        "user://v040_private_custom_polygon_cache")
     var draft := editor._new_draft_copy(
         "Brush::Polygon", "DraftProp_38",
         Transform3D(Basis(Vector3.UP,0.37),Vector3(4,1,7)))
@@ -93,6 +121,9 @@ func _run() -> void:
         or not editor.polygon_inspector_panel.visible
         or editor.polygon_vertex_selector.item_count != 6
         or editor.polygon_vertex_x == null or editor.polygon_vertex_z == null
+        or editor.polygon_surface_selector == null
+        or editor.polygon_surface_preset_selector == null
+        or editor.polygon_surface_uv_controls.size() != 4
         or editor.brush_face_controls.visible):
         _fail("Actual Inspector missing custom polygon corner editing")
         return
@@ -107,6 +138,43 @@ func _run() -> void:
     var after_move_mesh: Mesh = editor.draft_prop_copies["DraftProp_38"].mesh
     if after_move_mesh == mesh:
         _fail("Custom polygon vertex edit left original mesh unchanged")
+        return
+
+    # Apply a real per-surface material/UV change through the Inspector and
+    # prove it is one undoable private-draft edit, not a global material override.
+    var history_before_style := editor.undo_stack.size()
+    editor.polygon_surface_selector.select(0)
+    editor._polygon_surface_slot_selected(0)
+    editor.polygon_surface_preset_selector.select(Polygon.SURFACE_PRESETS.find("Metal"))
+    editor.polygon_surface_uv_controls[0].value = 2.0
+    editor.polygon_surface_uv_controls[1].value = 3.0
+    editor.polygon_surface_uv_controls[2].value = 0.25
+    editor.polygon_surface_uv_controls[3].value = -0.5
+    editor._apply_polygon_surface_style()
+    var styled_spec: Dictionary = editor.draft_brush_specs["DraftProp_38"]
+    var styled_mesh: Mesh = editor.draft_prop_copies["DraftProp_38"].mesh
+    var top_material := styled_mesh.surface_get_material(0) as StandardMaterial3D
+    if (editor.undo_stack.size() != history_before_style + 1
+        or styled_mesh.get_surface_count() != 3
+        or top_material == null or top_material.albedo_texture == null
+        or styled_spec["surface_style"]["top"]["preset"] != "Metal"
+        or not is_equal_approx(float(styled_spec["surface_style"]["top"]["uv_scale"][0]), 2.0)
+        or not is_equal_approx(float(styled_spec["surface_style"]["top"]["uv_scale"][1]), 3.0)
+        or not is_equal_approx(top_material.uv1_scale.x, 2.0)
+        or not is_equal_approx(top_material.uv1_scale.y, 3.0)
+        or not is_equal_approx(top_material.uv1_offset.x, 0.25)
+        or not is_equal_approx(top_material.uv1_offset.y, -0.5)
+        or styled_mesh.surface_get_material(1) == top_material
+        or styled_mesh.surface_get_material(2) == top_material):
+        _fail("Per-surface preview material/UV assignment did not reach three independent mesh surfaces")
+        return
+    editor._undo_edit()
+    if editor.draft_brush_specs["DraftProp_38"]["surface_style"]["top"]["preset"] != "Concrete":
+        _fail("Polygon surface material/UV Undo did not restore the prior style")
+        return
+    editor._redo_edit()
+    if editor.draft_brush_specs["DraftProp_38"]["surface_style"]["top"]["preset"] != "Metal":
+        _fail("Polygon surface material/UV Redo did not restore the applied style")
         return
     editor._insert_polygon_corner()
     if editor.draft_brush_specs["DraftProp_38"]["outline"].size() != 7:
@@ -248,6 +316,9 @@ func _run() -> void:
         or doc["copies"].size() != 1
         or doc["copies"][0]["brush"]["kind"] != "Polygon"
         or doc["copies"][0]["brush"]["outline"].size() != 6
+        or doc["copies"][0]["brush"]["surface_style"]["top"]["preset"] != "Metal"
+        or not is_equal_approx(float(doc["copies"][0]["brush"]["surface_style"]["top"]["uv_scale"][0]), 2.0)
+        or not is_equal_approx(float(doc["copies"][0]["brush"]["surface_style"]["top"]["uv_offset"][1]), -0.5)
         or not is_equal_approx(float(doc["copies"][0]["brush"]["outline"][0][0]), float(redone_outline[0][0]))
         or not is_equal_approx(float(doc["copies"][0]["brush"]["outline"][0][1]), float(redone_outline[0][1]))
         or not is_equal_approx(float(doc["copies"][0]["brush"]["outline"][2][0]),0.75)
@@ -266,6 +337,9 @@ func _run() -> void:
             editor.draft_brush_specs["DraftProp_38"]["outline"][0][1]), float(redone_outline[0][1]))
         or not is_equal_approx(float(
             editor.draft_brush_specs["DraftProp_38"]["outline"][2][0]),0.75)
+        or editor.draft_brush_specs["DraftProp_38"]["surface_style"]["top"]["preset"] != "Metal"
+        or not is_equal_approx(float(
+            editor.draft_brush_specs["DraftProp_38"]["surface_style"]["top"]["uv_scale"][0]), 2.0)
         or not editor.selected_meshes.has("DraftProp_38")
         or editor.editor_view_mode != Guides.TOP):
         _fail("Custom polygon geometry/project failed real editor reload")
@@ -287,6 +361,19 @@ func _run() -> void:
             editor.draft_brush_specs["DraftProp_38"]["outline"][2][0]),0.75)):
         _fail("Invalid polygon draft destroyed live edited geometry")
         return
+    # Invalid material metadata is also rejected before the live draft is cleared.
+    var malicious_style: Dictionary = doc.duplicate(true)
+    malicious_style["copies"][0]["brush"]["surface_style"]["top"]["uv_offset"] = [0.0, 1000.0]
+    external = FileAccess.open(path, FileAccess.WRITE)
+    external.store_string(JSON.stringify(malicious_style))
+    external.close()
+    editor._load_prop_draft()
+    if (not editor.draft_prop_copies.has("DraftProp_38")
+        or editor.draft_brush_specs["DraftProp_38"]["surface_style"]["top"]["preset"] != "Metal"
+        or not is_equal_approx(float(
+            editor.draft_brush_specs["DraftProp_38"]["surface_style"]["top"]["uv_scale"][0]), 2.0)):
+        _fail("Invalid private surface UV metadata destroyed the current valid preview")
+        return
     if FileAccess.get_sha256(source) != source_hash:
         _fail("Invented original source bytes were modified")
         return
@@ -295,5 +382,5 @@ func _run() -> void:
             DirAccess.remove_absolute(path+suffix)
     DirAccess.remove_absolute(source)
     editor.queue_free()
-    print("DX2Ed v0.39 snapped polygon viewport vertex drag and private round-trip PASS")
+    print("DX2Ed v0.40 polygon surface materials/UVs and private round-trip PASS")
     quit(0)

@@ -1,6 +1,6 @@
-# DX2Ed Windows prototype 0.6.0-alpha
+# DX2Ed Windows prototype 0.6.1-alpha
 
-**Target review: November 7, 2026.** This archive is a portable research **prototype**: it contains the original-source DX2Ed Godot project and official Godot 4.3 Standard Windows x64 engine, launched in project-run mode. It is **not** a Godot exported/published standalone game, a production UnrealEd replacement, or a complete engine-native map writer.
+**Target review: November 8, 2026.** This archive is a portable research **prototype**: it contains the original-source DX2Ed Godot project and official Godot 4.3 Standard Windows x64 engine, launched in project-run mode. It is **not** a Godot exported/published standalone game, a production UnrealEd replacement, or a complete engine-native map writer.
 
 ## DX2SDK v0.27 unified build: original Actor Workbench + archive audit
 
@@ -117,6 +117,25 @@ Save draft / Load draft workflow.
 
 This is still **Godot draft geometry only**. It does not edit original DX2 BSP
 faces, compile CSG/collision/lightmaps, or produce a game-compatible GMP.
+
+## v0.40: per-surface preview material and UV authoring
+
+The editor-only custom **Polygon** brush now builds three separately addressable
+mesh surfaces: **Top cap**, **Bottom cap**, and **Side walls**. The Inspector
+lets you choose a preview material preset for each slot and edit its U/V scale
+and offset. Top and bottom use footprint UVs; side UVs run continuously around
+the measured perimeter. A generated checker texture makes tiling and offset
+visible without extracting or redistributing retail textures.
+
+Each Apply is one Undo/Redo transaction. The validated per-slot preset and UV
+metadata are saved inside the existing private JSON draft and restored on
+reopen. Invalid presets, non-finite values and out-of-range UV transforms are
+rejected before a draft reload can replace live edits.
+
+**Scope:** this is procedural Godot preview material authoring on a private
+Polygon draft. It does not decode or assign original DX2 MatLib shader stages,
+edit imported source meshes, write native BSP surface flags/material indices,
+or cook a playable GMP. Original GMP/IBD files remain untouched.
 
 ## Get running in Windows 10/11, 64-bit
 

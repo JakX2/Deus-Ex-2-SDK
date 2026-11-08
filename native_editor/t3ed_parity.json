@@ -42,7 +42,7 @@
       "status": "partial",
       "phase": 1,
       "evidence": "0.4.2 DX2Ed asset catalog, searchable Assets tab, async textured GLB preview exporter, placing unused IBD meshes as undoable virtual drafts, local cache and source identity checking",
-      "next_step": "Native DX2 actor/archetype creation and runtime-safe package writer; thumbnails, multi-asset placement and source material variants"
+      "next_step": "Source-backed MatLib/texture thumbnails and shader-stage interpretation; preview surface overrides remain private editor data."
     },
     {
       "id": "actor_classes",
@@ -89,8 +89,8 @@
       "title": "Material inspector and UV operations",
       "status": "partial",
       "phase": 2,
-      "evidence": "DX2Ed textured IBD rendering; T3Ed TexturePan/TextureRotate icons",
-      "next_step": "Editable UV/material bindings, shader variants, lightmap metadata"
+      "evidence": "DX2Ed textured IBD rendering; T3Ed TexturePan/TextureRotate icons DX2Ed v0.40: custom Polygon preview mesh now has independent Top/Bottom/Sides material slots, procedural checker texture, per-slot UV scale/offset, Undo/Redo and private JSON persistence; original MatLib shader stages remain metadata-only.",
+      "next_step": "Decode original MatLib stage graphs and IBD texture resources, then prove source-surface binding semantics before any native BSP material writer."
     },
     {
       "id": "lighting",

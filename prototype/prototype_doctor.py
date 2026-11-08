@@ -147,6 +147,9 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("editor_custom_polygon_geometry_preview") is not True
                 or manifest.get("editor_custom_polygon_viewport_vertex_handles") is not True
                 or manifest.get("editor_custom_polygon_vertex_drag_grid_snap") is not True
+                or manifest.get("editor_polygon_surface_material_preview") is not True
+                or manifest.get("editor_polygon_surface_uv_editing") is not True
+                or manifest.get("editor_polygon_surface_material_native_writer") is not False
                 or manifest.get("editor_custom_polygon_vertex_drag_native_writer") is not False
                 or manifest.get("editor_custom_polygon_native_csg_writer") is not False
                 or manifest.get("editor_draft_face_resize_native_bsp_writer") is not False
