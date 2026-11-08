@@ -88,6 +88,25 @@ func _run() -> void:
         or Brush.validate({"kind": "Sphere", "size": [2.0, 2.0, 2.0], "steps": 2}) != {}):
         _fail("Cone/ellipsoid palette mesh or fail-closed validation regression")
         return
+    # Ramp is a closed six-face triangular prism (8 triangles / 24 vertices).
+    var ramp_spec := Brush.default_spec("Ramp")
+    var ramp := Brush.build_mesh(ramp_spec)
+    if (ramp == null or ramp.get_surface_count() != 1
+        or ramp.surface_get_array_len(0) != 24
+        or Brush.validate(ramp_spec).is_empty()
+        or Brush.validate({"kind": "Ramp", "size": [3.0, 1.5, 4.0], "steps": 2}) != {}
+        or Brush.validate({"kind": "Ramp", "size": [3.0, -1.0, 4.0], "steps": 1}) != {}):
+        _fail("Ramp brush mesh or bounded validation regression")
+        return
+    var ramp_vertices: PackedVector3Array = ramp.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+    var ramp_min := Vector3(INF, INF, INF)
+    var ramp_max := Vector3(-INF, -INF, -INF)
+    for vertex in ramp_vertices:
+        ramp_min = ramp_min.min(vertex)
+        ramp_max = ramp_max.max(vertex)
+    if not ramp_min.is_equal_approx(Vector3(-1.5, -0.75, -2.0)) or not ramp_max.is_equal_approx(Vector3(1.5, 0.75, 2.0)):
+        _fail("Ramp brush bounds regression")
+        return
     var editor := Editor.new()
     get_root().add_child(editor)
     if (editor.editor_view_mode_select == null
