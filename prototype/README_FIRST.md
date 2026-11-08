@@ -53,6 +53,26 @@ The packaged Godot test checks a rotated brush, the opposite plane,
 undo/redo, and reopening a private project with a moved original prop
 preview, resized brush and orthographic workspace.
  
+## v0.37: directly pick draft brush faces in the viewport
+
+Select **one editor-only Box, Wall or Floor** brush. Hold **Alt+Shift** and
+**left-click a visible face** in the Perspective, Top, Front or Side viewport.
+The Inspector's local Face selector will jump to the picked face (-X/+X,
+-Y/+Y, -Z/+Z). A **temporary yellow wireframe** outlines the selected draft
+face directly on the brush. It follows resizing and is removed when the brush
+is deselected. Click **In** or **Out** to resize that face by Grid m, keeping
+the opposite plane anchored. Ctrl+Z/Ctrl+Y undo/redo the size change.
+
+The click chooses only a face of your already-selected draft brush. It does
+not select hidden/unrelated objects, original imported DX2 StaticMeshActors,
+BSP triangles, world collision, or Light records. No native GMP/IBD save is
+performed. Click-and-drag continues to require the existing Inspector In/Out
+buttons; Alt+Shift+drag is not a native T3Ed face-drag controller.
+
+The actual bundled Godot Windows self-test now verifies all six local face
+rays, rotated brushes, miss/invalid gates, the real Inspector selection,
+Undo/Redo, and refusal of imported source-mesh face edits.
+
 ## Get running in Windows 10/11, 64-bit
 
 1. **Extract the entire ZIP** to a normal user-writable directory, e.g. `D:\DX2Ed_Prototype\`. Do not run files directly from inside the ZIP. Do not extract it into your game install or `Content\DX2\Maps`.

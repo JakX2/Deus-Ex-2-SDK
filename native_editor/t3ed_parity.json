@@ -81,8 +81,8 @@
       "title": "Vertex, face, polygon edit",
       "status": "partial",
       "phase": 2,
-      "evidence": "DX2Ed v0.35 editor-only face In/Out on Box/Wall/Floor draft brushes (six local-axis faces) with anchored opposing plane, undo/redo and private JSON project round-trip; source T3Ed ModeFaceDrag reference. Native BSP face/vertex mesh authoring remains missing.",
-      "next_step": "Native DX2 BSP/zone face ownership, editable arbitrary polygons/UVs and collision reconstruction, verified only after real package/runtime tests."
+      "evidence": "DX2Ed v0.35 editor-only face In/Out on Box/Wall/Floor draft brushes (six local-axis faces) with anchored opposing plane, undo/redo and private JSON project round-trip; source T3Ed ModeFaceDrag reference. Native BSP face/vertex mesh authoring remains missing. v0.37: Alt+Shift viewport click selects local six-axis face of only the already-selected editor-only Box/Wall/Floor, rotation-aware, then Inspector In/Out changes dimensions; real Godot synthetic smoke.",
+      "next_step": "Viewport draggable handles/highlighting; arbitrary polygon face/vertex editing, UV materials, original BSP/zone and collision writer require independent native proof."
     },
     {
       "id": "materials_uv",

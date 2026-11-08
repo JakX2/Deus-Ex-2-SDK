@@ -310,6 +310,8 @@ var brush_face_controls: HBoxContainer
 var brush_face_selector: OptionButton
 var brush_face_inward_button: Button
 var brush_face_outward_button: Button
+var brush_face_hint: Label
+var brush_face_outline: MeshInstance3D
 var brush_inspector_syncing := false
 var next_prop_copy_id := 1
 # In-memory session history. Each operation stores only edited actor transforms
@@ -1537,6 +1539,7 @@ func _make_ui() -> void:
     for face_label in BrushGeometry.FACE_LABELS:
         brush_face_selector.add_item(face_label)
     brush_face_selector.custom_minimum_size.x = 65
+    brush_face_selector.item_selected.connect(_brush_face_selected)
     brush_face_controls.add_child(brush_face_selector)
     brush_face_inward_button = Button.new()
     brush_face_inward_button.text = "In"
@@ -1548,6 +1551,13 @@ func _make_ui() -> void:
     brush_face_outward_button.tooltip_text = "Move this draft face outward by Grid m; preserve opposite face. Ctrl+Z to undo."
     brush_face_outward_button.pressed.connect(_change_brush_face.bind(1.0))
     brush_face_controls.add_child(brush_face_outward_button)
+    brush_face_hint = Label.new()
+    brush_face_hint.text = "Alt+Shift+click visible draft face to select it"
+    brush_face_hint.tooltip_text = (
+        "Only selects a face on the already-selected editor-only Box/Wall/Floor. "
+        + "Then use In/Out; does not alter source actor or DX2 BSP.")
+    brush_face_hint.visible = false
+    brush_inspector_panel.add_child(brush_face_hint)
     var property_heading := Label.new()
     property_heading.text = "Source actor details (read-only)"
     inspector_pane.add_child(property_heading)
@@ -6851,6 +6861,7 @@ func _refresh_brush_inspector() -> void:
     var show := nodes.size() == 1 and draft_brush_specs.has(str(nodes[0].name)) if nodes.size() == 1 else false
     brush_inspector_panel.visible = show
     if not show:
+        _refresh_brush_face_outline()
         return
     var spec: Dictionary = draft_brush_specs[str(nodes[0].name)]
     brush_inspector_syncing = true
@@ -6859,8 +6870,102 @@ func _refresh_brush_inspector() -> void:
     brush_inspector_steps.set_value_no_signal(float(spec["steps"]))
     brush_inspector_steps.editable = spec["kind"] == "Stairs"
     if brush_face_controls != null:
-        brush_face_controls.visible = BrushGeometry.FACE_EDIT_KINDS.has(str(spec["kind"]))
+        var can_face_edit := BrushGeometry.FACE_EDIT_KINDS.has(str(spec["kind"]))
+        brush_face_controls.visible = can_face_edit
+        if brush_face_hint != null:
+            brush_face_hint.visible = can_face_edit
     brush_inspector_syncing = false
+    _refresh_brush_face_outline()
+
+
+func _brush_face_selected(_index: int) -> void:
+    _refresh_brush_face_outline()
+
+
+## Highlight is a temporary 8-vertex line overlay parented only to the
+## selected authored draft mesh. It is NOT added to imported geometry,
+## actor lists, source preview caches or private draft Save/Load records.
+func _refresh_brush_face_outline() -> void:
+    var nodes := _selection_nodes()
+    var target: MeshInstance3D = null
+    if nodes.size() == 1 and brush_face_selector != null:
+        var candidate: MeshInstance3D = nodes[0]
+        if (is_instance_valid(candidate) and draft_brush_specs.has(str(candidate.name))
+            and draft_prop_copies.has(str(candidate.name))):
+            var spec: Dictionary = draft_brush_specs[str(candidate.name)]
+            if (BrushGeometry.FACE_EDIT_KINDS.has(str(spec.get("kind", "")))
+                and str(draft_prop_sources.get(str(candidate.name), "")) ==
+                    "Brush::" + str(spec["kind"])):
+                target = candidate
+    if is_instance_valid(brush_face_outline) and (
+            not is_instance_valid(target)
+            or brush_face_outline.get_parent() != target):
+        brush_face_outline.free()
+        brush_face_outline = null
+    if not is_instance_valid(target):
+        return
+    var face := brush_face_selector.selected
+    var wire := BrushGeometry.face_outline_mesh(
+        draft_brush_specs[str(target.name)], face)
+    if wire.get_surface_count() != 1:
+        return
+    if not is_instance_valid(brush_face_outline):
+        brush_face_outline = MeshInstance3D.new()
+        brush_face_outline.name = "DX2Ed_DraftFaceOutline_EDITOR_ONLY"
+        brush_face_outline.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        brush_face_outline.set_meta("editor_only", true)
+        var ink := StandardMaterial3D.new()
+        ink.albedo_color = Color(1.0, 0.74, 0.10, 1.0)
+        ink.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+        ink.no_depth_test = true
+        ink.cull_mode = BaseMaterial3D.CULL_DISABLED
+        brush_face_outline.material_override = ink
+        target.add_child(brush_face_outline)
+    brush_face_outline.mesh = wire
+
+
+## Face-pick gesture is explicit Alt+Shift+LEFT click on an already
+## selected editor-created cuboid. This never changes the selected mesh and
+## cannot target source BSP or original StaticMeshActor triangles.
+func _can_pick_selected_draft_face() -> bool:
+    var nodes := _selection_nodes()
+    if nodes.size() != 1 or brush_face_selector == null:
+        return false
+    var name := str(nodes[0].name)
+    if not draft_prop_copies.has(name) or not draft_brush_specs.has(name):
+        return false
+    var spec: Dictionary = draft_brush_specs[name]
+    return (BrushGeometry.FACE_EDIT_KINDS.has(str(spec.get("kind", "")))
+        and str(draft_prop_sources.get(name, "")) == "Brush::" + str(spec["kind"])
+        and is_instance_valid(nodes[0]) and nodes[0].mesh != null
+        and nodes[0].is_visible_in_tree())
+
+
+func _pick_selected_draft_face_ray(origin: Vector3, direction: Vector3) -> bool:
+    if not _can_pick_selected_draft_face():
+        return false
+    var node: MeshInstance3D = _selection_nodes()[0]
+    var hit: Dictionary = BrushGeometry.pick_draft_face(
+        draft_brush_specs[str(node.name)], node.global_transform,
+        origin, direction)
+    if hit.is_empty():
+        return false
+    brush_face_selector.select(int(hit["face_index"]))
+    _refresh_brush_face_outline()
+    status_label.text = (
+        "Picked draft " + str(node.name) + " face " + str(hit["label"])
+        + " at " + str(hit["world_point"])
+        + ". Use Face In/Out to resize, Ctrl+Z to undo. Native BSP unchanged.")
+    return true
+
+
+func _pick_selected_draft_face_from_viewport() -> void:
+    var ray: Dictionary = _mouse_ray(view_container.get_local_mouse_position())
+    if ray.is_empty() or not _pick_selected_draft_face_ray(
+            ray["origin"], ray["direction"]):
+        status_label.text = (
+            "No face on selected Box/Wall/Floor under cursor. "
+            + "Select one draft brush, then Alt+Shift+click its face.")
 
 
 func _change_brush_face(side: float) -> void:
@@ -8483,7 +8588,10 @@ func _input(event: InputEvent) -> void:
         elif button.button_index == MOUSE_BUTTON_LEFT:
             if button.pressed:
                 drag_distance = 0.0
-                if button.alt_pressed:
+                if button.alt_pressed and button.shift_pressed and _can_pick_selected_draft_face():
+                    dragging = true
+                    drag_mode = "draft_face_pick"
+                elif button.alt_pressed:
                     dragging = true
                     drag_mode = ("orbit" if editor_view_mode == OrthoGuides.PERSPECTIVE
                                  else "pan")
@@ -8499,6 +8607,8 @@ func _input(event: InputEvent) -> void:
                         _pick_source_collision_triangle()
                     else:
                         _pick_actor(button.ctrl_pressed or button.shift_pressed)
+                if drag_mode == "draft_face_pick" and mouse_inside and drag_distance < 3.0:
+                    _pick_selected_draft_face_from_viewport()
                 if drag_mode == "gizmo":
                     _finish_gizmo_drag()
                 dragging = false
