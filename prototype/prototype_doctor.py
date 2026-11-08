@@ -55,6 +55,9 @@ REQUIRED = (
     "native_editor/godot_editor/tests/smoke_draft_brush_viewport_face_pick.gd",
     "native_editor/godot_editor/custom_polygon_geometry.gd",
     "native_editor/godot_editor/tests/smoke_custom_polygon_geometry.gd",
+    "native_editor/godot_editor/matlib_browser.gd",
+    "native_editor/godot_editor/backend/dx2_matlib_catalog.py",
+    "native_editor/godot_editor/tests/smoke_matlib_browser.gd",
     "native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_scalar_worker.py",
@@ -104,6 +107,7 @@ REQUIRED = (
 # assets. The -B flag prevents __pycache__ writes in the extracted ZIP.
 PREFLIGHT_WORKERS = (
     "native_editor/godot_editor/backend/dx2_native_backend.py",
+    "native_editor/godot_editor/backend/dx2_matlib_catalog.py",
     "native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_scalar_worker.py",
@@ -149,6 +153,8 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("editor_custom_polygon_vertex_drag_grid_snap") is not True
                 or manifest.get("editor_polygon_surface_material_preview") is not True
                 or manifest.get("editor_polygon_surface_uv_editing") is not True
+                or manifest.get("editor_matlib_source_browser") is not True
+                or manifest.get("editor_matlib_native_writer") is not False
                 or manifest.get("editor_polygon_surface_material_native_writer") is not False
                 or manifest.get("editor_custom_polygon_vertex_drag_native_writer") is not False
                 or manifest.get("editor_custom_polygon_native_csg_writer") is not False

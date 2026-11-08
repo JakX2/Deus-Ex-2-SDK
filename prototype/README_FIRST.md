@@ -1,4 +1,4 @@
-# DX2Ed Windows prototype 0.6.1-alpha
+# DX2Ed Windows prototype 0.6.2-alpha
 
 **Target review: November 8, 2026.** This archive is a portable research **prototype**: it contains the original-source DX2Ed Godot project and official Godot 4.3 Standard Windows x64 engine, launched in project-run mode. It is **not** a Godot exported/published standalone game, a production UnrealEd replacement, or a complete engine-native map writer.
 
@@ -136,6 +136,25 @@ rejected before a draft reload can replace live edits.
 Polygon draft. It does not decode or assign original DX2 MatLib shader stages,
 edit imported source meshes, write native BSP surface flags/material indices,
 or cook a playable GMP. Original GMP/IBD files remain untouched.
+
+## v0.41: source-backed MatLib and texture browser
+
+The new **Materials** workspace tab can import a user-supplied original
+`.ibd` bundle or `Maps.zip`. The read-only worker reuses the existing DX2
+40-part MatLib parser and texture decoder, preserving all nine raw stage
+references, source bundle names, flags, category IDs, color vectors and
+parameters. Resolved stage textures receive small SHA-256-verified PNG
+thumbnails in a separate private cache.
+
+The browser supports material-name/source/stage search, resolved-diffuse and
+unresolved-reference filters, and a nine-slot preview grid. It reports missing
+stage resources rather than substituting invented textures. Oversized preview
+images are omitted under explicit limits while their metadata remains visible.
+
+**Scope:** the observed MatLib records and texture pixels are source-backed,
+but shader effects/categories are not interpreted. This is read-only browsing
+and preview only. It does not assign source shaders, modify original IBD/GMP,
+write native BSP material indices, or enable CSG/collision/lightmap cooking.
 
 ## Get running in Windows 10/11, 64-bit
 
