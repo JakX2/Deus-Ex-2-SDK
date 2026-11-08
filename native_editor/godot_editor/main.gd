@@ -7785,6 +7785,29 @@ func _write_private_draft_transaction(path: String, payload: String) -> bool:
     return true
 
 
+## Draft-only source-aware editable selection identities. Preflight every name
+## before resetting the current scene so malformed saved selections are refused.
+func _validated_draft_selection(value: Variant, copies: Array) -> Variant:
+    if typeof(value) != TYPE_ARRAY or value.size() > 10000:
+        return null
+    var allowed := {}
+    for name in meshes_by_actor:
+        if actors_by_name.has(name) and is_instance_valid(meshes_by_actor[name]):
+            allowed[str(name)] = true
+    for entry in copies:
+        if typeof(entry) != TYPE_DICTIONARY or typeof(entry.get("name", null)) != TYPE_STRING:
+            return null
+        allowed[entry["name"]] = true
+    var seen := {}
+    var result: Array[String] = []
+    for name in value:
+        if typeof(name) != TYPE_STRING or not allowed.has(name) or seen.has(name):
+            return null
+        seen[name] = true
+        result.append(name)
+    return result
+
+
 func _save_prop_draft() -> void:
     var path := _draft_file_path()
     if path.is_empty() or scene_root == null:
@@ -7813,6 +7836,7 @@ func _save_prop_draft() -> void:
         "moved": moved,
         "copies": copies,
         "property_edits": _serialize_property_edits(),
+        "selection": selected_meshes.keys().map(func(name): return str(name)),
         "workspace": {"view_mode": editor_view_mode, "grid_step": ortho_grid_step,
                       "grid_enabled": ortho_grid_enabled}
     }
@@ -7916,6 +7940,12 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
         if workspace == null:
             status_label.text = "Prop draft has invalid editor workspace settings; nothing loaded."
             return
+    var saved_selection: Variant = []
+    if doc.has("selection"):
+        saved_selection = _validated_draft_selection(doc["selection"], copies)
+        if saved_selection == null:
+            status_label.text = "Prop draft has invalid or duplicate preview selection; nothing loaded."
+            return
     var loaded_properties: Variant = _validate_property_edits(property_rows)
     if loaded_properties == null:
         status_label.text = "Prop draft has invalid or unmatched actor properties; nothing loaded."
@@ -7955,6 +7985,13 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
             var suffix := name.trim_prefix("DraftProp_")
             if suffix.is_valid_int():
                 next_prop_copy_id = max(next_prop_copy_id, int(suffix) + 1)
+    for selected_name in saved_selection:
+        var selected_node: Variant = draft_prop_copies.get(
+            selected_name, meshes_by_actor.get(selected_name, null))
+        if is_instance_valid(selected_node) and selected_node is MeshInstance3D:
+            _add_selection_mesh(selected_node)
+    _refresh_selection_inspector()
+    _sync_actor_list_selection()
     if not workspace.is_empty():
         ortho_grid_enabled = workspace["grid_enabled"]
         if ortho_grid_toggle != null:
