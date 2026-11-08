@@ -145,14 +145,17 @@ func _run() -> void:
     editor.original_mesh_transforms[invented.name] = invented.global_transform
     # Real editor private draft preflight: malformed identities must never
     # reach the destructive reset/reconstruction stage.
-    var valid_move := [{"actor": invented.name}]
-    var valid_copy := [{"name": "DraftProp_1", "from_actor": invented.name}]
+    # JSON draft records contain String values; Node.name is a StringName.
+    # Exercise the persisted representation, not the in-memory node type.
+    var actor_id: String = str(invented.name)
+    var valid_move := [{"actor": actor_id}]
+    var valid_copy := [{"name": "DraftProp_1", "from_actor": actor_id}]
     var preflight_cases := [
         {"label": "valid original move and draft copy", "moved": valid_move, "copies": valid_copy, "accept": true},
         {"label": "duplicate original move", "moved": valid_move + valid_move, "copies": [], "accept": false},
         {"label": "missing original actor", "moved": [{"actor": "missing"}], "copies": [], "accept": false},
         {"label": "duplicate draft copy", "moved": [], "copies": valid_copy + valid_copy, "accept": false},
-        {"label": "zero draft copy identifier", "moved": [], "copies": [{"name": "DraftProp_0", "from_actor": invented.name}], "accept": false},
+        {"label": "zero draft copy identifier", "moved": [], "copies": [{"name": "DraftProp_0", "from_actor": actor_id}], "accept": false},
         {"label": "missing draft source", "moved": [], "copies": [{"name": "DraftProp_2", "from_actor": "missing"}], "accept": false},
     ]
     for case in preflight_cases:
