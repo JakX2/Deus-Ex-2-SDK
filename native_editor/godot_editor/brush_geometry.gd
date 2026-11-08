@@ -150,6 +150,58 @@ static func pick_draft_face(
 
 
 
+## Single preview face wire outline, eight line vertices, local draft space.
+## Positive offset avoids depth fighting, does not modify exported brush
+## geometry and never enters source actor/BSP data.
+static func face_outline_edges(raw: Variant, face: int) -> PackedVector3Array:
+    var spec := validate(raw)
+    var edges := PackedVector3Array()
+    if (spec.is_empty() or not FACE_EDIT_KINDS.has(str(spec["kind"]))
+        or face < 0 or face >= FACE_LABELS.size()):
+        return edges
+    var x := float(spec["size"][0]) * 0.5
+    var y := float(spec["size"][1]) * 0.5
+    var z := float(spec["size"][2]) * 0.5
+    var corners: Array[Vector3] = []
+    var side := -1.0 if face % 2 == 0 else 1.0
+    var extra := 0.0075
+    match face / 2:
+        0:
+            var fx := side * (x + extra)
+            corners = [
+                Vector3(fx,-y,-z), Vector3(fx,y,-z),
+                Vector3(fx,y,z), Vector3(fx,-y,z)]
+        1:
+            var fy := side * (y + extra)
+            corners = [
+                Vector3(-x,fy,-z), Vector3(x,fy,-z),
+                Vector3(x,fy,z), Vector3(-x,fy,z)]
+        2:
+            var fz := side * (z + extra)
+            corners = [
+                Vector3(-x,-y,fz), Vector3(x,-y,fz),
+                Vector3(x,y,fz), Vector3(-x,y,fz)]
+    if corners.size() != 4:
+        return edges
+    for i in range(4):
+        edges.append(corners[i])
+        edges.append(corners[(i + 1) % 4])
+    return edges
+
+
+static func face_outline_mesh(raw: Variant, face: int) -> ImmediateMesh:
+    var mesh := ImmediateMesh.new()
+    var edges := face_outline_edges(raw, face)
+    if edges.size() != 8:
+        return mesh
+    mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+    for point in edges:
+        mesh.surface_add_vertex(point)
+    mesh.surface_end()
+    return mesh
+
+
+
 static func _triangle(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, normal: Vector3) -> void:
     st.set_normal(normal)
     st.set_uv(Vector2(0.0, 0.0))
