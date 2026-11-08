@@ -1,5 +1,6 @@
 extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
+const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const OrthoGuides = preload("res://orthographic_authoring_guides.gd")
 const PythonRuntime = preload("res://python_runtime.gd")
 const LightColorPanel = preload("res://light_color_panel.gd")
@@ -312,6 +313,11 @@ var brush_face_inward_button: Button
 var brush_face_outward_button: Button
 var brush_face_hint: Label
 var brush_face_outline: MeshInstance3D
+var polygon_inspector_panel: VBoxContainer
+var polygon_vertex_selector: OptionButton
+var polygon_vertex_x: SpinBox
+var polygon_vertex_z: SpinBox
+var polygon_selected_name := ""
 var brush_inspector_syncing := false
 var next_prop_copy_id := 1
 # In-memory session history. Each operation stores only edited actor transforms
@@ -1558,6 +1564,54 @@ func _make_ui() -> void:
         + "Then use In/Out; does not alter source actor or DX2 BSP.")
     brush_face_hint.visible = false
     brush_inspector_panel.add_child(brush_face_hint)
+    # User-authored, bounded XZ outline editing. The polygon is extruded in
+    # local Y. All controls edit only an authored private Brush::Polygon.
+    polygon_inspector_panel = VBoxContainer.new()
+    polygon_inspector_panel.visible = false
+    brush_inspector_panel.add_child(polygon_inspector_panel)
+    var polygon_heading := Label.new()
+    polygon_heading.text = "Custom polygon footprint (local normalized X/Z)"
+    polygon_inspector_panel.add_child(polygon_heading)
+    var polygon_note := Label.new()
+    polygon_note.text = (
+        "Move each corner between -1 and +1; Size X/Z scale the footprint, "
+        + "Size Y controls height. Concave shapes are allowed.")
+    polygon_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    polygon_inspector_panel.add_child(polygon_note)
+    polygon_vertex_selector = OptionButton.new()
+    polygon_vertex_selector.item_selected.connect(_polygon_corner_selected)
+    polygon_inspector_panel.add_child(polygon_vertex_selector)
+    var polygon_xy_row := HBoxContainer.new()
+    polygon_inspector_panel.add_child(polygon_xy_row)
+    for axis in range(2):
+        var coordinate := SpinBox.new()
+        coordinate.min_value = -1.0
+        coordinate.max_value = 1.0
+        coordinate.step = 0.025
+        coordinate.custom_minimum_size.x = 95
+        coordinate.prefix = "X" if axis == 0 else "Z"
+        coordinate.tooltip_text = "Footprint corner in -1..+1 local normalized coordinates."
+        coordinate.value_changed.connect(_change_polygon_corner.bind(axis))
+        polygon_xy_row.add_child(coordinate)
+        if axis == 0:
+            polygon_vertex_x = coordinate
+        else:
+            polygon_vertex_z = coordinate
+    var polygon_actions := HBoxContainer.new()
+    polygon_inspector_panel.add_child(polygon_actions)
+    var polygon_insert_button := Button.new()
+    polygon_insert_button.text = "Insert corner"
+    polygon_insert_button.tooltip_text = (
+        "Add a small inward corner between selected point and next point; "
+        + "maximum 32, undoable.")
+    polygon_insert_button.pressed.connect(_insert_polygon_corner)
+    polygon_actions.add_child(polygon_insert_button)
+    var polygon_remove_button := Button.new()
+    polygon_remove_button.text = "Delete corner"
+    polygon_remove_button.tooltip_text = (
+        "Remove selected polygon corner (minimum 3); invalid outlines refused.")
+    polygon_remove_button.pressed.connect(_delete_polygon_corner)
+    polygon_actions.add_child(polygon_remove_button)
     var property_heading := Label.new()
     property_heading.text = "Source actor details (read-only)"
     inspector_pane.add_child(property_heading)
@@ -6861,6 +6915,9 @@ func _refresh_brush_inspector() -> void:
     var show := nodes.size() == 1 and draft_brush_specs.has(str(nodes[0].name)) if nodes.size() == 1 else false
     brush_inspector_panel.visible = show
     if not show:
+        if polygon_inspector_panel != null:
+            polygon_inspector_panel.visible = false
+        polygon_selected_name = ""
         _refresh_brush_face_outline()
         return
     var spec: Dictionary = draft_brush_specs[str(nodes[0].name)]
@@ -6875,7 +6932,121 @@ func _refresh_brush_inspector() -> void:
         if brush_face_hint != null:
             brush_face_hint.visible = can_face_edit
     brush_inspector_syncing = false
+    _refresh_polygon_inspector()
     _refresh_brush_face_outline()
+
+
+## The polygon outline is stored in the same validated private brush spec
+## as other draft meshes; no source GMP/IBD or native BSP geometry is touched.
+func _selected_custom_polygon_name() -> String:
+    var nodes := _selection_nodes()
+    if nodes.size() != 1:
+        return ""
+    var name := str(nodes[0].name)
+    if (not draft_prop_copies.has(name) or not draft_brush_specs.has(name)
+        or str(draft_prop_sources.get(name, "")) != "Brush::Polygon"
+        or str(draft_brush_specs[name].get("kind", "")) != "Polygon"):
+        return ""
+    return name
+
+
+func _refresh_polygon_inspector() -> void:
+    if polygon_inspector_panel == null:
+        return
+    var name := _selected_custom_polygon_name()
+    polygon_inspector_panel.visible = not name.is_empty()
+    if name.is_empty():
+        polygon_selected_name = ""
+        return
+    var outline: Array = draft_brush_specs[name]["outline"]
+    if outline.is_empty():
+        polygon_inspector_panel.visible = false
+        return
+    var wanted := polygon_vertex_selector.selected
+    if name != polygon_selected_name:
+        wanted = 0
+    wanted = clampi(wanted,0,outline.size()-1)
+    brush_inspector_syncing = true
+    polygon_vertex_selector.clear()
+    for i in range(outline.size()):
+        polygon_vertex_selector.add_item(
+            "Vertex " + str(i + 1) + "  (" +
+            str(outline[i][0]) + ", " + str(outline[i][1]) + ")")
+    polygon_vertex_selector.select(wanted)
+    polygon_vertex_x.set_value_no_signal(float(outline[wanted][0]))
+    polygon_vertex_z.set_value_no_signal(float(outline[wanted][1]))
+    polygon_selected_name = name
+    brush_inspector_syncing = false
+
+
+func _polygon_corner_selected(_index: int) -> void:
+    if brush_inspector_syncing:
+        return
+    _refresh_polygon_inspector()
+
+
+func _change_polygon_corner(value: float, axis: int) -> void:
+    if brush_inspector_syncing:
+        return
+    var name := _selected_custom_polygon_name()
+    if name.is_empty() or polygon_vertex_selector == null:
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    var selected_index := polygon_vertex_selector.selected
+    var updated: Array = CustomPolygon.with_moved_vertex(
+        spec["outline"], selected_index, axis, value)
+    if updated.is_empty():
+        status_label.text = (
+            "Custom polygon refused an invalid, overlapping or out-of-bounds "
+            + "corner. Original geometry and source unchanged.")
+        _refresh_polygon_inspector()
+        return
+    var before := _capture_edit_state()
+    spec["outline"] = updated
+    if _set_brush_spec(name,spec):
+        _refresh_prop_inspection()
+        _record_edit("Move custom polygon corner " + str(selected_index + 1),before)
+        status_label.text = "Moved custom polygon corner; Undo available. Editor draft only."
+    else:
+        _refresh_polygon_inspector()
+
+
+func _insert_polygon_corner() -> void:
+    var name := _selected_custom_polygon_name()
+    if name.is_empty():
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    var selected_index := polygon_vertex_selector.selected
+    var updated: Array = CustomPolygon.with_inserted_vertex(
+        spec["outline"],selected_index)
+    if updated.is_empty():
+        status_label.text = "Custom polygon insertion refused: outline would be invalid or exceed 32 corners."
+        return
+    var before := _capture_edit_state()
+    spec["outline"] = updated
+    if _set_brush_spec(name,spec):
+        polygon_vertex_selector.select(selected_index+1)
+        _refresh_prop_inspection()
+        _record_edit("Insert custom polygon corner",before)
+        status_label.text = "Inserted custom polygon corner; Undo available."
+
+
+func _delete_polygon_corner() -> void:
+    var name := _selected_custom_polygon_name()
+    if name.is_empty():
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    var updated: Array = CustomPolygon.with_deleted_vertex(
+        spec["outline"],polygon_vertex_selector.selected)
+    if updated.is_empty():
+        status_label.text = "Custom polygon deletion refused: invalid outline or fewer than 3 corners."
+        return
+    var before := _capture_edit_state()
+    spec["outline"] = updated
+    if _set_brush_spec(name,spec):
+        _refresh_prop_inspection()
+        _record_edit("Delete custom polygon corner",before)
+        status_label.text = "Deleted custom polygon corner; Undo available."
 
 
 func _brush_face_selected(_index: int) -> void:
