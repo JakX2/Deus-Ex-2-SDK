@@ -1,0 +1,5 @@
+# DX2Ed v0.31: editor-only ramp brush
+
+The Godot Brush palette adds **Ramp**, a closed triangular prism that rises from negative Z to positive Z in the Y-up preview coordinate system. Its X width, Y rise and Z run use the existing dimension inspector, selection/hierarchy, duplication, undo and private JSON draft project workflow. The default size is 3 × 1.5 × 4 metres. The five faces comprise two triangular ends and three quads, yielding 24 triangle-list vertices; the same shared bounded dimension validator applies. Steps must equal one.
+
+The Windows Godot orthographic authoring smoke constructs the actual mesh, checks the triangle-list vertex count, its default axis-aligned bounds and invalid dimension/step rejection. This is a synthetic editor smoke test, not a retail map test. Ramp meshes are editor-only drafts: they do not generate DX2 BSP, CSG, collision, lighting, texture unwraps or game-compatible GMP/IBD exports. Original game assets remain untouched. The existing source-only portable SDK workflow is unaffected.
