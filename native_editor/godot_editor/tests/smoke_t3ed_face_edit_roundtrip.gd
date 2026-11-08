@@ -135,6 +135,12 @@ func _run() -> void:
     editor._set_editor_view_mode(Guides.SIDE)
     editor._grid_spacing_changed(0.5)
     editor._toggle_ortho_grid(false)
+    # Multi-selection should survive the real private draft Save/Load,
+    # including a source preview and editor-only face-resized brush.
+    editor._toggle_selection_mesh(editor.draft_prop_copies["DraftProp_1"])
+    if editor.selected_meshes.size() != 2:
+        _fail("Combined original actor/draft multi-selection unavailable")
+        return
     var draft_path := editor._draft_file_path()
     if draft_path.is_empty():
         _fail("Private draft output path unavailable")
@@ -153,7 +159,10 @@ func _run() -> void:
         or saved["copies"][0]["from_actor"] != "Brush::Box"
         or float(saved["copies"][0]["brush"]["size"][0]) != 2.5
         or saved["workspace"]["view_mode"] != Guides.SIDE
-        or saved["workspace"]["grid_enabled"] != false):
+        or saved["workspace"]["grid_enabled"] != false
+        or saved["selection"].size() != 2
+        or not saved["selection"].has(original_identity)
+        or not saved["selection"].has("DraftProp_1")):
         _fail("Saved project lost native-source previews, brush dimensions or view")
         return
 
@@ -168,7 +177,10 @@ func _run() -> void:
         or not is_equal_approx(float(editor.draft_brush_specs["DraftProp_1"]["size"][0]), 2.5)
         or editor.editor_view_mode != Guides.SIDE
         or editor.ortho_grid_enabled
-        or not is_equal_approx(editor.ortho_grid_step, 0.5)):
+        or not is_equal_approx(editor.ortho_grid_step, 0.5)
+        or editor.selected_meshes.size() != 2
+        or not editor.selected_meshes.has(original_identity)
+        or not editor.selected_meshes.has("DraftProp_1")):
         _fail("Real editor project reopen failed to reconstruct full authored state")
         return
     var reloaded: MeshInstance3D = editor.draft_prop_copies["DraftProp_1"]
