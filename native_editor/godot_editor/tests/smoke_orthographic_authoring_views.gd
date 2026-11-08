@@ -147,14 +147,19 @@ func _run() -> void:
     # reach the destructive reset/reconstruction stage.
     var valid_move := [{"actor": invented.name}]
     var valid_copy := [{"name": "DraftProp_1", "from_actor": invented.name}]
-    if (not editor._draft_record_preflight(valid_move, valid_copy).is_empty()
-        or editor._draft_record_preflight(valid_move + valid_move, []).is_empty()
-        or editor._draft_record_preflight([{"actor": "missing"}], []).is_empty()
-        or editor._draft_record_preflight([], valid_copy + valid_copy).is_empty()
-        or editor._draft_record_preflight([], [{"name": "DraftProp_0", "from_actor": invented.name}]).is_empty()
-        or editor._draft_record_preflight([], [{"name": "DraftProp_2", "from_actor": "missing"}]).is_empty()):
-        _fail("Private draft preflight accepted missing/duplicate records or rejected valid records")
-        return
+    var preflight_cases := [
+        {"label": "valid original move and draft copy", "moved": valid_move, "copies": valid_copy, "accept": true},
+        {"label": "duplicate original move", "moved": valid_move + valid_move, "copies": [], "accept": false},
+        {"label": "missing original actor", "moved": [{"actor": "missing"}], "copies": [], "accept": false},
+        {"label": "duplicate draft copy", "moved": [], "copies": valid_copy + valid_copy, "accept": false},
+        {"label": "zero draft copy identifier", "moved": [], "copies": [{"name": "DraftProp_0", "from_actor": invented.name}], "accept": false},
+        {"label": "missing draft source", "moved": [], "copies": [{"name": "DraftProp_2", "from_actor": "missing"}], "accept": false},
+    ]
+    for case in preflight_cases:
+        var verdict: String = editor._draft_record_preflight(case["moved"], case["copies"])
+        if verdict.is_empty() != case["accept"]:
+            _fail("Private draft preflight " + case["label"] + ": " + verdict)
+            return
     editor.selected_meshes[invented.name] = invented
     editor.selected_mesh = invented
     var original_preview := invented.global_position
