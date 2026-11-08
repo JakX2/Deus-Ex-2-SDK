@@ -56,7 +56,7 @@ func _run() -> void:
         elif not Polygon.validate_outline(bad).is_empty():
             _fail("Malformed source-only custom outline passed validation")
             return
-    if not Polygon.with_moved_vertex(spec["outline"],2,0,0.75).size() == 6:
+    if Polygon.with_moved_vertex(spec["outline"],2,0,0.75).size() != 6:
         _fail("Vertex editing failed for concave polygon")
         return
     if (not Polygon.with_moved_vertex(spec["outline"],2,0,4.0).is_empty()
