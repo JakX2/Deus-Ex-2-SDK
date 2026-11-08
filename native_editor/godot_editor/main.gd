@@ -319,6 +319,26 @@ var polygon_vertex_x: SpinBox
 var polygon_vertex_z: SpinBox
 var polygon_selected_name := ""
 var brush_inspector_syncing := false
+# Editor-only top-face handles for the selected private Polygon brush. These
+# nodes live beside the imported scene, never in actor selection or draft data.
+var polygon_vertex_handle_root: Node3D
+var polygon_vertex_outline_node: MeshInstance3D
+var polygon_vertex_handles: Array[MeshInstance3D] = []
+var polygon_vertex_handle_material: StandardMaterial3D
+var polygon_vertex_handle_selected_material: StandardMaterial3D
+var polygon_vertex_outline_material: StandardMaterial3D
+var polygon_vertex_handles_owner := ""
+var polygon_vertex_handles_outline: Array = []
+var polygon_vertex_handles_transform := Transform3D.IDENTITY
+var polygon_vertex_handles_size := Vector3.ZERO
+var polygon_vertex_handles_scale := -1.0
+var polygon_vertex_handles_selected := -1
+var polygon_vertex_drag_active := false
+var polygon_vertex_drag_owner := ""
+var polygon_vertex_drag_index := -1
+var polygon_vertex_drag_before: Dictionary = {}
+var polygon_vertex_drag_outline: Array = []
+var polygon_vertex_drag_plane := Plane(Vector3.UP, 0.0)
 var next_prop_copy_id := 1
 # In-memory session history. Each operation stores only edited actor transforms
 # and draft clones, never the large imported GLB or retail resources.
@@ -1574,8 +1594,8 @@ func _make_ui() -> void:
     polygon_inspector_panel.add_child(polygon_heading)
     var polygon_note := Label.new()
     polygon_note.text = (
-        "Move each corner between -1 and +1; Size X/Z scale the footprint, "
-        + "Size Y controls height. Concave shapes are allowed.")
+        "Drag visible corners in Top (XZ) or Perspective; world X/Z snaps to Grid m. "
+        + "Front/Side are view-only. Inspector coordinates and concave outlines remain editable.")
     polygon_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     polygon_inspector_panel.add_child(polygon_note)
     polygon_vertex_selector = OptionButton.new()
@@ -2192,6 +2212,35 @@ func _make_world() -> void:
     ortho_grid_material.cull_mode = BaseMaterial3D.CULL_DISABLED
     ortho_grid_node.material_override = ortho_grid_material
     world_root.add_child(ortho_grid_node)
+    # Polygon handles and their footprint wire are derived editor overlays,
+    # separate from imported scene meshes, hierarchy entries and Save/Load.
+    polygon_vertex_handle_root = Node3D.new()
+    polygon_vertex_handle_root.name = "DX2Ed_PolygonVertexHandles_EDITOR_ONLY"
+    polygon_vertex_handle_root.set_meta("editor_only", true)
+    polygon_vertex_handle_root.visible = false
+    world_root.add_child(polygon_vertex_handle_root)
+    polygon_vertex_outline_node = MeshInstance3D.new()
+    polygon_vertex_outline_node.name = "DX2Ed_PolygonFootprintOutline_EDITOR_ONLY"
+    polygon_vertex_outline_node.set_meta("editor_only", true)
+    polygon_vertex_outline_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    polygon_vertex_outline_node.visible = false
+    polygon_vertex_outline_material = StandardMaterial3D.new()
+    polygon_vertex_outline_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    polygon_vertex_outline_material.albedo_color = Color(1.0, 0.76, 0.12, 0.98)
+    polygon_vertex_outline_material.no_depth_test = true
+    polygon_vertex_outline_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    polygon_vertex_outline_node.material_override = polygon_vertex_outline_material
+    world_root.add_child(polygon_vertex_outline_node)
+    polygon_vertex_handle_material = StandardMaterial3D.new()
+    polygon_vertex_handle_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    polygon_vertex_handle_material.albedo_color = Color(0.18, 0.86, 1.0, 1.0)
+    polygon_vertex_handle_material.no_depth_test = true
+    polygon_vertex_handle_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    polygon_vertex_handle_selected_material = StandardMaterial3D.new()
+    polygon_vertex_handle_selected_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    polygon_vertex_handle_selected_material.albedo_color = Color(1.0, 0.76, 0.12, 1.0)
+    polygon_vertex_handle_selected_material.no_depth_test = true
+    polygon_vertex_handle_selected_material.cull_mode = BaseMaterial3D.CULL_DISABLED
     gizmo_root = Node3D.new()
     gizmo_root.name = "EditorGizmo"
     world_root.add_child(gizmo_root)
@@ -6796,6 +6845,8 @@ func _record_edit(label: String, before: Dictionary) -> void:
 
 
 func _undo_edit() -> void:
+    if polygon_vertex_drag_active:
+        _finish_polygon_vertex_drag()
     if gizmo_drag_active:
         _finish_gizmo_drag()
     if undo_stack.is_empty():
@@ -6808,6 +6859,8 @@ func _undo_edit() -> void:
 
 
 func _redo_edit() -> void:
+    if polygon_vertex_drag_active:
+        _finish_polygon_vertex_drag()
     if gizmo_drag_active:
         _finish_gizmo_drag()
     if redo_stack.is_empty():
@@ -6918,6 +6971,7 @@ func _refresh_brush_inspector() -> void:
         if polygon_inspector_panel != null:
             polygon_inspector_panel.visible = false
         polygon_selected_name = ""
+        _refresh_polygon_vertex_handles()
         _refresh_brush_face_outline()
         return
     var spec: Dictionary = draft_brush_specs[str(nodes[0].name)]
@@ -6933,6 +6987,7 @@ func _refresh_brush_inspector() -> void:
             brush_face_hint.visible = can_face_edit
     brush_inspector_syncing = false
     _refresh_polygon_inspector()
+    _refresh_polygon_vertex_handles()
     _refresh_brush_face_outline()
 
 
@@ -6979,10 +7034,324 @@ func _refresh_polygon_inspector() -> void:
     brush_inspector_syncing = false
 
 
+
+func _clear_polygon_vertex_handles() -> void:
+    for handle in polygon_vertex_handles:
+        if is_instance_valid(handle):
+            handle.free()
+    polygon_vertex_handles.clear()
+    polygon_vertex_handles_owner = ""
+    polygon_vertex_handles_outline.clear()
+    polygon_vertex_handles_transform = Transform3D.IDENTITY
+    polygon_vertex_handles_size = Vector3.ZERO
+    polygon_vertex_handles_scale = -1.0
+    polygon_vertex_handles_selected = -1
+    if is_instance_valid(polygon_vertex_handle_root):
+        polygon_vertex_handle_root.visible = false
+    if is_instance_valid(polygon_vertex_outline_node):
+        polygon_vertex_outline_node.mesh = null
+        polygon_vertex_outline_node.visible = false
+
+
+## Draws clickable, editor-only corner markers for one selected private Polygon.
+## The markers and outline are never indexed as actors or stored in project JSON.
+func _refresh_polygon_vertex_handles() -> void:
+    if not is_instance_valid(polygon_vertex_handle_root):
+        return
+    if (editor_view_mode != OrthoGuides.TOP
+        and editor_view_mode != OrthoGuides.PERSPECTIVE):
+        _clear_polygon_vertex_handles()
+        return
+    var name := _selected_custom_polygon_name()
+    if name.is_empty() or not draft_prop_copies.has(name) or not draft_brush_specs.has(name):
+        _clear_polygon_vertex_handles()
+        return
+    var node: MeshInstance3D = draft_prop_copies[name]
+    var spec: Dictionary = BrushGeometry.validate(draft_brush_specs[name])
+    if (not is_instance_valid(node) or spec.is_empty()
+        or str(spec.get("kind", "")) != "Polygon"):
+        _clear_polygon_vertex_handles()
+        return
+    var outline: Array = spec["outline"]
+    if outline.size() < CustomPolygon.MIN_VERTICES:
+        _clear_polygon_vertex_handles()
+        return
+    var selected_index := 0
+    if polygon_vertex_selector != null and polygon_vertex_selector.selected >= 0:
+        selected_index = clampi(polygon_vertex_selector.selected, 0, outline.size() - 1)
+    var rebuild := (
+        polygon_vertex_handles_owner != name
+        or polygon_vertex_handles.size() != outline.size())
+    if rebuild:
+        _clear_polygon_vertex_handles()
+        polygon_vertex_handles_owner = name
+        for i in range(outline.size()):
+            var marker := MeshInstance3D.new()
+            marker.name = "DX2Ed_PolygonVertex_" + str(i + 1) + "_EDITOR_ONLY"
+            var sphere := SphereMesh.new()
+            sphere.radius = 0.13
+            sphere.height = 0.26
+            sphere.radial_segments = 12
+            sphere.rings = 6
+            marker.mesh = sphere
+            marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+            marker.set_meta("editor_only", true)
+            marker.set_meta("polygon_vertex_index", i)
+            polygon_vertex_handle_root.add_child(marker)
+            polygon_vertex_handles.append(marker)
+    var size := Vector3(
+        float(spec["size"][0]), float(spec["size"][1]), float(spec["size"][2]))
+    var handle_radius := 0.13
+    if is_instance_valid(camera) and is_instance_valid(world_view):
+        var viewport_height := maxf(1.0, float(world_view.size.y))
+        if camera.projection == Camera3D.PROJECTION_ORTHOGONAL:
+            handle_radius = clampf(camera.size * 6.0 / viewport_height, 0.05, 1.25)
+        else:
+            var distance := camera.global_position.distance_to(node.global_position)
+            handle_radius = clampf(
+                distance * tan(deg_to_rad(camera.fov * 0.5)) * 6.0 / viewport_height,
+                0.05, 1.25)
+    var handle_scale_factor := handle_radius / 0.13
+    var transform_changed := polygon_vertex_handles_transform != node.global_transform
+    var outline_changed := polygon_vertex_handles_outline != outline
+    var size_changed := polygon_vertex_handles_size != size
+    var scale_changed := not is_equal_approx(
+        polygon_vertex_handles_scale, handle_scale_factor)
+    var selection_changed := polygon_vertex_handles_selected != selected_index
+    if not (rebuild or transform_changed or outline_changed or size_changed
+        or scale_changed or selection_changed):
+        return
+    for i in range(outline.size()):
+        var row: Array = outline[i]
+        var local_point := Vector3(
+            float(row[0]) * size.x * 0.5,
+            size.y * 0.5 + 0.035,
+            float(row[1]) * size.z * 0.5)
+        var marker: MeshInstance3D = polygon_vertex_handles[i]
+        marker.global_position = node.to_global(local_point)
+        marker.scale = Vector3.ONE * handle_scale_factor * (
+            1.28 if i == selected_index else 1.0)
+        marker.material_override = (
+            polygon_vertex_handle_selected_material if i == selected_index
+            else polygon_vertex_handle_material)
+    if rebuild or transform_changed or outline_changed or size_changed:
+        var wire := ImmediateMesh.new()
+        wire.surface_begin(Mesh.PRIMITIVE_LINES)
+        for i in range(outline.size()):
+            var a_row: Array = outline[i]
+            var b_row: Array = outline[(i + 1) % outline.size()]
+            var a := node.to_global(Vector3(
+                float(a_row[0]) * size.x * 0.5,
+                size.y * 0.5 + 0.025,
+                float(a_row[1]) * size.z * 0.5))
+            var b := node.to_global(Vector3(
+                float(b_row[0]) * size.x * 0.5,
+                size.y * 0.5 + 0.025,
+                float(b_row[1]) * size.z * 0.5))
+            wire.surface_set_color(Color(1.0, 0.76, 0.12, 0.98))
+            wire.surface_add_vertex(a)
+            wire.surface_add_vertex(b)
+        wire.surface_end()
+        polygon_vertex_outline_node.mesh = wire
+        polygon_vertex_outline_node.visible = true
+    polygon_vertex_handle_root.visible = true
+    polygon_vertex_handles_outline = outline.duplicate(true)
+    polygon_vertex_handles_transform = node.global_transform
+    polygon_vertex_handles_size = size
+    polygon_vertex_handles_scale = handle_scale_factor
+    polygon_vertex_handles_selected = selected_index
+
+
+## Return the nearest visible handle within a small screen-space hit radius.
+## Front/Side views are intentionally excluded because they collapse the XZ
+## footprint to a line; Top and Perspective expose both editable coordinates.
+func _pick_polygon_vertex_handle_at(view_mouse_position: Vector2) -> int:
+    if (editor_view_mode != OrthoGuides.TOP
+        and editor_view_mode != OrthoGuides.PERSPECTIVE):
+        return -1
+    if (not is_instance_valid(camera) or not is_instance_valid(world_view)
+        or not is_instance_valid(view_container)
+        or view_container.size.x <= 0.0 or view_container.size.y <= 0.0):
+        return -1
+    _refresh_polygon_vertex_handles()
+    if not polygon_vertex_handle_root.visible:
+        return -1
+    var viewport_size := Vector2(world_view.size)
+    if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
+        return -1
+    var mouse_pixels := view_mouse_position * viewport_size / view_container.size
+    var nearest_pixels := 18.0
+    var nearest_index := -1
+    for i in range(polygon_vertex_handles.size()):
+        var marker: MeshInstance3D = polygon_vertex_handles[i]
+        if (not is_instance_valid(marker) or not marker.is_visible_in_tree()
+            or camera.is_position_behind(marker.global_position)):
+            continue
+        var projected := camera.unproject_position(marker.global_position)
+        var distance := projected.distance_to(mouse_pixels)
+        if distance <= nearest_pixels:
+            nearest_pixels = distance
+            nearest_index = i
+    return nearest_index
+
+
+func _begin_polygon_vertex_drag() -> bool:
+    if not is_instance_valid(view_container):
+        return false
+    return _begin_polygon_vertex_drag_at(view_container.get_local_mouse_position())
+
+
+## Begin one transaction from a selected editor-only polygon handle. The
+## drag plane is the brush's transformed top plane, so rotated/scaled previews
+## keep their local XZ footprint while the pointer is snapped in world X/Z.
+func _begin_polygon_vertex_drag_at(view_mouse_position: Vector2) -> bool:
+    if (source_collision_mode or fly_looking
+        or (editor_view_mode != OrthoGuides.TOP
+            and editor_view_mode != OrthoGuides.PERSPECTIVE)
+        or polygon_vertex_selector == null):
+        return false
+    var index := _pick_polygon_vertex_handle_at(view_mouse_position)
+    if index < 0:
+        return false
+    var name := _selected_custom_polygon_name()
+    if name.is_empty() or not draft_prop_copies.has(name):
+        return false
+    var node: MeshInstance3D = draft_prop_copies[name]
+    var spec: Dictionary = BrushGeometry.validate(draft_brush_specs.get(name, {}))
+    if spec.is_empty() or not is_instance_valid(node):
+        return false
+    var determinant := node.global_basis.determinant()
+    if not is_finite(determinant) or absf(determinant) < 0.000001:
+        return false
+    var normal := node.global_basis.inverse().transposed() * Vector3.UP
+    if not normal.is_finite() or normal.length_squared() < 0.000001:
+        return false
+    normal = normal.normalized()
+    var plane_point := node.to_global(Vector3(
+        0.0, float(spec["size"][1]) * 0.5 + 0.035, 0.0))
+    polygon_vertex_drag_plane = Plane(normal, normal.dot(plane_point))
+    var ray := _mouse_ray(view_mouse_position)
+    if ray.is_empty():
+        return false
+    var plane_hit: Variant = polygon_vertex_drag_plane.intersects_ray(
+        ray["origin"], ray["direction"])
+    if plane_hit == null:
+        return false
+    polygon_vertex_drag_before = _capture_edit_state()
+    if polygon_vertex_drag_before.is_empty():
+        return false
+    polygon_vertex_drag_outline = spec["outline"].duplicate(true)
+    polygon_vertex_drag_owner = name
+    polygon_vertex_drag_index = index
+    polygon_vertex_drag_active = true
+    polygon_vertex_selector.select(index)
+    _refresh_polygon_inspector()
+    _refresh_polygon_vertex_handles()
+    status_label.text = (
+        "Dragging Polygon corner " + str(index + 1)
+        + "; world X/Z snaps to Grid m. Release commits one Undo step. Private draft only.")
+    return true
+
+
+func _apply_polygon_vertex_drag() -> void:
+    if is_instance_valid(view_container):
+        _apply_polygon_vertex_drag_at(view_container.get_local_mouse_position())
+
+
+func _apply_polygon_vertex_drag_at(view_mouse_position: Vector2) -> void:
+    if not polygon_vertex_drag_active:
+        return
+    if (not draft_prop_copies.has(polygon_vertex_drag_owner)
+        or not draft_brush_specs.has(polygon_vertex_drag_owner)):
+        _finish_polygon_vertex_drag()
+        return
+    var node: MeshInstance3D = draft_prop_copies[polygon_vertex_drag_owner]
+    var spec: Dictionary = BrushGeometry.validate(
+        draft_brush_specs[polygon_vertex_drag_owner])
+    if spec.is_empty() or not is_instance_valid(node):
+        _finish_polygon_vertex_drag()
+        return
+    var ray := _mouse_ray(view_mouse_position)
+    if ray.is_empty():
+        return
+    var hit: Variant = polygon_vertex_drag_plane.intersects_ray(
+        ray["origin"], ray["direction"])
+    if hit == null:
+        return
+    var step := float(ortho_grid_step)
+    if not is_finite(step) or step < 0.25 or step > 64.0:
+        return
+    var snapped_world: Vector3 = hit
+    snapped_world.x = snappedf(snapped_world.x, step)
+    snapped_world.z = snappedf(snapped_world.z, step)
+    var plane_normal := polygon_vertex_drag_plane.normal
+    if absf(plane_normal.y) < 0.0001:
+        status_label.text = "Polygon drag refused: the top plane is too vertical for X/Z grid snapping."
+        return
+    snapped_world.y = (
+        polygon_vertex_drag_plane.d
+        - plane_normal.x * snapped_world.x
+        - plane_normal.z * snapped_world.z) / plane_normal.y
+    if not snapped_world.is_finite():
+        return
+    var determinant := node.global_basis.determinant()
+    if not is_finite(determinant) or absf(determinant) < 0.000001:
+        return
+    var local_point: Vector3 = node.global_transform.affine_inverse() * snapped_world
+    var size := Vector3(
+        float(spec["size"][0]), float(spec["size"][1]), float(spec["size"][2]))
+    if size.x <= 0.0 or size.z <= 0.0:
+        return
+    var candidate: Array = polygon_vertex_drag_outline.duplicate(true)
+    var row: Array = candidate[polygon_vertex_drag_index].duplicate()
+    row[0] = clampf(local_point.x / (size.x * 0.5), -1.0, 1.0)
+    row[1] = clampf(local_point.z / (size.z * 0.5), -1.0, 1.0)
+    candidate[polygon_vertex_drag_index] = row
+    var updated: Array = CustomPolygon.validate_outline(candidate)
+    if updated.is_empty():
+        status_label.text = (
+            "Corner preview rejected: that drag would cross, collapse or exceed the "
+            + "validated footprint. The last valid preview is retained.")
+        return
+    var next_spec: Dictionary = spec.duplicate(true)
+    next_spec["outline"] = updated
+    if not _set_brush_spec(polygon_vertex_drag_owner, next_spec):
+        status_label.text = "Corner preview refused; the previous valid mesh is retained."
+        return
+    _refresh_prop_inspection()
+    _refresh_polygon_vertex_handles()
+    status_label.text = (
+        "Previewing snapped Polygon corner " + str(polygon_vertex_drag_index + 1)
+        + " at " + str(snapped_world) + ". Release to commit one Undo step; draft only.")
+
+
+func _finish_polygon_vertex_drag() -> void:
+    if not polygon_vertex_drag_active:
+        return
+    var before := polygon_vertex_drag_before
+    var index := polygon_vertex_drag_index
+    var owner := polygon_vertex_drag_owner
+    polygon_vertex_drag_active = false
+    polygon_vertex_drag_owner = ""
+    polygon_vertex_drag_index = -1
+    polygon_vertex_drag_before = {}
+    polygon_vertex_drag_outline = []
+    var after := _capture_edit_state()
+    if before.get("copies", {}) != after.get("copies", {}):
+        _record_edit("Drag custom polygon vertex " + str(index + 1), before)
+        status_label.text = (
+            "Committed Polygon corner " + str(index + 1) + " on " + owner
+            + ". One Undo step; save the private draft to persist. No native BSP write.")
+    else:
+        status_label.text = "Polygon corner drag made no valid change; no Undo step created."
+    _refresh_polygon_vertex_handles()
+
+
 func _polygon_corner_selected(_index: int) -> void:
     if brush_inspector_syncing:
         return
     _refresh_polygon_inspector()
+    _refresh_polygon_vertex_handles()
 
 
 func _change_polygon_corner(value: float, axis: int) -> void:
@@ -8326,6 +8695,8 @@ func _view_mode_item_selected(index: int) -> void:
 func _set_editor_view_mode(mode: String) -> void:
     if not OrthoGuides.valid_mode(mode):
         return
+    if polygon_vertex_drag_active:
+        _finish_polygon_vertex_drag()
     if gizmo_drag_active:
         _finish_gizmo_drag()
     _set_fly_mode(false)
@@ -8334,6 +8705,7 @@ func _set_editor_view_mode(mode: String) -> void:
         editor_view_mode_select.select(OrthoGuides.MODES.find(mode))
     ortho_grid_last_mode = ""
     _update_camera()
+    _refresh_polygon_vertex_handles()
     if status_label != null:
         status_label.text = (
             "Editor-only " + mode + " view. Scroll to zoom, middle-drag to pan."
@@ -8411,6 +8783,7 @@ func _update_camera() -> void:
         camera, editor_view_mode, camera_target,
         orbit_distance, orbit_yaw, orbit_pitch)
     _refresh_ortho_grid()
+    _refresh_polygon_vertex_handles()
 
 ## The gizmo lives outside the imported GLB and is never included in
 ## actor selection, scene exports, or the original game data.
@@ -8673,6 +9046,8 @@ func _mouse_ray(view_mouse_position: Vector2) -> Dictionary:
 func _set_editor_tool(tool: String) -> void:
     if tool not in ["move", "rotate", "scale"]:
         return
+    if polygon_vertex_drag_active:
+        _finish_polygon_vertex_drag()
     _finish_gizmo_drag()
     editor_tool = tool
     _refresh_gizmo_shape()
@@ -8759,7 +9134,11 @@ func _input(event: InputEvent) -> void:
         elif button.button_index == MOUSE_BUTTON_LEFT:
             if button.pressed:
                 drag_distance = 0.0
-                if button.alt_pressed and button.shift_pressed and _can_pick_selected_draft_face():
+                if (not button.alt_pressed and not button.shift_pressed
+                    and not button.ctrl_pressed and _begin_polygon_vertex_drag()):
+                    dragging = true
+                    drag_mode = "polygon_vertex"
+                elif button.alt_pressed and button.shift_pressed and _can_pick_selected_draft_face():
                     dragging = true
                     drag_mode = "draft_face_pick"
                 elif button.alt_pressed:
@@ -8780,6 +9159,8 @@ func _input(event: InputEvent) -> void:
                         _pick_actor(button.ctrl_pressed or button.shift_pressed)
                 if drag_mode == "draft_face_pick" and mouse_inside and drag_distance < 3.0:
                     _pick_selected_draft_face_from_viewport()
+                if drag_mode == "polygon_vertex":
+                    _finish_polygon_vertex_drag()
                 if drag_mode == "gizmo":
                     _finish_gizmo_drag()
                 dragging = false
@@ -8807,6 +9188,8 @@ func _input(event: InputEvent) -> void:
                 _update_camera()
             elif drag_mode == "gizmo":
                 _apply_gizmo_drag()
+            elif drag_mode == "polygon_vertex":
+                _apply_polygon_vertex_drag()
             get_viewport().set_input_as_handled()
 
 

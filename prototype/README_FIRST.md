@@ -97,6 +97,27 @@ The Windows executable self-test checks concave mesh construction,
 corner edits, insert/delete, Undo/Redo, full project reopen and
 malicious private draft refusal using invented data only.
 
+## v0.39: snapped custom-polygon vertex handles in the viewport
+
+Select one editor-only **Polygon** brush. In **Top (XZ)** or **Perspective**,
+its footprint now displays a colored wire outline and one clickable handle
+per corner. Drag a handle to reshape the footprint directly in the viewport.
+The pointer is projected onto the transformed brush top plane, world X/Z
+coordinates snap to the current **Grid m** increment, and the normalized
+local X/Z outline is revalidated before each preview mesh update. Invalid,
+crossing or collapsed shapes leave the last valid preview visible. Handles
+scale with viewport zoom so the corners remain easy to target.
+
+Release commits the complete drag as **one Undo step**; Ctrl+Z/Ctrl+Y restores
+the exact before/after outline. Front (XY) and Side (ZY) remain view-only for
+this planar footprint tool. The handles and wire are editor-only overlays,
+not actor hierarchy entries, imported source meshes, or saved scene objects;
+the authored polygon data itself continues through the existing private JSON
+Save draft / Load draft workflow.
+
+This is still **Godot draft geometry only**. It does not edit original DX2 BSP
+faces, compile CSG/collision/lightmaps, or produce a game-compatible GMP.
+
 ## Get running in Windows 10/11, 64-bit
 
 1. **Extract the entire ZIP** to a normal user-writable directory, e.g. `D:\DX2Ed_Prototype\`. Do not run files directly from inside the ZIP. Do not extract it into your game install or `Content\DX2\Maps`.
