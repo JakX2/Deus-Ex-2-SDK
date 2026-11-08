@@ -2,7 +2,7 @@ extends RefCounted
 ## DX2Ed source-only brush primitives. Godot metres, Y-up.
 ## These meshes are NOT Unreal CSG brushes or compiled DX2 BSP.
 
-const TYPES := ["Box", "Wall", "Floor", "Stairs", "Cylinder"]
+const TYPES := ["Box", "Wall", "Floor", "Stairs", "Cylinder", "Cone", "Sphere"]
 const MIN_SIZE := 0.05
 const MAX_SIZE := 256.0
 const MAX_STEPS := 64
@@ -15,6 +15,8 @@ static func default_spec(kind: String) -> Dictionary:
         "Floor": return {"kind": "Floor", "size": [4.0, 0.2, 4.0], "steps": 1}
         "Stairs": return {"kind": "Stairs", "size": [2.0, 2.0, 4.0], "steps": 8}
         "Cylinder": return {"kind": "Cylinder", "size": [2.0, 3.0, 2.0], "steps": 1}
+        "Cone": return {"kind": "Cone", "size": [2.0, 3.0, 2.0], "steps": 1}
+        "Sphere": return {"kind": "Sphere", "size": [2.0, 2.0, 2.0], "steps": 1}
     return {}
 
 
@@ -98,6 +100,42 @@ static func _cylinder(st: SurfaceTool, size: Vector3) -> void:
         _quad(st, low_a, high_a, high_b, low_b)
 
 
+static func _cone(st: SurfaceTool, size: Vector3) -> void:
+    # Elliptical 24-sided cone with outward sides and closed bottom.
+    const SEGMENTS := 24
+    var tip := Vector3(0.0, size.y * 0.5, 0.0)
+    var bottom := Vector3(0.0, -size.y * 0.5, 0.0)
+    for i in range(SEGMENTS):
+        var a := TAU * float(i) / float(SEGMENTS)
+        var b := TAU * float(i + 1) / float(SEGMENTS)
+        var p := Vector3(cos(a) * size.x * 0.5, bottom.y, sin(a) * size.z * 0.5)
+        var q := Vector3(cos(b) * size.x * 0.5, bottom.y, sin(b) * size.z * 0.5)
+        var normal := (tip - p).cross(q - p).normalized()
+        _triangle(st, p, tip, q, normal)
+        _triangle(st, bottom, p, q, Vector3.DOWN)
+
+
+static func _sphere(st: SurfaceTool, size: Vector3) -> void:
+    # Closed latitude/longitude ellipsoid with fixed, bounded tessellation.
+    const SEGMENTS := 24
+    const RINGS := 12
+    for ring in range(RINGS):
+        var t0 := PI * float(ring) / float(RINGS)
+        var t1 := PI * float(ring + 1) / float(RINGS)
+        for i in range(SEGMENTS):
+            var a := TAU * float(i) / float(SEGMENTS)
+            var b := TAU * float(i + 1) / float(SEGMENTS)
+            var p := Vector3(sin(t0) * cos(a), cos(t0), sin(t0) * sin(a))
+            var q := Vector3(sin(t0) * cos(b), cos(t0), sin(t0) * sin(b))
+            var r := Vector3(sin(t1) * cos(a), cos(t1), sin(t1) * sin(a))
+            var u := Vector3(sin(t1) * cos(b), cos(t1), sin(t1) * sin(b))
+            var scale := size * 0.5
+            if ring > 0:
+                _triangle(st, p * scale, q * scale, r * scale, (q - p).cross(r - p).normalized())
+            if ring < RINGS - 1:
+                _triangle(st, q * scale, u * scale, r * scale, (u - q).cross(r - q).normalized())
+
+
 static func build_mesh(raw: Variant) -> Mesh:
     var spec := validate(raw)
     if spec.is_empty():
@@ -105,7 +143,11 @@ static func build_mesh(raw: Variant) -> Mesh:
     var size := Vector3(spec["size"][0], spec["size"][1], spec["size"][2])
     var st := SurfaceTool.new()
     st.begin(Mesh.PRIMITIVE_TRIANGLES)
-    if spec["kind"] == "Cylinder":
+    if spec["kind"] == "Cone":
+        _cone(st, size)
+    elif spec["kind"] == "Sphere":
+        _sphere(st, size)
+    elif spec["kind"] == "Cylinder":
         _cylinder(st, size)
     elif spec["kind"] == "Stairs":
         # Rise in +Y, walk in -Z, with complete closed treads.
