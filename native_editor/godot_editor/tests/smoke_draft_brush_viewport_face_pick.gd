@@ -57,6 +57,20 @@ func _run() -> void:
             _fail("Invalid, unsupported or nonfinite face ray accepted")
             return
 
+    # The face highlight is exactly four local edges, bounded to a single
+    # authored face; no original BSP geometry enters the preview.
+    var line_vertices := Brush.face_outline_edges(box, 1)
+    if line_vertices.size() != 8:
+        _fail("Selected face highlight did not create exactly four edges")
+        return
+    for point in line_vertices:
+        if not is_equal_approx(point.x, 1.0075):
+            _fail("Selected face outline escaped +X draft face")
+            return
+    if not Brush.face_outline_edges(Brush.default_spec("Ramp"), 1).is_empty():
+        _fail("Unsupported/native face acquired a preview highlight")
+        return
+
     var editor := Editor.new()
     get_root().add_child(editor)
     var draft := editor._new_draft_copy("Brush::Box", "DraftProp_17", pose)
@@ -73,6 +87,12 @@ func _run() -> void:
     if not selected or editor.brush_face_selector.selected != 1:
         _fail("Viewport face picking did not choose local +X Inspector face")
         return
+    if (not is_instance_valid(editor.brush_face_outline)
+        or editor.brush_face_outline.get_parent() != draft
+        or editor.brush_face_outline.mesh.get_surface_count() != 1
+        or editor.all_mesh_instances.has(editor.brush_face_outline)):
+        _fail("Picked face wireframe leaked into original actor/mesh hierarchy")
+        return
     var back_before := draft.global_position - draft.global_basis.x
     editor._grid_spacing_changed(0.5)
     editor._change_brush_face(1.0)
@@ -80,6 +100,12 @@ func _run() -> void:
         or not (draft.global_position - draft.global_basis.x * 1.25
                 ).is_equal_approx(back_before)):
         _fail("Picking +X and resizing moved opposite world plane")
+        return
+    var resized_outline := Brush.face_outline_edges(
+        editor.draft_brush_specs["DraftProp_17"], 1)
+    if resized_outline.size() != 8 or not is_equal_approx(
+            resized_outline[0].x, 1.2575):
+        _fail("Draft face highlight failed to track resized face")
         return
     editor._undo_edit()
     if not is_equal_approx(float(editor.draft_brush_specs["DraftProp_17"]["size"][0]), 2.0):
@@ -110,6 +136,9 @@ func _run() -> void:
         "name": str(imported.name), "class": "StaticMeshActor", "export": 918,
         "location": [0,0,0], "rotation": [0,0,0], "game_properties": []}
     editor._select_mesh_only(imported)
+    if is_instance_valid(editor.brush_face_outline):
+        _fail("Original actor selection kept an editor-only brush face outline")
+        return
     if editor._can_pick_selected_draft_face() or editor._pick_selected_draft_face_ray(
             Vector3(5,0,0), Vector3.LEFT):
         _fail("Imported original mesh wrongly acquired draft face editor")
