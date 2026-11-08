@@ -4,6 +4,7 @@ extends SceneTree
 ## No retail maps, native actors, source GMP writes, BSP/zone serialization.
 const Guides = preload("res://orthographic_authoring_guides.gd")
 const Editor = preload("res://main.gd")
+const Brush = preload("res://brush_geometry.gd")
 
 
 func _initialize() -> void:
@@ -64,6 +65,16 @@ func _run() -> void:
         or not Guides.grid_segments(Guides.TOP, target, 0.0, 2).is_empty()
         or not Guides.grid_segments(Guides.TOP, Vector3(INF, 0, 0), 1.0).is_empty()):
         _fail("Unbounded/invalid grid or invalid view did not fail closed")
+        return
+    # The actual preview-brush mesh builder, used by the editor and draft save.
+    var cylinder_spec := Brush.default_spec("Cylinder")
+    var cylinder := Brush.build_mesh(cylinder_spec)
+    if (cylinder_spec.is_empty() or cylinder == null
+        or cylinder.get_surface_count() != 1
+        or cylinder.surface_get_array_len(0) != 288
+        or Brush.validate({"kind": "Cylinder", "size": [0.0, 2.0, 2.0], "steps": 1}) != {}
+        or Brush.validate({"kind": "Cylinder", "size": [2.0, 2.0, 2.0], "steps": 2}) != {}):
+        _fail("Closed bounded cylinder draft mesh/validation regression")
         return
     var editor := Editor.new()
     get_root().add_child(editor)
