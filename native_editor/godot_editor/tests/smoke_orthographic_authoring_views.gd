@@ -181,6 +181,18 @@ func _run() -> void:
         if verdict.is_empty() != case["accept"]:
             _fail("Private draft preflight " + case["label"] + ": " + verdict)
             return
+    var selected_copy_rows := [{"name": "DraftProp_9", "from_actor": actor_id}]
+    var restored_selection: Variant = editor._validated_draft_selection(
+        [actor_id, "DraftProp_9"], selected_copy_rows)
+    if restored_selection == null or restored_selection.size() != 2:
+        _fail("Private project selection failed to resolve original actor and draft copy")
+        return
+    for invalid_selection in [
+        [actor_id, actor_id], ["missing"], ["DraftProp_10"], [42], "not an array"
+    ]:
+        if editor._validated_draft_selection(invalid_selection, selected_copy_rows) != null:
+            _fail("Invalid private project selection was accepted")
+            return
     editor.selected_meshes[invented.name] = invented
     editor.selected_mesh = invented
     var original_preview := invented.global_position
