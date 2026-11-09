@@ -2,6 +2,7 @@ extends RefCounted
 ## Exact-weld MOPP-subset vertex handles and screen-space picking.
 ## These are original Level float32 position identities, not native BSP vertex IDs.
 
+const SourceSectionEdgePicker = preload("res://source_section_edge_picker.gd")
 const MAX_EDGE_COUNT := 24576
 const MAX_VERTEX_COUNT := 49152
 const MAX_EDGES_PER_VERTEX := 4096
@@ -31,7 +32,11 @@ static func _valid_vertex_report(report: Dictionary) -> bool:
         or report.get("exact_original_float32_weld_ids", false) != true
         or report.get("native_bsp_vertex_verified", true) != false
         or report.get("native_map_written", true) != false
-        or int(report.get("max_vertex_count", -1)) != MAX_VERTEX_COUNT):
+        or int(report.get("max_edge_count", -1)) != MAX_EDGE_COUNT
+        or int(report.get("max_vertex_count", -1)) != MAX_VERTEX_COUNT
+        or int(report.get("max_edges_per_vertex", -1)) != MAX_EDGES_PER_VERTEX
+        or int(report.get("max_triangles_per_vertex", -1)) != MAX_TRIANGLES_PER_VERTEX
+        or int(report.get("max_external_representatives_per_vertex", -1)) != MAX_EXTERNAL_REPRESENTATIVES_PER_VERTEX):
         return false
     var source_map := str(report.get("source_map", ""))
     var section_key := str(report.get("source_section_key", ""))
@@ -40,6 +45,14 @@ static func _valid_vertex_report(report: Dictionary) -> bool:
         return false
     for character in source_sha256.to_lower():
         if not "0123456789abcdef".contains(character):
+            return false
+    var raw_edge_count: Variant = report.get("source_edge_report_count", null)
+    if (typeof(raw_edge_count) != TYPE_INT or int(raw_edge_count) < 1
+        or int(raw_edge_count) > MAX_EDGE_COUNT):
+        return false
+    for key in ["source_block_id", "render_block_ordinal", "render_section_ordinal"]:
+        var raw_tuple_value: Variant = report.get(key, null)
+        if typeof(raw_tuple_value) != TYPE_INT or int(raw_tuple_value) < 0:
             return false
     var raw_records: Variant = report.get("vertex_records", null)
     if typeof(raw_records) != TYPE_ARRAY:
@@ -83,6 +96,7 @@ static func _valid_vertex_report(report: Dictionary) -> bool:
             if (parts.size() != 2
                 or edge_key != "%d:%d" % [int(parts[0]), int(parts[1])]
                 or int(parts[0]) < 0 or int(parts[1]) <= int(parts[0])
+                or (int(parts[0]) != weld_id and int(parts[1]) != weld_id)
                 or seen_edges.has(edge_key)
                 or (not previous_edge.is_empty() and edge_key < previous_edge)):
                 return false
@@ -195,9 +209,11 @@ static func build_vertex_report(details: Dictionary) -> Dictionary:
         "vertex_record_count": records.size(),
         "unique_source_vertex_count": records.size(),
         "vertex_records": records,
+        "max_edge_count": MAX_EDGE_COUNT,
         "max_vertex_count": MAX_VERTEX_COUNT,
         "max_edges_per_vertex": MAX_EDGES_PER_VERTEX,
         "max_triangles_per_vertex": MAX_TRIANGLES_PER_VERTEX,
+        "max_external_representatives_per_vertex": MAX_EXTERNAL_REPRESENTATIVES_PER_VERTEX,
         "exact_original_float32_weld_ids": true,
         "mopp_leaf_subset_only": true,
         "native_bsp_vertex_verified": false,
@@ -229,10 +245,20 @@ static func camera_signature_matches(index: Dictionary, camera: Camera3D,
     if not is_instance_valid(camera) or index.is_empty():
         return false
     return (
-        index.get("camera_transform") == camera.global_transform
+        index.get("schema", "") == "DX2Ed-source-section-vertex-screen-index-v1"
+        and index.get("mopp_leaf_subset_only", false) == true
+        and index.get("native_bsp_vertex_verified", true) == false
+        and index.get("native_map_written", true) == false
+        and index.get("camera_transform") == camera.global_transform
         and int(index.get("camera_projection", -1)) == int(camera.projection)
         and is_equal_approx(float(index.get("camera_size", -1.0)), camera.size)
         and is_equal_approx(float(index.get("camera_fov", -1.0)), camera.fov)
+        and is_equal_approx(float(index.get("camera_near", -1.0)), camera.near)
+        and is_equal_approx(float(index.get("camera_far", -1.0)), camera.far)
+        and int(index.get("camera_keep_aspect", -1)) == int(camera.keep_aspect)
+        and is_equal_approx(float(index.get("camera_h_offset", INF)), camera.h_offset)
+        and is_equal_approx(float(index.get("camera_v_offset", INF)), camera.v_offset)
+        and index.get("camera_frustum_offset", Vector2(INF, INF)) == camera.frustum_offset
         and index.get("viewport_size", Vector2.ZERO) == viewport_size
     )
 
@@ -248,6 +274,9 @@ static func build_screen_index(report: Dictionary, camera: Camera3D,
         var point := _point(record.get("godot_xyz", null))
         if not point.is_finite() or camera.is_position_behind(point):
             continue
+        var depth := -camera.global_basis.z.dot(point - camera.global_position)
+        if not is_finite(depth) or depth < camera.near or depth > camera.far:
+            continue
         var screen := camera.unproject_position(point)
         if (not is_finite(screen.x) or not is_finite(screen.y)
             or screen.x < -PICK_RADIUS_PIXELS or screen.y < -PICK_RADIUS_PIXELS
@@ -260,7 +289,7 @@ static func build_screen_index(report: Dictionary, camera: Camera3D,
             "vertex_key": str(record["vertex_key"]),
             "screen": screen,
             "world": point,
-            "depth": camera.global_position.distance_to(point),
+            "depth": depth,
         })
         var cell_x := floori(screen.x / CELL_SIZE)
         var cell_y := floori(screen.y / CELL_SIZE)
@@ -279,6 +308,12 @@ static func build_screen_index(report: Dictionary, camera: Camera3D,
         "camera_projection": int(camera.projection),
         "camera_size": camera.size,
         "camera_fov": camera.fov,
+        "camera_near": camera.near,
+        "camera_far": camera.far,
+        "camera_keep_aspect": int(camera.keep_aspect),
+        "camera_h_offset": camera.h_offset,
+        "camera_v_offset": camera.v_offset,
+        "camera_frustum_offset": camera.frustum_offset,
         "cell_size": CELL_SIZE,
         "records": projected_records,
         "cells": cells,
@@ -364,13 +399,18 @@ static func build_overlay(report: Dictionary, camera: Camera3D,
         var point := _point(record.get("godot_xyz", null))
         if not point.is_finite() or camera.is_position_behind(point):
             continue
+        var depth := -camera.global_basis.z.dot(point - camera.global_position)
+        if not is_finite(depth) or depth < camera.near or depth > camera.far:
+            continue
         var screen := camera.unproject_position(point)
         if (not is_finite(screen.x) or not is_finite(screen.y)
             or screen.x < -PICK_RADIUS_PIXELS or screen.y < -PICK_RADIUS_PIXELS
             or screen.x > viewport_size.x + PICK_RADIUS_PIXELS
             or screen.y > viewport_size.y + PICK_RADIUS_PIXELS):
             continue
-        var depth := maxf(0.001, camera.global_position.distance_to(point))
+        var depth := -camera.global_basis.z.dot(point - camera.global_position)
+        if not is_finite(depth) or depth < camera.near or depth > camera.far:
+            continue
         var world_per_pixel := camera.size / viewport_size.y
         if camera.projection == Camera3D.PROJECTION_PERSPECTIVE:
             world_per_pixel = 2.0 * depth * tan(deg_to_rad(camera.fov * 0.5)) / viewport_size.y
@@ -418,7 +458,9 @@ static func build_highlight(pick: Dictionary, camera: Camera3D,
     var point: Vector3 = pick.get("world_point", Vector3(INF, INF, INF))
     if not point.is_finite():
         return null
-    var depth := maxf(0.001, camera.global_position.distance_to(point))
+    var depth := -camera.global_basis.z.dot(point - camera.global_position)
+    if not is_finite(depth) or depth < camera.near or depth > camera.far:
+        return null
     var world_per_pixel := camera.size / viewport_height
     if camera.projection == Camera3D.PROJECTION_PERSPECTIVE:
         world_per_pixel = 2.0 * depth * tan(deg_to_rad(camera.fov * 0.5)) / viewport_height

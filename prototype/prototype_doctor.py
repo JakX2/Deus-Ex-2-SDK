@@ -65,6 +65,7 @@ REQUIRED = (
     "native_editor/godot_editor/source_section_fill_preview.gd",
     "native_editor/godot_editor/source_section_edge_overlay.gd",
     "native_editor/godot_editor/source_section_edge_picker.gd",
+    "native_editor/godot_editor/source_section_vertex_picker.gd",
     "native_editor/godot_editor/tests/smoke_source_section_topology.gd",
     "native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py",
@@ -188,6 +189,17 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("editor_source_section_edge_pick_radius_pixels") != 18
                 or manifest.get("editor_source_section_edge_native_surface_verified") is not False
                 or manifest.get("editor_source_section_edge_native_writer") is not False
+                or manifest.get("editor_source_section_vertex_overlay") is not True
+                or manifest.get("editor_source_section_vertex_overlay_max_vertices") != 49152
+                or manifest.get("editor_source_section_vertex_overlay_exact_weld_ids") is not True
+                or manifest.get("editor_source_section_vertex_mopp_leaf_subset_only") is not True
+                or manifest.get("editor_source_section_vertex_hover_pick") is not True
+                or manifest.get("editor_source_section_vertex_pick_radius_pixels") != 12
+                or manifest.get("editor_source_section_vertex_selection_details") is not True
+                or manifest.get("editor_source_section_vertex_incident_edge_report") is not True
+                or manifest.get("editor_source_section_vertex_incident_triangle_navigation") is not True
+                or manifest.get("editor_source_section_vertex_native_bsp_verified") is not False
+                or manifest.get("editor_source_section_vertex_native_writer") is not False
                 or manifest.get("editor_source_section_neighbor_navigation") is not True
                 or manifest.get("editor_source_section_neighbor_navigation_native_surface_verified") is not False
                 or manifest.get("editor_matlib_python_worker_invocation_verified") is not True

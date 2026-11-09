@@ -245,6 +245,8 @@ func _run() -> void:
         or not VertexPicker.camera_signature_matches(vertex_index, camera, viewport_size)
         or picked_vertex.get("vertex_key", "") != "1"
         or int(picked_vertex.get("source_weld_id", -1)) != 1
+        or not is_equal_approx(float(picked_vertex.get("depth_godot_units", -1.0)),
+            -camera.global_basis.z.dot(target_point - camera.global_position))
         or not VertexPicker.record_belongs_to_report(vertex_report, picked_vertex.get("record", {}))):
         _fail("Screen-space vertex picking did not recover the exact original Level weld identity.")
         return
@@ -267,6 +269,30 @@ func _run() -> void:
         _fail("Camera motion must invalidate the projected screen-space source vertex index.")
         return
     camera.position -= Vector3(0.25, 0.0, 0.0)
+    var original_near := camera.near
+    var original_far := camera.far
+    camera.near = original_near + 0.01
+    if VertexPicker.camera_signature_matches(stale_vertex_index, camera, viewport_size):
+        _fail("Camera near-plane changes must invalidate the projected source vertex index.")
+        return
+    camera.near = original_near
+    camera.far = camera.near + 0.01
+    if not VertexPicker.build_screen_index(vertex_report, camera, viewport_size).is_empty():
+        _fail("Vertices outside the active camera far clip plane must not receive selectable handles.")
+        return
+    camera.far = original_far
+    var invalid_vertex_report: Dictionary = vertex_report.duplicate(true)
+    var invalid_vertex_records: Array = invalid_vertex_report["vertex_records"]
+    for record_index in range(invalid_vertex_records.size()):
+        var invalid_record: Dictionary = invalid_vertex_records[record_index]
+        if int(invalid_record.get("weld_id", -1)) == 1:
+            invalid_record["incident_edge_keys"] = ["2:3"]
+            invalid_vertex_records[record_index] = invalid_record
+            break
+    invalid_vertex_report["vertex_records"] = invalid_vertex_records
+    if VertexPicker._valid_vertex_report(invalid_vertex_report):
+        _fail("A vertex report must reject incident edge keys that do not contain that exact weld ID.")
+        return
     var mismatched_weld_report: Dictionary = report.duplicate(true)
     var mismatched_edges: Array = mismatched_weld_report["edge_records"]
     var mismatched_first: Dictionary = mismatched_edges[0]

@@ -10137,7 +10137,7 @@ func _toggle_source_section_vertex_overlay(enabled: bool) -> void:
         if source_section_topology_panel != null and source_section_topology_panel.vertex_toggle != null:
             source_section_topology_panel.vertex_toggle.set_pressed_no_signal(false)
             source_section_topology_panel.vertex_toggle.disabled = true
-        source_collision_details.text += "\\nExact-weld vertex handles refused: bounded MOPP-subset edge provenance is unavailable."
+        source_collision_details.text += "\nExact-weld vertex handles refused: bounded MOPP-subset edge provenance is unavailable."
         return
     var overlay: Dictionary = SourceSectionVertexPicker.build_overlay(
         report, camera, Vector2(world_view.size))
@@ -10146,7 +10146,7 @@ func _toggle_source_section_vertex_overlay(enabled: bool) -> void:
         if source_section_topology_panel != null and source_section_topology_panel.vertex_toggle != null:
             source_section_topology_panel.vertex_toggle.set_pressed_no_signal(false)
             source_section_topology_panel.vertex_toggle.disabled = true
-        source_collision_details.text += "\\nExact-weld vertex handles refused: viewport marker construction failed."
+        source_collision_details.text += "\nExact-weld vertex handles refused: viewport marker construction failed."
         return
     source_collision_section_vertex_report = report.duplicate(true)
     source_collision_section_vertex_marker = marker_value
@@ -10245,7 +10245,7 @@ func _select_source_section_vertex(picked: Dictionary) -> void:
     ]
 
 
-func _clear_source_section_edge_hover() -> void:func _clear_source_section_edge_hover() -> void:
+func _clear_source_section_edge_hover() -> void:
     if is_instance_valid(source_collision_section_edge_hover_marker):
         source_collision_section_edge_hover_marker.queue_free()
     source_collision_section_edge_hover_marker = null

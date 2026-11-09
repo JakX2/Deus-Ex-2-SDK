@@ -81,8 +81,8 @@
       "title": "Vertex, face, polygon edit",
       "status": "partial",
       "phase": 2,
-      "evidence": "DX2Ed v0.35 editor-only face In/Out on Box/Wall/Floor draft brushes (six local-axis faces) with anchored opposing plane, undo/redo and private JSON project round-trip; source T3Ed ModeFaceDrag reference. Native BSP face/vertex mesh authoring remains missing. v0.37: Alt+Shift viewport click selects local six-axis face of only the already-selected editor-only Box/Wall/Floor, rotation-aware, then Inspector In/Out changes dimensions; real Godot synthetic smoke. v0.38: custom concave Polygon draft brush with 3-32 editable local footprint vertices, bounded XZ coordinate UI, insertion/deletion, triangulated top/bottom and side preview mesh, Undo/Redo and strict private project save/reopen; synthetic Godot test. v0.39: selectable editor-only Polygon footprint handles and a top-plane viewport drag in Top/Perspective; world X/Z grid snapping, validated live preview, one Undo/Redo transaction and synthetic real-Godot smoke.",
-      "next_step": "General 3D polyhedral vertex/edge editing, per-surface material/UV authoring and independently proven native BSP/zone/CSG cooking remain missing; custom polygon tools are private Godot drafts only."
+      "evidence": "DX2Ed v0.35 editor-only face In/Out on Box/Wall/Floor draft brushes (six local-axis faces) with anchored opposing plane, undo/redo and private JSON project round-trip; source T3Ed ModeFaceDrag reference. Native BSP face/vertex mesh authoring remains missing. v0.37: Alt+Shift viewport click selects local six-axis face of only the already-selected editor-only Box/Wall/Floor, rotation-aware, then Inspector In/Out changes dimensions; real Godot synthetic smoke. v0.38: custom concave Polygon draft brush with 3-32 editable local footprint vertices, bounded XZ coordinate UI, insertion/deletion, triangulated top/bottom and side preview mesh, Undo/Redo and strict private project save/reopen; synthetic Godot test. v0.39: selectable editor-only Polygon footprint handles and a top-plane viewport drag in Top/Perspective; world X/Z grid snapping, validated live preview, one Undo/Redo transaction and synthetic real-Godot smoke. v0.52: the original source-section Inspector adds selectable MOPP-subset Level float32 weld handles with incident edge/triangle details; these are not native BSP vertex IDs.",
+      "next_step": "General 3D polyhedral vertex/edge editing and independently authenticated native BSP/zone/CSG cooking remain missing; custom polygon tools are private Godot drafts and source weld handles are read-only MOPP-subset evidence."
     },
     {
       "id": "materials_uv",
@@ -227,6 +227,14 @@
       "phase": 1,
       "evidence": "DX2Ed v0.51 adds a camera-signature-cached, 64-pixel screen-space index for the bounded exact-original-float32-weld MOPP-leaf edge overlay; hover highlights and click selection expose weld IDs, incident Level triangle IDs, raw source edge code and a verified adjacent-section representative. The selected-edge Inspector can navigate to local or adjacent MOPP-linked triangles and copy source-pinned JSON. This remains a MOPP terminal-leaf subset, not complete native BSP edge/vertex identity.",
       "next_step": "Authenticate complete original Flesh/BSP surface and vertex provenance, then compare edge/vertex picking against independent source-map rendering; keep native writers disabled."
+    },
+    {
+      "id": "source_section_vertex_interaction",
+      "title": "Interactive source-section vertex picking and navigation",
+      "status": "partial",
+      "phase": 1,
+      "evidence": "DX2Ed v0.52 derives a bounded vertex inventory from the authenticated MOPP terminal-leaf edge report, draws transient exact-original-float32-weld handles, and supports camera/clip-aware 12-pixel screen-space hover/click. The selected-vertex Inspector exposes incident edge keys, original Level triangle IDs and observed adjacent-section representatives, with local/adjacent navigation and source-pinned JSON. These are MOPP terminal-leaf subset weld identities, not native BSP vertex IDs or complete Flesh render vertices.",
+      "next_step": "Authenticate complete original Flesh/BSP vertex provenance and compare source vertex picking against independent original-map rendering; keep native writers disabled."
     }
   ]
 }

@@ -286,6 +286,7 @@ func set_selected_vertex(record: Dictionary, report: Dictionary) -> bool:
         or str(report.get("source_sha256", "")) != str(summary.get("source_sha256", ""))
         or str(report.get("source_section_key", "")) != str(summary.get("source_section_key", ""))):
         return false
+    clear_selected_edge()
     clear_selected_vertex()
     selected_vertex = record.duplicate(true)
     var weld_id := int(selected_vertex.get("weld_id", -1))

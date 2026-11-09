@@ -134,5 +134,46 @@ class SourceSectionTopologyContractTests(unittest.TestCase):
         self.assertIn("Compile exact-weld source-section edge overlay helper", workflow)
         self.assertIn("Compile source-section edge hover picker", workflow)
 
+
+    def test_vertex_picker_is_bounded_exact_weld_and_camera_clip_aware(self) -> None:
+        helper = (ROOT / "native_editor/godot_editor/source_section_vertex_picker.gd").read_text("utf-8")
+        panel = (ROOT / "native_editor/godot_editor/source_section_topology_panel.gd").read_text("utf-8")
+        main = (ROOT / "native_editor/godot_editor/main.gd").read_text("utf-8")
+        self.assertIn('const SourceSectionEdgePicker = preload("res://source_section_edge_picker.gd")', helper)
+        self.assertIn("MAX_EDGE_COUNT := 24576", helper)
+        self.assertIn("MAX_VERTEX_COUNT := 49152", helper)
+        self.assertIn("PICK_RADIUS_PIXELS := 12.0", helper)
+        self.assertIn("(int(parts[0]) != weld_id and int(parts[1]) != weld_id)", helper)
+        self.assertIn("camera_near", helper)
+        self.assertIn("camera_far", helper)
+        self.assertIn("camera_keep_aspect", helper)
+        self.assertIn("depth_godot_units", helper)
+        self.assertIn('"native_bsp_vertex_verified": false', helper)
+        self.assertIn('"native_map_written": false', helper)
+        self.assertIn("incident_edge_keys", helper)
+        self.assertIn("incident_level_triangle_ids", helper)
+        self.assertIn("signal vertex_overlay_toggled", panel)
+        self.assertIn("set_selected_vertex", panel)
+        self.assertIn("clear_selected_edge()", panel)
+        self.assertIn("_update_source_section_vertex_hover", main)
+        self.assertIn("_select_source_section_vertex", main)
+        self.assertEqual(main.count("func _clear_source_section_edge_hover() -> void:"), 1)
+
+    def test_vertex_picker_is_packaged_and_native_writer_stays_disabled(self) -> None:
+        builder = (ROOT / "tools/build_dx2ed_windows_prototype.py").read_text("utf-8")
+        doctor = (ROOT / "prototype/prototype_doctor.py").read_text("utf-8")
+        workflow = (ROOT / ".github/workflows/native-dx2ed.yml").read_text("utf-8")
+        for source in (
+            "native_editor/godot_editor/source_section_vertex_picker.gd",
+            "native_editor/godot_editor/tests/smoke_source_section_topology.gd",
+        ):
+            self.assertIn(source, builder)
+            self.assertIn(source, doctor)
+        self.assertIn("editor_source_section_vertex_native_writer", builder)
+        self.assertIn("editor_source_section_vertex_native_bsp_verified", doctor)
+        self.assertIn("Compile source-section exact-weld vertex picker", workflow)
+        self.assertIn("smoke_source_section_topology.gd", workflow)
+
+
 if __name__ == "__main__":
     unittest.main()

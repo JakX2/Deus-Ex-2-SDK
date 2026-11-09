@@ -73,6 +73,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 "native_editor/godot_editor/source_section_fill_preview.gd",
                 "native_editor/godot_editor/source_section_edge_overlay.gd",
                 "native_editor/godot_editor/source_section_edge_picker.gd",
+                "native_editor/godot_editor/source_section_vertex_picker.gd",
                 "native_editor/godot_editor/tests/smoke_source_section_topology.gd",
                 "native_editor/godot_editor/python_runtime.gd",
                 "native_editor/godot_editor/startup_route.gd",
@@ -118,6 +119,17 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
             self.assertEqual(doc["editor_source_section_edge_pick_radius_pixels"], 18)
             self.assertFalse(doc["editor_source_section_edge_native_surface_verified"])
             self.assertFalse(doc["editor_source_section_edge_native_writer"])
+            self.assertTrue(doc["editor_source_section_vertex_overlay"])
+            self.assertEqual(doc["editor_source_section_vertex_overlay_max_vertices"], 49152)
+            self.assertTrue(doc["editor_source_section_vertex_overlay_exact_weld_ids"])
+            self.assertTrue(doc["editor_source_section_vertex_mopp_leaf_subset_only"])
+            self.assertTrue(doc["editor_source_section_vertex_hover_pick"])
+            self.assertEqual(doc["editor_source_section_vertex_pick_radius_pixels"], 12)
+            self.assertTrue(doc["editor_source_section_vertex_selection_details"])
+            self.assertTrue(doc["editor_source_section_vertex_incident_edge_report"])
+            self.assertTrue(doc["editor_source_section_vertex_incident_triangle_navigation"])
+            self.assertFalse(doc["editor_source_section_vertex_native_bsp_verified"])
+            self.assertFalse(doc["editor_source_section_vertex_native_writer"])
             self.assertTrue(doc["editor_source_section_neighbor_navigation"])
             self.assertFalse(doc["editor_source_section_neighbor_navigation_native_surface_verified"])
             self.assertEqual(doc["runtime_sha256"]["Godot_v4.3-stable_win64.exe"],

@@ -41,6 +41,11 @@ class T3EdParityAndCatalogTests(unittest.TestCase):
         self.assertEqual(writer["status"], "partial")
         self.assertIn("translation-only", writer["evidence"])
         self.assertIn("BSP", writer["next_step"])
+        vertex = next(c for c in capabilities if c["id"] == "source_section_vertex_interaction")
+        self.assertEqual(vertex["status"], "partial")
+        self.assertIn("MOPP terminal-leaf subset", vertex["evidence"])
+        self.assertIn("native BSP vertex IDs", vertex["evidence"])
+        self.assertIn("independently authenticated", vertex["next_step"])
 
     def test_catalog_lists_all_types_including_unplaced_resources(self):
         result = catalog_from_bundles([fixture_bundle("mission.ibd",
