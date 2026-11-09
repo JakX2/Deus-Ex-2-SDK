@@ -5,7 +5,10 @@ extends VBoxContainer
 signal triangle_requested(original_level_triangle_id: int)
 signal edge_overlay_toggled(enabled: bool)
 signal edge_selection_cleared
+signal vertex_overlay_toggled(enabled: bool)
+signal vertex_selection_cleared
 
+const SourceSectionVertexPicker = preload("res://source_section_vertex_picker.gd")
 const ANALYSIS_CAP := 8192
 const EDGE_NAMES := ["same-material interior", "open boundary", "render-material seam", "non-manifold"]
 
@@ -29,6 +32,17 @@ var edge_triangle_button: Button
 var edge_neighbor_button: Button
 var edge_copy_button: Button
 var selected_edge: Dictionary = {}
+var vertex_toggle: CheckBox
+var copy_vertices_button: Button
+var vertex_selection_panel: VBoxContainer
+var vertex_selection_label: Label
+var vertex_triangle_selector: OptionButton
+var vertex_triangle_button: Button
+var vertex_neighbor_selector: OptionButton
+var vertex_neighbor_button: Button
+var vertex_copy_button: Button
+var vertex_report: Dictionary = {}
+var selected_vertex: Dictionary = {}
 
 func initialize() -> void:
     visible = false
@@ -64,6 +78,17 @@ func initialize() -> void:
     copy_edges_button.disabled = true
     copy_edges_button.pressed.connect(_copy_edge_report)
     controls.add_child(copy_edges_button)
+    vertex_toggle = CheckBox.new()
+    vertex_toggle.text = "Show exact-weld vertex handles"
+    vertex_toggle.tooltip_text = "Display selectable original Level float32 weld identities derived from the authenticated MOPP terminal-leaf subset; not native BSP vertex IDs."
+    vertex_toggle.disabled = true
+    vertex_toggle.toggled.connect(_on_vertex_overlay_toggled)
+    controls.add_child(vertex_toggle)
+    copy_vertices_button = Button.new()
+    copy_vertices_button.text = "Copy vertex report JSON"
+    copy_vertices_button.disabled = true
+    copy_vertices_button.pressed.connect(_copy_vertex_report)
+    controls.add_child(copy_vertices_button)
     neighbor_row = HBoxContainer.new()
     neighbor_row.visible = false
     add_child(neighbor_row)
@@ -113,6 +138,42 @@ func initialize() -> void:
     edge_copy_button.disabled = true
     edge_copy_button.pressed.connect(_copy_selected_edge)
     edge_actions.add_child(edge_copy_button)
+    vertex_selection_panel = VBoxContainer.new()
+    vertex_selection_panel.visible = false
+    add_child(vertex_selection_panel)
+    var vertex_heading := Label.new()
+    vertex_heading.text = "SELECTED ORIGINAL LEVEL WELD VERTEX"
+    vertex_heading.add_theme_font_size_override("font_size", 12)
+    vertex_selection_panel.add_child(vertex_heading)
+    vertex_selection_label = Label.new()
+    vertex_selection_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    vertex_selection_label.text = "Hover a source vertex handle and click to inspect its Level weld identity."
+    vertex_selection_panel.add_child(vertex_selection_label)
+    var vertex_actions := HFlowContainer.new()
+    vertex_selection_panel.add_child(vertex_actions)
+    vertex_triangle_selector = OptionButton.new()
+    vertex_triangle_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    vertex_triangle_selector.disabled = true
+    vertex_actions.add_child(vertex_triangle_selector)
+    vertex_triangle_button = Button.new()
+    vertex_triangle_button.text = "Select incident triangle"
+    vertex_triangle_button.disabled = true
+    vertex_triangle_button.pressed.connect(_select_vertex_triangle)
+    vertex_actions.add_child(vertex_triangle_button)
+    vertex_neighbor_selector = OptionButton.new()
+    vertex_neighbor_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    vertex_neighbor_selector.disabled = true
+    vertex_actions.add_child(vertex_neighbor_selector)
+    vertex_neighbor_button = Button.new()
+    vertex_neighbor_button.text = "Jump to adjacent section"
+    vertex_neighbor_button.disabled = true
+    vertex_neighbor_button.pressed.connect(_select_vertex_neighbor)
+    vertex_actions.add_child(vertex_neighbor_button)
+    vertex_copy_button = Button.new()
+    vertex_copy_button.text = "Copy selected vertex JSON"
+    vertex_copy_button.disabled = true
+    vertex_copy_button.pressed.connect(_copy_selected_vertex)
+    vertex_actions.add_child(vertex_copy_button)
 
 func set_selection(value: RefCounted, hit: Dictionary) -> void:
     clear_selection()
@@ -140,6 +201,8 @@ func set_selection(value: RefCounted, hit: Dictionary) -> void:
 
 func clear_selection() -> void:
     clear_selected_edge()
+    clear_selected_vertex()
+    vertex_report.clear()
     picker = null
     selected_triangle_id = -1
     summary.clear()
@@ -160,6 +223,14 @@ func clear_selection() -> void:
         edge_toggle.disabled = true
     if copy_edges_button != null:
         copy_edges_button.disabled = true
+    if vertex_toggle != null:
+        if vertex_toggle.button_pressed:
+            vertex_overlay_toggled.emit(false)
+        vertex_toggle.set_pressed_no_signal(false)
+        vertex_toggle.disabled = true
+    if copy_vertices_button != null:
+        copy_vertices_button.disabled = true
+    vertex_report.clear()
     _clear_neighbors()
     visible = false
 
@@ -181,6 +252,160 @@ func clear_selected_edge() -> void:
         edge_selection_panel.visible = false
     if had_selection:
         edge_selection_cleared.emit()
+
+
+
+
+func clear_selected_vertex() -> void:
+    var had_selection := not selected_vertex.is_empty()
+    selected_vertex.clear()
+    if vertex_selection_label != null:
+        vertex_selection_label.text = "Hover a source vertex handle and click to inspect its Level weld identity."
+    if vertex_triangle_selector != null:
+        vertex_triangle_selector.clear()
+        vertex_triangle_selector.disabled = true
+    if vertex_triangle_button != null:
+        vertex_triangle_button.disabled = true
+    if vertex_neighbor_selector != null:
+        vertex_neighbor_selector.clear()
+        vertex_neighbor_selector.disabled = true
+    if vertex_neighbor_button != null:
+        vertex_neighbor_button.disabled = true
+    if vertex_copy_button != null:
+        vertex_copy_button.disabled = true
+    if vertex_selection_panel != null:
+        vertex_selection_panel.visible = false
+    if had_selection:
+        vertex_selection_cleared.emit()
+
+
+func set_selected_vertex(record: Dictionary, report: Dictionary) -> bool:
+    if (vertex_toggle == null or not vertex_toggle.button_pressed
+        or not SourceSectionVertexPicker.record_belongs_to_report(report, record)
+        or not SourceSectionVertexPicker.record_belongs_to_report(vertex_report, record)
+        or str(report.get("source_sha256", "")) != str(summary.get("source_sha256", ""))
+        or str(report.get("source_section_key", "")) != str(summary.get("source_section_key", ""))):
+        return false
+    clear_selected_vertex()
+    selected_vertex = record.duplicate(true)
+    var weld_id := int(selected_vertex.get("weld_id", -1))
+    var point: Array = selected_vertex.get("godot_xyz", [])
+    var edge_keys: Array = selected_vertex.get("incident_edge_keys", [])
+    var triangles: Array = selected_vertex.get("incident_level_triangle_ids", [])
+    var external_representatives: Array = selected_vertex.get("external_section_representative_triangle_ids", [])
+    vertex_selection_label.text = (
+        "Original Level float32 weld ID: %d\n"
+        + "Godot preview XYZ: %s\n"
+        + "Incident MOPP-subset edges: %d | incident original Level triangles: %s\n"
+        + "Observed adjacent-section representative triangles via incident edges: %s. "
+        + "These are not native BSP vertex IDs."
+    ) % [weld_id, str(point), edge_keys.size(), str(triangles), str(external_representatives)]
+    vertex_triangle_selector.clear()
+    for raw_triangle_id in triangles:
+        var triangle_id := int(raw_triangle_id)
+        vertex_triangle_selector.add_item("Level triangle #%d" % triangle_id)
+        vertex_triangle_selector.set_item_metadata(vertex_triangle_selector.get_item_count() - 1, triangle_id)
+    var has_triangles := vertex_triangle_selector.get_item_count() > 0
+    vertex_triangle_selector.disabled = not has_triangles
+    vertex_triangle_button.disabled = not has_triangles
+    if has_triangles:
+        vertex_triangle_selector.select(0)
+    vertex_neighbor_selector.clear()
+    for raw_triangle_id in external_representatives:
+        var triangle_id := int(raw_triangle_id)
+        vertex_neighbor_selector.add_item("Adjacent MOPP section representative #%d" % triangle_id)
+        vertex_neighbor_selector.set_item_metadata(vertex_neighbor_selector.get_item_count() - 1, triangle_id)
+    var has_neighbors := vertex_neighbor_selector.get_item_count() > 0
+    vertex_neighbor_selector.disabled = not has_neighbors
+    vertex_neighbor_button.disabled = not has_neighbors
+    if has_neighbors:
+        vertex_neighbor_selector.select(0)
+    vertex_copy_button.disabled = false
+    vertex_selection_panel.visible = true
+    return true
+
+
+func _select_vertex_triangle() -> void:
+    if (selected_vertex.is_empty() or picker == null or not bool(picker.get("ready"))
+        or vertex_triangle_selector == null or vertex_triangle_selector.disabled):
+        return
+    var item_index := vertex_triangle_selector.selected
+    if item_index < 0 or item_index >= vertex_triangle_selector.get_item_count():
+        return
+    var triangle_id := int(vertex_triangle_selector.get_item_metadata(item_index))
+    var allowed: Array = selected_vertex.get("incident_level_triangle_ids", [])
+    if not allowed.has(triangle_id):
+        return
+    var hit: Dictionary = picker.call("triangle_details", triangle_id)
+    if int(hit.get("original_level_triangle_id", -1)) != triangle_id:
+        return
+    triangle_requested.emit(triangle_id)
+
+
+func _select_vertex_neighbor() -> void:
+    if (selected_vertex.is_empty() or picker == null or not bool(picker.get("ready"))
+        or vertex_neighbor_selector == null or vertex_neighbor_selector.disabled):
+        return
+    var item_index := vertex_neighbor_selector.selected
+    if item_index < 0 or item_index >= vertex_neighbor_selector.get_item_count():
+        return
+    var triangle_id := int(vertex_neighbor_selector.get_item_metadata(item_index))
+    var allowed: Array = selected_vertex.get("external_section_representative_triangle_ids", [])
+    if not allowed.has(triangle_id):
+        return
+    var hit: Dictionary = picker.call("triangle_details", triangle_id)
+    var target_section: Dictionary = picker.call("section_details", triangle_id)
+    var current_section: Dictionary = picker.call("section_details", selected_triangle_id)
+    if (hit.is_empty() or target_section.is_empty() or current_section.is_empty()
+        or int(hit.get("original_level_triangle_id", -1)) != triangle_id
+        or (int(target_section.get("source_block_id", -1)) == int(current_section.get("source_block_id", -2))
+            and int(target_section.get("render_block_ordinal", -1)) == int(current_section.get("render_block_ordinal", -2))
+            and int(target_section.get("render_section_ordinal", -1)) == int(current_section.get("render_section_ordinal", -2)))):
+        return
+    triangle_requested.emit(triangle_id)
+
+
+func vertex_report_payload() -> Dictionary:
+    if vertex_report.is_empty() or not SourceSectionVertexPicker._valid_vertex_report(vertex_report):
+        return {}
+    return vertex_report.duplicate(true)
+
+
+func selected_vertex_payload() -> Dictionary:
+    if selected_vertex.is_empty() or not SourceSectionVertexPicker.record_belongs_to_report(vertex_report, selected_vertex):
+        return {}
+    return {
+        "schema": "DX2Ed-selected-source-section-vertex-v1",
+        "source_map": str(vertex_report.get("source_map", "")),
+        "source_sha256": str(vertex_report.get("source_sha256", "")),
+        "source_section_key": str(vertex_report.get("source_section_key", "")),
+        "vertex": selected_vertex.duplicate(true),
+        "mopp_leaf_subset_only": true,
+        "native_bsp_vertex_verified": false,
+        "native_map_written": false,
+    }
+
+
+func _copy_vertex_report() -> void:
+    var payload := vertex_report_payload()
+    if payload.is_empty():
+        return
+    DisplayServer.clipboard_set(JSON.stringify(payload, "  "))
+    note_label.text = "Copied bounded exact-weld MOPP-subset vertex report JSON."
+
+
+func _copy_selected_vertex() -> void:
+    var payload := selected_vertex_payload()
+    if payload.is_empty():
+        return
+    DisplayServer.clipboard_set(JSON.stringify(payload, "  "))
+    note_label.text = "Copied selected original Level weld identity and incident triangle IDs (read-only JSON)."
+
+
+func _on_vertex_overlay_toggled(enabled: bool) -> void:
+    if enabled and vertex_report.is_empty():
+        return
+    vertex_overlay_toggled.emit(enabled)
 
 
 func set_selected_edge(record: Dictionary) -> bool:
@@ -382,17 +607,26 @@ func _analyze() -> void:
         clear_selection()
         return
     clear_selected_edge()
+    clear_selected_vertex()
+    vertex_report.clear()
     if edge_toggle.button_pressed:
         edge_toggle.set_pressed_no_signal(false)
         edge_overlay_toggled.emit(false)
+    if vertex_toggle.button_pressed:
+        vertex_toggle.set_pressed_no_signal(false)
+        vertex_overlay_toggled.emit(false)
     edge_toggle.disabled = true
     copy_edges_button.disabled = true
+    vertex_toggle.disabled = true
+    copy_vertices_button.disabled = true
     var result: Dictionary = picker.call("section_topology_details", selected_triangle_id, ANALYSIS_CAP)
     if result.is_empty():
         summary.clear()
         copy_button.disabled = true
         edge_toggle.disabled = true
         copy_edges_button.disabled = true
+        vertex_toggle.disabled = true
+        copy_vertices_button.disabled = true
         _clear_neighbors()
         report_label.text = "Topology analysis refused: source section identity or geometry is unavailable."
         return
@@ -401,6 +635,8 @@ func _analyze() -> void:
     if bool(result.get("analysis_skipped_for_size", false)):
         edge_toggle.disabled = true
         copy_edges_button.disabled = true
+        vertex_toggle.disabled = true
+        copy_vertices_button.disabled = true
         _clear_neighbors()
         report_label.text = (
             "Analysis skipped without partial results.\n"
@@ -411,6 +647,8 @@ func _analyze() -> void:
     if bool(result.get("analysis_skipped_for_edge_incidence", false)):
         edge_toggle.disabled = true
         copy_edges_button.disabled = true
+        vertex_toggle.disabled = true
+        copy_vertices_button.disabled = true
         _clear_neighbors()
         report_label.text = (
             "Analysis skipped without partial results.\n"
@@ -429,6 +667,10 @@ func _analyze() -> void:
     )
     edge_toggle.disabled = not has_complete_edge_report
     copy_edges_button.disabled = not has_complete_edge_report
+    vertex_report = SourceSectionVertexPicker.build_vertex_report(summary) if has_complete_edge_report else {}
+    var has_complete_vertex_report := not vertex_report.is_empty()
+    vertex_toggle.disabled = not has_complete_vertex_report
+    copy_vertices_button.disabled = not has_complete_vertex_report
     var lines := PackedStringArray([
         "MOPP-linked triangles in section subset: %d" % int(result["section_triangle_count"]),
         "Unique exact-welded source vertices / edges: %d / %d" % [
