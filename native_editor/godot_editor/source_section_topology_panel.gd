@@ -105,19 +105,19 @@ func _analyze() -> void:
         "MOPP-linked triangles in section subset: %d" % int(result["section_triangle_count"]),
         "Unique exact-welded source vertices / edges: %d / %d" % [
             int(result["unique_source_vertex_count"]), int(result["unique_source_edge_count"])],
-        "Area of MOPP subset: %.3f Level units²" % float(result["area_level_units_squared"]),
+        "Summed MOPP triangle area: %.3f Level units²" % float(result["area_level_units_squared"]),
         "Area-weighted centroid (Level XYZ): %s" % str(result["area_weighted_centroid_level_xyz"]),
         "Bounds min / max (Level XYZ): %s / %s" % [
             str(result["bounds_min_level_xyz"]), str(result["bounds_max_level_xyz"])],
         "Connected components in MOPP subset: %d | largest sizes: %s" % [
             int(result["connected_component_count"]), str(result["largest_component_sizes"])],
-        "Section perimeter / shared / non-manifold edges: %d / %d / %d" % [
+        "MOPP-subset perimeter / within-section shared / subset non-manifold edges: %d / %d / %d" % [
             int(result["section_perimeter_edge_count"]), int(result["section_shared_edge_count"]),
             int(result["section_nonmanifold_edge_count"])],
         "MOPP-shared edges to other render sections: %d | perimeter edges shared across sections: %d" % [
             int(result["cross_section_mopp_shared_edge_count"]),
             int(result["section_perimeter_shared_with_other_sections"])],
-        "Section perimeter length: %.3f Level units" % float(result["section_perimeter_length_level_units"]),
+        "MOPP-subset perimeter length: %.3f Level units" % float(result["section_perimeter_length_level_units"]),
         "Cross-section shared edge length: %.3f Level units" % float(result["cross_section_mopp_shared_edge_length_level_units"]),
     ])
     var class_counts: Array = result.get("source_edge_class_counts", [])
