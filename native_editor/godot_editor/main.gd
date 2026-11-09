@@ -7147,14 +7147,14 @@ func _refresh_polygon_surface_controls(name: String) -> void:
     if polygon_surface_source_label != null:
         var source_assignment: Dictionary = row.get("source_material", {})
         if source_assignment.is_empty():
-            polygon_surface_source_label.text = "Source diffuse: procedural checker"
+            polygon_surface_source_label.text = "Source slot-0 preview: procedural checker"
         elif _load_polygon_source_texture(source_assignment) == null:
             polygon_surface_source_label.text = (
-                "Source diffuse: " + str(source_assignment.get("material_name", "unknown"))
+                "Source slot-0 preview: " + str(source_assignment.get("material_name", "unknown"))
                 + " (catalog/thumbnail unavailable or changed; checker fallback)")
         else:
             polygon_surface_source_label.text = (
-                "Source diffuse: " + str(source_assignment["material_name"])
+                "Source slot-0 preview: " + str(source_assignment["material_name"])
                 + " · " + str(source_assignment["material_source_bundle"]))
 
 
@@ -7203,10 +7203,10 @@ func _apply_polygon_surface_style() -> void:
 func _apply_matlib_material_to_polygon_surface(raw: Dictionary, slot_index: int) -> void:
     var nodes := _selection_nodes()
     if nodes.is_empty():
-        status_label.text = "Select one or more private Polygon brushes before applying a MatLib diffuse preview."
+        status_label.text = "Select one or more private Polygon brushes before applying a MatLib slot-0 preview candidate."
         return
     if slot_index < 0 or slot_index >= CustomPolygon.SURFACE_SLOTS.size():
-        status_label.text = "MatLib diffuse assignment refused: invalid target surface slot."
+        status_label.text = "MatLib slot-0 preview assignment refused: invalid target surface slot."
         return
 
     # Refuse the entire batch if even one selected object is an original actor,
@@ -7231,7 +7231,7 @@ func _apply_matlib_material_to_polygon_surface(raw: Dictionary, slot_index: int)
     var assignment := CustomPolygon.validate_source_material_assignment(raw)
     if (assignment.is_empty()
         or MatLibBrowser.load_assignment_texture(assignment) == null):
-        status_label.text = "MatLib diffuse assignment refused: catalog identity or thumbnail verification failed."
+        status_label.text = "MatLib slot-0 preview assignment refused: catalog identity or thumbnail verification failed."
         return
 
     var slot: String = CustomPolygon.SURFACE_SLOTS[slot_index]
@@ -7279,12 +7279,12 @@ func _apply_matlib_material_to_polygon_surface(raw: Dictionary, slot_index: int)
     if polygon_surface_selector != null:
         polygon_surface_selector.select(slot_index)
     _record_edit(
-        "Assign MatLib diffuse to " + str(updates.size()) + " Polygon " + slot,
+        "Assign MatLib slot-0 preview candidate to " + str(updates.size()) + " Polygon " + slot,
         before)
     _refresh_brush_inspector()
     _refresh_prop_inspection()
     status_label.text = (
-        "Applied verified diffuse " + str(assignment["texture_name"]) + " to "
+        "Applied source-backed slot-0 preview candidate " + str(assignment["texture_name"]) + " to "
         + str(updates.size()) + " selected Polygon brush(es), surface " + slot
         + ". One Undo/Redo transaction; catalog/thumbnail hashes are stored in the private draft. "
         + "Source bundles and native BSP remain read-only.")
@@ -7312,10 +7312,10 @@ func _clear_polygon_surface_source_material() -> void:
     var before := _capture_edit_state()
     spec["surface_style"] = validated
     if _set_brush_spec(name, spec):
-        _record_edit("Clear Polygon " + slot + " source diffuse", before)
+        _record_edit("Clear Polygon " + slot + " slot-0 preview candidate", before)
         _refresh_brush_inspector()
         _refresh_prop_inspection()
-        status_label.text = "Cleared source diffuse from " + slot + "; procedural checker restored."
+        status_label.text = "Cleared slot-0 preview candidate from " + slot + "; procedural checker restored."
 
 
 func _refresh_brush_inspector() -> void:
