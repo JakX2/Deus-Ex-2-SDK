@@ -11,7 +11,7 @@ const MAX_MATERIALS := 50000
 const MAX_SOURCE_FILES := 64
 const MAX_PREVIEW_BYTES := 2 * 1024 * 1024
 
-signal material_apply_requested(assignment: Dictionary)
+signal material_apply_requested(assignment: Dictionary, slot_index: int)
 
 var source_dialog: FileDialog
 var search_box: LineEdit
@@ -21,6 +21,7 @@ var details_label: Label
 var stage_grid: GridContainer
 var status_label: Label
 var apply_button: Button
+var target_slot_selector: OptionButton
 
 var catalog_path := ""
 var catalog: Dictionary = {}
@@ -103,11 +104,24 @@ func _build_ui() -> void:
     details_label.custom_minimum_size.y = 96
     detail_column.add_child(details_label)
 
+    var target_row := HBoxContainer.new()
+    detail_column.add_child(target_row)
+    var target_label := Label.new()
+    target_label.text = "Target surface"
+    target_row.add_child(target_label)
+    target_slot_selector = OptionButton.new()
+    target_slot_selector.add_item("Top cap")
+    target_slot_selector.add_item("Bottom cap")
+    target_slot_selector.add_item("Side walls")
+    target_slot_selector.select(0)
+    target_row.add_child(target_slot_selector)
+
     apply_button = Button.new()
-    apply_button.text = "Apply diffuse to selected Polygon slot"
+    apply_button.text = "Apply diffuse to selected Polygon brush(es)"
     apply_button.tooltip_text = (
-        "Assign the selected material's verified diffuse thumbnail to the currently selected "
-        + "private Polygon surface slot. Preview only; no native material or BSP write.")
+        "Assign this verified diffuse thumbnail to the chosen surface slot on every selected "
+        + "editor-only Polygon brush. All selected objects must be private Polygon drafts; "
+        + "the batch is one Undo/Redo transaction. No native material or BSP write.")
     apply_button.disabled = true
     apply_button.pressed.connect(_request_apply_selected_material)
     detail_column.add_child(apply_button)
@@ -394,8 +408,11 @@ func _request_apply_selected_material() -> void:
     if assignment.is_empty():
         status_label.text = "Select a material with a verified resolved diffuse preview first."
         return
-    material_apply_requested.emit(assignment)
-    status_label.text = "Requested preview-only diffuse assignment to the selected Polygon slot."
+    if target_slot_selector == null or target_slot_selector.selected < 0:
+        status_label.text = "Choose a Polygon surface slot first."
+        return
+    material_apply_requested.emit(assignment, target_slot_selector.selected)
+    status_label.text = "Requested preview-only diffuse assignment to selected private Polygon brush(es)."
 
 
 func _clear_stage_cards() -> void:
