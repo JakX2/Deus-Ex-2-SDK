@@ -7199,7 +7199,13 @@ func _record_edit(label: String, before: Dictionary) -> void:
     # Selection changes alone do not count as edits.
     if before.get("moved") == after.get("moved") and before.get("copies") == after.get("copies") and before.get("property_edits", {}) == after.get("property_edits", {}):
         return
-    undo_stack.append({"label": label, "before": before, "after": after})
+    # History owns immutable snapshots. Callers may clear/reuse their working
+    # dictionaries after recording (gizmo drag does this on mouse release).
+    undo_stack.append({
+        "label": label,
+        "before": before.duplicate(true),
+        "after": after.duplicate(true)
+    })
     if undo_stack.size() > HISTORY_LIMIT:
         undo_stack.pop_front()
     redo_stack.clear()
