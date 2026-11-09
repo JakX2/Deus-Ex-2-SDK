@@ -24,7 +24,8 @@ func _write_json(path: String, value: Dictionary) -> void:
 
 
 func _run() -> void:
-    var root_path := ProjectSettings.globalize_path("user://dx2ed_matlib_browser_smoke")
+    var root_path := ProjectSettings.globalize_path(
+        "user://dx2ed_material_cache/matlib_browser_smoke")
     var preview_dir := root_path.path_join("previews")
     if DirAccess.make_dir_recursive_absolute(preview_dir) != OK:
         _fail("Could not create synthetic preview directory.")
@@ -36,6 +37,15 @@ func _run() -> void:
         _fail("Could not write synthetic PNG preview.")
         return
     var preview_sha := FileAccess.get_sha256(png_path).to_lower()
+
+    var source_path := root_path.path_join("synthetic.ibd")
+    var source_file := FileAccess.open(source_path, FileAccess.WRITE)
+    if source_file == null:
+        _fail("Could not create synthetic source identity sentinel.")
+        return
+    source_file.store_buffer(PackedByteArray([68, 88, 50, 73, 66, 68]))
+    source_file.close()
+    var source_sha := FileAccess.get_sha256(source_path).to_lower()
 
     var stages: Array = []
     for index in range(9):
@@ -77,7 +87,8 @@ func _run() -> void:
         "read_only": true,
         "native_writer_enabled": false,
         "source_bytes_modified": false,
-        "source_files": [{"path": "synthetic.ibd", "sha256": "a".repeat(64), "bytes": 128}],
+        "catalog_id": "a".repeat(64),
+        "source_files": [{"path": source_path, "sha256": source_sha, "bytes": 6}],
         "materials": [material],
         "material_count": 1,
         "texture_count": 1,
@@ -108,6 +119,9 @@ func _run() -> void:
         return
     browser.material_list.select(0)
     browser._material_selected(0)
+    if browser.apply_button.disabled or browser.selected_diffuse_assignment().is_empty():
+        _fail("Resolved diffuse did not enable the private Polygon surface assignment action.")
+        return
     if browser.stage_grid.get_child_count() != 9:
         _fail("Browser did not display all nine stage slots.")
         return
