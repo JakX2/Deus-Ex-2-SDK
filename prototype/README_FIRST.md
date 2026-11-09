@@ -1,4 +1,4 @@
-# DX2Ed Windows prototype 0.6.3-alpha
+# DX2Ed Windows prototype 0.6.4-alpha
 
 **Target review: November 9, 2026.** This archive is a portable research **prototype**: it contains the original-source DX2Ed Godot project and official Godot 4.3 Standard Windows x64 engine, launched in project-run mode. It is **not** a Godot exported/published standalone game, a production UnrealEd replacement, or a complete engine-native map writer.
 
@@ -213,6 +213,27 @@ usage_code field remain readable.
 The old slot-0 preview action is now described as a **legacy preview candidate**
 rather than a proven diffuse shader binding. All catalog/source files remain
 read-only, and native MatLib/BSP material writers remain disabled.
+
+## v0.45: MatLib stage-mask / slot correspondence audit
+
+The Materials workspace now offers Run stage-mask / slot audit after a
+source-backed catalog is loaded. The read-only Python worker compares only the
+raw stage_mask low nine bits with a derived bitset of non-empty ordered
+MatLib texture-name slots. It reports exact matches, mismatches, records with
+higher mask bits, and per-slot texture usage-code/name frequencies. It also
+summarizes raw category IDs and flags without assigning semantic names.
+
+The selected-material Inspector shows the same low-nine XOR comparison. This is
+a falsifiable structural-correlation aid, not proof that mask bit n controls
+slot n, nor a decode of blending, UV generation, animation, environment
+mapping or runtime shader order. Texture usage labels remain parser labels
+only. Original IBD/Maps ZIP data stays read-only; the audit emits aggregate
+metadata only and native MatLib/BSP writers remain disabled.
+
+The bundled Materials worker invocation now passes the worker script path to
+the launcher-verified Python executable before its arguments. The real Godot
+smoke runs --help and the audit mode through that same path, covering the
+direct Windows launcher route as well as the py -3 fallback.
 
 ## Get running in Windows 10/11, 64-bit
 

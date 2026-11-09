@@ -10,7 +10,7 @@ func _initialize() -> void:
 
 
 func _fail(message: String) -> void:
-    push_error("DX2Ed v0.41 MatLib browser: " + message)
+    push_error("DX2Ed v0.45 MatLib stage-mask audit: " + message)
     quit(1)
 
 
@@ -101,12 +101,23 @@ func _run() -> void:
         "source": "synthetic fixture",
         "version": 1,
         "flags": 3,
-        "stage_mask": 5,
+        "stage_mask": 7,
         "category_id": 7,
         "colors": [],
         "params": [],
         "stages": stages
     }
+    var mismatch_stages: Array = []
+    for index in range(9):
+        if index == 0 or index == 2:
+            mismatch_stages.append(stages[index].duplicate(true))
+        else:
+            mismatch_stages.append({"index": index, "name": "", "resolved": false})
+    var mismatch_material: Dictionary = material.duplicate(true)
+    mismatch_material["name"] = "M_SYNTH_MISMATCH"
+    mismatch_material["stage_mask"] = 0x201
+    mismatch_material["stages"] = mismatch_stages
+
     var catalog := {
         "schema": "DX2Ed-MatLib-catalog-v1",
         "read_only": true,
@@ -114,8 +125,8 @@ func _run() -> void:
         "source_bytes_modified": false,
         "catalog_id": "a".repeat(64),
         "source_files": [{"path": source_path, "sha256": source_sha, "bytes": 6}],
-        "materials": [material],
-        "material_count": 1,
+        "materials": [material, mismatch_material],
+        "material_count": 2,
         "texture_count": 2,
         "preview_count": 2,
         "unresolved_stage_count": 1
@@ -128,7 +139,7 @@ func _run() -> void:
     if not browser.load_catalog(catalog_path):
         _fail("Valid source-backed synthetic catalog was rejected.")
         return
-    if browser.materials.size() != 1:
+    if browser.materials.size() != 2:
         _fail("Material records were not loaded.")
         return
 
@@ -156,7 +167,7 @@ func _run() -> void:
     if browser._preview_texture(browser.selected_material["stages"][2]) == null:
         _fail("Verified second-stage usage preview did not load.")
         return
-    if not browser.stage_audit_label.text.contains("Raw stage_mask: 0x00000005 (uninterpreted)"):
+    if not browser.stage_audit_label.text.contains("Raw stage_mask: 0x00000007 (uninterpreted)"):
         _fail("Raw stage mask was not presented explicitly as uninterpreted.")
         return
     if not browser.stage_audit_label.text.contains("3 named, 2 resolved, 1 unresolved, 6 empty"):
@@ -164,6 +175,31 @@ func _run() -> void:
         return
     if not browser.details_label.text.contains("diffuse shader semantics are unverified"):
         _fail("Slot-0 preview candidate was presented as verified shader semantics.")
+        return
+    if not browser.details_label.text.contains("Named-slot mask (derived): 0x007"):
+        _fail("Per-material named-slot mask was not derived from non-empty slot names.")
+        return
+    if not browser.details_label.text.contains("Low-nine XOR: 0x000 (exact match; candidate only)"):
+        _fail("Per-material raw mask/slot comparison was not reported as a candidate only.")
+        return
+
+    var worker_path := ProjectSettings.globalize_path("res://backend/dx2_matlib_catalog.py")
+    var help_output: Array = []
+    if browser._execute_python_worker(
+        worker_path, PackedStringArray(["--help"]), help_output) != 0:
+        _fail("Launcher-verified Python did not invoke the MatLib worker script.")
+        return
+    if not str(help_output).contains("--audit-catalog"):
+        _fail("MatLib worker help did not expose the read-only audit mode.")
+        return
+    if not browser._run_catalog_stage_mask_audit():
+        _fail("Catalog-wide stage-mask / slot audit failed.")
+        return
+    if (not browser.catalog_audit_label.text.contains("Materials: 2")
+        or not browser.catalog_audit_label.text.contains("exact low-nine matches: 1")
+        or not browser.catalog_audit_label.text.contains("mismatches: 1")
+        or not browser.catalog_audit_label.text.contains("Records with high bits set: 1")):
+        _fail("Catalog-wide stage-mask audit did not report exact, mismatch and high-bit controls.")
         return
 
     browser.filter_selector.select(5)
@@ -184,7 +220,7 @@ func _run() -> void:
     if browser.load_catalog(hostile_path):
         _fail("Path-traversing thumbnail reference passed catalog validation.")
         return
-    if browser.materials.size() != 1:
+    if browser.materials.size() != 2:
         _fail("Rejected catalog destroyed the last valid browser state.")
         return
 
@@ -199,5 +235,5 @@ func _run() -> void:
         _fail("Modified thumbnail bytes passed SHA-256 verification.")
         return
 
-    print("DX2Ed v0.44 source-backed MatLib stage diagnostics smoke: PASS")
+    print("DX2Ed v0.45 MatLib stage-mask / slot correspondence audit smoke: PASS")
     quit(0)
