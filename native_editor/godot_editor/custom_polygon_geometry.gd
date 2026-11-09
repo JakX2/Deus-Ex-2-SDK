@@ -103,6 +103,7 @@ static func _valid_sha256(value: Variant) -> bool:
 ## only to the private catalog/cache; they never authorize source or BSP writes.
 static func validate_source_material_assignment(raw: Variant) -> Dictionary:
     if typeof(raw) != TYPE_DICTIONARY or raw.is_empty() or raw.size() != 19:
+        print("ASSIGNMENT DEBUG raw shape: type=", typeof(raw), " size=", raw.size() if typeof(raw) == TYPE_DICTIONARY else -1)
         return {}
     var required := [
         "catalog_path", "catalog_sha256", "catalog_id", "material_name",
@@ -118,15 +119,18 @@ static func validate_source_material_assignment(raw: Variant) -> Dictionary:
     var catalog_path: Variant = raw["catalog_path"]
     if (not _valid_assignment_text(catalog_path, 4096)
         or not str(catalog_path).is_absolute_path()):
+        print("ASSIGNMENT DEBUG catalog text/absolute: ", catalog_path)
         return {}
     var normalized_catalog := str(catalog_path).simplify_path()
     var private_cache_root := ProjectSettings.globalize_path(
         "user://dx2ed_material_cache").simplify_path().trim_suffix("/")
     if (not normalized_catalog.ends_with(".json")
         or not normalized_catalog.begins_with(private_cache_root + "/")):
+        print("ASSIGNMENT DEBUG catalog root: path=", normalized_catalog, " root=", private_cache_root, " starts=", normalized_catalog.begins_with(private_cache_root + "/"))
         return {}
     for key in ["catalog_sha256", "catalog_id", "preview_sha256"]:
         if not _valid_sha256(raw[key]):
+            print("ASSIGNMENT DEBUG bad hash: ", key, " value=", raw[key])
             return {}
     for key in [
         "material_name", "material_source_bundle",
@@ -134,10 +138,13 @@ static func validate_source_material_assignment(raw: Variant) -> Dictionary:
         "texture_usage"
     ]:
         if not _valid_assignment_text(raw[key], 260):
+            print("ASSIGNMENT DEBUG bad text: ", key, " value=", raw[key], " type=", typeof(raw[key]))
             return {}
     if not _valid_assignment_text(raw["material_source"], 260, true):
+        print("ASSIGNMENT DEBUG bad material source")
         return {}
     if str(raw["diffuse_name"]).to_lower() != str(raw["texture_name"]).to_lower():
+        print("ASSIGNMENT DEBUG diffuse mismatch")
         return {}
     var integer_limits := {
         "material_version": [0, 65535],
@@ -149,18 +156,22 @@ static func validate_source_material_assignment(raw: Variant) -> Dictionary:
     }
     for key in integer_limits:
         if typeof(raw[key]) != TYPE_INT:
+            print("ASSIGNMENT DEBUG numeric type: ", key, " value=", raw[key], " type=", typeof(raw[key]))
             return {}
         var value := int(raw[key])
         if value < integer_limits[key][0] or value > integer_limits[key][1]:
+            print("ASSIGNMENT DEBUG numeric range: ", key, " value=", value)
             return {}
     var preview_path: Variant = raw["preview_path"]
     if (not _valid_assignment_text(preview_path, 260)
         or str(preview_path).begins_with("/")
         or str(preview_path).contains("\\")
         or str(preview_path).contains(":")):
+        print("ASSIGNMENT DEBUG bad preview path: ", preview_path)
         return {}
     for segment in str(preview_path).split("/", false):
         if segment.is_empty() or segment == "." or segment == "..":
+            print("ASSIGNMENT DEBUG unsafe preview segment: ", segment)
             return {}
     return {
         "catalog_path": str(catalog_path),
