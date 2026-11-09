@@ -1,4 +1,4 @@
-# DX2Ed Windows prototype 0.6.2-alpha
+# DX2Ed Windows prototype 0.6.3-alpha
 
 **Target review: November 8, 2026.** This archive is a portable research **prototype**: it contains the original-source DX2Ed Godot project and official Godot 4.3 Standard Windows x64 engine, launched in project-run mode. It is **not** a Godot exported/published standalone game, a production UnrealEd replacement, or a complete engine-native map writer.
 
@@ -156,6 +156,30 @@ but shader effects/categories are not interpreted. This is read-only browsing
 and preview only. It does not assign source shaders, modify original IBD/GMP,
 write native BSP material indices, or enable CSG/collision/lightmap cooking.
 
+## v0.42: apply source-backed diffuse previews to private Polygon surfaces
+
+Select one editor-only **Polygon** brush and choose its target slot in the
+Inspector (**Top cap**, **Bottom cap**, or **Side walls**). Open **Materials**,
+import your own IBD/Maps ZIP, select a material with a verified resolved
+diffuse thumbnail, then press **Apply diffuse to selected Polygon slot**.
+DX2Ed binds that decoded thumbnail to only the currently selected private
+surface. The existing preset still controls preview tint/roughness and the
+surface's U/V scale and offset remain independently editable.
+
+Each assignment is one **Undo/Redo** transaction. The private JSON draft stores
+the catalog path and SHA-256, catalog/source identity, material record fields,
+diffuse stage name, texture metadata, relative thumbnail path and thumbnail
+SHA-256. Save/Load revalidates the catalog record and thumbnail before restoring
+the texture. If the private catalog or thumbnail is missing or changed, the
+assignment metadata is retained but the viewport safely falls back to the
+procedural checker; use **Clear source diffuse** to remove the assignment.
+
+**Scope:** this is a source-backed *preview* binding for editor-created
+Polygon surfaces. It does not interpret original DX2 shader stages, edit
+imported source meshes, modify IBD/GMP files, write native BSP material
+indices, or prove a game-compatible cooked level. Original bundles remain
+read-only and the native material writer stays disabled.
+
 ## Get running in Windows 10/11, 64-bit
 
 1. **Extract the entire ZIP** to a normal user-writable directory, e.g. `D:\DX2Ed_Prototype\`. Do not run files directly from inside the ZIP. Do not extract it into your game install or `Content\DX2\Maps`.
@@ -167,7 +191,7 @@ write native BSP material indices, or enable CSG/collision/lightmap cooking.
 
 **Precheck an original map before importing:** Drag the owner-original `.gmp` onto **DIAGNOSE_GMP.cmd**. This performs **local filename/companion IBD discovery only**, through the same Python resource resolver used by DX2Ed. It reports fixed codes such as `bundle_paths_found`, `mission_ibd_missing` or `resource_discovery_failed`, without embedding your original file paths or hashes. A `ready` outcome means the candidate resource paths were located, **not** that the GMP/IBD contents have decoded successfully or that the map can render. No cache or modified game output is generated. When manual IBD overrides are necessary, select them in the editor UI.
 
-**Troubleshooting:** Double-click `CHECK_DX2ED.cmd` for offline preflight, or run `START_DX2ED.cmd --self-test` in a Windows Command Prompt to run **fifteen** completely synthetic Godot 4.3 headless fixture scripts and a project-startup check. Real game maps are not required for these checks. Windows Defender and SmartScreen may warn about a downloaded unsigned experimental executable; the two engine binaries are taken from the **official Godot 4.3 stable Standard Windows release** with upstream release checksum verification during packaging. Check `GODOT_LICENSE.txt` for Godot's separate redistribution notice.
+**Troubleshooting:** Double-click `CHECK_DX2ED.cmd` for offline preflight, or run `START_DX2ED.cmd --self-test` in a Windows Command Prompt to run the complete synthetic Godot 4.3 headless fixture suite and a project-startup check. Real game maps are not required for these checks. Windows Defender and SmartScreen may warn about a downloaded unsigned experimental executable; the two engine binaries are taken from the **official Godot 4.3 stable Standard Windows release** with upstream release checksum verification during packaging. Check `GODOT_LICENSE.txt` for Godot's separate redistribution notice.
 
 ## New: DX2SDK v0.5 public Python API and console
 
