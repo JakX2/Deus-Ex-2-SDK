@@ -61,6 +61,8 @@ REQUIRED = (
     "native_editor/godot_editor/tests/smoke_matlib_polygon_assignment.gd",
     "native_editor/godot_editor/source_surface_matlib_crossref.gd",
     "native_editor/godot_editor/tests/smoke_source_surface_matlib_crossref.gd",
+    "native_editor/godot_editor/source_section_topology_panel.gd",
+    "native_editor/godot_editor/tests/smoke_source_section_topology.gd",
     "native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_scalar_worker.py",
@@ -163,6 +165,8 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("editor_matlib_category_flags_cohort_audit") is not True
                 or manifest.get("editor_source_surface_matlib_name_crossref") is not True
                 or manifest.get("editor_source_surface_matlib_native_binding_verified") is not False
+                or manifest.get("editor_source_section_topology_diagnostics") is not True
+                or manifest.get("editor_source_section_topology_native_bsp_verified") is not False
                 or manifest.get("editor_matlib_python_worker_invocation_verified") is not True
                 or manifest.get("editor_matlib_shader_stage_semantics_verified") is not False
                 or manifest.get("editor_polygon_surface_source_diffuse_assignment_preview") is not True
