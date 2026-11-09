@@ -25,8 +25,8 @@
       "title": "3D viewport/camera and selection",
       "status": "partial",
       "phase": 1,
-      "evidence": "DX2Ed v0.28 perspective/top/front/side fixed-axis Godot viewport navigation, preview grid and zoom/pan; previous fly camera, actor triangle picking and scene selection.",
-      "next_step": "Multi-viewport split/quad layout, persistent orthographic settings and source-verified face selection. Preview grid is not BSP/zone editing."
+      "evidence": "DX2Ed v0.28 perspective/top/front/side fixed-axis Godot viewport navigation, preview grid and zoom/pan; v0.53 adds a simultaneous 2x2 Perspective/Top/Front/Side layout with independent camera targets/zoom/orbit state, per-view grid cull layers, hover-routed active viewport and private workspace persistence; previous fly camera, actor triangle picking and scene selection.",
+      "next_step": "Independent per-view selection overlays and orthographic transform-gizmo constraints, then evidence-backed native BSP/zone topology. The shared quad world remains a Godot preview, not BSP/zone editing."
     },
     {
       "id": "transforms",

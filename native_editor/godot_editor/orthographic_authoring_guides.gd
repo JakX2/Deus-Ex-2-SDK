@@ -7,6 +7,9 @@ const TOP := "Top (XZ)"
 const FRONT := "Front (XY)"
 const SIDE := "Side (ZY)"
 const MODES := [PERSPECTIVE, TOP, FRONT, SIDE]
+const VIEW_IDS := ["perspective", "top", "front", "side"]
+const SINGLE_LAYOUT := "single"
+const QUAD_LAYOUT := "quad"
 const MAX_GRID_HALF_LINES := 64
 
 
@@ -125,3 +128,135 @@ static func grid_mesh(mode: String, target: Vector3,
             mesh.surface_add_vertex(point)
     mesh.surface_end()
     return mesh
+
+
+## Independent editor camera workspace. State is private UI metadata only.
+
+
+static func valid_layout(layout: String) -> bool:
+    return layout == SINGLE_LAYOUT or layout == QUAD_LAYOUT
+
+
+static func view_id_for_mode(mode: String) -> String:
+    match mode:
+        PERSPECTIVE:
+            return "perspective"
+        TOP:
+            return "top"
+        FRONT:
+            return "front"
+        SIDE:
+            return "side"
+        _:
+            return ""
+
+
+static func mode_for_view_id(view_id: String) -> String:
+    match view_id:
+        "perspective":
+            return PERSPECTIVE
+        "top":
+            return TOP
+        "front":
+            return FRONT
+        "side":
+            return SIDE
+        _:
+            return ""
+
+
+static func grid_layer_mask(view_id: String) -> int:
+    var index := VIEW_IDS.find(view_id)
+    if index < 0:
+        return 0
+    # Bit zero is shared scene geometry; each view owns one isolated grid layer.
+    return 1 << (index + 1)
+
+
+static func make_view_state(target: Vector3, distance: float,
+                            yaw: float, pitch: float) -> Dictionary:
+    return {
+        "target": [target.x, target.y, target.z],
+        "distance": distance,
+        "yaw": yaw,
+        "pitch": pitch,
+    }
+
+
+static func default_view_states(target: Vector3, distance: float,
+                                yaw: float, pitch: float) -> Dictionary:
+    var state := make_view_state(target, distance, yaw, pitch)
+    var result := {}
+    for view_id in VIEW_IDS:
+        result[view_id] = state.duplicate(true)
+    return result
+
+
+static func _is_number(value: Variant) -> bool:
+    return typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT
+
+
+static func target_from_state(state: Dictionary) -> Vector3:
+    var target: Variant = state.get("target", [])
+    if typeof(target) != TYPE_ARRAY or target.size() != 3:
+        return Vector3.ZERO
+    return Vector3(float(target[0]), float(target[1]), float(target[2]))
+
+
+static func validate_view_states(value: Variant) -> Variant:
+    if typeof(value) != TYPE_DICTIONARY or value.size() != VIEW_IDS.size():
+        return null
+    var result := {}
+    for view_id in VIEW_IDS:
+        if not value.has(view_id):
+            return null
+        var state: Variant = value[view_id]
+        if (typeof(state) != TYPE_DICTIONARY or state.size() != 4
+            or not state.has("target") or not state.has("distance")
+            or not state.has("yaw") or not state.has("pitch")):
+            return null
+        var target: Variant = state["target"]
+        if typeof(target) != TYPE_ARRAY or target.size() != 3:
+            return null
+        var coordinates: Array = []
+        for component in target:
+            if not _is_number(component):
+                return null
+            var coordinate := float(component)
+            if not is_finite(coordinate) or absf(coordinate) > 1000000.0:
+                return null
+            coordinates.append(coordinate)
+        for key in ["distance", "yaw", "pitch"]:
+            if not _is_number(state[key]) or not is_finite(float(state[key])):
+                return null
+        var distance := float(state["distance"])
+        var yaw := float(state["yaw"])
+        var pitch := float(state["pitch"])
+        if (distance < 0.15 or distance > 200000.0
+            or absf(yaw) > 10000.0 or pitch < -1.5 or pitch > 1.5):
+            return null
+        result[view_id] = {
+            "target": coordinates,
+            "distance": distance,
+            "yaw": yaw,
+            "pitch": pitch,
+        }
+    return result
+
+
+static func apply_view_camera(camera: Camera3D, view_id: String,
+                              state: Dictionary) -> bool:
+    if mode_for_view_id(view_id).is_empty():
+        return false
+    var checked: Variant = validate_view_states(default_view_states(
+        target_from_state(state),
+        float(state.get("distance", 25.0)),
+        float(state.get("yaw", 0.8)),
+        float(state.get("pitch", 0.37))))
+    if checked == null:
+        return false
+    return apply_camera(
+        camera, mode_for_view_id(view_id), target_from_state(state),
+        float(state.get("distance", 25.0)),
+        float(state.get("yaw", 0.8)),
+        float(state.get("pitch", 0.37)))

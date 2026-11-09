@@ -51,6 +51,7 @@ REQUIRED = (
     "native_editor/godot_editor/tests/smoke_scene_actor_workbench_bridge.gd",
     "native_editor/godot_editor/orthographic_authoring_guides.gd",
     "native_editor/godot_editor/tests/smoke_orthographic_authoring_views.gd",
+    "native_editor/godot_editor/tests/smoke_multi_view_workspace.gd",
     "native_editor/godot_editor/tests/smoke_t3ed_face_edit_roundtrip.gd",
     "native_editor/godot_editor/tests/smoke_draft_brush_viewport_face_pick.gd",
     "native_editor/godot_editor/custom_polygon_geometry.gd",
@@ -147,6 +148,7 @@ def examine(root: Path) -> list[str]:
         manifest = json.loads((root / "prototype-manifest.json").read_text("utf-8"))
         if (manifest.get("schema") != SCHEMA
                 or manifest.get("engine") != "Godot 4.3 stable Standard Windows x86_64"
+                or manifest.get("prototype_version") != "0.7.2-alpha"
                 or manifest.get("includes_original_dx2_assets") is not False
                 or manifest.get("includes_havok_runtime") is not False
                 or manifest.get("gameplay_physics_or_walkability_verified") is not False
@@ -155,6 +157,11 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("private_original_map_zip_aggregate_audit_available") is not True
                 or manifest.get("private_original_map_zip_write_enabled") is not False
                 or manifest.get("editor_orthographic_planar_grid_preview") is not True
+                or manifest.get("editor_quad_multiview_layout") is not True
+                or manifest.get("editor_quad_multiview_independent_cameras") is not True
+                or manifest.get("editor_quad_multiview_per_view_grid_layers") is not True
+                or manifest.get("editor_quad_multiview_private_workspace_persistence") is not True
+                or manifest.get("editor_quad_multiview_native_writer") is not False
                 or manifest.get("editor_draft_face_resize_preview") is not True
                 or manifest.get("editor_draft_viewport_face_picking_preview") is not True
                 or manifest.get("editor_custom_polygon_geometry_preview") is not True
