@@ -175,6 +175,11 @@ func _run() -> void:
         or mesh_b.surface_get_material(1) == side_material_b):
         _fail("Diffuse was not assigned to both selected Polygon side slots as one undoable batch.")
         return
+    var no_op_history_before := editor.undo_stack.size()
+    browser._request_apply_selected_material()
+    if editor.undo_stack.size() != no_op_history_before:
+        _fail("Reapplying an identical batch created a redundant Undo entry.")
+        return
 
     # A mixed selection must reject the whole operation without changing either Polygon.
     editor._clear_selection()
