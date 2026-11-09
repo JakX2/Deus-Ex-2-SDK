@@ -101,6 +101,13 @@ func _analyze() -> void:
             + "The original source selection remains valid."
         ) % [int(result["section_triangle_count"]), int(result["analysis_cap"])]
         return
+    if bool(result.get("analysis_skipped_for_edge_incidence", false)):
+        report_label.text = (
+            "Analysis skipped without partial results.\n"
+            + "A touched source edge has %d MOPP incidences; the per-edge cap is %d.\n"
+            + "The original source selection remains valid."
+        ) % [int(result["edge_incidence_count"]), int(result["edge_incidence_cap"])]
+        return
     var lines := PackedStringArray([
         "MOPP-linked triangles in section subset: %d" % int(result["section_triangle_count"]),
         "Unique exact-welded source vertices / edges: %d / %d" % [
