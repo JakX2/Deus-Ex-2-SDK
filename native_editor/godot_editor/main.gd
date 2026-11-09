@@ -1652,7 +1652,7 @@ func _make_ui() -> void:
     var surface_note := Label.new()
     surface_note.text = (
         "Top, bottom and side slots keep independent UVs and preview materials. Choose a resolved "
-        + "diffuse in Materials and apply it to the currently selected slot; this only changes a "
+        + "slot-0 preview candidate in Materials and apply it to the currently selected slot; this only changes a "
         + "private Polygon preview. Presets control tint/roughness, not DX2 shader semantics.")
     surface_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     polygon_inspector_panel.add_child(surface_note)
@@ -1694,12 +1694,12 @@ func _make_ui() -> void:
         polygon_surface_uv_controls.append(uv_control)
     var surface_apply := Button.new()
     surface_apply.text = "Apply surface style"
-    surface_apply.tooltip_text = "Apply the selected preview preset and UV transform as one undoable private-draft edit; any source diffuse assignment is retained."
+    surface_apply.tooltip_text = "Apply the selected preview preset and UV transform as one undoable private-draft edit; any source-backed slot-0 preview assignment is retained."
     surface_apply.pressed.connect(_apply_polygon_surface_style)
     polygon_inspector_panel.add_child(surface_apply)
     var surface_clear := Button.new()
-    surface_clear.text = "Clear source diffuse"
-    surface_clear.tooltip_text = "Remove the source-backed thumbnail from this private Polygon slot and return to the procedural checker."
+    surface_clear.text = "Clear source preview"
+    surface_clear.tooltip_text = "Remove the source-backed slot-0 preview candidate from this private Polygon slot and return to the procedural checker."
     surface_clear.pressed.connect(_clear_polygon_surface_source_material)
     polygon_inspector_panel.add_child(surface_clear)
     var property_heading := Label.new()
