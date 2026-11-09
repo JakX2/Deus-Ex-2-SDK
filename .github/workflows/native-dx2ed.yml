@@ -55,6 +55,8 @@ jobs:
         run: timeout 30s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_multi_view_workspace.gd
       - name: Exercise active-pane orthographic gizmos, plane drag and private transform round-trip
         run: timeout 35s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_orthographic_gizmo_constraints.gd
+      - name: Exercise transform pivot/orientation preferences and private cursor persistence
+        run: timeout 35s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_transform_pivot_orientation.gd
       - name: Compile custom polygon geometry in isolation (Godot 4.3)
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://custom_polygon_geometry.gd
       - name: Exercise actual custom polygon authoring and full private scene reopen

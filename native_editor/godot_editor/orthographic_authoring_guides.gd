@@ -12,6 +12,8 @@ const SINGLE_LAYOUT := "single"
 const QUAD_LAYOUT := "quad"
 const MAX_GRID_HALF_LINES := 64
 const INTERACTION_LAYER_MASK := 1 << 5
+const PIVOT_MODES := ["median", "active", "cursor"]
+const ORIENTATION_MODES := ["world", "local"]
 
 
 static func valid_mode(mode: String) -> bool:
@@ -367,4 +369,48 @@ static func axis_drag_delta(pivot: Vector3, raw_change: float, axis: Vector3,
     var result := axis * amount
     if not result.is_finite() or result.length() > 1000000.0:
         return null
+    return result
+
+
+## Transform preferences remain editor-only workspace metadata.
+
+static func valid_pivot_mode(mode: String) -> bool:
+    return mode in PIVOT_MODES
+
+
+static func valid_orientation_mode(mode: String) -> bool:
+    return mode in ORIENTATION_MODES
+
+
+static func validate_cursor_position(value: Variant) -> Variant:
+    if typeof(value) != TYPE_ARRAY or value.size() != 3:
+        return null
+    var coordinates: Array[float] = []
+    for component in value:
+        if typeof(component) not in [TYPE_INT, TYPE_FLOAT]:
+            return null
+        var number := float(component)
+        if not is_finite(number) or absf(number) > 1000000.0:
+            return null
+        coordinates.append(number)
+    return Vector3(coordinates[0], coordinates[1], coordinates[2])
+
+
+static func gizmo_basis(mode: String, orientation: String,
+                        active_basis: Basis) -> Basis:
+    # Orthographic gizmos stay aligned to their world-space view planes.
+    if (not valid_orientation_mode(orientation)
+        or orientation != "local" or mode != PERSPECTIVE):
+        return Basis.IDENTITY
+    var determinant := active_basis.determinant()
+    if (not is_finite(determinant) or absf(determinant) < 0.000001
+        or not active_basis.x.is_finite()
+        or not active_basis.y.is_finite()
+        or not active_basis.z.is_finite()):
+        return Basis.IDENTITY
+    var result := active_basis.orthonormalized()
+    if (not result.x.is_finite() or not result.y.is_finite()
+        or not result.z.is_finite()
+        or absf(result.determinant()) < 0.999):
+        return Basis.IDENTITY
     return result

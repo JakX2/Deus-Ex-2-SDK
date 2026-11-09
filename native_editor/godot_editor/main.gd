@@ -47,6 +47,12 @@ var scene_root: Node3D
 var camera: Camera3D
 var editor_view_mode := OrthoGuides.PERSPECTIVE
 var editor_view_mode_select: OptionButton
+var transform_pivot_mode := "median"
+var transform_orientation_mode := "world"
+var transform_cursor_position := Vector3.ZERO
+var transform_pivot_select: OptionButton
+var transform_orientation_select: OptionButton
+var transform_cursor_marker: MeshInstance3D
 var ortho_grid_node: MeshInstance3D
 var ortho_grid_toggle: CheckBox
 var ortho_grid_spacing_control: SpinBox
@@ -721,6 +727,30 @@ func _make_ui() -> void:
         tool_button.tooltip_text = "Choose 3D axis gizmo; keyboard shortcut " + definition[0].right(1)
         tool_button.pressed.connect(_set_editor_tool.bind(definition[1]))
         prop_bar.add_child(tool_button)
+    transform_pivot_select = OptionButton.new()
+    transform_pivot_select.tooltip_text = (
+        "Median averages selected origins; Active uses the last selected object; "
+        + "3D Cursor uses the editor-only cursor. Saved in private JSON workspace.")
+    transform_pivot_select.add_item("Pivot: Median", 0)
+    transform_pivot_select.add_item("Pivot: Active", 1)
+    transform_pivot_select.add_item("Pivot: 3D Cursor", 2)
+    transform_pivot_select.item_selected.connect(_transform_pivot_item_selected)
+    prop_bar.add_child(transform_pivot_select)
+    transform_orientation_select = OptionButton.new()
+    transform_orientation_select.tooltip_text = (
+        "World or active-object local basis. Local orientation is used in Perspective; "
+        + "Top/Front/Side remain constrained to world view planes.")
+    transform_orientation_select.add_item("Axes: World", 0)
+    transform_orientation_select.add_item("Axes: Local", 1)
+    transform_orientation_select.item_selected.connect(_transform_orientation_item_selected)
+    prop_bar.add_child(transform_orientation_select)
+    var set_cursor_button := Button.new()
+    set_cursor_button.text = "Set 3D cursor"
+    set_cursor_button.tooltip_text = (
+        "Place the editor-only cursor at the selected objects' median pivot, "
+        + "or the active view center when nothing is selected. Undoable.")
+    set_cursor_button.pressed.connect(_set_transform_cursor_from_selection)
+    prop_bar.add_child(set_cursor_button)
     var duplicate_button := Button.new()
     duplicate_button.text = "Duplicate"
     duplicate_button.tooltip_text = "Clone selected rendered prop in the viewer. Does not write the GMP."
@@ -2405,6 +2435,35 @@ func _make_world() -> void:
     polygon_vertex_handle_selected_material.albedo_color = Color(1.0, 0.76, 0.12, 1.0)
     polygon_vertex_handle_selected_material.no_depth_test = true
     polygon_vertex_handle_selected_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    transform_cursor_marker = MeshInstance3D.new()
+    transform_cursor_marker.name = "DX2Ed_TransformCursor_EDITOR_ONLY"
+    transform_cursor_marker.set_meta("editor_only", true)
+    transform_cursor_marker.layers = 1
+    transform_cursor_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    var cursor_mesh := ImmediateMesh.new()
+    cursor_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+    for axis_data in [
+        [Vector3.RIGHT, Color(0.98, 0.26, 0.24, 1.0)],
+        [Vector3.UP, Color(0.29, 0.94, 0.32, 1.0)],
+        [Vector3.BACK, Color(0.28, 0.52, 1.0, 1.0)]
+    ]:
+        var axis: Vector3 = axis_data[0]
+        var color: Color = axis_data[1]
+        for direction in [-1.0, 1.0]:
+            cursor_mesh.surface_set_color(color)
+            cursor_mesh.surface_add_vertex(Vector3.ZERO)
+            cursor_mesh.surface_add_vertex(axis * 0.42 * direction)
+    cursor_mesh.surface_end()
+    transform_cursor_marker.mesh = cursor_mesh
+    var cursor_material := StandardMaterial3D.new()
+    cursor_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    cursor_material.vertex_color_use_as_albedo = true
+    cursor_material.no_depth_test = true
+    cursor_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    transform_cursor_marker.material_override = cursor_material
+    transform_cursor_marker.visible = false
+    world_root.add_child(transform_cursor_marker)
+    _refresh_transform_cursor_marker()
     gizmo_root = Node3D.new()
     gizmo_root.name = "EditorGizmo"
     world_root.add_child(gizmo_root)
@@ -2630,6 +2689,13 @@ func _capture_draft_workspace() -> Dictionary:
         "view_layout": view_layout,
         "active_view_id": active_view_id,
         "view_states": view_states.duplicate(true),
+        "pivot_mode": transform_pivot_mode,
+        "orientation_mode": transform_orientation_mode,
+        "cursor_position": [
+            transform_cursor_position.x,
+            transform_cursor_position.y,
+            transform_cursor_position.z
+        ],
     }
 
 
@@ -2637,6 +2703,18 @@ func _apply_draft_workspace(workspace: Dictionary) -> void:
     view_states = workspace["view_states"].duplicate(true)
     view_layout = workspace["view_layout"]
     active_view_id = workspace["active_view_id"]
+    transform_pivot_mode = str(workspace.get("pivot_mode", "median"))
+    transform_orientation_mode = str(workspace.get("orientation_mode", "world"))
+    var checked_cursor: Variant = OrthoGuides.validate_cursor_position(
+        workspace.get("cursor_position", [0.0, 0.0, 0.0]))
+    if checked_cursor != null:
+        transform_cursor_position = checked_cursor
+    if transform_pivot_select != null:
+        transform_pivot_select.select(OrthoGuides.PIVOT_MODES.find(transform_pivot_mode))
+    if transform_orientation_select != null:
+        transform_orientation_select.select(
+            OrthoGuides.ORIENTATION_MODES.find(transform_orientation_mode))
+    _refresh_transform_cursor_marker()
     ortho_grid_enabled = workspace["grid_enabled"]
     if ortho_grid_toggle != null:
         ortho_grid_toggle.set_pressed_no_signal(ortho_grid_enabled)
@@ -2646,6 +2724,8 @@ func _apply_draft_workspace(workspace: Dictionary) -> void:
     _activate_view(active_view_id, false, false, true)
     _sync_view_layout_visibility()
     _refresh_ortho_grid()
+    _refresh_gizmo_shape()
+    _update_gizmo_pose()
 
 
 func _make_material() -> void:
@@ -6144,7 +6224,7 @@ func _selection_nodes() -> Array[MeshInstance3D]:
     return nodes
 
 
-func _selection_pivot() -> Vector3:
+func _selection_pivot_median() -> Vector3:
     var nodes := _selection_nodes()
     if nodes.is_empty():
         return Vector3.ZERO
@@ -6152,6 +6232,95 @@ func _selection_pivot() -> Vector3:
     for node in nodes:
         pivot += node.global_position
     return pivot / float(nodes.size())
+
+
+func _selection_pivot() -> Vector3:
+    var nodes := _selection_nodes()
+    if nodes.is_empty():
+        return transform_cursor_position if transform_pivot_mode == "cursor" else Vector3.ZERO
+    if transform_pivot_mode == "active":
+        if is_instance_valid(selected_mesh) and nodes.has(selected_mesh):
+            return selected_mesh.global_position
+        return nodes.back().global_position
+    if transform_pivot_mode == "cursor":
+        return transform_cursor_position
+    return _selection_pivot_median()
+
+
+func _refresh_transform_cursor_marker() -> void:
+    if not is_instance_valid(transform_cursor_marker):
+        return
+    transform_cursor_marker.global_position = transform_cursor_position
+    transform_cursor_marker.visible = transform_pivot_mode == "cursor"
+
+
+func _transform_pivot_item_selected(index: int) -> void:
+    if index < 0 or index >= OrthoGuides.PIVOT_MODES.size():
+        return
+    _set_transform_pivot_mode(OrthoGuides.PIVOT_MODES[index])
+
+
+func _transform_orientation_item_selected(index: int) -> void:
+    if index < 0 or index >= OrthoGuides.ORIENTATION_MODES.size():
+        return
+    _set_transform_orientation_mode(OrthoGuides.ORIENTATION_MODES[index])
+
+
+func _set_transform_pivot_mode(mode: String) -> void:
+    if not OrthoGuides.valid_pivot_mode(mode):
+        return
+    transform_pivot_mode = mode
+    if transform_pivot_select != null:
+        transform_pivot_select.select(OrthoGuides.PIVOT_MODES.find(mode))
+    _refresh_transform_cursor_marker()
+    _update_gizmo_pose()
+    _refresh_prop_inspection()
+    status_label.text = "Transform pivot: " + mode.capitalize() + ". Editor preview only."
+
+
+func _set_transform_orientation_mode(mode: String) -> void:
+    if not OrthoGuides.valid_orientation_mode(mode):
+        return
+    transform_orientation_mode = mode
+    if transform_orientation_select != null:
+        transform_orientation_select.select(OrthoGuides.ORIENTATION_MODES.find(mode))
+    _refresh_gizmo_shape()
+    _update_gizmo_pose()
+    status_label.text = (
+        "Transform axes: " + mode.capitalize()
+        + (" (local basis in Perspective; orthographic views stay world-plane constrained)." if mode == "local"
+            else " (world aligned)."))
+
+
+func _set_transform_cursor_from_selection() -> void:
+    var next_position := _selection_pivot_median()
+    if _selection_nodes().is_empty():
+        next_position = camera_target
+    if (not next_position.is_finite()
+        or absf(next_position.x) > 1000000.0
+        or absf(next_position.y) > 1000000.0
+        or absf(next_position.z) > 1000000.0):
+        status_label.text = "3D cursor refused: target is nonfinite or outside the bounded editor workspace."
+        return
+    if transform_cursor_position.is_equal_approx(next_position):
+        status_label.text = "3D cursor already matches the selection/view center."
+        return
+    var before := _capture_edit_state()
+    transform_cursor_position = next_position
+    _refresh_transform_cursor_marker()
+    _update_gizmo_pose()
+    _record_edit("Set 3D cursor", before)
+    status_label.text = (
+        "Moved editor-only 3D cursor to " + str(transform_cursor_position)
+        + ". Ctrl+Z restores its previous position; save the private draft to persist.")
+
+
+func _gizmo_root_basis() -> Basis:
+    var active_basis := Basis.IDENTITY
+    if is_instance_valid(selected_mesh):
+        active_basis = selected_mesh.global_basis
+    return OrthoGuides.gizmo_basis(
+        editor_view_mode, transform_orientation_mode, active_basis)
 
 
 ## Geometry debugging never writes an editor draft or a native map.
@@ -7117,7 +7286,8 @@ func _capture_edit_state() -> Dictionary:
         "property_edits": property_overrides.duplicate(true),
         "selected": selected_meshes.keys().duplicate(),
         "selected_logical_actor": str(selected_actor.get("name", "")) if selected_meshes.is_empty() else "",
-        "next_id": next_prop_copy_id
+        "next_id": next_prop_copy_id,
+        "cursor_position": transform_cursor_position
     }
 
 
@@ -7165,6 +7335,13 @@ func _apply_edit_state(state: Dictionary) -> void:
                         draft_template_provenance[str(name)] = prov.duplicate(true)
     next_prop_copy_id = max(1, int(state.get("next_id", 1)))
     property_overrides = state.get("property_edits", {}).duplicate(true)
+    var cursor_value: Variant = state.get("cursor_position", transform_cursor_position)
+    if typeof(cursor_value) == TYPE_VECTOR3:
+        var checked_cursor: Vector3 = cursor_value
+        if (checked_cursor.is_finite() and absf(checked_cursor.x) <= 1000000.0
+            and absf(checked_cursor.y) <= 1000000.0
+            and absf(checked_cursor.z) <= 1000000.0):
+            transform_cursor_position = checked_cursor
     for name in state.get("selected", []):
         var node: MeshInstance3D = null
         if draft_prop_copies.has(name):
@@ -7182,6 +7359,7 @@ func _apply_edit_state(state: Dictionary) -> void:
         _refresh_selection_inspector()
     _sync_actor_list_selection()
     _refresh_hierarchy()
+    _refresh_transform_cursor_marker()
     _update_gizmo_pose()
 
 
@@ -7196,8 +7374,15 @@ func _refresh_history_buttons() -> void:
 
 func _record_edit(label: String, before: Dictionary) -> void:
     var after := _capture_edit_state()
-    # Selection changes alone do not count as edits.
-    if before.get("moved") == after.get("moved") and before.get("copies") == after.get("copies") and before.get("property_edits", {}) == after.get("property_edits", {}):
+    # Selection changes alone do not count as edits. Cursor placement is the
+    # one workspace preference that is also a reversible editor action.
+    var cursor_unchanged: bool = (
+        before.get("cursor_position", Vector3.ZERO)
+        == after.get("cursor_position", Vector3.ZERO))
+    if (before.get("moved") == after.get("moved")
+        and before.get("copies") == after.get("copies")
+        and before.get("property_edits", {}) == after.get("property_edits", {})
+        and cursor_unchanged):
         return
     # History owns immutable snapshots. Callers may clear/reuse their working
     # dictionaries after recording (gizmo drag does this on mouse release).
@@ -9044,7 +9229,11 @@ func _validated_draft_workspace(value: Variant) -> Variant:
         return null
     var legacy: bool = value.size() == 3
     var extended: bool = value.size() == 6
-    if (not legacy and not extended) or not value.has("view_mode") or not value.has("grid_step") or not value.has("grid_enabled"):
+    var extended_v2: bool = value.size() == 9
+    if (not legacy and not extended and not extended_v2):
+        return null
+    if (not value.has("view_mode") or not value.has("grid_step")
+        or not value.has("grid_enabled")):
         return null
     if typeof(value["view_mode"]) != TYPE_STRING or not OrthoGuides.valid_mode(value["view_mode"]):
         return null
@@ -9058,7 +9247,10 @@ func _validated_draft_workspace(value: Variant) -> Variant:
     var active_id := OrthoGuides.view_id_for_mode(value["view_mode"])
     var layout := "single"
     var states := OrthoGuides.default_view_states(Vector3.ZERO, 25.0, 0.8, 0.37)
-    if extended:
+    var pivot_mode := "median"
+    var orientation_mode := "world"
+    var cursor_position := [0.0, 0.0, 0.0]
+    if extended or extended_v2:
         if (not value.has("view_layout") or typeof(value["view_layout"]) != TYPE_STRING
             or not OrthoGuides.valid_layout(value["view_layout"])
             or not value.has("active_view_id") or typeof(value["active_view_id"]) != TYPE_STRING
@@ -9071,6 +9263,20 @@ func _validated_draft_workspace(value: Variant) -> Variant:
             return null
         layout = value["view_layout"]
         states = checked_states
+    if extended_v2:
+        if (not value.has("pivot_mode") or typeof(value["pivot_mode"]) != TYPE_STRING
+            or not OrthoGuides.valid_pivot_mode(value["pivot_mode"])
+            or not value.has("orientation_mode") or typeof(value["orientation_mode"]) != TYPE_STRING
+            or not OrthoGuides.valid_orientation_mode(value["orientation_mode"])
+            or not value.has("cursor_position")):
+            return null
+        var checked_cursor: Variant = OrthoGuides.validate_cursor_position(value["cursor_position"])
+        if checked_cursor == null:
+            return null
+        var cursor: Vector3 = checked_cursor
+        pivot_mode = value["pivot_mode"]
+        orientation_mode = value["orientation_mode"]
+        cursor_position = [cursor.x, cursor.y, cursor.z]
     return {
         "view_mode": value["view_mode"],
         "grid_step": step,
@@ -9078,6 +9284,9 @@ func _validated_draft_workspace(value: Variant) -> Variant:
         "view_layout": layout,
         "active_view_id": active_id,
         "view_states": states,
+        "pivot_mode": pivot_mode,
+        "orientation_mode": orientation_mode,
+        "cursor_position": cursor_position,
     }
 
 
@@ -9569,6 +9778,7 @@ func _update_gizmo_pose() -> void:
         gizmo_root.global_position = position
     else:
         gizmo_root.global_position = _selection_pivot()
+    gizmo_root.global_basis = _gizmo_root_basis()
     var scale_size := 0.22
     if is_instance_valid(camera) and camera.projection == Camera3D.PROJECTION_ORTHOGONAL:
         var viewport_height := (
@@ -9639,6 +9849,14 @@ func _begin_gizmo_drag_at(mouse_position: Vector2) -> bool:
                 else:
                     best_plane_axes.clear()
                     best_axis = handle.get_meta("axis", Vector3.ZERO)
+    var gizmo_basis := gizmo_root.global_basis.orthonormalized()
+    if best_plane_axes.size() == 2:
+        best_plane_axes = [
+            (gizmo_basis * best_plane_axes[0]).normalized(),
+            (gizmo_basis * best_plane_axes[1]).normalized()
+        ]
+    elif best_axis != Vector3.ZERO:
+        best_axis = (gizmo_basis * best_axis).normalized()
     if best_axis == Vector3.ZERO and best_plane_axes.size() != 2:
         return false
     if is_light:

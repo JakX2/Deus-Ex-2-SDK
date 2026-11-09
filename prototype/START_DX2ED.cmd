@@ -30,6 +30,7 @@ if /I "%~1"=="--self-test" (
     smoke_orthographic_authoring_views.gd
     smoke_multi_view_workspace.gd
     smoke_orthographic_gizmo_constraints.gd
+    smoke_transform_pivot_orientation.gd
     smoke_t3ed_face_edit_roundtrip.gd
     smoke_draft_brush_viewport_face_pick.gd
     smoke_custom_polygon_geometry.gd

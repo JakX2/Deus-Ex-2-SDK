@@ -887,3 +887,8 @@ Y/Z and X. Orthographic Move adds a two-axis plane handle with Ctrl world-grid
 snapping. Drag commits one Undo/Redo transaction and survives private JSON
 Save/reopen. This is editor-only preview state; native DX2 map writers remain
 disabled. See docs/research/dx2ed-orthographic-gizmo-constraints-v0-54.md.
+
+
+## DX2Ed v0.55 transform pivots and orientation
+
+The prop toolbar now offers Median, Active and 3D Cursor pivots plus World/Local gizmo orientation. Local axes are used in Perspective only; orthographic Top/Front/Side remain aligned to their world view planes. The editor-only RGB cursor can be placed at the selection median or active view center, is undoable, and persists in private JSON workspace metadata. Old three-field and six-field workspaces remain readable. These settings do not alter source actor transforms or authorize native map writing; see `docs/research/dx2ed-transform-pivot-orientation-v0-55.md`.
