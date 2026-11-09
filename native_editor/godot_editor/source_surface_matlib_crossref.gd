@@ -270,8 +270,8 @@ func _candidate_selected(index: int) -> void:
         "Nine named stage references (slot roles unverified):"
     ])
     var stages: Array = material.get("stages", [])
-    for index in range(9):
-        var stage: Dictionary = stages[index]
+    for slot_index in range(9):
+        var stage: Dictionary = stages[slot_index]
         var name := str(stage.get("name", ""))
         var state := "empty"
         if not name.is_empty():
@@ -282,7 +282,7 @@ func _candidate_selected(index: int) -> void:
         var display_name := name
         if display_name.is_empty():
             display_name = "(empty)"
-        lines.append("Slot %d: %s [%s]" % [index, display_name, state])
+        lines.append("Slot %d: %s [%s]" % [slot_index, display_name, state])
     lines.append("Native material index: NOT VERIFIED.")
     lines.append("Shader-stage semantics: NOT VERIFIED.")
     lines.append("Physical material / Havok role: NOT VERIFIED.")
