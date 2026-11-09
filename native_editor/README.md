@@ -892,3 +892,8 @@ disabled. See docs/research/dx2ed-orthographic-gizmo-constraints-v0-54.md.
 ## DX2Ed v0.55 transform pivots and orientation
 
 The prop toolbar now offers Median, Active and 3D Cursor pivots plus World/Local gizmo orientation. Local axes are used in Perspective only; orthographic Top/Front/Side remain aligned to their world view planes. The editor-only RGB cursor can be placed at the selection median or active view center, is undoable, and persists in private JSON workspace metadata. Old three-field and six-field workspaces remain readable. These settings do not alter source actor transforms or authorize native map writing; see `docs/research/dx2ed-transform-pivot-orientation-v0-55.md`.
+
+
+## DX2Ed v0.56 private hierarchy groups
+
+The Hierarchy tab can now create and remove editor-only parent groups for selected editable preview meshes. Selecting a group routes transform operations through its Node3D parent while preserving child local offsets; selecting a child targets that mesh alone. Group duplication, reset, Undo/Redo and optional private JSON persistence are covered by the Godot 4.3 synthetic group-hierarchy smoke and the bundled Windows self-test. Malformed member identities and singular parent transforms are rejected before current editor state is changed. Group nodes are not native DX2 actor ownership, BSP/CSG, or cooked-level data; original GMP/IBD files remain read-only. See docs/research/dx2ed-draft-group-hierarchy-v0-56.md.

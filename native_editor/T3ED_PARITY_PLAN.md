@@ -235,3 +235,12 @@ proof of T3Ed's exact gizmo implementation, and no T3SDK code is copied.
 ## v0.55: transform pivots and local/world orientation
 
 DX2Ed v0.55 adds Median / Active / 3D Cursor transform pivots, a visible editor-only 3D cursor and World / Local gizmo orientation. Perspective local axes follow the active selected object's orthonormal basis; orthographic views retain world-plane constraints. Cursor placement is one Undo/Redo transaction. The private workspace validates and persists the three preferences while continuing to migrate the earlier three-field and six-field workspace schemas. This advances the transform workflow but remains editor-private preview state, not native DX2 transform serialization.
+
+
+## v0.56: private group hierarchy and parent transforms
+
+DX2Ed v0.56 adds a Hierarchy-tab group-name field with Group selected / Ungroup actions. Selected editable preview meshes are reparented under an editor-only Node3D parent while preserving their world transforms. Selecting the group row expands selection to its member meshes but routes Move, Rotate, Scale, Inspector edits and viewport gizmos to the parent node; selecting a child row remains an individual transform. Multiple groups can be selected. Duplicating a selected group reconstructs a separate group, and Reset removes the selected group's private copies without touching original source files.
+
+Group identity, parent transform and member names are optional additions to the existing private prop-draft JSON. The loader validates group names, unique member ownership, source/copy identities, finite bounded transforms, invertible parent bases and selected-group references before clearing the current editor state. Older drafts without groups remain readable. Scene unload ungroups original preview meshes back to their original parents before freeing the private copies and imported preview root. Group state is part of Undo/Redo.
+
+The Godot 4.3 synthetic smoke exercises parent transforms, Hierarchy selection, group creation/ungroup, Undo/Redo, group duplication, reset, private Save/reopen and rejection of duplicate-member and singular-transform documents before mutation. The Windows prototype includes this same test. This is editor-private scene organization only: it does not prove T3Ed's exact implementation, native DX2 group ownership, native rotator conversion, BSP/CSG/leaf/zone/collision/lightmap behavior or a playable cooked map. No proprietary game assets or T3SDK source are bundled, and native writers remain disabled.
