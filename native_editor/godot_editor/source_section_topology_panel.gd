@@ -4,6 +4,7 @@ extends VBoxContainer
 
 signal triangle_requested(original_level_triangle_id: int)
 signal edge_overlay_toggled(enabled: bool)
+signal edge_selection_cleared
 
 const ANALYSIS_CAP := 8192
 const EDGE_NAMES := ["same-material interior", "open boundary", "render-material seam", "non-manifold"]
@@ -21,6 +22,13 @@ var neighbor_selector: OptionButton
 var neighbor_button: Button
 var edge_toggle: CheckBox
 var copy_edges_button: Button
+var edge_selection_panel: VBoxContainer
+var edge_selection_label: Label
+var edge_triangle_selector: OptionButton
+var edge_triangle_button: Button
+var edge_neighbor_button: Button
+var edge_copy_button: Button
+var selected_edge: Dictionary = {}
 
 func initialize() -> void:
     visible = false
@@ -73,6 +81,38 @@ func initialize() -> void:
     report_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     report_label.text = "No source section selected."
     add_child(report_label)
+    edge_selection_panel = VBoxContainer.new()
+    edge_selection_panel.visible = false
+    add_child(edge_selection_panel)
+    var edge_selection_heading := Label.new()
+    edge_selection_heading.text = "SELECTED EXACT-WELD SOURCE EDGE"
+    edge_selection_heading.add_theme_font_size_override("font_size", 12)
+    edge_selection_panel.add_child(edge_selection_heading)
+    edge_selection_label = Label.new()
+    edge_selection_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    edge_selection_label.text = "Hover an overlay edge and click to inspect its source weld IDs."
+    edge_selection_panel.add_child(edge_selection_label)
+    var edge_actions := HFlowContainer.new()
+    edge_selection_panel.add_child(edge_actions)
+    edge_triangle_selector = OptionButton.new()
+    edge_triangle_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    edge_triangle_selector.disabled = true
+    edge_actions.add_child(edge_triangle_selector)
+    edge_triangle_button = Button.new()
+    edge_triangle_button.text = "Select incident triangle"
+    edge_triangle_button.disabled = true
+    edge_triangle_button.pressed.connect(_select_edge_triangle)
+    edge_actions.add_child(edge_triangle_button)
+    edge_neighbor_button = Button.new()
+    edge_neighbor_button.text = "Jump to adjacent section"
+    edge_neighbor_button.disabled = true
+    edge_neighbor_button.pressed.connect(_select_edge_neighbor)
+    edge_actions.add_child(edge_neighbor_button)
+    edge_copy_button = Button.new()
+    edge_copy_button.text = "Copy selected edge JSON"
+    edge_copy_button.disabled = true
+    edge_copy_button.pressed.connect(_copy_selected_edge)
+    edge_actions.add_child(edge_copy_button)
 
 func set_selection(value: RefCounted, hit: Dictionary) -> void:
     clear_selection()
@@ -99,6 +139,7 @@ func set_selection(value: RefCounted, hit: Dictionary) -> void:
     visible = true
 
 func clear_selection() -> void:
+    clear_selected_edge()
     picker = null
     selected_triangle_id = -1
     summary.clear()
@@ -121,6 +162,153 @@ func clear_selection() -> void:
         copy_edges_button.disabled = true
     _clear_neighbors()
     visible = false
+
+func clear_selected_edge() -> void:
+    var had_selection := not selected_edge.is_empty()
+    selected_edge.clear()
+    if edge_selection_label != null:
+        edge_selection_label.text = "Hover an overlay edge and click to inspect its source weld IDs."
+    if edge_triangle_selector != null:
+        edge_triangle_selector.clear()
+        edge_triangle_selector.disabled = true
+    if edge_triangle_button != null:
+        edge_triangle_button.disabled = true
+    if edge_neighbor_button != null:
+        edge_neighbor_button.disabled = true
+    if edge_copy_button != null:
+        edge_copy_button.disabled = true
+    if edge_selection_panel != null:
+        edge_selection_panel.visible = false
+    if had_selection:
+        edge_selection_cleared.emit()
+
+
+func set_selected_edge(record: Dictionary) -> bool:
+    if (summary.is_empty() or not summary.has("edge_records")
+        or edge_toggle == null or not edge_toggle.button_pressed):
+        return false
+    var edge_key := str(record.get("edge_key", ""))
+    if edge_key.is_empty():
+        return false
+    var matched := false
+    for raw_record in summary.get("edge_records", []):
+        if typeof(raw_record) != TYPE_DICTIONARY:
+            continue
+        var candidate: Dictionary = raw_record
+        if (str(candidate.get("edge_key", "")) == edge_key
+            and candidate.get("source_weld_ids", []) == record.get("source_weld_ids", [])
+            and candidate.get("section_triangle_ids", []) == record.get("section_triangle_ids", [])
+            and str(candidate.get("edge_classification", "")) == str(record.get("edge_classification", ""))):
+            matched = true
+            break
+    if not matched:
+        return false
+    clear_selected_edge()
+    selected_edge = record.duplicate(true)
+    var welds: Array = selected_edge.get("source_weld_ids", [])
+    var triangles: Array = selected_edge.get("section_triangle_ids", [])
+    var classification := str(selected_edge.get("edge_classification", ""))
+    var external_count := int(selected_edge.get("cross_section_neighbor_count", 0))
+    var representative_id := int(selected_edge.get("representative_cross_section_triangle_id", -1))
+    edge_selection_label.text = (
+        "Edge %s | original float32 weld IDs %d / %d\n"
+        + "Classification: %s | local incidence: %d | local Level triangles: %s\n"
+        + "Other MOPP-linked sections sharing this edge: %d | raw source edge code: %d (uninterpreted)."
+    ) % [
+        edge_key, int(welds[0]), int(welds[1]), classification,
+        int(selected_edge.get("section_incidence_count", -1)), str(triangles),
+        external_count, int(selected_edge.get("source_edge_class_code", -1)),
+    ]
+    edge_triangle_selector.clear()
+    for raw_triangle_id in triangles:
+        var triangle_id := int(raw_triangle_id)
+        edge_triangle_selector.add_item("Level triangle #%d" % triangle_id)
+        edge_triangle_selector.set_item_metadata(edge_triangle_selector.get_item_count() - 1, triangle_id)
+    var has_local_triangles := edge_triangle_selector.get_item_count() > 0
+    edge_triangle_selector.disabled = not has_local_triangles
+    edge_triangle_button.disabled = not has_local_triangles
+    if has_local_triangles:
+        edge_triangle_selector.select(0)
+    edge_neighbor_button.disabled = true
+    if representative_id >= 0 and picker != null and bool(picker.get("ready")):
+        var neighbor_hit: Dictionary = picker.call("triangle_details", representative_id)
+        var neighbor_section: Dictionary = picker.call("section_details", representative_id)
+        var current_section: Dictionary = picker.call("section_details", selected_triangle_id)
+        if (not neighbor_hit.is_empty() and not neighbor_section.is_empty()
+            and not current_section.is_empty()
+            and int(neighbor_hit.get("original_level_triangle_id", -1)) == representative_id
+            and (int(neighbor_section.get("source_block_id", -1)) != int(current_section.get("source_block_id", -2))
+                or int(neighbor_section.get("render_block_ordinal", -1)) != int(current_section.get("render_block_ordinal", -2))
+                or int(neighbor_section.get("render_section_ordinal", -1)) != int(current_section.get("render_section_ordinal", -2)))):
+            edge_neighbor_button.disabled = false
+            edge_selection_label.text += "\nAdjacent MOPP section: block %d / render %d / section %d | representative triangle #%d." % [
+                int(neighbor_section.get("source_block_id", -1)),
+                int(neighbor_section.get("render_block_ordinal", -1)),
+                int(neighbor_section.get("render_section_ordinal", -1)),
+                representative_id,
+            ]
+    edge_copy_button.disabled = false
+    edge_selection_panel.visible = true
+    return true
+
+
+func _select_edge_triangle() -> void:
+    if (selected_edge.is_empty() or picker == null or not bool(picker.get("ready"))
+        or edge_triangle_selector == null or edge_triangle_selector.disabled):
+        return
+    var item_index := edge_triangle_selector.selected
+    if item_index < 0 or item_index >= edge_triangle_selector.get_item_count():
+        return
+    var triangle_id := int(edge_triangle_selector.get_item_metadata(item_index))
+    var allowed_triangles: Array = selected_edge.get("section_triangle_ids", [])
+    if not allowed_triangles.has(triangle_id):
+        return
+    var hit: Dictionary = picker.call("triangle_details", triangle_id)
+    if int(hit.get("original_level_triangle_id", -1)) != triangle_id:
+        return
+    triangle_requested.emit(triangle_id)
+
+
+func _select_edge_neighbor() -> void:
+    if selected_edge.is_empty() or picker == null or not bool(picker.get("ready")):
+        return
+    var triangle_id := int(selected_edge.get("representative_cross_section_triangle_id", -1))
+    if triangle_id < 0:
+        return
+    var hit: Dictionary = picker.call("triangle_details", triangle_id)
+    var target_section: Dictionary = picker.call("section_details", triangle_id)
+    var current_section: Dictionary = picker.call("section_details", selected_triangle_id)
+    if (hit.is_empty() or target_section.is_empty() or current_section.is_empty()
+        or int(hit.get("original_level_triangle_id", -1)) != triangle_id
+        or (int(target_section.get("source_block_id", -1)) == int(current_section.get("source_block_id", -2))
+            and int(target_section.get("render_block_ordinal", -1)) == int(current_section.get("render_block_ordinal", -2))
+            and int(target_section.get("render_section_ordinal", -1)) == int(current_section.get("render_section_ordinal", -2)))):
+        return
+    triangle_requested.emit(triangle_id)
+
+
+func selected_edge_payload() -> Dictionary:
+    if selected_edge.is_empty() or summary.is_empty():
+        return {}
+    return {
+        "schema": "DX2Ed-selected-source-section-edge-v1",
+        "source_map": str(summary.get("source_map", "")),
+        "source_sha256": str(summary.get("source_sha256", "")),
+        "source_section_key": str(summary.get("source_section_key", "")),
+        "edge": selected_edge.duplicate(true),
+        "mopp_leaf_subset_only": true,
+        "native_bsp_surface_verified": false,
+        "native_map_written": false,
+    }
+
+
+func _copy_selected_edge() -> void:
+    var payload := selected_edge_payload()
+    if payload.is_empty():
+        return
+    DisplayServer.clipboard_set(JSON.stringify(payload, "  "))
+    note_label.text = "Copied selected exact-weld edge identity and incident triangle IDs (read-only JSON)."
+
 
 func _clear_neighbors() -> void:
     if neighbor_selector != null:
@@ -193,6 +381,7 @@ func _analyze() -> void:
     if picker == null or not bool(picker.get("ready")) or selected_triangle_id < 0:
         clear_selection()
         return
+    clear_selected_edge()
     if edge_toggle.button_pressed:
         edge_toggle.set_pressed_no_signal(false)
         edge_overlay_toggled.emit(false)

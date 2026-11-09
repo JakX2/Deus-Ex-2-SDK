@@ -102,14 +102,37 @@ class SourceSectionTopologyContractTests(unittest.TestCase):
         self.assertIn("_toggle_source_section_edge_overlay", main)
         self.assertIn("source_collision_section_edge_marker.queue_free()", main)
 
+    def test_screen_edge_picker_is_bounded_cached_and_provenance_pinned(self) -> None:
+        helper = (ROOT / "native_editor/godot_editor/source_section_edge_picker.gd").read_text("utf-8")
+        main = (ROOT / "native_editor/godot_editor/main.gd").read_text("utf-8")
+        panel = (ROOT / "native_editor/godot_editor/source_section_topology_panel.gd").read_text("utf-8")
+        self.assertIn("MAX_EDGE_COUNT := 24576", helper)
+        self.assertIn("CELL_SIZE := 64.0", helper)
+        self.assertIn("radius_pixels > PICK_RADIUS_PIXELS", helper)
+        self.assertIn("camera_signature_matches", helper)
+        self.assertIn("record_belongs_to_report", helper)
+        self.assertIn('analysis_skipped_for_edge_incidence", false', helper)
+        self.assertIn("screen_distance_px", helper)
+        self.assertIn("edge_selection_cleared", panel)
+        self.assertIn("set_selected_edge", panel)
+        self.assertIn("Select incident triangle", panel)
+        self.assertIn("Jump to adjacent section", panel)
+        self.assertIn("_update_source_section_edge_hover", main)
+        self.assertIn("_select_source_section_edge", main)
+        self.assertIn("editor_only", helper)
+
+
     def test_package_and_ci_require_edge_overlay_but_not_native_writer(self) -> None:
         builder = (ROOT / "tools/build_dx2ed_windows_prototype.py").read_text("utf-8")
         doctor = (ROOT / "prototype/prototype_doctor.py").read_text("utf-8")
         workflow = (ROOT / ".github/workflows/native-dx2ed.yml").read_text("utf-8")
         self.assertIn("source_section_edge_overlay.gd", builder)
-        self.assertIn("editor_source_section_edge_overlay_native_writer", builder)
+        self.assertIn("source_section_edge_picker.gd", builder)
+        self.assertIn("editor_source_section_edge_hover_pick", builder)
+        self.assertIn("editor_source_section_edge_native_writer", builder)
         self.assertIn("editor_source_section_edge_overlay_native_surface_verified", doctor)
         self.assertIn("Compile exact-weld source-section edge overlay helper", workflow)
+        self.assertIn("Compile source-section edge hover picker", workflow)
 
 if __name__ == "__main__":
     unittest.main()

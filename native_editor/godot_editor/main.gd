@@ -22,6 +22,7 @@ const SourceSurfaceMatLibCrossref = preload("res://source_surface_matlib_crossre
 const SourceSectionTopologyPanel = preload("res://source_section_topology_panel.gd")
 const SourceSectionFillPreview = preload("res://source_section_fill_preview.gd")
 const SourceSectionEdgeOverlay = preload("res://source_section_edge_overlay.gd")
+const SourceSectionEdgePicker = preload("res://source_section_edge_picker.gd")
 const SourceEdgeTransitionPanel = preload("res://source_edge_transition_panel.gd")
 ## DX2Ed native viewer: a READ-ONLY Godot 4 GLB + GMP actor inspector.
 ## Can open an original DX2 .gmp using the bundled read-only Python backend.
@@ -78,6 +79,12 @@ var source_collision_marker: MeshInstance3D
 var source_collision_section_marker: MeshInstance3D
 var source_collision_section_fill_marker: MeshInstance3D
 var source_collision_section_edge_marker: MeshInstance3D
+var source_collision_section_edge_hover_marker: Node3D
+var source_collision_section_edge_selected_marker: Node3D
+var source_collision_section_edge_report: Dictionary = {}
+var source_collision_section_edge_index: Dictionary = {}
+var source_collision_section_edge_hover: Dictionary = {}
+var source_collision_section_edge_hover_key := ""
 var source_collision_section_actions: HFlowContainer
 var source_collision_section_toggle: CheckBox
 var source_collision_section_fill_toggle: CheckBox
@@ -1386,6 +1393,7 @@ func _make_ui() -> void:
     source_section_topology_panel.initialize()
     source_section_topology_panel.triangle_requested.connect(_navigate_source_collision_triangle)
     source_section_topology_panel.edge_overlay_toggled.connect(_toggle_source_section_edge_overlay)
+    source_section_topology_panel.edge_selection_cleared.connect(_clear_source_section_edge_selected_marker)
     source_surface_matlib_crossref = SourceSurfaceMatLibCrossref.new()
     source_surface_matlib_crossref.name = "SourceSurfaceMatLibCrossref"
     inspector_pane.add_child(source_surface_matlib_crossref)
@@ -9540,6 +9548,9 @@ func _input(event: InputEvent) -> void:
                     dragging = true
                     drag_mode = ("orbit" if editor_view_mode == OrthoGuides.PERSPECTIVE
                                  else "pan")
+                elif source_collision_mode and is_instance_valid(source_collision_section_edge_marker):
+                    dragging = true
+                    drag_mode = "select"
                 elif _begin_gizmo_drag():
                     dragging = true
                     drag_mode = "gizmo"
@@ -9549,7 +9560,14 @@ func _input(event: InputEvent) -> void:
             else:
                 if drag_mode == "select" and mouse_inside and drag_distance < 3.0:
                     if source_collision_mode:
-                        _pick_source_collision_triangle()
+                        if is_instance_valid(source_collision_section_edge_marker):
+                            _update_source_section_edge_hover(view_container.get_local_mouse_position())
+                            if not source_collision_section_edge_hover.is_empty():
+                                _select_source_section_edge(source_collision_section_edge_hover)
+                            else:
+                                _pick_source_collision_triangle()
+                        else:
+                            _pick_source_collision_triangle()
                     else:
                         _pick_actor(button.ctrl_pressed or button.shift_pressed)
                 if drag_mode == "draft_face_pick" and mouse_inside and drag_distance < 3.0:
@@ -9586,6 +9604,10 @@ func _input(event: InputEvent) -> void:
             elif drag_mode == "polygon_vertex":
                 _apply_polygon_vertex_drag()
             get_viewport().set_input_as_handled()
+        elif mouse_inside and source_collision_mode and is_instance_valid(source_collision_section_edge_marker):
+            _update_source_section_edge_hover(view_container.get_local_mouse_position())
+        elif not mouse_inside:
+            _clear_source_section_edge_hover()
 
 
 
@@ -9690,6 +9712,7 @@ func _clear_source_collision_highlights() -> void:
     if is_instance_valid(source_collision_section_edge_marker):
         source_collision_section_edge_marker.queue_free()
     source_collision_section_edge_marker = null
+    _clear_source_section_edge_interaction()
 
 
 func _toggle_source_collision_inspection() -> void:
@@ -10021,6 +10044,7 @@ func _toggle_source_section_edge_overlay(enabled: bool) -> void:
     if is_instance_valid(source_collision_section_edge_marker):
         source_collision_section_edge_marker.queue_free()
     source_collision_section_edge_marker = null
+    _clear_source_section_edge_interaction()
     if (not enabled or not source_collision_mode or source_collision_last_hit.is_empty()
         or not source_collision_picker.ready or world_root == null):
         return
@@ -10049,6 +10073,8 @@ func _toggle_source_section_edge_overlay(enabled: bool) -> void:
         source_collision_details.text += "\nExact-weld edge overlay refused: viewport mesh construction failed."
         return
     source_collision_section_edge_marker = marker_value
+    source_collision_section_edge_report = details.duplicate(true)
+    source_collision_section_edge_index.clear()
     world_root.add_child(source_collision_section_edge_marker)
     var counts: Dictionary = overlay.get("edge_classification_counts", {})
     status_label.text = "MOPP-subset edge overlay | %d edges | open %d | within-section %d | cross-section %d | non-manifold %d. Read-only." % [
@@ -10057,6 +10083,92 @@ func _toggle_source_section_edge_overlay(enabled: bool) -> void:
         int(counts.get("within_section_shared", 0)),
         int(counts.get("cross_section_mopp_shared", 0)),
         int(counts.get("subset_nonmanifold", 0)),
+    ]
+
+
+func _clear_source_section_edge_hover() -> void:
+    if is_instance_valid(source_collision_section_edge_hover_marker):
+        source_collision_section_edge_hover_marker.queue_free()
+    source_collision_section_edge_hover_marker = null
+    source_collision_section_edge_hover.clear()
+    source_collision_section_edge_hover_key = ""
+
+
+func _clear_source_section_edge_selected_marker() -> void:
+    if is_instance_valid(source_collision_section_edge_selected_marker):
+        source_collision_section_edge_selected_marker.queue_free()
+    source_collision_section_edge_selected_marker = null
+
+
+func _clear_source_section_edge_interaction() -> void:
+    _clear_source_section_edge_hover()
+    _clear_source_section_edge_selected_marker()
+    source_collision_section_edge_report.clear()
+    source_collision_section_edge_index.clear()
+    if source_section_topology_panel != null:
+        source_section_topology_panel.clear_selected_edge()
+
+
+func _update_source_section_edge_hover(view_mouse_position: Vector2) -> void:
+    if (not source_collision_mode or not is_instance_valid(source_collision_section_edge_marker)
+        or source_collision_section_edge_report.is_empty()
+        or not is_instance_valid(camera) or not is_instance_valid(world_view)
+        or not is_instance_valid(view_container)
+        or view_container.size.x <= 0.0 or view_container.size.y <= 0.0):
+        _clear_source_section_edge_hover()
+        return
+    var viewport_size := Vector2(world_view.size)
+    var screen_position := view_mouse_position * viewport_size / view_container.size
+    if not SourceSectionEdgePicker.camera_signature_matches(
+        source_collision_section_edge_index, camera, viewport_size):
+        source_collision_section_edge_index = SourceSectionEdgePicker.build_screen_index(
+            source_collision_section_edge_report, camera, viewport_size)
+    if source_collision_section_edge_index.is_empty():
+        _clear_source_section_edge_hover()
+        return
+    var picked: Dictionary = SourceSectionEdgePicker.pick_edge(
+        source_collision_section_edge_index, screen_position)
+    if picked.is_empty():
+        _clear_source_section_edge_hover()
+        return
+    var edge_key := str(picked.get("edge_key", ""))
+    if edge_key != source_collision_section_edge_hover_key:
+        _clear_source_section_edge_hover()
+        var marker := SourceSectionEdgePicker.build_highlight(
+            picked, camera, viewport_size.y, Color(1.0, 0.88, 0.24, 1.0))
+        if marker != null:
+            source_collision_section_edge_hover_marker = marker
+            world_root.add_child(marker)
+        source_collision_section_edge_hover_key = edge_key
+    source_collision_section_edge_hover = picked
+    var record: Dictionary = picked.get("record", {})
+    var welds: Array = record.get("source_weld_ids", [])
+    status_label.text = "Hover MOPP-subset edge %s | weld IDs %s | %d incident section triangle(s). Click to select; read-only." % [
+        edge_key, str(welds), int(record.get("section_incidence_count", 0)),
+    ]
+
+
+func _select_source_section_edge(picked: Dictionary) -> void:
+    var record: Dictionary = picked.get("record", {})
+    if (source_collision_section_edge_report.is_empty()
+        or not SourceSectionEdgePicker.record_belongs_to_report(
+            source_collision_section_edge_report, record)
+        or source_section_topology_panel == null
+        or not source_section_topology_panel.set_selected_edge(record)):
+        status_label.text = "Source edge selection refused: exact-weld report identity did not validate."
+        return
+    _clear_source_section_edge_selected_marker()
+    _clear_source_section_edge_hover()
+    var marker := SourceSectionEdgePicker.build_highlight(
+        picked, camera, float(world_view.size.y), Color(0.18, 1.0, 0.58, 1.0))
+    if marker != null:
+        source_collision_section_edge_selected_marker = marker
+        world_root.add_child(marker)
+    var welds: Array = record.get("source_weld_ids", [])
+    status_label.text = "Selected MOPP-subset edge %s | weld IDs %s | incident Level triangles %s | external sections %d. Read-only." % [
+        str(record.get("edge_key", "")), str(welds),
+        str(record.get("section_triangle_ids", [])),
+        int(record.get("cross_section_neighbor_count", 0)),
     ]
 
 

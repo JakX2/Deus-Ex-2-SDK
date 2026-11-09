@@ -43,6 +43,8 @@ jobs:
         run: timeout 20s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://source_section_fill_preview.gd
       - name: Compile exact-weld source-section edge overlay helper (Godot 4.3)
         run: timeout 20s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://source_section_edge_overlay.gd
+      - name: Compile source-section edge hover picker (Godot 4.3)
+        run: timeout 20s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://source_section_edge_picker.gd
       - name: Compile full DX2Ed main editor script (Godot 4.3)
         run: timeout 30s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://main.gd
       - name: Compile custom polygon geometry in isolation (Godot 4.3)

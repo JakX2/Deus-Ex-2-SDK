@@ -6,10 +6,12 @@ const Picker = preload("res://collision_source_picker.gd")
 const TopologyPanel = preload("res://source_section_topology_panel.gd")
 const FillPreview = preload("res://source_section_fill_preview.gd")
 const EdgeOverlay = preload("res://source_section_edge_overlay.gd")
+const EdgePicker = preload("res://source_section_edge_picker.gd")
 const SHA := "1111111111111111111111111111111111111111111111111111111111111111"
 
 var requested_neighbor_triangle_id := -1
 var requested_edge_overlay_enabled := false
+var edge_selection_cleared := false
 
 func _initialize() -> void:
     call_deferred("_run")
@@ -19,6 +21,9 @@ func _on_neighbor_triangle_requested(triangle_id: int) -> void:
 
 func _on_edge_overlay_toggled(enabled: bool) -> void:
     requested_edge_overlay_enabled = enabled
+
+func _on_edge_selection_cleared() -> void:
+    edge_selection_cleared = true
 
 func _fail(reason: String) -> void:
     push_error("DX2Ed source section topology smoke: " + reason)
@@ -116,6 +121,59 @@ func _run() -> void:
         or edge_material.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED
         or edge_marker.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF):
         _fail("Exact-weld MOPP-subset edge overlay was not built as a bounded editor-only line mesh.")
+        return
+    var camera := Camera3D.new()
+    camera.position = Vector3(0.0, 10.0, 10.0)
+    root.add_child(camera)
+    camera.look_at(Vector3.ZERO, Vector3.UP)
+    camera.current = true
+    var viewport_size := camera.get_viewport().get_visible_rect().size
+    var screen_index: Dictionary = EdgePicker.build_screen_index(report, camera, viewport_size)
+    var target_record: Dictionary = edge_records[0]
+    var target_a := Vector3(
+        float(target_record["a_godot_xyz"][0]),
+        float(target_record["a_godot_xyz"][1]),
+        float(target_record["a_godot_xyz"][2]))
+    var target_b := Vector3(
+        float(target_record["b_godot_xyz"][0]),
+        float(target_record["b_godot_xyz"][1]),
+        float(target_record["b_godot_xyz"][2]))
+    var target_screen := camera.unproject_position((target_a + target_b) * 0.5)
+    var picked_edge: Dictionary = EdgePicker.pick_edge(screen_index, target_screen, 18.0)
+    if (screen_index.is_empty()
+        or screen_index.get("projected_edge_count", -1) <= 0
+        or not EdgePicker.camera_signature_matches(screen_index, camera, viewport_size)
+        or picked_edge.get("edge_key", "") != str(target_record.get("edge_key", ""))
+        or picked_edge.get("record", {}).get("source_weld_ids", []) != target_record.get("source_weld_ids", [])):
+        _fail("Screen-space edge picking did not recover the exact original weld pair.")
+        return
+    if not EdgePicker.pick_edge(screen_index, Vector2(-10000.0, -10000.0), 18.0).is_empty():
+        _fail("Screen-space edge picker selected an edge outside its bounded viewport index.")
+        return
+    if not EdgePicker.pick_edge(screen_index, target_screen, 19.0).is_empty():
+        _fail("Screen-space edge picker accepted a radius wider than its indexed 18-pixel search envelope.")
+        return
+    var edge_highlight: Node3D = EdgePicker.build_highlight(
+        picked_edge, camera, viewport_size.y, Color(0.2, 1.0, 0.5, 1.0))
+    if (not is_instance_valid(edge_highlight) or edge_highlight.get_child_count() != 2
+        or edge_highlight.get_meta("editor_only", false) != true):
+        _fail("Selected-edge screen-width highlight was not built as a transient editor-only marker.")
+        return
+    edge_highlight.free()
+    var stale_camera_index: Dictionary = screen_index.duplicate(true)
+    camera.position += Vector3(0.25, 0.0, 0.0)
+    if EdgePicker.camera_signature_matches(stale_camera_index, camera, viewport_size):
+        _fail("Camera motion must invalidate the projected screen-space edge index.")
+        return
+    camera.position -= Vector3(0.25, 0.0, 0.0)
+    var tampered_pick_report: Dictionary = report.duplicate(true)
+    var tampered_pick_records: Array = tampered_pick_report["edge_records"]
+    var tampered_pick_first: Dictionary = tampered_pick_records[0]
+    tampered_pick_first["source_weld_ids"] = [1, 1]
+    tampered_pick_records[0] = tampered_pick_first
+    tampered_pick_report["edge_records"] = tampered_pick_records
+    if not EdgePicker.build_screen_index(tampered_pick_report, camera, viewport_size).is_empty():
+        _fail("Screen-space edge picker must reject tampered source-weld identity atomically.")
         return
     var tampered_report: Dictionary = report.duplicate(true)
     var tampered_records: Array = tampered_report["edge_records"]
@@ -280,6 +338,7 @@ func _run() -> void:
     panel.initialize()
     panel.triangle_requested.connect(_on_neighbor_triangle_requested)
     panel.edge_overlay_toggled.connect(_on_edge_overlay_toggled)
+    panel.edge_selection_cleared.connect(_on_edge_selection_cleared)
     if panel.visible:
         _fail("Topology Inspector should start hidden.")
         return
@@ -309,9 +368,40 @@ func _run() -> void:
         or edge_payload.get("native_map_written", true) != false):
         _fail("Copyable edge report payload lost source identity or read-only scope.")
         return
-    panel._select_neighbor()
+    var cross_section_edge: Dictionary = {}
+    for edge in edge_records:
+        if str(edge.get("edge_classification", "")) == "cross_section_mopp_shared":
+            cross_section_edge = edge
+            break
+    if cross_section_edge.is_empty() or not panel.set_selected_edge(cross_section_edge):
+        _fail("Topology Inspector refused a source edge present in its authenticated report.")
+        return
+    if (not panel.edge_selection_panel.visible
+        or panel.edge_triangle_selector.get_item_count() != int(cross_section_edge.get("section_incidence_count", -1))
+        or panel.edge_triangle_button.disabled
+        or panel.edge_neighbor_button.disabled
+        or panel.edge_copy_button.disabled
+        or not panel.edge_selection_label.text.contains("original float32 weld IDs")):
+        _fail("Selected-edge Inspector did not expose weld IDs, incident triangles and adjacent section.")
+        return
+    panel.edge_triangle_selector.select(0)
+    panel._select_edge_triangle()
+    if requested_neighbor_triangle_id != int(cross_section_edge["section_triangle_ids"][0]):
+        _fail("Selected-edge Inspector did not navigate to an incident original Level triangle.")
+        return
+    panel._select_edge_neighbor()
     if requested_neighbor_triangle_id != 3:
-        _fail("Selecting an adjacent section did not emit its representative original triangle ID.")
+        _fail("Selected-edge Inspector did not navigate to the adjacent MOPP section representative triangle.")
+        return
+    var selected_payload: Dictionary = panel.selected_edge_payload()
+    if (selected_payload.get("schema", "") != "DX2Ed-selected-source-section-edge-v1"
+        or selected_payload.get("native_map_written", true) != false
+        or selected_payload.get("edge", {}).get("source_weld_ids", []) != cross_section_edge.get("source_weld_ids", [])):
+        _fail("Selected-edge evidence JSON lost exact source identity or read-only scope.")
+        return
+    panel.clear_selected_edge()
+    if not edge_selection_cleared or panel.edge_selection_panel.visible:
+        _fail("Clearing selected edge did not notify the viewport lifecycle and hide its Inspector.")
         return
     panel.clear_selection()
     if (panel.visible or not panel.summary.is_empty() or not panel.copy_button.disabled
@@ -324,5 +414,6 @@ func _run() -> void:
         return
     edge_marker.free()
     preview_marker.free()
-    print("DX2Ed source section topology, exact-weld edge overlay, neighbor navigation and filled MOPP preview smoke: PASS")
+    camera.free()
+    print("DX2Ed source section topology, exact-weld overlay, screen-space edge picking, selected-edge Inspector and adjacent navigation smoke: PASS")
     quit(0)

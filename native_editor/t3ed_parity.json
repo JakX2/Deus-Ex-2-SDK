@@ -219,6 +219,14 @@
       "phase": 1,
       "evidence": "DX2Ed v0.50 adds bounded raw exact-original-float32-weld edge records for the authenticated MOPP terminal-leaf subset, a transient four-class viewport line overlay, and copyable JSON. Classifications are subset-open, within-section shared, cross-section MOPP-shared, and subset non-manifold; raw source edge class codes remain uninterpreted.",
       "next_step": "Authenticate complete original Flesh/BSP polygons and native edge/material identities; compare against independently rendered source maps and retail runtime behavior."
+    },
+    {
+      "id": "source_section_edge_interaction",
+      "title": "Interactive source-section edge picking and navigation",
+      "status": "partial",
+      "phase": 1,
+      "evidence": "DX2Ed v0.51 adds a camera-signature-cached, 64-pixel screen-space index for the bounded exact-original-float32-weld MOPP-leaf edge overlay; hover highlights and click selection expose weld IDs, incident Level triangle IDs, raw source edge code and a verified adjacent-section representative. The selected-edge Inspector can navigate to local or adjacent MOPP-linked triangles and copy source-pinned JSON. This remains a MOPP terminal-leaf subset, not complete native BSP edge/vertex identity.",
+      "next_step": "Authenticate complete original Flesh/BSP surface and vertex provenance, then compare edge/vertex picking against independent source-map rendering; keep native writers disabled."
     }
   ]
 }
