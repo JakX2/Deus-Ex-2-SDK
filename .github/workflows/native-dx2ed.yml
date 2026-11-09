@@ -37,6 +37,8 @@ jobs:
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_custom_polygon_geometry.gd
       - name: Verify source-backed MatLib browser UI and preview integrity
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_matlib_browser.gd
+      - name: Verify source-backed MatLib diffuse assignment to private Polygon surface
+        run: timeout 30s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_matlib_polygon_assignment.gd
       - name: Verify original mission versus Kernel TriggerScript payload comparison
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_mission_kernel_script_view.gd
       - name: Verify map-wide original actor script index offset audit
