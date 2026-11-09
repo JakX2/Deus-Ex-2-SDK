@@ -9990,7 +9990,7 @@ func _draw_source_collision_section_fill() -> void:
         )
         return
     var marker: Variant = preview.get("marker", null)
-    if not marker is MeshInstance3D or marker.mesh == null:
+    if not (marker is MeshInstance3D) or marker.mesh == null:
         source_collision_details.text += "\nFilled MOPP subset preview refused: mesh construction failed."
         return
     source_collision_section_fill_marker = marker
