@@ -7259,10 +7259,10 @@ func _apply_matlib_material_to_polygon_surface(raw: Dictionary, slot_index: int)
             return
         updates[name] = validated_spec
 
-    polygon_surface_slot = slot_index
-    if polygon_surface_selector != null:
-        polygon_surface_selector.select(slot_index)
     if updates.is_empty():
+        polygon_surface_slot = slot_index
+        if polygon_surface_selector != null:
+            polygon_surface_selector.select(slot_index)
         status_label.text = (
             "All " + str(names.size()) + " selected Polygon brush(es) already use " + slot + ".")
         return
@@ -7275,6 +7275,9 @@ func _apply_matlib_material_to_polygon_surface(raw: Dictionary, slot_index: int)
                 "MatLib batch assignment rolled back because a Polygon preview could not be rebuilt. "
                 + "No partial batch was retained.")
             return
+    polygon_surface_slot = slot_index
+    if polygon_surface_selector != null:
+        polygon_surface_selector.select(slot_index)
     _record_edit(
         "Assign MatLib diffuse to " + str(updates.size()) + " Polygon " + slot,
         before)
