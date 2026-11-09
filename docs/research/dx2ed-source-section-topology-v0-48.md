@@ -36,7 +36,8 @@ does not export source bytes, file paths, material payloads or private assets.
 - Area and bounds are calculated from the selected MOPP terminal-leaf subset.
   The Level-to-Godot preview transform is inverted as (x,z,y) * 10 for the
   reported Level XYZ values; area is scaled by 100.
-- The 8,192-triangle cap is atomic. Oversized sections return identity/count
+- The 8,192-triangle section cap and 1,024-incidence-per-edge cap are atomic.
+  Oversized sections or pathological edge incidence return identity/count
   metadata and a skipped marker, not partial statistics.
 - Component-size output is capped at 16 entries; neighboring sections at 64,
   with omitted counts shown explicitly.
