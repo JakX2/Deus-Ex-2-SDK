@@ -45,7 +45,7 @@ class T3EdParityAndCatalogTests(unittest.TestCase):
         self.assertEqual(vertex["status"], "partial")
         self.assertIn("MOPP terminal-leaf subset", vertex["evidence"])
         self.assertIn("native BSP vertex IDs", vertex["evidence"])
-        self.assertIn("independently authenticated", vertex["next_step"])
+        self.assertIn("complete original Flesh/BSP vertex provenance", vertex["next_step"])
 
     def test_catalog_lists_all_types_including_unplaced_resources(self):
         result = catalog_from_bundles([fixture_bundle("mission.ibd",
