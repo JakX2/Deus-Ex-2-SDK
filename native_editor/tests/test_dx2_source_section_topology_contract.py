@@ -27,12 +27,36 @@ class SourceSectionTopologyContractTests(unittest.TestCase):
         self.assertIn("not a complete render/BSP surface", source)
         self.assertIn("Native map written: NO.", source)
 
+    def test_filled_mopp_subset_preview_is_bounded_translucent_and_read_only(self) -> None:
+        picker = (ROOT / "native_editor/godot_editor/collision_source_picker.gd").read_text("utf-8")
+        helper = (ROOT / "native_editor/godot_editor/source_section_fill_preview.gd").read_text("utf-8")
+        main = (ROOT / "native_editor/godot_editor/main.gd").read_text("utf-8")
+        self.assertIn("MAX_SECTION_SURFACE_PREVIEW_TRIANGLES := 8192", picker)
+        self.assertIn("func section_surface_preview_details", picker)
+        self.assertIn("PREVIEW_CAP := 8192", helper)
+        self.assertIn("TRANSPARENCY_ALPHA", helper)
+        self.assertIn("DISPLAY_OFFSET_GODOT_UNITS := 0.0015", helper)
+        self.assertIn("native_bsp_surface_verified", picker)
+        self.assertIn("Fill MOPP subset", main)
+        self.assertIn("_toggle_source_collision_section_fill", main)
+
+    def test_topology_neighbor_navigation_uses_representative_source_triangle(self) -> None:
+        picker = (ROOT / "native_editor/godot_editor/collision_source_picker.gd").read_text("utf-8")
+        panel = (ROOT / "native_editor/godot_editor/source_section_topology_panel.gd").read_text("utf-8")
+        main = (ROOT / "native_editor/godot_editor/main.gd").read_text("utf-8")
+        self.assertIn('"representative_triangle_id": other_id', picker)
+        self.assertIn("signal triangle_requested", panel)
+        self.assertIn("Select adjacent section", panel)
+        self.assertIn("_select_neighbor", panel)
+        self.assertIn("_navigate_source_collision_triangle", main)
+
     def test_windows_bundle_and_doctor_require_the_new_panel_and_smoke(self) -> None:
         builder = (ROOT / "tools/build_dx2ed_windows_prototype.py").read_text("utf-8")
         doctor = (ROOT / "prototype/prototype_doctor.py").read_text("utf-8")
         launcher = (ROOT / "prototype/START_DX2ED.cmd").read_text("utf-8")
         for path in (
             "native_editor/godot_editor/source_section_topology_panel.gd",
+            "native_editor/godot_editor/source_section_fill_preview.gd",
             "native_editor/godot_editor/tests/smoke_source_section_topology.gd",
         ):
             self.assertIn(path, builder)
@@ -40,6 +64,8 @@ class SourceSectionTopologyContractTests(unittest.TestCase):
         self.assertIn("smoke_source_section_topology.gd", launcher)
         self.assertIn('"editor_source_section_topology_diagnostics": True', builder)
         self.assertIn('"editor_source_section_topology_native_bsp_verified": False', builder)
+        self.assertIn('"editor_source_section_fill_preview_native_writer": False', builder)
+        self.assertIn('"editor_source_section_neighbor_navigation_native_surface_verified": False', builder)
 
 
 if __name__ == "__main__":
