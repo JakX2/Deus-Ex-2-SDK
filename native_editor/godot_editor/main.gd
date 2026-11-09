@@ -10029,14 +10029,23 @@ func _toggle_source_section_edge_overlay(enabled: bool) -> void:
     if (details.is_empty() or details.get("analysis_skipped_for_size", true)
         or details.get("analysis_skipped_for_edge_incidence", false)
         or not details.has("edge_records")):
+        if source_section_topology_panel != null and source_section_topology_panel.edge_toggle != null:
+            source_section_topology_panel.edge_toggle.set_pressed_no_signal(false)
+            source_section_topology_panel.edge_toggle.disabled = true
         source_collision_details.text += "\nExact-weld edge overlay refused: bounded source topology is unavailable."
         return
     var overlay: Dictionary = SourceSectionEdgeOverlay.build_marker(details)
     if overlay.is_empty():
+        if source_section_topology_panel != null and source_section_topology_panel.edge_toggle != null:
+            source_section_topology_panel.edge_toggle.set_pressed_no_signal(false)
+            source_section_topology_panel.edge_toggle.disabled = true
         source_collision_details.text += "\nExact-weld edge overlay refused: edge provenance or geometry failed validation."
         return
     var marker_value: Variant = overlay.get("marker", null)
     if not (marker_value is MeshInstance3D) or marker_value.mesh == null:
+        if source_section_topology_panel != null and source_section_topology_panel.edge_toggle != null:
+            source_section_topology_panel.edge_toggle.set_pressed_no_signal(false)
+            source_section_topology_panel.edge_toggle.disabled = true
         source_collision_details.text += "\nExact-weld edge overlay refused: viewport mesh construction failed."
         return
     source_collision_section_edge_marker = marker_value

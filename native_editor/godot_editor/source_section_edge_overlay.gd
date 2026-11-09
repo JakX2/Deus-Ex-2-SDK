@@ -36,6 +36,16 @@ static func build_marker(details: Dictionary) -> Dictionary:
         or details.get("edge_report_uses_original_float32_weld_ids", false) != true
         or details.get("edge_report_is_mopp_leaf_subset_only", false) != true):
         return {}
+    var source_map := str(details.get("source_map", ""))
+    var source_section_key := str(details.get("source_section_key", ""))
+    var source_sha256 := str(details.get("source_sha256", ""))
+    if source_map.is_empty() or source_section_key.is_empty() or source_sha256.length() != 64:
+        return {}
+    for character in source_sha256.to_lower():
+        if not "0123456789abcdef".contains(character):
+            return {}
+    if int(details.get("edge_report_cap", -1)) != MAX_EDGE_COUNT:
+        return {}
     var raw_records: Variant = details.get("edge_records", null)
     if typeof(raw_records) != TYPE_ARRAY:
         return {}
@@ -55,6 +65,8 @@ static func build_marker(details: Dictionary) -> Dictionary:
         "subset_nonmanifold": 0,
     }
     var mesh := ImmediateMesh.new()
+    var seen_edge_keys: Dictionary = {}
+    var previous_edge_key := ""
     mesh.surface_begin(Mesh.PRIMITIVE_LINES)
     for raw_record in records:
         if typeof(raw_record) != TYPE_DICTIONARY:
@@ -69,15 +81,23 @@ static func build_marker(details: Dictionary) -> Dictionary:
             return {}
         var low := int(welds[0])
         var high := int(welds[1])
-        if low < 0 or high <= low or str(record.get("edge_key", "")) != "%d:%d" % [low, high]:
+        var edge_key := str(record.get("edge_key", ""))
+        if (low < 0 or high <= low or edge_key != "%d:%d" % [low, high]
+            or seen_edge_keys.has(edge_key)
+            or (not previous_edge_key.is_empty() and edge_key < previous_edge_key)):
             return {}
+        seen_edge_keys[edge_key] = true
+        previous_edge_key = edge_key
         var source_class = record.get("source_edge_class_code", null)
         if typeof(source_class) != TYPE_INT or int(source_class) < 0 or int(source_class) > 3:
             return {}
         var local_count := int(record.get("section_incidence_count", -1))
         var external_count := int(record.get("cross_section_neighbor_count", -1))
+        var representative_external_id := int(record.get("representative_cross_section_triangle_id", -2))
         if (local_count < 1 or local_count > MAX_LOCAL_INCIDENCE
-            or external_count < 0 or external_count > MAX_EXTERNAL_INCIDENCE):
+            or external_count < 0 or external_count > MAX_EXTERNAL_INCIDENCE
+            or (external_count == 0 and representative_external_id != -1)
+            or (external_count > 0 and representative_external_id < 0)):
             return {}
         var raw_triangles: Variant = record.get("section_triangle_ids", null)
         if typeof(raw_triangles) != TYPE_ARRAY:

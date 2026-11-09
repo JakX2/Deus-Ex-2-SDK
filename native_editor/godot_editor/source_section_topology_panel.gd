@@ -322,7 +322,7 @@ func edge_report_payload() -> Dictionary:
 
 
 func _on_edge_overlay_toggled(enabled: bool) -> void:
-    if summary.is_empty() or not summary.has("edge_records"):
+    if enabled and (summary.is_empty() or not summary.has("edge_records")):
         return
     edge_overlay_toggled.emit(enabled)
 

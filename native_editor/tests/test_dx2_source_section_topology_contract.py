@@ -88,6 +88,8 @@ class SourceSectionTopologyContractTests(unittest.TestCase):
         self.assertIn("MAX_EDGE_COUNT := 24576", source)
         self.assertIn("original_float32_weld_ids", source)
         self.assertIn("distance_squared_to(b) <= 1e-12", source)
+        self.assertIn("source_sha256.length() != 64", source)
+        self.assertIn("seen_edge_keys.has(edge_key)", source)
         self.assertIn("vertex_color_use_as_albedo = true", source)
         self.assertIn("native_bsp_surface_verified", source)
 
