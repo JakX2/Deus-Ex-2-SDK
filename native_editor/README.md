@@ -826,3 +826,5 @@ This is only the MOPP terminal-leaf subset, not a complete render/BSP surface
 or Havok graph. Oversized sections skip atomically above 8,192 triangles or
 when a touched edge exceeds 1,024 MOPP incidences.
 Native map/material/physics writers remain disabled.
+
+The Windows prototype workflow downloads the official Godot 4.3 Standard Windows x64 archive, retries transient release-CDN 504 responses, and still requires the published SHA-512 verification before packaging.
