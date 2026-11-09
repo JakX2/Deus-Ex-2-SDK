@@ -150,6 +150,9 @@ func _run() -> void:
     if not EdgePicker.pick_edge(screen_index, Vector2(-10000.0, -10000.0), 18.0).is_empty():
         _fail("Screen-space edge picker selected an edge outside its bounded viewport index.")
         return
+    if not EdgePicker.pick_edge(screen_index, target_screen, 19.0).is_empty():
+        _fail("Screen-space edge picker accepted a radius wider than its indexed 18-pixel search envelope.")
+        return
     var edge_highlight: Node3D = EdgePicker.build_highlight(
         picked_edge, camera, viewport_size.y, Color(0.2, 1.0, 0.5, 1.0))
     if (not is_instance_valid(edge_highlight) or edge_highlight.get_child_count() != 2

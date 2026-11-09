@@ -108,6 +108,7 @@ class SourceSectionTopologyContractTests(unittest.TestCase):
         panel = (ROOT / "native_editor/godot_editor/source_section_topology_panel.gd").read_text("utf-8")
         self.assertIn("MAX_EDGE_COUNT := 24576", helper)
         self.assertIn("CELL_SIZE := 64.0", helper)
+        self.assertIn("radius_pixels > PICK_RADIUS_PIXELS", helper)
         self.assertIn("camera_signature_matches", helper)
         self.assertIn("record_belongs_to_report", helper)
         self.assertIn('analysis_skipped_for_edge_incidence", false', helper)

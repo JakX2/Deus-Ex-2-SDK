@@ -247,7 +247,7 @@ static func pick_edge(index: Dictionary, mouse_pixels: Vector2,
         or index.get("native_map_written", true) != false
         or not is_finite(mouse_pixels.x) or not is_finite(mouse_pixels.y)
         or not is_finite(radius_pixels) or radius_pixels <= 0.0
-        or radius_pixels > 64.0):
+        or radius_pixels > PICK_RADIUS_PIXELS):
         return {}
     var cell_size := float(index.get("cell_size", 0.0))
     if not is_finite(cell_size) or cell_size <= 0.0:
