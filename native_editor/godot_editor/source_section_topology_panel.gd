@@ -50,7 +50,7 @@ func set_selection(value: RefCounted, hit: Dictionary) -> void:
     if typeof(raw_id) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(raw_id)) or float(raw_id) != floor(float(raw_id)):
         return
     var tid := int(raw_id)
-    var section: Dictionary = value.section_details(tid)
+    var section: Dictionary = value.call("section_details", tid)
     if section.is_empty():
         return
     picker = value
@@ -86,7 +86,7 @@ func _analyze() -> void:
     if picker == null or not bool(picker.get("ready")) or selected_triangle_id < 0:
         clear_selection()
         return
-    var result: Dictionary = picker.section_topology_details(selected_triangle_id, ANALYSIS_CAP)
+    var result: Dictionary = picker.call("section_topology_details", selected_triangle_id, ANALYSIS_CAP)
     if result.is_empty():
         summary.clear()
         copy_button.disabled = true
