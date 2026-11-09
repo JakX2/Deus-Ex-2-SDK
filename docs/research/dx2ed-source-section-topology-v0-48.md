@@ -14,7 +14,7 @@ The bounded report includes:
 
 - MOPP-linked triangle count in the selected render-section subset;
 - exact original Level-welded vertex and edge counts;
-- area, area-weighted centroid and bounds converted back to original Level units;
+- summed per-triangle area, area-weighted centroid and bounds converted back to original Level units;
 - connected-component count and the largest component sizes;
 - section-local perimeter/shared/non-manifold edge counts and perimeter length;
 - cross-section shared edges found among the loaded MOPP leaf triangles;
@@ -23,7 +23,7 @@ The bounded report includes:
 - neighboring MOPP-linked render-section tuples, material names and shared
   exact-welded edge counts.
 
-The **Copy topology JSON** action exports only this bounded derived report. It
+Area is the sum of individual MOPP-leaf triangle areas, not a polygon union.\n\nThe **Copy topology JSON** action exports only this bounded derived report. It
 does not export source bytes, file paths, material payloads or private assets.
 
 ## Geometry and provenance rules
