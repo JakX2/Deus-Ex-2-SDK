@@ -789,3 +789,25 @@ Python fixture tests cover 0°/90°/180° and malformed values, Seattle trim
 and Trier pipe matrix results, preserving original location, off/on cache
 isolation and source audit metadata. Godot smoke tests cover the checkbox
 state and actor preview labeling. Retail game rendering is still unverified.
+
+
+## v0.47: original source-surface → MatLib name cross-reference
+
+With an original GMP open, enable **Inspect source collision** and click a
+MOPP-linked source triangle. The Inspector now carries the original Level
+triangle ID, source block, Flesh render block/section, source GMP basename and
+SHA-256, plus the original render-material name into a read-only MatLib
+cross-reference panel.
+
+Import the matching user-owned IBD/Maps ZIP in the Materials workspace. The
+panel refreshes automatically and distinguishes exact case-sensitive name
+matches, case-insensitive-only candidates, ambiguous candidate lists, and
+names absent from the currently imported catalog. Selecting a candidate shows
+its source bundle, raw category/flags/stage mask, all nine named stage
+references, and a SHA-256-checked slot-0 thumbnail when available.
+
+This is a **name correlation**, not proof of a native material index or shader
+binding. The current MatLib inventory keeps the first case-folded duplicate
+name, so a catalog-wide duplicate count is surfaced as a uniqueness caveat.
+Render-material names are not Havok physical materials; no source GMP/IBD
+bytes, native material indices, BSP data or shader data are written.

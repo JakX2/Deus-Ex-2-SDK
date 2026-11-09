@@ -67,6 +67,8 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 "prototype_doctor.py", "map_import_preflight.py",
                 "native_editor/godot_editor/project.godot",
                 "native_editor/godot_editor/main.gd",
+                "native_editor/godot_editor/source_surface_matlib_crossref.gd",
+                "native_editor/godot_editor/tests/smoke_source_surface_matlib_crossref.gd",
                 "native_editor/godot_editor/python_runtime.gd",
                 "native_editor/godot_editor/startup_route.gd",
                 "native_editor/godot_editor/tests/smoke_python_runtime.gd",

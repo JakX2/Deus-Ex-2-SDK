@@ -199,6 +199,14 @@ func _run() -> void:
         Vector3(0.4, 3, 0.3), Vector3.DOWN)
     chosen["selection_is_ray_hit"] = true
     editor._show_source_collision_hit(chosen)
+    if editor.source_surface_matlib_crossref == null:
+        _fail("Main editor did not create the source-surface MatLib cross-reference panel.")
+        return
+    if (not editor.source_surface_matlib_crossref.visible
+        or editor.source_surface_matlib_crossref.source_evidence.get("render_material_name", "") != "MatA"
+        or int(editor.source_surface_matlib_crossref.source_evidence.get("original_level_triangle_id", -1)) != 0):
+        _fail("Original source triangle selection did not reach the MatLib cross-reference panel.")
+        return
     if (not editor.source_collision_section_actions.visible
         or editor.source_collision_last_hit.get("original_level_triangle_id", -1) != 0
         or not editor.source_collision_details.text.contains("1 of 1")

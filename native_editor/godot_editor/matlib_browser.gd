@@ -22,6 +22,7 @@ const TEXTURE_USAGE_FILTERS := [
 ]
 
 signal material_apply_requested(assignment: Dictionary, slot_index: int)
+signal catalog_loaded(path: String, catalog: Dictionary)
 
 var source_dialog: FileDialog
 var search_box: LineEdit
@@ -280,6 +281,7 @@ func load_catalog(path: String) -> bool:
         "Loaded %d MatLib records from %d source file(s). "
         + "Stage references and raw masks are shown without shader-semantic inference."
     ) % [materials.size(), parsed["source_files"].size()]
+    catalog_loaded.emit(catalog_path, catalog)
     return true
 
 

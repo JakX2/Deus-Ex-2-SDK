@@ -18,6 +18,7 @@ const SourceCollisionPicker = preload("res://collision_source_picker.gd")
 const CapsuleContactPreview = preload("res://capsule_contact_preview.gd")
 const CapsuleSweepPanel = preload("res://capsule_sweep_panel.gd")
 const SourceSurfacePanel = preload("res://source_surface_panel.gd")
+const SourceSurfaceMatLibCrossref = preload("res://source_surface_matlib_crossref.gd")
 const SourceEdgeTransitionPanel = preload("res://source_edge_transition_panel.gd")
 ## DX2Ed native viewer: a READ-ONLY Godot 4 GLB + GMP actor inspector.
 ## Can open an original DX2 .gmp using the bundled read-only Python backend.
@@ -87,6 +88,7 @@ var capsule_preview_marker: MeshInstance3D
 var capsule_preview_details: Label
 var interactive_capsule_panel: VBoxContainer
 var source_surface_panel: VBoxContainer
+var source_surface_matlib_crossref
 var source_edge_transition_panel: VBoxContainer
 var source_gamesys_panel: VBoxContainer
 var light_color_panel: VBoxContainer
@@ -788,6 +790,7 @@ func _make_ui() -> void:
     matlib_browser.name = "Materials"
     matlib_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
     matlib_browser.material_apply_requested.connect(_apply_matlib_material_to_polygon_surface)
+    matlib_browser.catalog_loaded.connect(_on_matlib_catalog_loaded)
     left_tabs.add_child(matlib_browser)
     asset_filter = LineEdit.new()
     asset_filter.placeholder_text = "Search IBD resources..."
@@ -1370,6 +1373,10 @@ func _make_ui() -> void:
     source_collision_details.visible = false
     source_collision_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     inspector_pane.add_child(source_collision_details)
+    source_surface_matlib_crossref = SourceSurfaceMatLibCrossref.new()
+    source_surface_matlib_crossref.name = "SourceSurfaceMatLibCrossref"
+    inspector_pane.add_child(source_surface_matlib_crossref)
+    source_surface_matlib_crossref.initialize()
     capsule_preview_details = Label.new()
     capsule_preview_details.visible = false
     capsule_preview_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -9623,6 +9630,8 @@ func _reset_source_collision_inspection() -> void:
     _clear_capsule_research_preview()
     if source_surface_panel != null:
         source_surface_panel.reset()
+    if source_surface_matlib_crossref != null:
+        source_surface_matlib_crossref.clear_source_evidence()
     if source_edge_transition_panel != null:
         source_edge_transition_panel.reset()
     if interactive_capsule_panel != null:
@@ -9810,6 +9819,8 @@ func _show_source_collision_hit(hit: Dictionary) -> void:
         source_surface_panel.observe_hit(hit)
     if source_edge_transition_panel != null:
         source_edge_transition_panel.observe_hit(hit)
+    if source_surface_matlib_crossref != null:
+        source_surface_matlib_crossref.set_source_evidence(_source_surface_matlib_evidence(hit, section))
     source_collision_section_actions.visible = true
     _clear_source_collision_highlights()
     var ray_hit := bool(hit.get("selection_is_ray_hit", false))
@@ -9939,6 +9950,30 @@ func _step_source_collision_triangle(step: int) -> void:
     if next_hit.is_empty():
         return
     _show_source_collision_hit(next_hit)
+
+
+func _on_matlib_catalog_loaded(path: String, document: Dictionary) -> void:
+    if source_surface_matlib_crossref != null:
+        source_surface_matlib_crossref.set_catalog(path, document)
+
+
+func _source_surface_matlib_evidence(hit: Dictionary, section: Dictionary) -> Dictionary:
+    return {
+        "schema": "DX2Ed-read-only-source-render-material-evidence-v1",
+        "source_map": source_collision_picker.source_map,
+        "source_sha256": source_collision_picker.source_sha256,
+        "original_level_triangle_id": int(hit.get("original_level_triangle_id", -1)),
+        "source_block_id": int(hit.get("source_block_id", -1)),
+        "render_block_ordinal": int(hit.get("render_block_ordinal", -1)),
+        "render_section_ordinal": int(hit.get("render_section_ordinal", -1)),
+        "render_material_name": str(hit.get("render_material_name", "")),
+        "source_section_triangle_count": int(section.get("triangle_count", 0)),
+        "selection_is_ray_hit": bool(hit.get("selection_is_ray_hit", false)),
+        "render_material_is_physics_material": false,
+        "native_map_written": false,
+        "native_material_index_verified": false,
+        "shader_semantics_verified": false,
+    }
 
 
 func _source_collision_evidence_json() -> String:
