@@ -10,6 +10,16 @@ const MAX_CATALOG_BYTES := 64 * 1024 * 1024
 const MAX_MATERIALS := 50000
 const MAX_SOURCE_FILES := 64
 const MAX_PREVIEW_BYTES := 2 * 1024 * 1024
+## These are parser-decoded texture resource usage codes, not MatLib shader-stage meanings.
+const TEXTURE_USAGE_FILTERS := [
+    {"code": 0, "label": "diffuse"},
+    {"code": 1, "label": "normal"},
+    {"code": 2, "label": "specular"},
+    {"code": 3, "label": "mask"},
+    {"code": 4, "label": "detail"},
+    {"code": 5, "label": "emissive"},
+    {"code": 6, "label": "environment"}
+]
 
 signal material_apply_requested(assignment: Dictionary, slot_index: int)
 
@@ -18,6 +28,7 @@ var search_box: LineEdit
 var filter_selector: OptionButton
 var material_list: ItemList
 var details_label: Label
+var stage_audit_label: Label
 var stage_grid: GridContainer
 var status_label: Label
 var apply_button: Button
@@ -76,9 +87,14 @@ func _build_ui() -> void:
 
     filter_selector = OptionButton.new()
     filter_selector.add_item("All materials")
-    filter_selector.add_item("Resolved diffuse")
-    filter_selector.add_item("Missing diffuse")
+    filter_selector.add_item("Resolved slot 0 (legacy preview candidate)")
+    filter_selector.add_item("Missing slot 0 (legacy preview candidate)")
     filter_selector.add_item("Unresolved stage refs")
+    for usage_filter in TEXTURE_USAGE_FILTERS:
+        filter_selector.add_item(
+            "Contains usage code %d (%s parser label)" % [
+                int(usage_filter["code"]), str(usage_filter["label"])
+            ])
     filter_selector.item_selected.connect(func(_index: int): _refresh_list())
     filter_row.add_child(filter_selector)
 
@@ -104,6 +120,12 @@ func _build_ui() -> void:
     details_label.custom_minimum_size.y = 96
     detail_column.add_child(details_label)
 
+    stage_audit_label = Label.new()
+    stage_audit_label.text = "Raw stage diagnostics appear when a material is selected."
+    stage_audit_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    stage_audit_label.custom_minimum_size.y = 52
+    detail_column.add_child(stage_audit_label)
+
     var target_row := HBoxContainer.new()
     detail_column.add_child(target_row)
     var target_label := Label.new()
@@ -117,11 +139,12 @@ func _build_ui() -> void:
     target_row.add_child(target_slot_selector)
 
     apply_button = Button.new()
-    apply_button.text = "Apply diffuse to selected Polygon brush(es)"
+    apply_button.text = "Apply slot-0 preview candidate to selected Polygon brush(es)"
     apply_button.tooltip_text = (
-        "Assign this verified diffuse thumbnail to the chosen surface slot on every selected "
-        + "editor-only Polygon brush. All selected objects must be private Polygon drafts; "
-        + "the batch is one Undo/Redo transaction. No native material or BSP write.")
+        "Use the current slot-0 preview candidate on the chosen surface of every selected "
+        + "editor-only Polygon brush. Its diffuse shader meaning is not independently verified. "
+        + "All selected objects must be private Polygon drafts; one Undo/Redo transaction. "
+        + "No native material or BSP write.")
     apply_button.disabled = true
     apply_button.pressed.connect(_request_apply_selected_material)
     detail_column.add_child(apply_button)
@@ -202,7 +225,7 @@ func load_catalog(path: String) -> bool:
     _refresh_list()
     status_label.text = (
         "Loaded %d MatLib records from %d source file(s). "
-        + "Stage references are metadata; shader effects are not interpreted."
+        + "Stage references and raw masks are shown without shader-semantic inference."
     ) % [materials.size(), parsed["source_files"].size()]
     return true
 
@@ -244,6 +267,14 @@ func _validate_catalog(raw: Variant, path: String) -> bool:
                 var texture: Variant = stage.get("texture", null)
                 if typeof(texture) != TYPE_DICTIONARY:
                     return false
+                if texture.has("usage_code"):
+                    var usage_code: Variant = texture.get("usage_code", null)
+                    if typeof(usage_code) != TYPE_INT or int(usage_code) < 0 or int(usage_code) > 0xFFFFFFFF:
+                        return false
+                if texture.has("usage"):
+                    var usage_label: Variant = texture.get("usage", null)
+                    if typeof(usage_label) != TYPE_STRING or str(usage_label).length() > 64:
+                        return false
                 var relative: String = str(texture.get("preview_path", ""))
                 if not relative.is_empty():
                     if _safe_preview_path(relative, path).is_empty():
@@ -292,8 +323,8 @@ func _refresh_list() -> void:
         var stages: Array = material.get("stages", [])
         if stages.size() != 9:
             continue
-        var diffuse: Dictionary = stages[0]
-        var has_diffuse := bool(diffuse.get("resolved", false))
+        var slot_zero: Dictionary = stages[0]
+        var has_slot_zero := bool(slot_zero.get("resolved", false))
         var has_unresolved := false
         var stage_names: Array[String] = []
         for stage in stages:
@@ -302,12 +333,24 @@ func _refresh_list() -> void:
                 stage_names.append(stage_name)
                 if not bool(stage.get("resolved", false)):
                     has_unresolved = true
+                elif typeof(stage.get("texture", null)) == TYPE_DICTIONARY:
+                    var texture_record: Dictionary = stage["texture"]
+                    stage_names.append(str(texture_record.get("usage", "")))
+                    stage_names.append(str(texture_record.get("usage_code", "")))
+        if mode >= 4:
+            var usage_filter_index := mode - 4
+            if usage_filter_index >= TEXTURE_USAGE_FILTERS.size():
+                continue
+            if not _material_has_usage_code(
+                material, int(TEXTURE_USAGE_FILTERS[usage_filter_index]["code"])
+            ):
+                continue
         match mode:
             1:
-                if not has_diffuse:
+                if not has_slot_zero:
                     continue
             2:
-                if has_diffuse:
+                if has_slot_zero:
                     continue
             3:
                 if not has_unresolved:
@@ -343,18 +386,54 @@ func _material_selected(index: int) -> void:
         "Source bundle: " + str(selected_material.get("source_bundle", "")),
         "Source label: " + str(selected_material.get("source", "")),
         "Version: " + str(selected_material.get("version", "?")),
-        "Flags: 0x%08X" % int(selected_material.get("flags", 0)),
-        "Stage mask: 0x%08X" % int(selected_material.get("stage_mask", 0)),
-        "Category ID: " + str(selected_material.get("category_id", "?")),
+        "Flags (raw): 0x%08X" % int(selected_material.get("flags", 0)),
+        "Stage mask (raw): 0x%08X" % int(selected_material.get("stage_mask", 0)),
+        "Category ID (raw): " + str(selected_material.get("category_id", "?")),
         "Colors: " + str(selected_material.get("colors", [])),
         "Parameters: " + str(selected_material.get("params", [])),
-        "Shader interpretation: metadata only; no native assignment."
+        "Slot 0 is the existing preview candidate only; diffuse shader semantics are unverified.",
+        "No native material or BSP assignment."
     ]
     details_label.text = "\n".join(lines)
     _clear_stage_cards()
+    var named_count := 0
+    var resolved_count := 0
+    var unresolved_count := 0
+    var empty_count := 0
     for stage in selected_material.get("stages", []):
+        var stage_name := str(stage.get("name", ""))
+        if stage_name.is_empty():
+            empty_count += 1
+        else:
+            named_count += 1
+            if bool(stage.get("resolved", false)):
+                resolved_count += 1
+            else:
+                unresolved_count += 1
         _add_stage_card(stage)
+    stage_audit_label.text = (
+        "Raw stage_mask: 0x%08X (uninterpreted)\n" % int(selected_material.get("stage_mask", 0))
+        + "Slots: %d named, %d resolved, %d unresolved, %d empty. "
+        % [named_count, resolved_count, unresolved_count, empty_count]
+        + "Texture usage labels come from the parser; they do not establish shader-stage semantics."
+    )
     _refresh_apply_button()
+
+
+func _material_has_usage_code(material: Dictionary, usage_code: int) -> bool:
+    var stages: Variant = material.get("stages", null)
+    if typeof(stages) != TYPE_ARRAY or stages.size() != 9:
+        return false
+    for stage in stages:
+        if typeof(stage) != TYPE_DICTIONARY or not bool(stage.get("resolved", false)):
+            continue
+        var texture: Variant = stage.get("texture", null)
+        if typeof(texture) != TYPE_DICTIONARY:
+            continue
+        var raw_code: Variant = texture.get("usage_code", null)
+        if typeof(raw_code) == TYPE_INT and int(raw_code) == usage_code:
+            return true
+    return false
 
 
 func selected_diffuse_assignment() -> Dictionary:
@@ -412,10 +491,15 @@ func _request_apply_selected_material() -> void:
         status_label.text = "Choose a Polygon surface slot first."
         return
     material_apply_requested.emit(assignment, target_slot_selector.selected)
-    status_label.text = "Requested preview-only diffuse assignment to selected private Polygon brush(es)."
+    status_label.text = (
+        "Requested slot-0 preview-candidate assignment to selected private Polygon brush(es). "
+        + "This is not a verified native diffuse binding."
+    )
 
 
 func _clear_stage_cards() -> void:
+    if stage_audit_label != null:
+        stage_audit_label.text = "Raw stage diagnostics appear when a material is selected."
     if stage_grid == null:
         return
     for child in stage_grid.get_children():
@@ -443,7 +527,7 @@ func _add_stage_card(stage: Dictionary) -> void:
         placeholder.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         column.add_child(placeholder)
     var stage_label := Label.new()
-    stage_label.text = "Stage %d" % int(stage.get("index", -1))
+    stage_label.text = "MatLib slot %d" % int(stage.get("index", -1))
     column.add_child(stage_label)
     var name_label := Label.new()
     var name := str(stage.get("name", ""))
@@ -453,11 +537,16 @@ func _add_stage_card(stage: Dictionary) -> void:
     var detail := Label.new()
     if bool(stage.get("resolved", false)):
         var texture: Dictionary = stage.get("texture", {})
-        detail.text = "%s · %s×%s\n%s" % [
+        var usage_code_text := (
+            str(texture.get("usage_code", "?"))
+            if texture.has("usage_code") else "unknown"
+        )
+        detail.text = "%s · %s×%s\nUsage code %s · parser label: %s" % [
             str(texture.get("format", "?")),
             str(texture.get("width", "?")),
             str(texture.get("height", "?")),
-            str(texture.get("usage", "usage unknown"))
+            usage_code_text,
+            str(texture.get("usage", "unknown"))
         ]
     elif not name.is_empty():
         detail.text = "Unresolved texture reference"
