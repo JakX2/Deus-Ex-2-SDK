@@ -10,7 +10,7 @@ func _initialize() -> void:
 
 
 func _fail(message: String) -> void:
-    push_error("DX2Ed v0.45 MatLib stage-mask audit: " + message)
+    push_error("DX2Ed v0.46 MatLib raw cohort browser: " + message)
     quit(1)
 
 
@@ -227,6 +227,10 @@ func _run() -> void:
         or str(browser.visible_materials[0].get("name", "")) != "M_SYNTH_VARIANT"
         or not browser.selected_material.is_empty()):
         _fail("Raw category ID filter did not isolate the opaque category 42 cohort or clear stale selection.")
+        return
+    if (browser.materials.size() != 3
+        or str(browser.materials[0].get("name", "")) != "M_SYNTH_METAL"):
+        _fail("Hiding a selected material mutated the underlying catalog record.")
         return
     if (browser.category_filter_selector.get_item_text(2) != "42"
         or browser.flags_filter_selector.get_item_text(2) != "0x00000010"):

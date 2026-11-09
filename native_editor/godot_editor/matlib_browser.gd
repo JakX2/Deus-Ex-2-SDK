@@ -488,12 +488,12 @@ func _refresh_list() -> void:
 
     var selected_index := visible_materials.find(selected_material) if not selected_material.is_empty() else -1
     if visible_materials.is_empty():
-        selected_material.clear()
+        selected_material = {}
         details_label.text = "No materials match the current filter."
         stage_audit_label.text = "No material selected."
         _clear_stage_cards()
     elif selected_index < 0:
-        selected_material.clear()
+        selected_material = {}
         details_label.text = "%d materials match. Select one to inspect all nine stage slots." % visible_materials.size()
         stage_audit_label.text = "Select a material to inspect its raw stage references."
         _clear_stage_cards()
