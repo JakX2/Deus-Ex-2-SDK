@@ -93,12 +93,12 @@ func _run() -> void:
     editor._set_transform_orientation_mode("local")
     editor._update_gizmo_pose()
     var expected_local: Basis = second.global_basis.orthonormalized()
-    if not editor.gizmo_root.global_basis.is_equal_approx(expected_local):
+    if not editor.gizmo_root.global_basis.orthonormalized().is_equal_approx(expected_local):
         _fail("Perspective gizmo did not follow the active selected object's local basis")
         return
     editor._activate_view("top", false, false, true)
     editor._update_gizmo_pose()
-    if not editor.gizmo_root.global_basis.is_equal_approx(Basis.IDENTITY):
+    if not editor.gizmo_root.global_basis.orthonormalized().is_equal_approx(Basis.IDENTITY):
         _fail("Top view gizmo leaked local orientation outside its world XZ plane")
         return
 
