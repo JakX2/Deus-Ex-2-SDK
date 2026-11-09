@@ -15,6 +15,7 @@ class SourceSectionTopologyContractTests(unittest.TestCase):
         self.assertIn('face["source_weld_ids"]', source)
         self.assertIn("original_edge_incidence.get(edge_key, [])", source)
         self.assertIn('"mopp_leaf_subset_only": true', source)
+        self.assertIn('"area_measure": "sum_of_mopp_leaf_triangle_areas"', source)
         self.assertIn('"native_bsp_surface_verified": false', source)
 
     def test_user_facing_panel_discloses_subset_and_native_limits(self) -> None:
