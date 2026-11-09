@@ -94,7 +94,7 @@ without crossing the DX2 native-format evidence boundary.
 DX2Ed v0.48 adds a bounded read-only analysis of the MOPP terminal-leaf
 triangles belonging to the selected original Flesh render-section tuple. It
 reports exact source-weld connectivity, section-subset components, summed Level-unit
-triangle area/bounds/centroid, source edge-class counts, perimeter and cross-section
+triangle area/bounds/centroid, MOPP-leaf edge-class counts, perimeter and cross-section
 MOPP-shared edges, and adjacent MOPP-linked render sections. The report can be
 copied as derived JSON without source bytes or paths.
 
