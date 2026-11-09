@@ -26,15 +26,15 @@
       "status": "partial",
       "phase": 1,
       "evidence": "DX2Ed v0.28 perspective/top/front/side fixed-axis Godot viewport navigation, preview grid and zoom/pan; v0.53 adds a simultaneous 2x2 Perspective/Top/Front/Side layout with independent camera targets/zoom/orbit state, per-view grid cull layers, hover-routed active viewport and private workspace persistence; previous fly camera, actor triangle picking and scene selection. DX2Ed v0.54 adds an active-pane-only interaction cull layer for custom Polygon vertex handles/wire and transform gizmos, so a gizmo constrained for one quad camera no longer appears in the other three panes.",
-      "next_step": "Parent/group transforms and pivot preferences, plus evidence-backed native BSP/zone topology. The shared quad world remains a Godot preview."
+      "next_step": "Parent/group transforms and independently validated DX2 transform conversion; evidence-backed native BSP/zone topology. The shared quad world remains a Godot preview."
     },
     {
       "id": "transforms",
       "title": "Move/rotate/scale, groups, undo",
       "status": "partial",
       "phase": 1,
-      "evidence": "DX2Ed 0.3.0 through 0.3.2 preview-only W/E/R move/rotate/scale gizmo and multi-selection history; v0.28 Grid m/Ctrl snap; v0.54 constrains Top to X/Z, Front to X/Y and Side to Y/Z, uses the view-normal rotate ring, adds a two-axis orthographic move plane handle, world-pivot grid snapping, active-pane-only gizmo culling, one-transaction Undo/Redo and private JSON transform Save/reopen. This remains editor-private preview state.",
-      "next_step": "Parent/group transforms, local/world pivot preferences and independently validated DX2 rotator/scale/pivot conversion; no native map writer until runtime truth tests pass."
+      "evidence": "DX2Ed 0.3.0 through 0.3.2 preview-only W/E/R move/rotate/scale gizmo and multi-selection history; v0.28 Grid m/Ctrl snap; v0.54 constrains Top to X/Z, Front to X/Y and Side to Y/Z, uses the view-normal rotate ring, adds a two-axis orthographic move plane handle, world-pivot grid snapping, active-pane-only gizmo culling, one-transaction Undo/Redo and private JSON transform Save/reopen. v0.55 adds Median/Active/3D Cursor pivots, undoable editor-only cursor placement, Perspective local/world axes and backward-compatible private workspace persistence. This remains editor-private preview state.",
+      "next_step": "Parent/group transforms and independently validated DX2 rotator/scale/pivot conversion; no native map writer until runtime truth tests pass."
     },
     {
       "id": "asset_browser",
