@@ -155,6 +155,8 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("editor_polygon_surface_material_preview") is not True
                 or manifest.get("editor_polygon_surface_uv_editing") is not True
                 or manifest.get("editor_matlib_source_browser") is not True
+                or manifest.get("editor_matlib_stage_resource_diagnostics") is not True
+                or manifest.get("editor_matlib_shader_stage_semantics_verified") is not False
                 or manifest.get("editor_polygon_surface_source_diffuse_assignment_preview") is not True
                 or manifest.get("editor_polygon_surface_source_diffuse_native_writer") is not False
                 or manifest.get("editor_matlib_native_writer") is not False
