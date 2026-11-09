@@ -88,7 +88,11 @@ func _run() -> void:
         _fail("Synthetic Polygon brush failed normal authoring preflight")
         return
     editor._select_mesh_only(draft)
-    if not editor.gizmo_root.visible or editor._selection_nodes().size() != 1:
+    if editor._selection_nodes().size() != 1:
+        _fail("Synthetic private Polygon was not retained in the editor selection")
+        return
+    editor._update_gizmo_pose()
+    if not editor.gizmo_root.visible:
         _fail("Selected private Polygon did not expose its transform gizmo")
         return
 
