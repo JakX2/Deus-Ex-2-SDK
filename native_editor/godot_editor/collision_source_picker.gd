@@ -449,6 +449,7 @@ func section_details(original_id: int, preview_cap: int = 1024) -> Dictionary:
         "not_a_havok_contact_or_native_surface": true,
     }
 const MAX_SECTION_TOPOLOGY_TRIANGLES := 8192
+const MAX_SECTION_EDGE_INCIDENCE := 1024
 const MAX_SECTION_TOPOLOGY_NEIGHBORS := 64
 const MAX_SECTION_TOPOLOGY_COMPONENTS := 16
 const SECTION_TOPOLOGY_SCHEMA := "DX2Ed-source-section-topology-v1"
@@ -605,6 +606,11 @@ func section_topology_details(original_id: int,
         source_edge_class_counts[source_class] = int(source_edge_class_counts[source_class]) + 1
         var other_sections_for_edge: Dictionary = {}
         var incidence: Array = original_edge_incidence.get(edge_key, [])
+        if incidence.size() > MAX_SECTION_EDGE_INCIDENCE:
+            base["analysis_skipped_for_edge_incidence"] = true
+            base["edge_incidence_count"] = incidence.size()
+            base["edge_incidence_cap"] = MAX_SECTION_EDGE_INCIDENCE
+            return base
         for incident in incidence:
             var other_id := int(incident.get("triangle_id", -1))
             if other_id == original_id or not face_index_by_id.has(other_id):
