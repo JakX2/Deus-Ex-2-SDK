@@ -26,7 +26,7 @@ func _write_json(path: String, value: Dictionary) -> void:
 
 func _run() -> void:
     var root_path := ProjectSettings.globalize_path(
-        "user://dx2ed_matlib_polygon_assignment_smoke")
+        "user://dx2ed_material_cache/smoke_assignment")
     var preview_dir := root_path.path_join("previews")
     if (DirAccess.make_dir_recursive_absolute(preview_dir) != OK
         and not DirAccess.dir_exists_absolute(preview_dir)):
