@@ -33,6 +33,8 @@ var stage_grid: GridContainer
 var status_label: Label
 var apply_button: Button
 var target_slot_selector: OptionButton
+var catalog_audit_button: Button
+var catalog_audit_label: Label
 
 var catalog_path := ""
 var catalog: Dictionary = {}
@@ -157,6 +159,23 @@ func _build_ui() -> void:
     stage_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     stage_scroll.add_child(stage_grid)
 
+    var catalog_audit_row := HBoxContainer.new()
+    detail_column.add_child(catalog_audit_row)
+    catalog_audit_button = Button.new()
+    catalog_audit_button.text = "Run stage-mask / slot audit"
+    catalog_audit_button.disabled = true
+    catalog_audit_button.tooltip_text = (
+        "Compare raw low-nine stage-mask bits with non-empty ordered MatLib slot positions. "
+        + "This is an exploratory structural audit, not a shader-stage decode.")
+    catalog_audit_button.pressed.connect(_run_catalog_stage_mask_audit)
+    catalog_audit_row.add_child(catalog_audit_button)
+
+    catalog_audit_label = Label.new()
+    catalog_audit_label.text = "Import a catalog, then run the read-only stage-mask / slot correspondence audit."
+    catalog_audit_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    catalog_audit_label.custom_minimum_size.y = 96
+    detail_column.add_child(catalog_audit_label)
+
     status_label = Label.new()
     status_label.text = "No source catalog loaded. Original bundles remain read-only."
     status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -184,11 +203,7 @@ func _import_bundle(path: String) -> void:
         return
     var arguments := PackedStringArray(["--bundle", path, "--output", output_path])
     var output: Array = []
-    var exit_code := OS.execute(PythonRuntime.executable(), arguments, output, true)
-    if exit_code == -1:
-        output.clear()
-        var fallback := PackedStringArray(["-3", worker, "--bundle", path, "--output", output_path])
-        exit_code = OS.execute("py", fallback, output, true)
+    var exit_code := _execute_python_worker(worker, arguments, output)
     if exit_code != 0:
         status_label.text = "MatLib import failed: " + "\n".join(output).left(500)
         return
@@ -223,6 +238,10 @@ func load_catalog(path: String) -> bool:
     materials = parsed["materials"]
     selected_material.clear()
     _refresh_list()
+    if catalog_audit_button != null:
+        catalog_audit_button.disabled = false
+    if catalog_audit_label != null:
+        catalog_audit_label.text = "Catalog loaded. Run the read-only stage-mask / slot correspondence audit."
     status_label.text = (
         "Loaded %d MatLib records from %d source file(s). "
         + "Stage references and raw masks are shown without shader-semantic inference."
@@ -251,6 +270,10 @@ func _validate_catalog(raw: Variant, path: String) -> bool:
             return false
     for material in records:
         if typeof(material) != TYPE_DICTIONARY or str(material.get("name", "")).is_empty():
+            return false
+        if (_usage_code_value(material.get("flags", null)) < 0
+            or _usage_code_value(material.get("stage_mask", null)) < 0
+            or _usage_code_value(material.get("category_id", null)) < 0):
             return false
         var stages: Variant = material.get("stages", null)
         if typeof(stages) != TYPE_ARRAY or stages.size() != 9:
@@ -379,6 +402,10 @@ func _material_selected(index: int) -> void:
     if index < 0 or index >= visible_materials.size():
         return
     selected_material = visible_materials[index]
+    var named_slot_mask := _named_stage_slot_mask(selected_material)
+    var raw_stage_mask := int(selected_material.get("stage_mask", 0))
+    var low9_stage_mask := raw_stage_mask & 0x1FF
+    var mask_xor := low9_stage_mask ^ named_slot_mask
     var lines: Array[String] = [
         "Material: " + str(selected_material.get("name", "")),
         "Source bundle: " + str(selected_material.get("source_bundle", "")),
@@ -387,6 +414,10 @@ func _material_selected(index: int) -> void:
         "Flags (raw): 0x%08X" % int(selected_material.get("flags", 0)),
         "Stage mask (raw): 0x%08X" % int(selected_material.get("stage_mask", 0)),
         "Category ID (raw): " + str(selected_material.get("category_id", "?")),
+        "Named-slot mask (derived): 0x%03X" % named_slot_mask,
+        "Low-nine XOR: 0x%03X (%s; candidate only)" % [
+            mask_xor, "exact match" if mask_xor == 0 else "mismatch"
+        ],
         "Colors: " + str(selected_material.get("colors", [])),
         "Parameters: " + str(selected_material.get("params", [])),
         "Slot 0 is the existing preview candidate only; diffuse shader semantics are unverified.",
@@ -416,6 +447,131 @@ func _material_selected(index: int) -> void:
         + "Texture usage labels come from the parser; they do not establish shader-stage semantics."
     )
     _refresh_apply_button()
+
+
+
+static func _named_stage_slot_mask(material: Dictionary) -> int:
+    var stages: Variant = material.get("stages", null)
+    if typeof(stages) != TYPE_ARRAY or stages.size() != 9:
+        return -1
+    var result := 0
+    for index in range(9):
+        var stage: Variant = stages[index]
+        if typeof(stage) != TYPE_DICTIONARY:
+            return -1
+        if not str(stage.get("name", "")).is_empty():
+            result |= 1 << index
+    return result
+
+
+func _execute_python_worker(worker: String, arguments: PackedStringArray, output: Array) -> int:
+    var direct_arguments := PackedStringArray([worker])
+    direct_arguments.append_array(arguments)
+    var exit_code := OS.execute(PythonRuntime.executable(), direct_arguments, output, true)
+    if exit_code == -1:
+        output.clear()
+        var fallback := PackedStringArray(["-3", worker])
+        fallback.append_array(arguments)
+        exit_code = OS.execute("py", fallback, output, true)
+    return exit_code
+
+
+func _run_catalog_stage_mask_audit() -> bool:
+    if catalog_path.is_empty() or not FileAccess.file_exists(catalog_path):
+        if catalog_audit_label != null:
+            catalog_audit_label.text = "No readable MatLib catalog is loaded."
+        return false
+    var worker := ProjectSettings.globalize_path("res://backend/dx2_matlib_catalog.py")
+    if not FileAccess.file_exists(worker):
+        catalog_audit_label.text = "The MatLib catalog worker is missing from this prototype."
+        return false
+    var output: Array = []
+    var exit_code := _execute_python_worker(
+        worker, PackedStringArray(["--audit-catalog", catalog_path]), output)
+    var output_lines := PackedStringArray()
+    for item in output:
+        output_lines.append(str(item))
+    var output_text := "\n".join(output_lines)
+    if exit_code != 0:
+        catalog_audit_label.text = "Stage-mask audit failed: " + output_text.left(500)
+        return false
+    var parsed: Variant = JSON.parse_string(output_text)
+    if (typeof(parsed) != TYPE_DICTIONARY
+        or parsed.get("status", "") != "ok"
+        or parsed.get("schema", "") != "DX2Ed-MatLib-stage-mask-audit-v1"
+        or parsed.get("native_writer_enabled", true) != false
+        or parsed.get("source_bytes_modified", true) != false):
+        catalog_audit_label.text = "Stage-mask audit returned an invalid or writable report."
+        return false
+    catalog_audit_label.text = _format_catalog_stage_mask_audit(parsed)
+    return true
+
+
+func _format_catalog_stage_mask_audit(report: Dictionary) -> String:
+    var lines := PackedStringArray([
+        "Materials: %d | exact low-nine matches: %d (%d non-empty) | mismatches: %d." % [
+            int(report.get("material_count", 0)),
+            int(report.get("exact_low9_match_count", 0)),
+            int(report.get("exact_nonempty_low9_match_count", 0)),
+            int(report.get("mismatch_count", 0))
+        ],
+        "Records with high bits set: %d; no named slots: %d; nonzero mask without names: %d." % [
+            int(report.get("high_bits_set_count", 0)),
+            int(report.get("no_named_slots_count", 0)),
+            int(report.get("nonzero_mask_without_named_slots_count", 0))
+        ],
+        "Per-slot resource usage codes (parser labels are not shader roles):"
+    ])
+    var per_slot: Variant = report.get("per_slot", [])
+    if typeof(per_slot) == TYPE_ARRAY:
+        for raw_slot in per_slot:
+            if typeof(raw_slot) != TYPE_DICTIONARY:
+                continue
+            var slot: Dictionary = raw_slot
+            var usage_parts := PackedStringArray()
+            for item in slot.get("usage_code_counts", []):
+                if typeof(item) == TYPE_DICTIONARY:
+                    usage_parts.append("%s:%s" % [
+                        str(item.get("code", "?")), str(item.get("count", 0))
+                    ])
+            var name_parts := PackedStringArray()
+            for item in slot.get("common_names", []):
+                if typeof(item) == TYPE_DICTIONARY:
+                    name_parts.append("%s×%s" % [
+                        str(item.get("name", "")), str(item.get("count", 0))
+                    ])
+            lines.append("Slot %d: named=%d resolved=%d | codes [%s] | names [%s]" % [
+                int(slot.get("slot_index", -1)),
+                int(slot.get("named_count", 0)),
+                int(slot.get("resolved_count", 0)),
+                ", ".join(usage_parts) if not usage_parts.is_empty() else "none",
+                ", ".join(name_parts) if not name_parts.is_empty() else "none"
+            ])
+    var categories := PackedStringArray()
+    for item in report.get("top_category_ids", []):
+        if typeof(item) == TYPE_DICTIONARY:
+            categories.append("%s×%s" % [
+                str(item.get("value", "?")), str(item.get("count", 0))
+            ])
+    var flags := PackedStringArray()
+    for item in report.get("top_flags", []):
+        if typeof(item) == TYPE_DICTIONARY:
+            flags.append("0x%08X×%s" % [
+                int(item.get("value", 0)), str(item.get("count", 0))
+            ])
+    lines.append("Most common raw category IDs: " + (", ".join(categories) if not categories.is_empty() else "none"))
+    lines.append("Most common raw flags: " + (", ".join(flags) if not flags.is_empty() else "none"))
+    for item in report.get("mismatch_examples", []):
+        if typeof(item) == TYPE_DICTIONARY:
+            lines.append("Mismatch %s: raw=0x%08X named=0x%03X xor=0x%03X" % [
+                str(item.get("name", "")),
+                int(item.get("raw_stage_mask", 0)),
+                int(item.get("named_slot_mask", 0)),
+                int(item.get("xor_mask", 0))
+            ])
+    lines.append("Exact equality is only a candidate bit/slot relationship, not proof of runtime shader semantics.")
+    return "\n".join(lines).left(6000)
+
 
 
 static func _usage_code_value(raw: Variant) -> int:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 import tempfile
 import unittest
@@ -11,7 +12,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "native_editor" / "godot_editor" / "backend"))
 sys.path.insert(0, str(ROOT / "map_exporter"))
 
-from dx2_matlib_catalog import build_catalog_from_inventory
+from dx2_matlib_catalog import (
+    audit_catalog_file,
+    audit_stage_mask_correspondence,
+    build_catalog_from_inventory,
+)
 from dx2textures import Texture
 
 
@@ -187,6 +192,126 @@ class MatLibCatalogTests(unittest.TestCase):
             self.assertFalse(relative.is_absolute())
             self.assertNotIn("..", relative.parts)
             self.assertTrue((Path(temporary) / relative).is_file())
+
+
+    def test_stage_mask_audit_matches_named_slots_and_counts_usage_per_slot(self):
+        normal = Texture(
+            name="T_SYNTH_NORMAL",
+            fmt="BGRA8",
+            width=2,
+            height=2,
+            usage=1,
+            mipmaps=[(2, 2, bytes([128, 128, 255, 255] * 4))],
+            source="synthetic.ibd",
+        )
+        record = material_record(
+            "M_EXACT", ["T_SYNTH_DIFFUSE", "T_SYNTH_NORMAL"] + [""] * 7
+        )
+        record["stage_mask"] = 0x3
+        with tempfile.TemporaryDirectory() as temporary:
+            catalog = build_catalog_from_inventory(
+                {"t_synth_diffuse": self.texture, "t_synth_normal": normal},
+                {"exact": record},
+                self.duplicates,
+                self.skipped,
+                self.sources,
+                Path(temporary) / "audit_previews",
+            )
+            report = audit_stage_mask_correspondence(catalog["materials"])
+        self.assertEqual(report["exact_low9_match_count"], 1)
+        self.assertEqual(report["exact_nonempty_low9_match_count"], 1)
+        self.assertEqual(report["mismatch_count"], 0)
+        self.assertEqual(report["per_slot"][0]["usage_code_counts"][0]["code"], 0)
+        self.assertEqual(report["per_slot"][1]["usage_code_counts"][0]["code"], 1)
+        self.assertIs(report["source_bytes_modified"], False)
+        self.assertIs(report["native_writer_enabled"], False)
+
+    def test_stage_mask_audit_reports_mismatch_and_high_bits_without_guessing(self):
+        normal = Texture(
+            name="T_SYNTH_NORMAL",
+            fmt="BGRA8",
+            width=2,
+            height=2,
+            usage=1,
+            mipmaps=[(2, 2, bytes([128, 128, 255, 255] * 4))],
+            source="synthetic.ibd",
+        )
+        record = material_record(
+            "M_MISMATCH", ["T_SYNTH_DIFFUSE", "", "T_SYNTH_NORMAL"] + [""] * 6
+        )
+        record["stage_mask"] = 0x201
+        with tempfile.TemporaryDirectory() as temporary:
+            catalog = build_catalog_from_inventory(
+                {"t_synth_diffuse": self.texture, "t_synth_normal": normal},
+                {"mismatch": record},
+                self.duplicates,
+                self.skipped,
+                self.sources,
+                Path(temporary) / "mismatch_previews",
+            )
+            report = audit_stage_mask_correspondence(catalog["materials"])
+        self.assertEqual(report["mismatch_count"], 1)
+        self.assertEqual(report["high_bits_set_count"], 1)
+        example = report["mismatch_examples"][0]
+        self.assertEqual(example["raw_stage_mask"], 0x201)
+        self.assertEqual(example["named_slot_mask"], 0x5)
+        self.assertEqual(example["low9_mask"], 0x1)
+        self.assertEqual(example["xor_mask"], 0x4)
+
+    def test_stage_mask_audit_rejects_malformed_masks_and_usage_codes(self):
+        empty_stages = [
+            {"index": index, "name": "", "resolved": False}
+            for index in range(9)
+        ]
+        bad_mask = {
+            "name": "M_BAD_MASK",
+            "stage_mask": True,
+            "flags": 0,
+            "category_id": 0,
+            "stages": empty_stages,
+        }
+        with self.assertRaisesRegex(ValueError, "stage_mask"):
+            audit_stage_mask_correspondence([bad_mask])
+
+        bad_usage_stages = [dict(stage) for stage in empty_stages]
+        bad_usage_stages[0] = {
+            "index": 0,
+            "name": "T_BAD_USAGE",
+            "resolved": True,
+            "texture": {"usage_code": -1},
+        }
+        bad_usage = {
+            "name": "M_BAD_USAGE",
+            "stage_mask": 1,
+            "flags": 0,
+            "category_id": 0,
+            "stages": bad_usage_stages,
+        }
+        with self.assertRaisesRegex(ValueError, "usage_code"):
+            audit_stage_mask_correspondence([bad_usage])
+
+    def test_audit_catalog_file_is_read_only_and_omits_private_source_paths(self):
+        record = material_record("M_AUDIT_FILE", ["T_SYNTH_DIFFUSE"] + [""] * 8)
+        record["stage_mask"] = 1
+        with tempfile.TemporaryDirectory() as temporary:
+            catalog = build_catalog_from_inventory(
+                {"t_synth_diffuse": self.texture},
+                {"audit": record},
+                self.duplicates,
+                self.skipped,
+                self.sources,
+                Path(temporary) / "file_audit_previews",
+            )
+            path = Path(temporary) / "catalog.json"
+            path.write_text(json.dumps(catalog), encoding="utf-8")
+            report = audit_catalog_file(path)
+            self.assertEqual(report["material_count"], 1)
+            self.assertNotIn("source_files", report)
+            self.assertNotIn("path", report)
+            catalog["native_writer_enabled"] = True
+            path.write_text(json.dumps(catalog), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "read-only"):
+                audit_catalog_file(path)
 
 
 if __name__ == "__main__":

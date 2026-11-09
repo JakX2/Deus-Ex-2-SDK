@@ -8,6 +8,7 @@ Original bundles are never modified and no native material writer exists.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -234,13 +235,188 @@ def catalog_from_paths(
     return catalog
 
 
+
+def _audit_uint32(value: object, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 0xFFFFFFFF:
+        raise ValueError("Invalid MatLib audit " + field)
+    return value
+
+
+def audit_stage_mask_correspondence(materials: list) -> dict:
+    """Compare raw low-nine stage-mask bits with non-empty ordered slot positions.
+
+    Equality is an exploratory structural correlation only. It is not a
+    shader-stage decode and does not establish runtime material behavior.
+    """
+    if not isinstance(materials, list) or len(materials) > MAX_MATERIALS:
+        raise ValueError("Invalid MatLib audit material collection")
+    slot_names = [Counter() for _ in range(9)]
+    slot_usage = [Counter() for _ in range(9)]
+    slot_named_counts = [0] * 9
+    slot_resolved_counts = [0] * 9
+    category_counts = Counter()
+    flags_counts = Counter()
+    exact_count = 0
+    exact_nonempty_count = 0
+    mismatch_count = 0
+    high_bits_count = 0
+    no_named_count = 0
+    nonzero_without_named_count = 0
+    named_without_low9_count = 0
+    mismatch_examples = []
+
+    for material in materials:
+        if not isinstance(material, dict):
+            raise ValueError("Invalid MatLib audit material record")
+        name = material.get("name", "")
+        if not isinstance(name, str) or not name or len(name) > 260:
+            raise ValueError("Invalid MatLib audit material name")
+        raw_mask = _audit_uint32(material.get("stage_mask"), "stage_mask")
+        category = _audit_uint32(material.get("category_id", 0), "category_id")
+        flags = _audit_uint32(material.get("flags", 0), "flags")
+        stages = material.get("stages")
+        if not isinstance(stages, list) or len(stages) != 9:
+            raise ValueError("MatLib audit requires exactly nine ordered stage slots")
+
+        named_mask = 0
+        for slot_index, stage in enumerate(stages):
+            if not isinstance(stage, dict):
+                raise ValueError("Invalid MatLib audit stage record")
+            if isinstance(stage.get("index"), bool) or stage.get("index") != slot_index:
+                raise ValueError("MatLib audit stage order is invalid")
+            stage_name = stage.get("name", "")
+            if not isinstance(stage_name, str) or len(stage_name) > 260:
+                raise ValueError("Invalid MatLib audit stage name")
+            resolved = stage.get("resolved", False)
+            if not isinstance(resolved, bool):
+                raise ValueError("Invalid MatLib audit resolution flag")
+            if stage_name:
+                named_mask |= 1 << slot_index
+                slot_named_counts[slot_index] += 1
+                slot_names[slot_index][stage_name] += 1
+            if resolved:
+                texture = stage.get("texture")
+                if not isinstance(texture, dict) or not stage_name:
+                    raise ValueError("Resolved MatLib audit stage lacks a named texture")
+                slot_resolved_counts[slot_index] += 1
+                if "usage_code" in texture:
+                    usage_code = _audit_uint32(texture["usage_code"], "texture usage_code")
+                    slot_usage[slot_index][usage_code] += 1
+
+        low9_mask = raw_mask & 0x1FF
+        xor_mask = low9_mask ^ named_mask
+        category_counts[category] += 1
+        flags_counts[flags] += 1
+        if xor_mask == 0:
+            exact_count += 1
+            if named_mask:
+                exact_nonempty_count += 1
+        else:
+            mismatch_count += 1
+            if len(mismatch_examples) < 8:
+                mismatch_examples.append({
+                    "name": name,
+                    "raw_stage_mask": raw_mask,
+                    "named_slot_mask": named_mask,
+                    "low9_mask": low9_mask,
+                    "xor_mask": xor_mask,
+                })
+        if raw_mask & ~0x1FF:
+            high_bits_count += 1
+        if named_mask == 0:
+            no_named_count += 1
+            if raw_mask != 0:
+                nonzero_without_named_count += 1
+        elif low9_mask == 0:
+            named_without_low9_count += 1
+
+    per_slot = []
+    for slot_index in range(9):
+        per_slot.append({
+            "slot_index": slot_index,
+            "named_count": slot_named_counts[slot_index],
+            "resolved_count": slot_resolved_counts[slot_index],
+            "usage_code_counts": [
+                {
+                    "code": code,
+                    "parser_label": dx2textures.USAGE.get(code, str(code)),
+                    "count": count,
+                }
+                for code, count in sorted(slot_usage[slot_index].items())
+            ],
+            "common_names": [
+                {"name": value, "count": count}
+                for value, count in slot_names[slot_index].most_common(5)
+            ],
+        })
+
+    return {
+        "schema": "DX2Ed-MatLib-stage-mask-audit-v1",
+        "read_only": True,
+        "native_writer_enabled": False,
+        "source_bytes_modified": False,
+        "material_count": len(materials),
+        "exact_low9_match_count": exact_count,
+        "exact_nonempty_low9_match_count": exact_nonempty_count,
+        "mismatch_count": mismatch_count,
+        "high_bits_set_count": high_bits_count,
+        "no_named_slots_count": no_named_count,
+        "nonzero_mask_without_named_slots_count": nonzero_without_named_count,
+        "named_slots_without_low9_mask_count": named_without_low9_count,
+        "per_slot": per_slot,
+        "top_category_ids": [
+            {"value": value, "count": count}
+            for value, count in category_counts.most_common(8)
+        ],
+        "top_flags": [
+            {"value": value, "count": count}
+            for value, count in flags_counts.most_common(8)
+        ],
+        "mismatch_examples": mismatch_examples,
+    }
+
+
+def audit_catalog_file(path: Path) -> dict:
+    """Read a bounded private catalog and return aggregate diagnostics only."""
+    path = Path(path)
+    if path.stat().st_size > MAX_CATALOG_BYTES:
+        raise ValueError("MatLib audit catalog exceeds the 64 MiB limit")
+    data = path.read_bytes()
+    if len(data) > MAX_CATALOG_BYTES:
+        raise ValueError("MatLib audit catalog exceeds the 64 MiB limit")
+    try:
+        catalog = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Invalid MatLib audit catalog JSON") from exc
+    if (not isinstance(catalog, dict)
+            or catalog.get("schema") != SCHEMA
+            or catalog.get("read_only") is not True
+            or catalog.get("native_writer_enabled") is not False
+            or catalog.get("source_bytes_modified") is not False):
+        raise ValueError("MatLib audit requires a read-only source catalog")
+    materials = catalog.get("materials")
+    if catalog.get("material_count") != (len(materials) if isinstance(materials, list) else -1):
+        raise ValueError("MatLib audit catalog material count is inconsistent")
+    return audit_stage_mask_correspondence(materials)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bundle", action="append", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--bundle", action="append", type=Path)
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--max-previews", type=int, default=MAX_PREVIEWS)
+    parser.add_argument("--audit-catalog", type=Path,
+                        help="Read-only stage-mask/slot audit of a private MatLib catalog")
     options = parser.parse_args(argv)
     try:
+        if options.audit_catalog is not None:
+            if options.bundle or options.output is not None:
+                parser.error("--audit-catalog cannot be combined with --bundle/--output")
+            report = audit_catalog_file(options.audit_catalog)
+            print(json.dumps({"status": "ok", **report}, sort_keys=True))
+            return 0
+        if not options.bundle or options.output is None:
+            parser.error("catalog creation requires --bundle and --output")
         catalog = catalog_from_paths(options.bundle, options.output, options.max_previews)
         print(json.dumps({
             "status": "ok",
