@@ -98,8 +98,8 @@ triangle area/bounds/centroid, source edge-class counts, perimeter and cross-sec
 MOPP-shared edges, and adjacent MOPP-linked render sections. The report can be
 copied as derived JSON without source bytes or paths.
 
-The analysis cap is 8,192 triangles and skips atomically without partial
-statistics. It is not a complete render section or BSP surface, and it does not
+The analysis cap is 8,192 section triangles and 1,024 incidences per touched
+edge; either limit skips atomically without partial statistics. It is not a complete render section or BSP surface, and it does not
 prove Havok runtime adjacency, physics materials, shader behavior or native
 material identity. MOPP leaf connectivity and neighbor discovery remain
 limited to the authenticated collision sidecar subset.
