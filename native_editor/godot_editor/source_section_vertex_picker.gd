@@ -331,23 +331,31 @@ static func pick_vertex(index: Dictionary, mouse_pixels: Vector2,
         or index.get("native_map_written", true) != false
         or not is_finite(mouse_pixels.x) or not is_finite(mouse_pixels.y)
         or not is_finite(radius_pixels) or radius_pixels <= 0.0
-        or radius_pixels > PICK_RADIUS_PIXELS):
+        or radius_pixels > PICK_RADIUS_PIXELS
+        or str(index.get("source_section_key", "")).is_empty()
+        or str(index.get("source_sha256", "")).length() != 64):
+        return {}
+    var raw_records: Variant = index.get("records", null)
+    var raw_cells: Variant = index.get("cells", null)
+    if (typeof(raw_records) != TYPE_ARRAY or typeof(raw_cells) != TYPE_DICTIONARY
+        or raw_records.is_empty() or raw_records.size() > MAX_VERTEX_COUNT
+        or raw_records.size() != int(index.get("projected_vertex_count", -1))):
         return {}
     var cell_size := float(index.get("cell_size", 0.0))
-    if not is_finite(cell_size) or cell_size <= 0.0:
+    if not is_equal_approx(cell_size, CELL_SIZE):
         return {}
     var min_cell_x := floori((mouse_pixels.x - radius_pixels) / cell_size)
     var max_cell_x := floori((mouse_pixels.x + radius_pixels) / cell_size)
     var min_cell_y := floori((mouse_pixels.y - radius_pixels) / cell_size)
     var max_cell_y := floori((mouse_pixels.y + radius_pixels) / cell_size)
-    var cells: Dictionary = index.get("cells", {})
+    var cells: Dictionary = raw_cells
     var candidates: Array = []
     for cell_y in range(min_cell_y, max_cell_y + 1):
         for cell_x in range(min_cell_x, max_cell_x + 1):
             var cell_key := "%d:%d" % [cell_x, cell_y]
             for raw_index in cells.get(cell_key, []):
                 candidates.append(raw_index)
-    var records: Array = index.get("records", [])
+    var records: Array = raw_records
     var seen: Dictionary = {}
     var best: Dictionary = {}
     var best_distance := radius_pixels
@@ -407,9 +415,6 @@ static func build_overlay(report: Dictionary, camera: Camera3D,
             or screen.x < -PICK_RADIUS_PIXELS or screen.y < -PICK_RADIUS_PIXELS
             or screen.x > viewport_size.x + PICK_RADIUS_PIXELS
             or screen.y > viewport_size.y + PICK_RADIUS_PIXELS):
-            continue
-        var depth := -camera.global_basis.z.dot(point - camera.global_position)
-        if not is_finite(depth) or depth < camera.near or depth > camera.far:
             continue
         var world_per_pixel := camera.size / viewport_size.y
         if camera.projection == Camera3D.PROJECTION_PERSPECTIVE:

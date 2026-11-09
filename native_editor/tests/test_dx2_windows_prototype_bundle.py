@@ -98,7 +98,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 for file in files))
             self.assertTrue(archive.read(prefix + "native_editor/godot_editor/demo/scene.glb").startswith(b"glTF"))
             doc = json.loads(archive.read(prefix + "prototype-manifest.json"))
-            self.assertEqual(doc["prototype_version"], "0.7.0-alpha")
+            self.assertEqual(doc["prototype_version"], "0.7.1-alpha")
             self.assertTrue(doc["editor_source_section_topology_diagnostics"])
             self.assertFalse(doc["editor_source_section_topology_native_bsp_verified"])
             self.assertFalse(doc["editor_source_section_topology_full_render_section_verified"])

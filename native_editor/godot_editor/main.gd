@@ -10223,6 +10223,8 @@ func _update_source_section_vertex_hover(view_mouse_position: Vector2) -> void:
 func _select_source_section_vertex(picked: Dictionary) -> void:
     var record: Dictionary = picked.get("record", {})
     if (source_collision_section_vertex_report.is_empty()
+        or str(picked.get("source_sha256", "")) != str(source_collision_section_vertex_report.get("source_sha256", ""))
+        or str(picked.get("source_section_key", "")) != str(source_collision_section_vertex_report.get("source_section_key", ""))
         or not SourceSectionVertexPicker.record_belongs_to_report(
             source_collision_section_vertex_report, record)
         or source_section_topology_panel == null

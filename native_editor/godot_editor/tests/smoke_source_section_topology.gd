@@ -253,6 +253,11 @@ func _run() -> void:
     if not VertexPicker.pick_vertex(vertex_index, Vector2(-10000.0, -10000.0), 12.0).is_empty():
         _fail("Screen-space vertex picker selected a handle outside its bounded viewport index.")
         return
+    var tampered_vertex_index: Dictionary = vertex_index.duplicate(true)
+    tampered_vertex_index["cell_size"] = 64.0
+    if not VertexPicker.pick_vertex(tampered_vertex_index, target_vertex_screen).is_empty():
+        _fail("Screen-space vertex picker accepted a tampered spatial-index cell size.")
+        return
     if not VertexPicker.pick_vertex(vertex_index, target_vertex_screen, 13.0).is_empty():
         _fail("Screen-space vertex picker accepted a radius wider than its indexed 12-pixel envelope.")
         return

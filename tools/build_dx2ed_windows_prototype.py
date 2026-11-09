@@ -235,7 +235,7 @@ def build(source_root: Path, godot_zip: Path, godot_license: Path,
 
     result = {
         "schema": SCHEMA,
-        "prototype_version": "0.7.0-alpha",
+        "prototype_version": "0.7.1-alpha",
         "engine": "Godot 4.3 stable Standard Windows x86_64",
         "engine_archive_sha512": hashlib.sha512(godot_zip.read_bytes()).hexdigest(),
         "python_minimum": "3.11",
