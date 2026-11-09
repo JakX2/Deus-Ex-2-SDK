@@ -167,6 +167,9 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("editor_source_surface_matlib_native_binding_verified") is not False
                 or manifest.get("editor_source_section_topology_diagnostics") is not True
                 or manifest.get("editor_source_section_topology_native_bsp_verified") is not False
+                or manifest.get("editor_source_section_topology_full_render_section_verified") is not False
+                or manifest.get("editor_source_section_topology_havok_adjacency_verified") is not False
+                or manifest.get("editor_source_section_topology_area_is_triangle_sum") is not True
                 or manifest.get("editor_matlib_python_worker_invocation_verified") is not True
                 or manifest.get("editor_matlib_shader_stage_semantics_verified") is not False
                 or manifest.get("editor_polygon_surface_source_diffuse_assignment_preview") is not True
