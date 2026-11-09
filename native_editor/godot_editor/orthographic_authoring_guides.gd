@@ -303,13 +303,22 @@ static func gizmo_view_normal(mode: String) -> Vector3:
 
 
 static func gizmo_axes(mode: String, tool: String) -> Array[Vector3]:
+    # Build the typed result explicitly. A ternary expression containing an
+    # untyped array literal is inferred as Array and cannot satisfy the
+    # Array[Vector3] return contract on Godot 4.3.
+    var result: Array[Vector3] = []
     if tool not in ["move", "rotate", "scale"]:
-        return []
+        return result
     if mode == PERSPECTIVE:
-        return [Vector3.RIGHT, Vector3.UP, Vector3.BACK]
+        result.append(Vector3.RIGHT)
+        result.append(Vector3.UP)
+        result.append(Vector3.BACK)
+        return result
     if tool == "rotate":
         var normal := gizmo_view_normal(mode)
-        return [] if normal == Vector3.ZERO else [normal]
+        if normal != Vector3.ZERO:
+            result.append(normal)
+        return result
     return gizmo_plane_axes(mode)
 
 
