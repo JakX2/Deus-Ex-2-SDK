@@ -9017,8 +9017,8 @@ func _native_export_finished(code: int, output: String) -> void:
 func _validated_draft_workspace(value: Variant) -> Variant:
     if typeof(value) != TYPE_DICTIONARY:
         return null
-    var legacy := value.size() == 3
-    var extended := value.size() == 6
+    var legacy: bool = value.size() == 3
+    var extended: bool = value.size() == 6
     if (not legacy and not extended) or not value.has("view_mode") or not value.has("grid_step") or not value.has("grid_enabled"):
         return null
     if typeof(value["view_mode"]) != TYPE_STRING or not OrthoGuides.valid_mode(value["view_mode"]):
@@ -9413,7 +9413,7 @@ func _refresh_ortho_grid() -> void:
         var mode := OrthoGuides.mode_for_view_id(view_id)
         var state: Dictionary = view_states.get(view_id, {})
         var target := OrthoGuides.target_from_state(state)
-        var show_grid := (
+        var show_grid: bool = (
             ortho_grid_enabled and mode != OrthoGuides.PERSPECTIVE
             and (view_layout == "quad" or view_id == active_view_id))
         node.visible = show_grid
