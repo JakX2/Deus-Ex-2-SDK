@@ -100,12 +100,16 @@ def build_catalog_from_inventory(
         texture = textures.get(key)
         if texture is None:
             continue
+        usage_code = int(texture.usage)
+        if not 0 <= usage_code <= 0xFFFFFFFF:
+            raise ValueError("Invalid texture usage code")
         record = {
             "name": texture.name,
             "format": texture.fmt,
             "width": int(texture.width),
             "height": int(texture.height),
-            "usage": dx2textures.USAGE.get(texture.usage, str(texture.usage)),
+            "usage_code": usage_code,
+            "usage": dx2textures.USAGE.get(usage_code, str(usage_code)),
             "detail": int(texture.detail),
             "source_bundle": texture.source,
             "preview_path": "",

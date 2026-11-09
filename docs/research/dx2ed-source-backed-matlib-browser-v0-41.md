@@ -18,7 +18,7 @@ written.
 ## Browser behavior
 
 - Search material names, source labels, bundle names and raw stage names.
-- Filter materials by resolved diffuse stage, missing diffuse, or unresolved
+- Filter materials by resolved slot-0 candidate, missing diffuse, or unresolved
   stage references.
 - Inspect all nine stage slots with a decoded thumbnail when one is available.
 - View format, dimensions, usage, source bundle, flags, stage mask, category
@@ -55,3 +55,8 @@ stage filtering, renders nine slot cards, verifies the thumbnail digest, and
 rejects path traversal while retaining the last valid catalog. CI also runs
 the existing 910+ Python fixture suite, source-only bundle, portable SDK
 checks and bundled Windows Godot 4.3 executable self-test on the exact head.
+
+
+## Later clarification in v0.44
+
+The parser's existing `diffuse` convenience field points to ordered stage slot 0, but this alone does not independently prove the runtime shader meaning of that slot. DX2Ed v0.44 therefore labels it as a legacy slot-0 preview candidate and keeps the native material writer disabled.

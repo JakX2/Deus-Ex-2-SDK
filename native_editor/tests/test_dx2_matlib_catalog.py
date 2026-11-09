@@ -78,6 +78,8 @@ class MatLibCatalogTests(unittest.TestCase):
             self.assertTrue(stages[0]["resolved"])
             self.assertFalse(stages[1]["resolved"])
             texture = stages[0]["texture"]
+            self.assertEqual(texture["usage_code"], 0)
+            self.assertEqual(texture["usage"], "diffuse")
             preview = Path(temporary) / texture["preview_path"]
             self.assertTrue(preview.is_file())
             content = preview.read_bytes()
@@ -99,6 +101,52 @@ class MatLibCatalogTests(unittest.TestCase):
             texture = catalog["materials"][0]["stages"][0]["texture"]
             self.assertEqual(texture["preview_path"], "")
             self.assertEqual(texture["preview_omitted_reason"], "preview_count_limit")
+
+    def test_unknown_texture_usage_code_is_preserved_without_guessing(self):
+        unknown = Texture(
+            name="T_UNKNOWN_USAGE",
+            fmt="BGRA8",
+            width=2,
+            height=2,
+            usage=99,
+            mipmaps=[(2, 2, bytes([0, 0, 0, 255] * 4))],
+            source="synthetic.ibd",
+        )
+        stages = ["T_UNKNOWN_USAGE"] + [""] * 8
+        with tempfile.TemporaryDirectory() as temporary:
+            catalog = build_catalog_from_inventory(
+                {"t_unknown_usage": unknown},
+                {"unknown": material_record("M_UNKNOWN", stages)},
+                self.duplicates,
+                self.skipped,
+                self.sources,
+                Path(temporary) / "unknown_previews",
+            )
+            texture = catalog["materials"][0]["stages"][0]["texture"]
+            self.assertEqual(texture["usage_code"], 99)
+            self.assertEqual(texture["usage"], "99")
+
+    def test_out_of_range_texture_usage_code_is_rejected(self):
+        invalid = Texture(
+            name="T_INVALID_USAGE",
+            fmt="BGRA8",
+            width=2,
+            height=2,
+            usage=-1,
+            mipmaps=[(2, 2, bytes([0, 0, 0, 255] * 4))],
+            source="synthetic.ibd",
+        )
+        stages = ["T_INVALID_USAGE"] + [""] * 8
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(ValueError, "usage code"):
+                build_catalog_from_inventory(
+                    {"t_invalid_usage": invalid},
+                    {"invalid": material_record("M_INVALID", stages)},
+                    self.duplicates,
+                    self.skipped,
+                    self.sources,
+                    Path(temporary) / "invalid_usage_previews",
+                )
 
     def test_invalid_stage_shape_is_rejected_before_catalog_creation(self):
         invalid = {"bad": material_record("M_BAD", ["T_ONLY"])}
