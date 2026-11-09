@@ -211,6 +211,7 @@ func _run() -> void:
     if MatLibBrowser.load_assignment_texture(assignment) != null:
         _fail("Tampered source thumbnail passed its recorded SHA-256.")
         return
+    editor.polygon_source_texture_cache.clear()
     editor._set_brush_spec(
         "DraftProp_42", editor.draft_brush_specs["DraftProp_42"])
     var fallback_mesh := editor.draft_prop_copies["DraftProp_42"].mesh as ArrayMesh
