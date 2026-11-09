@@ -18,6 +18,7 @@ class SourceSectionTopologyContractTests(unittest.TestCase):
         self.assertIn('"mopp_leaf_subset_only": true', source)
         self.assertIn('"area_measure": "sum_of_mopp_leaf_triangle_areas"', source)
         self.assertIn('"native_bsp_surface_verified": false', source)
+        self.assertIn('"source_edge_classification_mopp_leaf_subset": true', source)
 
     def test_user_facing_panel_discloses_subset_and_native_limits(self) -> None:
         source = (ROOT / "native_editor/godot_editor/source_section_topology_panel.gd").read_text("utf-8")
