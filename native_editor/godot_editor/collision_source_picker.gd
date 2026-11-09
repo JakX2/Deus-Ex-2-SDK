@@ -590,7 +590,9 @@ func section_topology_details(original_id: int,
     var cross_section_mopp_shared_edge_length_level_units := 0.0
     var neighbor_records: Dictionary = {}
 
-    for edge_key in edge_records.keys():
+    var section_edge_keys: Array = edge_records.keys()
+    section_edge_keys.sort()
+    for edge_key in section_edge_keys:
         var edge_record: Dictionary = edge_records[edge_key]
         var local_ids: Array = edge_record["triangle_ids"]
         var local_count := local_ids.size()
