@@ -161,18 +161,18 @@ write native BSP material indices, or enable CSG/collision/lightmap cooking.
 Select one editor-only **Polygon** brush and choose its target slot in the
 Inspector (**Top cap**, **Bottom cap**, or **Side walls**). Open **Materials**,
 import your own IBD/Maps ZIP, select a material with a verified resolved
-diffuse thumbnail, then press **Apply diffuse to selected Polygon slot**.
+slot-0 texture preview (legacy diffuse candidate), then press **Apply slot-0 preview candidate to selected Polygon brush(es)**.
 DX2Ed binds that decoded thumbnail to only the currently selected private
 surface. The existing preset still controls preview tint/roughness and the
 surface's U/V scale and offset remain independently editable.
 
 Each assignment is one **Undo/Redo** transaction. The private JSON draft stores
 the catalog path and SHA-256, catalog/source identity, material record fields,
-diffuse stage name, texture metadata, relative thumbnail path and thumbnail
+slot-0 resource name, texture metadata, relative thumbnail path and thumbnail
 SHA-256. Save/Load revalidates the catalog record and thumbnail before restoring
 the texture. If the private catalog or thumbnail is missing or changed, the
 assignment metadata is retained but the viewport safely falls back to the
-procedural checker; use **Clear source diffuse** to remove the assignment.
+procedural checker; use the Inspector's clear control to remove the preview assignment.
 
 **Scope:** this is a source-backed *preview* binding for editor-created
 Polygon surfaces. It does not interpret original DX2 shader stages, edit
