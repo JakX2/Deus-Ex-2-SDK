@@ -43,17 +43,18 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/dx2ed-godot
           base='https://github.com/godotengine/godot-builds/releases/download/4.3-stable'
-          curl -fL --retry 3 --retry-delay 3 \
+          # Retry transient release-CDN 504s; the official SHA-512 verification below remains mandatory.
+          curl -fL --retry 8 --retry-all-errors --retry-delay 10 --retry-max-time 600 --connect-timeout 30 --max-time 900 \
             -o /tmp/dx2ed-godot/Godot_v4.3-stable_win64.exe.zip \
             "$base/Godot_v4.3-stable_win64.exe.zip"
-          curl -fL --retry 3 --retry-delay 3 \
+          curl -fL --retry 8 --retry-all-errors --retry-delay 10 --retry-max-time 600 --connect-timeout 30 --max-time 900 \
             -o /tmp/dx2ed-godot/SHA512-SUMS.txt \
             "$base/SHA512-SUMS.txt"
           grep -F 'Godot_v4.3-stable_win64.exe.zip' /tmp/dx2ed-godot/SHA512-SUMS.txt \
             > /tmp/dx2ed-godot/Godot_required.sha512
           test "$(wc -l < /tmp/dx2ed-godot/Godot_required.sha512)" -eq 1
           (cd /tmp/dx2ed-godot && sha512sum -c Godot_required.sha512)
-          curl -fL --retry 3 --retry-delay 3 \
+          curl -fL --retry 8 --retry-all-errors --retry-delay 10 --retry-max-time 600 --connect-timeout 30 --max-time 900 \
             -o /tmp/dx2ed-godot/GODOT_LICENSE.txt \
             'https://raw.githubusercontent.com/godotengine/godot/4.3-stable/LICENSE.txt'
       - name: Assemble launchable ZIP with generated synthetic cubes
