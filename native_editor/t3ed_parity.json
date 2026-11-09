@@ -211,6 +211,14 @@
       "phase": 1,
       "evidence": "DX2Ed v0.49 adds exact-weld MOPP-leaf adjacent-section navigation using a deterministic representative original triangle ID, plus a translucent editor-only fill overlay for the selected MOPP terminal-leaf subset. Preview is capped atomically at 8,192 triangles and uses a display-only normal offset. This is not complete Flesh/BSP topology, Havok adjacency, native collision or writable geometry.",
       "next_step": "Authenticate complete original BSP surface polygons and native surface/material identities; compare source-section fills against independently rendered original maps."
+    },
+    {
+      "id": "source_section_edge_overlay",
+      "title": "Source-section exact-weld edge topology overlay",
+      "status": "partial",
+      "phase": 1,
+      "evidence": "DX2Ed v0.50 adds bounded raw exact-original-float32-weld edge records for the authenticated MOPP terminal-leaf subset, a transient four-class viewport line overlay, and copyable JSON. Classifications are subset-open, within-section shared, cross-section MOPP-shared, and subset non-manifold; raw source edge class codes remain uninterpreted.",
+      "next_step": "Authenticate complete original Flesh/BSP polygons and native edge/material identities; compare against independently rendered source maps and retail runtime behavior."
     }
   ]
 }

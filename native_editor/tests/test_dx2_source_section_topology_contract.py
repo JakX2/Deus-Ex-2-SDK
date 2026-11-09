@@ -68,5 +68,46 @@ class SourceSectionTopologyContractTests(unittest.TestCase):
         self.assertIn('"editor_source_section_neighbor_navigation_native_surface_verified": False', builder)
 
 
+    def test_edge_overlay_godot_smoke_covers_tampered_weld_refusal(self) -> None:
+        smoke = (ROOT / "native_editor/godot_editor/tests/smoke_source_section_topology.gd").read_text("utf-8")
+        self.assertIn("EdgeOverlay.build_marker", smoke)
+        self.assertIn("source_weld_ids", smoke)
+        self.assertIn("panel.edge_overlay_toggled", smoke)
+
+
+    def test_picker_exports_bounded_exact_weld_edge_records(self) -> None:
+        source = (ROOT / "native_editor/godot_editor/collision_source_picker.gd").read_text("utf-8")
+        self.assertIn("MAX_SECTION_TOPOLOGY_EDGES := 24576", source)
+        self.assertIn("edge_report_uses_original_float32_weld_ids", source)
+        self.assertIn("source_weld_ids", source)
+        self.assertIn("cross_section_neighbor_count", source)
+        self.assertIn("edge_classification_counts", source)
+
+    def test_edge_overlay_helper_revalidates_source_edge_identity(self) -> None:
+        source = (ROOT / "native_editor/godot_editor/source_section_edge_overlay.gd").read_text("utf-8")
+        self.assertIn("MAX_EDGE_COUNT := 24576", source)
+        self.assertIn("original_float32_weld_ids", source)
+        self.assertIn("distance_squared_to(b) <= 1e-12", source)
+        self.assertIn("vertex_color_use_as_albedo = true", source)
+        self.assertIn("native_bsp_surface_verified", source)
+
+    def test_topology_panel_and_main_wire_transient_edge_overlay(self) -> None:
+        panel = (ROOT / "native_editor/godot_editor/source_section_topology_panel.gd").read_text("utf-8")
+        main = (ROOT / "native_editor/godot_editor/main.gd").read_text("utf-8")
+        self.assertIn("Show exact-weld edge overlay", panel)
+        self.assertIn("Copy edge report JSON", panel)
+        self.assertIn("signal edge_overlay_toggled", panel)
+        self.assertIn("_toggle_source_section_edge_overlay", main)
+        self.assertIn("source_collision_section_edge_marker.queue_free()", main)
+
+    def test_package_and_ci_require_edge_overlay_but_not_native_writer(self) -> None:
+        builder = (ROOT / "tools/build_dx2ed_windows_prototype.py").read_text("utf-8")
+        doctor = (ROOT / "prototype/prototype_doctor.py").read_text("utf-8")
+        workflow = (ROOT / ".github/workflows/native-dx2ed.yml").read_text("utf-8")
+        self.assertIn("source_section_edge_overlay.gd", builder)
+        self.assertIn("editor_source_section_edge_overlay_native_writer", builder)
+        self.assertIn("editor_source_section_edge_overlay_native_surface_verified", doctor)
+        self.assertIn("Compile exact-weld source-section edge overlay helper", workflow)
+
 if __name__ == "__main__":
     unittest.main()

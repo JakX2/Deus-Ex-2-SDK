@@ -21,6 +21,7 @@ const SourceSurfacePanel = preload("res://source_surface_panel.gd")
 const SourceSurfaceMatLibCrossref = preload("res://source_surface_matlib_crossref.gd")
 const SourceSectionTopologyPanel = preload("res://source_section_topology_panel.gd")
 const SourceSectionFillPreview = preload("res://source_section_fill_preview.gd")
+const SourceSectionEdgeOverlay = preload("res://source_section_edge_overlay.gd")
 const SourceEdgeTransitionPanel = preload("res://source_edge_transition_panel.gd")
 ## DX2Ed native viewer: a READ-ONLY Godot 4 GLB + GMP actor inspector.
 ## Can open an original DX2 .gmp using the bundled read-only Python backend.
@@ -76,6 +77,7 @@ var source_collision_pending_sha := ""
 var source_collision_marker: MeshInstance3D
 var source_collision_section_marker: MeshInstance3D
 var source_collision_section_fill_marker: MeshInstance3D
+var source_collision_section_edge_marker: MeshInstance3D
 var source_collision_section_actions: HFlowContainer
 var source_collision_section_toggle: CheckBox
 var source_collision_section_fill_toggle: CheckBox
@@ -1383,6 +1385,7 @@ func _make_ui() -> void:
     inspector_pane.add_child(source_section_topology_panel)
     source_section_topology_panel.initialize()
     source_section_topology_panel.triangle_requested.connect(_navigate_source_collision_triangle)
+    source_section_topology_panel.edge_overlay_toggled.connect(_toggle_source_section_edge_overlay)
     source_surface_matlib_crossref = SourceSurfaceMatLibCrossref.new()
     source_surface_matlib_crossref.name = "SourceSurfaceMatLibCrossref"
     inspector_pane.add_child(source_surface_matlib_crossref)
@@ -9684,6 +9687,9 @@ func _clear_source_collision_highlights() -> void:
     if is_instance_valid(source_collision_section_fill_marker):
         source_collision_section_fill_marker.queue_free()
     source_collision_section_fill_marker = null
+    if is_instance_valid(source_collision_section_edge_marker):
+        source_collision_section_edge_marker.queue_free()
+    source_collision_section_edge_marker = null
 
 
 func _toggle_source_collision_inspection() -> void:
@@ -10009,6 +10015,40 @@ func _toggle_source_collision_section_fill(enabled: bool) -> void:
         or not source_collision_picker.ready):
         return
     _draw_source_collision_section_fill()
+
+
+func _toggle_source_section_edge_overlay(enabled: bool) -> void:
+    if is_instance_valid(source_collision_section_edge_marker):
+        source_collision_section_edge_marker.queue_free()
+    source_collision_section_edge_marker = null
+    if (not enabled or not source_collision_mode or source_collision_last_hit.is_empty()
+        or not source_collision_picker.ready or world_root == null):
+        return
+    var triangle_id := int(source_collision_last_hit.get("original_level_triangle_id", -1))
+    var details: Dictionary = source_collision_picker.section_topology_details(triangle_id)
+    if (details.is_empty() or details.get("analysis_skipped_for_size", true)
+        or details.get("analysis_skipped_for_edge_incidence", false)
+        or not details.has("edge_records")):
+        source_collision_details.text += "\nExact-weld edge overlay refused: bounded source topology is unavailable."
+        return
+    var overlay: Dictionary = SourceSectionEdgeOverlay.build_marker(details)
+    if overlay.is_empty():
+        source_collision_details.text += "\nExact-weld edge overlay refused: edge provenance or geometry failed validation."
+        return
+    var marker_value: Variant = overlay.get("marker", null)
+    if not (marker_value is MeshInstance3D) or marker_value.mesh == null:
+        source_collision_details.text += "\nExact-weld edge overlay refused: viewport mesh construction failed."
+        return
+    source_collision_section_edge_marker = marker_value
+    world_root.add_child(source_collision_section_edge_marker)
+    var counts: Dictionary = overlay.get("edge_classification_counts", {})
+    status_label.text = "MOPP-subset edge overlay | %d edges | open %d | within-section %d | cross-section %d | non-manifold %d. Read-only." % [
+        int(overlay.get("edge_count", 0)),
+        int(counts.get("subset_open_boundary", 0)),
+        int(counts.get("within_section_shared", 0)),
+        int(counts.get("cross_section_mopp_shared", 0)),
+        int(counts.get("subset_nonmanifold", 0)),
+    ]
 
 
 func _navigate_source_collision_triangle(original_id: int) -> void:
