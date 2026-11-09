@@ -267,10 +267,8 @@ func _validate_catalog(raw: Variant, path: String) -> bool:
                 var texture: Variant = stage.get("texture", null)
                 if typeof(texture) != TYPE_DICTIONARY:
                     return false
-                if texture.has("usage_code"):
-                    var usage_code: Variant = texture.get("usage_code", null)
-                    if typeof(usage_code) != TYPE_INT or int(usage_code) < 0 or int(usage_code) > 0xFFFFFFFF:
-                        return false
+                if texture.has("usage_code") and _usage_code_value(texture.get("usage_code", null)) < 0:
+                    return false
                 if texture.has("usage"):
                     var usage_label: Variant = texture.get("usage", null)
                     if typeof(usage_label) != TYPE_STRING or str(usage_label).length() > 64:
@@ -420,6 +418,20 @@ func _material_selected(index: int) -> void:
     _refresh_apply_button()
 
 
+static func _usage_code_value(raw: Variant) -> int:
+    if typeof(raw) == TYPE_INT:
+        var integer_value := int(raw)
+        return integer_value if integer_value >= 0 and integer_value <= 0xFFFFFFFF else -1
+    if typeof(raw) == TYPE_FLOAT:
+        var numeric_value := float(raw)
+        if (is_nan(numeric_value) or is_inf(numeric_value)
+            or numeric_value < 0.0 or numeric_value > 4294967295.0
+            or floor(numeric_value) != numeric_value):
+            return -1
+        return int(numeric_value)
+    return -1
+
+
 func _material_has_usage_code(material: Dictionary, usage_code: int) -> bool:
     var stages: Variant = material.get("stages", null)
     if typeof(stages) != TYPE_ARRAY or stages.size() != 9:
@@ -430,8 +442,7 @@ func _material_has_usage_code(material: Dictionary, usage_code: int) -> bool:
         var texture: Variant = stage.get("texture", null)
         if typeof(texture) != TYPE_DICTIONARY:
             continue
-        var raw_code: Variant = texture.get("usage_code", null)
-        if typeof(raw_code) == TYPE_INT and int(raw_code) == usage_code:
+        if _usage_code_value(texture.get("usage_code", null)) == usage_code:
             return true
     return false
 
@@ -538,7 +549,7 @@ func _add_stage_card(stage: Dictionary) -> void:
     if bool(stage.get("resolved", false)):
         var texture: Dictionary = stage.get("texture", {})
         var usage_code_text := (
-            str(texture.get("usage_code", "?"))
+            str(_usage_code_value(texture.get("usage_code", null)))
             if texture.has("usage_code") else "unknown"
         )
         detail.text = "%s · %s×%s\nUsage code %s · parser label: %s" % [
