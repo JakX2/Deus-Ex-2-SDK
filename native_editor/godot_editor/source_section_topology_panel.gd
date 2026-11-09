@@ -129,7 +129,7 @@ func _analyze() -> void:
     ])
     var class_counts: Array = result.get("source_edge_class_counts", [])
     if class_counts.size() == 4:
-        lines.append("Original full-Level edge classes on touched edges:")
+        lines.append("MOPP-leaf source edge classes on touched edges:")
         for index in range(4):
             lines.append("  %s: %d" % [EDGE_NAMES[index], int(class_counts[index])])
     lines.append("Adjacent MOPP-linked render sections: %d" % int(result["neighbor_section_count"]))
