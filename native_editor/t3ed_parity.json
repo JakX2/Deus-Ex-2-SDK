@@ -201,7 +201,7 @@
       "title": "Original source surface topology Inspector",
       "status": "partial",
       "phase": 1,
-      "evidence": "DX2Ed v0.48 adds bounded read-only analysis of the MOPP terminal-leaf subset for a selected original Flesh render-section tuple: exact source-weld connectivity, connected components, Level-unit area/bounds/centroid, original Level edge-class counts, perimeter and adjacent MOPP-linked sections. It is not a complete render/BSP surface or Havok adjacency graph; oversized sections skip atomically.",
+      "evidence": "DX2Ed v0.48 adds bounded read-only analysis of the MOPP terminal-leaf subset for a selected original Flesh render-section tuple: exact source-weld connectivity, connected components, summed per-triangle Level-unit area/bounds/centroid, original Level edge-class counts, perimeter and adjacent MOPP-linked sections. It is not a complete render/BSP surface or Havok adjacency graph; oversized sections skip atomically.",
       "next_step": "Authenticate complete BSP surface polygons and native material indices; validate against independently rendered geometry and the retail runtime."
     }
   ]
