@@ -448,6 +448,71 @@ func section_details(original_id: int, preview_cap: int = 1024) -> Dictionary:
         "preview_triangle_cap": preview_cap,
         "not_a_havok_contact_or_native_surface": true,
     }
+const MAX_SECTION_SURFACE_PREVIEW_TRIANGLES := 8192
+
+# Exact source-section triangles for an editor-only viewport overlay. This is
+# still only the authenticated MOPP terminal-leaf subset, never a full BSP face.
+func section_surface_preview_details(original_id: int,
+        preview_cap: int = MAX_SECTION_SURFACE_PREVIEW_TRIANGLES) -> Dictionary:
+    if (not ready or not face_index_by_id.has(original_id)
+        or preview_cap < 1 or preview_cap > MAX_SECTION_SURFACE_PREVIEW_TRIANGLES):
+        return {}
+    var selected_face: Dictionary = faces[int(face_index_by_id[original_id])]
+    var section_key := str(selected_face["source_section_key"])
+    var triangle_ids: Array = section_triangle_ids.get(section_key, [])
+    var selected_index := triangle_ids.find(original_id)
+    if triangle_ids.is_empty() or selected_index < 0:
+        return {}
+    var result := {
+        "schema": "DX2Ed-source-section-fill-preview-v1",
+        "source_map": source_map,
+        "source_sha256": source_sha256,
+        "source_section_key": section_key,
+        "source_block_id": int(selected_face["source_block_id"]),
+        "render_block_ordinal": int(selected_face["render_block_ordinal"]),
+        "render_section_ordinal": int(selected_face["render_section_ordinal"]),
+        "render_material_name": materials[int(selected_face["render_material_id"])],
+        "selected_triangle_id": original_id,
+        "selected_triangle_index_in_section": selected_index,
+        "triangle_count": triangle_ids.size(),
+        "preview_cap": preview_cap,
+        "mopp_leaf_subset_only": true,
+        "read_only": true,
+        "native_map_written": false,
+        "native_bsp_surface_verified": false,
+        "full_render_section_geometry_verified": false,
+    }
+    if triangle_ids.size() > preview_cap:
+        result["preview_skipped_for_size"] = true
+        return result
+
+    var triangle_vertices := PackedVector3Array()
+    for raw_tid in triangle_ids:
+        var tid := int(raw_tid)
+        if not face_index_by_id.has(tid):
+            return {}
+        var source_face: Dictionary = faces[int(face_index_by_id[tid])]
+        if str(source_face.get("source_section_key", "")) != section_key:
+            return {}
+        var corners: Array = source_face.get("vertex_indices", [])
+        if corners.size() != 3:
+            return {}
+        for raw_index in corners:
+            var vertex_index := int(raw_index)
+            if vertex_index < 0 or vertex_index >= vertices.size():
+                return {}
+            var point: Vector3 = vertices[vertex_index]
+            if not point.is_finite():
+                return {}
+            triangle_vertices.append(point)
+    if triangle_vertices.size() != triangle_ids.size() * 3:
+        return {}
+    result["preview_skipped_for_size"] = false
+    result["preview_vertex_count"] = triangle_vertices.size()
+    result["triangle_vertices_godot"] = triangle_vertices
+    return result
+
+
 const MAX_SECTION_TOPOLOGY_TRIANGLES := 8192
 const MAX_SECTION_EDGE_INCIDENCE := 1024
 const MAX_SECTION_TOPOLOGY_NEIGHBORS := 64
@@ -643,8 +708,13 @@ func section_topology_details(original_id: int,
                 "render_block_ordinal": int(other_face["render_block_ordinal"]),
                 "render_section_ordinal": int(other_face["render_section_ordinal"]),
                 "render_material_name": materials[int(other_face["render_material_id"])],
+                "representative_triangle_id": other_id,
                 "shared_edge_count": 0,
             })
+            # Lowest observed MOPP triangle ID is a deterministic navigation
+            # target, not a claim that this subset is a complete render surface.
+            neighbor["representative_triangle_id"] = mini(
+                int(neighbor.get("representative_triangle_id", other_id)), other_id)
             neighbor["shared_edge_count"] = int(neighbor["shared_edge_count"]) + 1
             neighbor_records[other_key] = neighbor
 
