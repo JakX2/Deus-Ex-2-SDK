@@ -64,3 +64,26 @@ The modern T3SDK launcher archive is **a separate, third-party codebase**, not I
 Use the parity tracker in code review and keep its `missing`, `partial`, `verified` labels conservative. Do not equate a working preview with a working mod. Next engineering step is the DX2 IBD **Asset Browser**, followed by typed actor properties. Each cross-over feature requires its own DX2 format tests, then Windows/Godot UI tests and in-game validation.
 
 External corroboration: T3Ed is a derivative of UnrealEd used to make Thief 3 fan missions, but its edited source and cooked outputs differ. See https://worthplaying.com/article/2005/2/23/news/22704-thief-deadly-shadows-game-editor-available-now/ and https://github.com/Veradictus/Thief3-Decomp.
+
+
+## v0.47: source render-section → MatLib name cross-reference
+
+The original source collision picker already preserves a source MOPP-linked
+Level triangle ID and its validated Flesh render block/section tuple, along
+with the section's observed render-material name. DX2Ed v0.47 carries that
+evidence into the Inspector and correlates the name with a user-imported
+read-only MatLib catalog.
+
+The panel distinguishes exact case-sensitive matches, case-insensitive-only
+candidates, multiple candidates, and no match in the imported catalog. A
+candidate exposes its source bundle, raw category/flags/stage mask, nine
+ordered stage references and a hash-checked slot-0 texture thumbnail. The
+source GMP basename/SHA and Level triangle/block/section IDs remain visible.
+
+This is deliberately **not** called a native material binding. The join key is
+the render-section name, not an independently decoded native material index.
+The MatLib inventory deduplicates case-folded names and reports only a
+catalog-wide duplicate count, so source-level uniqueness cannot be inferred.
+Texture-stage semantics and Havok physical materials remain unverified, and
+the panel has no writer. This adds a useful T3Ed-like surface inspection step
+without crossing the DX2 native-format evidence boundary.
