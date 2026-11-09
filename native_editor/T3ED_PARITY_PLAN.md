@@ -167,3 +167,37 @@ authority remains the authenticated MOPP terminal-leaf subset. It does not
 establish native BSP vertex identity, complete render-section vertices,
 Havok adjacency, physical materials, or a writable map. Native map writers
 remain disabled.
+
+## v0.53: independent quad viewport cameras and saved workspace
+
+DX2Ed v0.53 adds a Single / Quad (2x2) viewport layout. The quad shows
+Perspective, Top (XZ), Front (XY) and Side (ZY) simultaneously. Each pane owns
+a separate Godot SubViewport and Camera3D, while all four viewports share the
+same editor-only World3D scene. Camera target, zoom distance, yaw and pitch are
+independent per view; hovering a pane routes selection, gizmos, polygon vertex
+dragging and source-topology picking through that pane's camera and viewport
+dimensions. Keys 1-4 jump to a canonical view and key 5 toggles Single / Quad.
+
+The planar authoring grid is also isolated per viewport using separate
+visibility layers and matching camera cull masks. This prevents the Top grid
+from appearing in Front or Side, even though all panes share one preview
+world. Hidden panes stop their render-target updates in Single mode to avoid
+wasting four render passes.
+
+Private prop-draft workspace metadata now records the layout, active view and
+all four bounded camera states. Legacy v0.52 three-field workspace records
+remain readable and migrate to a safe default camera set. Quad records require
+exactly four view states with finite, bounded targets, distance, yaw and pitch;
+malformed or non-finite camera state is rejected before current editor changes
+are cleared. The state is still UI-only JSON metadata and never enters GMP,
+IBD, BSP, MOPP, collision, lighting or gameplay serialization.
+
+The T3SDK archive inventory includes separate viewer-state, map-viewer and
+picking scripts, which supports treating viewport state and picking as
+distinct editor concerns. DX2Ed's implementation is original Godot code;
+no T3SDK source or binary was copied. The archive inventory is not evidence
+that Thief 3 and DX2 share native geometry formats.
+
+The four cameras render the same preview scene and read-only source overlays.
+They do not establish native BSP topology, a playable native level, or
+independent scene/world contents per pane.

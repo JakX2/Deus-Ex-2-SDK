@@ -31,6 +31,17 @@ const SourceEdgeTransitionPanel = preload("res://source_edge_transition_panel.gd
 
 var world_view: SubViewport
 var view_container: SubViewportContainer
+var view_grid: GridContainer
+var view_layout_select: OptionButton
+var view_layout := "single"
+var active_view_id := "perspective"
+var view_slots: Dictionary = {}
+var view_labels: Dictionary = {}
+var view_containers: Dictionary = {}
+var world_views: Dictionary = {}
+var cameras_by_view: Dictionary = {}
+var ortho_grid_nodes: Dictionary = {}
+var view_states: Dictionary = {}
 var world_root: Node3D
 var scene_root: Node3D
 var camera: Camera3D
@@ -574,12 +585,20 @@ func _make_ui() -> void:
     # T3Ed-style planar authoring views; editor preview ONLY.
     editor_view_mode_select = OptionButton.new()
     editor_view_mode_select.tooltip_text = (
-        "Perspective / top XZ / front XY / side ZY (keys 1-4 over viewport). "
-        + "Views never change original camera or DX2 geometry.")
+        "Choose the active Perspective / Top / Front / Side camera (keys 1-4). "
+        + "In Quad, hover a pane to activate its independent camera.")
     for mode in OrthoGuides.MODES:
         editor_view_mode_select.add_item(str(mode))
     editor_view_mode_select.item_selected.connect(_view_mode_item_selected)
     toolbar.add_child(editor_view_mode_select)
+    view_layout_select = OptionButton.new()
+    view_layout_select.tooltip_text = (
+        "Single viewport or T3Ed-style 2x2 Perspective / Top / Front / Side views. "
+        + "Each pane has its own camera and private workspace state. Key 5 toggles.")
+    view_layout_select.add_item("Single", 0)
+    view_layout_select.add_item("Quad (2x2)", 1)
+    view_layout_select.item_selected.connect(_view_layout_item_selected)
+    toolbar.add_child(view_layout_select)
     ortho_grid_toggle = CheckBox.new()
     ortho_grid_toggle.text = "Ortho grid"
     ortho_grid_toggle.button_pressed = true
@@ -1350,11 +1369,34 @@ func _make_ui() -> void:
     var scene_label := Label.new()
     scene_label.text = "Scene  |  Godot preview, read-only source assets"
     scene_pane.add_child(scene_label)
+    view_grid = GridContainer.new()
+    view_grid.name = "DX2Ed_ViewportGrid"
+    view_grid.columns = 1
+    view_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    view_grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    scene_pane.add_child(view_grid)
+    var perspective_slot := Control.new()
+    perspective_slot.name = "DX2Ed_ViewSlot_Perspective"
+    perspective_slot.custom_minimum_size = Vector2(200, 180)
+    perspective_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    perspective_slot.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    view_grid.add_child(perspective_slot)
+    view_slots["perspective"] = perspective_slot
     view_container = SubViewportContainer.new()
+    view_container.name = "DX2Ed_SubViewport_Perspective"
     view_container.stretch = true
+    view_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     view_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    view_container.custom_minimum_size = Vector2(400, 360)
-    scene_pane.add_child(view_container)
+    view_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    perspective_slot.add_child(view_container)
+    view_containers["perspective"] = view_container
+    var perspective_label := Label.new()
+    perspective_label.text = OrthoGuides.PERSPECTIVE
+    perspective_label.position = Vector2(8, 8)
+    perspective_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    perspective_label.z_index = 10
+    perspective_slot.add_child(perspective_label)
+    view_labels["perspective"] = perspective_label
 
     # The Inspector content can be taller than the window, especially when
     # editing actor properties. Scroll vertically instead of cutting off the
@@ -2304,31 +2346,30 @@ func _apply_semi_lit_global_tone() -> void:
 
 
 func _make_world() -> void:
+    view_states = OrthoGuides.default_view_states(
+        camera_target, orbit_distance, orbit_yaw, orbit_pitch)
     world_view = SubViewport.new()
     world_view.transparent_bg = false
     world_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+    world_view.world_3d = World3D.new()
     view_container.add_child(world_view)
+    world_views["perspective"] = world_view
     world_root = Node3D.new()
     world_root.name = "Scene"
     world_view.add_child(world_root)
     camera = Camera3D.new()
-    camera.current = true
     camera.near = 0.05
     camera.far = 100000.0
+    camera.cull_mask = 1 | OrthoGuides.grid_layer_mask("perspective")
     world_root.add_child(camera)
-    # Grid is a separate editor-only mesh, never a selectable original actor.
-    ortho_grid_node = MeshInstance3D.new()
-    ortho_grid_node.name = "DX2Ed_Planar_Authoring_Grid_EDITOR_ONLY"
-    ortho_grid_node.set_meta("editor_only", true)
-    ortho_grid_node.visible = false
-    ortho_grid_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-    var ortho_grid_material := StandardMaterial3D.new()
-    ortho_grid_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-    ortho_grid_material.vertex_color_use_as_albedo = true
-    ortho_grid_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-    ortho_grid_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-    ortho_grid_node.material_override = ortho_grid_material
-    world_root.add_child(ortho_grid_node)
+    camera.current = true
+    cameras_by_view["perspective"] = camera
+    _create_view_grid_node("perspective")
+    for view_id in OrthoGuides.VIEW_IDS:
+        if view_id != "perspective":
+            _create_secondary_view(str(view_id))
+    ortho_grid_node = ortho_grid_nodes.get(active_view_id, null)
+    _sync_view_layout_visibility()
     # Polygon handles and their footprint wire are derived editor overlays,
     # separate from imported scene meshes, hierarchy entries and Save/Load.
     polygon_vertex_handle_root = Node3D.new()
@@ -2401,6 +2442,196 @@ func _make_world() -> void:
     semi_lit_world_environment.ambient_light_energy = 1.1
     env.environment = semi_lit_world_environment
     world_root.add_child(env)
+
+
+func _create_view_grid_node(view_id: String) -> void:
+    var node := MeshInstance3D.new()
+    node.name = "DX2Ed_Planar_Authoring_Grid_" + view_id + "_EDITOR_ONLY"
+    node.set_meta("editor_only", true)
+    node.layers = OrthoGuides.grid_layer_mask(view_id)
+    node.visible = false
+    node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    var material := StandardMaterial3D.new()
+    material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    material.vertex_color_use_as_albedo = true
+    material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    node.material_override = material
+    world_root.add_child(node)
+    ortho_grid_nodes[view_id] = node
+
+
+func _create_secondary_view(view_id: String) -> void:
+    var slot := Control.new()
+    slot.name = "DX2Ed_ViewSlot_" + view_id.capitalize()
+    slot.custom_minimum_size = Vector2(200, 180)
+    slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    slot.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    view_grid.add_child(slot)
+    view_slots[view_id] = slot
+    var container := SubViewportContainer.new()
+    container.name = "DX2Ed_SubViewport_" + view_id.capitalize()
+    container.stretch = true
+    container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    slot.add_child(container)
+    view_containers[view_id] = container
+    var label := Label.new()
+    label.text = OrthoGuides.mode_for_view_id(view_id)
+    label.position = Vector2(8, 8)
+    label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    label.z_index = 10
+    slot.add_child(label)
+    view_labels[view_id] = label
+    var viewport := SubViewport.new()
+    viewport.transparent_bg = false
+    viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+    viewport.size = Vector2i(400, 360)
+    viewport.world_3d = world_view.world_3d
+    container.add_child(viewport)
+    world_views[view_id] = viewport
+    var view_camera := Camera3D.new()
+    view_camera.near = 0.05
+    view_camera.far = 100000.0
+    view_camera.cull_mask = 1 | OrthoGuides.grid_layer_mask(view_id)
+    viewport.add_child(view_camera)
+    view_camera.current = true
+    cameras_by_view[view_id] = view_camera
+    OrthoGuides.apply_view_camera(view_camera, view_id, view_states[view_id])
+    _create_view_grid_node(view_id)
+
+
+func _store_active_view_state() -> void:
+    if not cameras_by_view.has(active_view_id) or not view_states.has(active_view_id):
+        return
+    view_states[active_view_id] = OrthoGuides.make_view_state(
+        camera_target, orbit_distance, orbit_yaw, orbit_pitch)
+
+
+func _load_active_view_state() -> void:
+    var state: Variant = view_states.get(active_view_id, {})
+    if typeof(state) != TYPE_DICTIONARY:
+        return
+    camera_target = OrthoGuides.target_from_state(state)
+    orbit_distance = float(state.get("distance", 25.0))
+    orbit_yaw = float(state.get("yaw", 0.8))
+    orbit_pitch = float(state.get("pitch", 0.37))
+
+
+func _sync_view_layout_visibility() -> void:
+    if view_grid == null:
+        return
+    view_grid.columns = 2 if view_layout == "quad" else 1
+    for view_id in OrthoGuides.VIEW_IDS:
+        var slot: Control = view_slots.get(view_id, null)
+        if is_instance_valid(slot):
+            slot.visible = view_layout == "quad" or view_id == active_view_id
+        var label: Label = view_labels.get(view_id, null)
+        if is_instance_valid(label):
+            label.text = OrthoGuides.mode_for_view_id(view_id)
+            if view_id == active_view_id:
+                label.text += "  • ACTIVE"
+        var viewport: SubViewport = world_views.get(view_id, null)
+        if is_instance_valid(viewport):
+            viewport.render_target_update_mode = (
+                SubViewport.UPDATE_ALWAYS if slot != null and slot.visible
+                else SubViewport.UPDATE_DISABLED)
+    if view_layout_select != null:
+        view_layout_select.select(1 if view_layout == "quad" else 0)
+    if editor_view_mode_select != null:
+        editor_view_mode_select.select(OrthoGuides.MODES.find(editor_view_mode))
+
+
+func _activate_view(view_id: String, preserve_current: bool = true,
+                    announce: bool = true, force: bool = false) -> void:
+    if (not OrthoGuides.VIEW_IDS.has(view_id)
+        or not view_containers.has(view_id)
+        or not world_views.has(view_id)
+        or not cameras_by_view.has(view_id)):
+        return
+    if view_id == active_view_id and camera == cameras_by_view[view_id] and not force:
+        return
+    if polygon_vertex_drag_active:
+        _finish_polygon_vertex_drag()
+    if gizmo_drag_active:
+        _finish_gizmo_drag()
+    if preserve_current:
+        _store_active_view_state()
+    _set_fly_mode(false)
+    active_view_id = view_id
+    view_container = view_containers[view_id]
+    world_view = world_views[view_id]
+    camera = cameras_by_view[view_id]
+    ortho_grid_node = ortho_grid_nodes.get(view_id, null)
+    editor_view_mode = OrthoGuides.mode_for_view_id(view_id)
+    _load_active_view_state()
+    _sync_view_layout_visibility()
+    ortho_grid_last_mode = ""
+    _update_camera()
+    _refresh_polygon_vertex_handles()
+    if announce and status_label != null:
+        status_label.text = (
+            "Active " + editor_view_mode + " camera. Independent pan/zoom state; "
+            + "preview only. No original BSP/actor changes.")
+
+
+func _activate_view_at_mouse() -> void:
+    if view_layout != "quad" or dragging or fly_looking:
+        return
+    var mouse := get_global_mouse_position()
+    for view_id in OrthoGuides.VIEW_IDS:
+        var slot: Control = view_slots.get(view_id, null)
+        if is_instance_valid(slot) and slot.visible and slot.get_global_rect().has_point(mouse):
+            if view_id != active_view_id:
+                _activate_view(view_id, true, false)
+            return
+
+
+func _set_view_layout(layout: String, preserve_current: bool = true) -> void:
+    if not OrthoGuides.valid_layout(layout):
+        return
+    if preserve_current:
+        _store_active_view_state()
+    view_layout = layout
+    _sync_view_layout_visibility()
+    _refresh_ortho_grid()
+    if status_label != null:
+        status_label.text = (
+            "Single viewport layout." if layout == "single"
+            else "Quad view: Perspective / Top / Front / Side. Hover a pane to activate its independent camera.")
+
+
+func _view_layout_item_selected(index: int) -> void:
+    _set_view_layout("quad" if index == 1 else "single")
+
+
+func _capture_draft_workspace() -> Dictionary:
+    _store_active_view_state()
+    return {
+        "view_mode": editor_view_mode,
+        "grid_step": ortho_grid_step,
+        "grid_enabled": ortho_grid_enabled,
+        "view_layout": view_layout,
+        "active_view_id": active_view_id,
+        "view_states": view_states.duplicate(true),
+    }
+
+
+func _apply_draft_workspace(workspace: Dictionary) -> void:
+    view_states = workspace["view_states"].duplicate(true)
+    view_layout = workspace["view_layout"]
+    active_view_id = workspace["active_view_id"]
+    ortho_grid_enabled = workspace["grid_enabled"]
+    if ortho_grid_toggle != null:
+        ortho_grid_toggle.set_pressed_no_signal(ortho_grid_enabled)
+    _grid_spacing_changed(workspace["grid_step"])
+    if ortho_grid_spacing_control != null:
+        ortho_grid_spacing_control.set_value_no_signal(ortho_grid_step)
+    _activate_view(active_view_id, false, false, true)
+    _sync_view_layout_visibility()
+    _refresh_ortho_grid()
+
 
 func _make_material() -> void:
     overlay_material = StandardMaterial3D.new()
@@ -8786,7 +9017,9 @@ func _native_export_finished(code: int, output: String) -> void:
 func _validated_draft_workspace(value: Variant) -> Variant:
     if typeof(value) != TYPE_DICTIONARY:
         return null
-    if value.size() != 3 or not value.has("view_mode") or not value.has("grid_step") or not value.has("grid_enabled"):
+    var legacy := value.size() == 3
+    var extended := value.size() == 6
+    if (not legacy and not extended) or not value.has("view_mode") or not value.has("grid_step") or not value.has("grid_enabled"):
         return null
     if typeof(value["view_mode"]) != TYPE_STRING or not OrthoGuides.valid_mode(value["view_mode"]):
         return null
@@ -8797,7 +9030,30 @@ func _validated_draft_workspace(value: Variant) -> Variant:
         return null
     if typeof(value["grid_enabled"]) != TYPE_BOOL:
         return null
-    return {"view_mode": value["view_mode"], "grid_step": step, "grid_enabled": value["grid_enabled"]}
+    var active_id := OrthoGuides.view_id_for_mode(value["view_mode"])
+    var layout := "single"
+    var states := OrthoGuides.default_view_states(Vector3.ZERO, 25.0, 0.8, 0.37)
+    if extended:
+        if (not value.has("view_layout") or typeof(value["view_layout"]) != TYPE_STRING
+            or not OrthoGuides.valid_layout(value["view_layout"])
+            or not value.has("active_view_id") or typeof(value["active_view_id"]) != TYPE_STRING
+            or not OrthoGuides.VIEW_IDS.has(value["active_view_id"])
+            or value["active_view_id"] != active_id
+            or not value.has("view_states")):
+            return null
+        var checked_states: Variant = OrthoGuides.validate_view_states(value["view_states"])
+        if checked_states == null:
+            return null
+        layout = value["view_layout"]
+        states = checked_states
+    return {
+        "view_mode": value["view_mode"],
+        "grid_step": step,
+        "grid_enabled": value["grid_enabled"],
+        "view_layout": layout,
+        "active_view_id": active_id,
+        "view_states": states,
+    }
 
 
 ## Transactional private JSON save. Stage and close the entire new document before
@@ -8895,8 +9151,7 @@ func _save_prop_draft() -> void:
         "copies": copies,
         "property_edits": _serialize_property_edits(),
         "selection": selected_meshes.keys().map(func(name): return str(name)),
-        "workspace": {"view_mode": editor_view_mode, "grid_step": ortho_grid_step,
-                      "grid_enabled": ortho_grid_enabled}
+        "workspace": _capture_draft_workspace()
     }
     if not _write_private_draft_transaction(path, JSON.stringify(document, "  ")):
         status_label.text = "Private draft save failed; existing draft preserved: " + path
@@ -9051,13 +9306,7 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
     _refresh_selection_inspector()
     _sync_actor_list_selection()
     if not workspace.is_empty():
-        ortho_grid_enabled = workspace["grid_enabled"]
-        if ortho_grid_toggle != null:
-            ortho_grid_toggle.set_pressed_no_signal(ortho_grid_enabled)
-        _grid_spacing_changed(workspace["grid_step"])
-        if ortho_grid_spacing_control != null:
-            ortho_grid_spacing_control.set_value_no_signal(ortho_grid_step)
-        _set_editor_view_mode(workspace["view_mode"])
+        _apply_draft_workspace(workspace)
     if not silent_if_absent:
         _record_edit("Load draft", history_before)
     _refresh_hierarchy()
@@ -9106,23 +9355,10 @@ func _view_mode_item_selected(index: int) -> void:
 
 
 func _set_editor_view_mode(mode: String) -> void:
-    if not OrthoGuides.valid_mode(mode):
+    var view_id := OrthoGuides.view_id_for_mode(mode)
+    if view_id.is_empty():
         return
-    if polygon_vertex_drag_active:
-        _finish_polygon_vertex_drag()
-    if gizmo_drag_active:
-        _finish_gizmo_drag()
-    _set_fly_mode(false)
-    editor_view_mode = mode
-    if editor_view_mode_select != null:
-        editor_view_mode_select.select(OrthoGuides.MODES.find(mode))
-    ortho_grid_last_mode = ""
-    _update_camera()
-    _refresh_polygon_vertex_handles()
-    if status_label != null:
-        status_label.text = (
-            "Editor-only " + mode + " view. Scroll to zoom, middle-drag to pan."
-            + " Ctrl-snapping uses the grid step. No original BSP/actor changes.")
+    _activate_view(view_id, true, true)
 
 
 func _snap_selected_preview_to_grid() -> void:
@@ -9168,23 +9404,22 @@ func _grid_spacing_changed(step: float) -> void:
 
 
 func _refresh_ortho_grid() -> void:
-    if ortho_grid_node == null:
+    if ortho_grid_nodes.is_empty():
         return
-    var show_grid := ortho_grid_enabled and editor_view_mode != OrthoGuides.PERSPECTIVE
-    ortho_grid_node.visible = show_grid
-    if not show_grid:
-        return
-    var center: Vector3 = OrthoGuides.grid_center(
-        editor_view_mode, camera_target, ortho_grid_step)
-    if (ortho_grid_last_mode == editor_view_mode
-        and ortho_grid_last_center == center
-        and is_equal_approx(ortho_grid_last_step, ortho_grid_step)):
-        return
-    ortho_grid_node.mesh = OrthoGuides.grid_mesh(
-        editor_view_mode, camera_target, ortho_grid_step, 24)
-    ortho_grid_last_mode = editor_view_mode
-    ortho_grid_last_center = center
-    ortho_grid_last_step = ortho_grid_step
+    for view_id in OrthoGuides.VIEW_IDS:
+        var node: MeshInstance3D = ortho_grid_nodes.get(view_id, null)
+        if not is_instance_valid(node):
+            continue
+        var mode := OrthoGuides.mode_for_view_id(view_id)
+        var state: Dictionary = view_states.get(view_id, {})
+        var target := OrthoGuides.target_from_state(state)
+        var show_grid := (
+            ortho_grid_enabled and mode != OrthoGuides.PERSPECTIVE
+            and (view_layout == "quad" or view_id == active_view_id))
+        node.visible = show_grid
+        if show_grid:
+            node.mesh = OrthoGuides.grid_mesh(mode, target, ortho_grid_step, 24)
+    ortho_grid_node = ortho_grid_nodes.get(active_view_id, null)
 
 
 func _update_camera() -> void:
@@ -9192,6 +9427,7 @@ func _update_camera() -> void:
         return
     orbit_pitch = clamp(orbit_pitch, -1.50, 1.50)
     orbit_distance = clamp(orbit_distance, 0.15, 200000.0)
+    _store_active_view_state()
     OrthoGuides.apply_camera(
         camera, editor_view_mode, camera_target,
         orbit_distance, orbit_yaw, orbit_pitch)
@@ -9502,6 +9738,8 @@ func _input(event: InputEvent) -> void:
                 _redo_edit()
                 get_viewport().set_input_as_handled()
                 return
+    if not dragging and not fly_looking:
+        _activate_view_at_mouse()
     if view_container == null or not view_container.visible:
         return
     var mouse_inside := view_container.get_global_rect().has_point(get_global_mouse_position())
@@ -9512,6 +9750,8 @@ func _input(event: InputEvent) -> void:
             elif ke.keycode == KEY_E: _set_editor_tool("rotate")
             elif ke.keycode == KEY_R: _set_editor_tool("scale")
             elif ke.keycode == KEY_F: focus_selected()
+            elif ke.keycode == KEY_5:
+                _set_view_layout("quad" if view_layout == "single" else "single")
             elif ke.keycode in [KEY_1, KEY_2, KEY_3, KEY_4]:
                 _set_editor_view_mode(
                     str(OrthoGuides.MODES[ke.keycode - KEY_1]))
