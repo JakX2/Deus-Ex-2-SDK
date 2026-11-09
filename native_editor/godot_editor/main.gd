@@ -7968,11 +7968,11 @@ func _draft_light_value_changed(value: Variant, key: String) -> void:
             status_label.text = "Shadow preview limit reached (" + str(DraftLight.MAX_SHADOW_LIGHTS) + ")."
             _refresh_draft_light_inspector()
             return
+    var history_before := _capture_edit_state()
     var node: MeshInstance3D = draft_prop_copies[name]
     if not DraftLight.apply_to_node(node, checked):
         status_label.text = "Draft light preview node is unavailable; no edit was recorded."
         return
-    var history_before := _capture_edit_state()
     draft_light_specs[name] = checked
     _record_edit("Edit " + expected_kind + " light " + key, history_before)
     _refresh_draft_light_inspector()
