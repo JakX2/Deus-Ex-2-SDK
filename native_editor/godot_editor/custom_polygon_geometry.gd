@@ -83,10 +83,11 @@ static func validate_surface_style(raw: Variant) -> Dictionary:
     return result
 
 
-static func _valid_assignment_text(value: Variant, maximum: int) -> bool:
-    return (typeof(value) == TYPE_STRING
-        and not str(value).strip_edges().is_empty()
-        and str(value).length() <= maximum)
+static func _valid_assignment_text(
+        value: Variant, maximum: int, allow_empty: bool = false) -> bool:
+    if typeof(value) != TYPE_STRING or str(value).length() > maximum:
+        return false
+    return allow_empty or not str(value).strip_edges().is_empty()
 
 
 static func _valid_sha256(value: Variant) -> bool:
@@ -118,16 +119,24 @@ static func validate_source_material_assignment(raw: Variant) -> Dictionary:
     if (not _valid_assignment_text(catalog_path, 4096)
         or not str(catalog_path).is_absolute_path()):
         return {}
+    var normalized_catalog := str(catalog_path).simplify_path()
+    var private_cache_root := ProjectSettings.globalize_path(
+        "user://dx2ed_material_cache").simplify_path()
+    if (not normalized_catalog.ends_with(".json")
+        or not normalized_catalog.begins_with(private_cache_root + "/")):
+        return {}
     for key in ["catalog_sha256", "catalog_id", "preview_sha256"]:
         if not _valid_sha256(raw[key]):
             return {}
     for key in [
-        "material_name", "material_source_bundle", "material_source",
+        "material_name", "material_source_bundle",
         "diffuse_name", "texture_name", "texture_source_bundle", "texture_format",
         "texture_usage"
     ]:
         if not _valid_assignment_text(raw[key], 260):
             return {}
+    if not _valid_assignment_text(raw["material_source"], 260, true):
+        return {}
     if str(raw["diffuse_name"]).to_lower() != str(raw["texture_name"]).to_lower():
         return {}
     var integer_limits := {
