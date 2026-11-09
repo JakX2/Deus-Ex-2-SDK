@@ -111,6 +111,9 @@ func _run() -> void:
     if editor.active_view_id != "side" or editor.camera.projection != Camera3D.PROJECTION_ORTHOGONAL:
         _fail("Mode selector did not activate the independent Side camera")
         return
+    editor.camera_target = Vector3(21, 2, 9)
+    editor.orbit_distance = 75.0
+    editor._update_camera()
 
     editor._set_view_layout(Guides.SINGLE_LAYOUT)
     if (editor.view_grid.columns != 1 or not editor.view_slots["side"].visible
@@ -168,7 +171,7 @@ func _run() -> void:
         return
     editor._apply_draft_workspace(reopened_workspace)
     if (editor.view_layout != Guides.SINGLE_LAYOUT or editor.active_view_id != "side"
-        or not editor.camera_target.is_equal_approx(Vector3(-5, 7, 14))):
+        or not editor.camera_target.is_equal_approx(Vector3(21, 2, 9))):
         _fail("Private workspace reopen lost independent camera state")
         return
     for suffix in ["", ".bak", ".pending"]:

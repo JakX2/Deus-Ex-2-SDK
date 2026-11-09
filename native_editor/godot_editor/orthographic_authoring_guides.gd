@@ -7,6 +7,9 @@ const TOP := "Top (XZ)"
 const FRONT := "Front (XY)"
 const SIDE := "Side (ZY)"
 const MODES := [PERSPECTIVE, TOP, FRONT, SIDE]
+const VIEW_IDS := ["perspective", "top", "front", "side"]
+const SINGLE_LAYOUT := "single"
+const QUAD_LAYOUT := "quad"
 const MAX_GRID_HALF_LINES := 64
 
 
@@ -128,9 +131,6 @@ static func grid_mesh(mode: String, target: Vector3,
 
 
 ## Independent editor camera workspace. State is private UI metadata only.
-const VIEW_IDS := ["perspective", "top", "front", "side"]
-const SINGLE_LAYOUT := "single"
-const QUAD_LAYOUT := "quad"
 
 
 static func valid_layout(layout: String) -> bool:
