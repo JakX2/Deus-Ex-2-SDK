@@ -18,8 +18,8 @@ The bounded report includes:
 - connected-component count and the largest component sizes;
 - section-local perimeter/shared/non-manifold edge counts and perimeter length;
 - cross-section shared edges found among the loaded MOPP leaf triangles;
-- the original full-Level source edge-classification counts for each unique
-  source edge touched by this section; and
+- MOPP-leaf source edge-classification counts for each unique source edge
+  touched by this section; and
 - neighboring MOPP-linked render-section tuples, material names and shared
   exact-welded edge counts.
 
@@ -47,10 +47,10 @@ does not export source bytes, file paths, material payloads or private assets.
 This is **not** a complete Flesh render section, original BSP surface database,
 native BSP polygon, Havok adjacency graph, collision response, walkability
 classification, physics material, shader interpretation or native material
-index. The source edge classes are inherited from the full original Level
-edge audit, while connectivity and neighboring-section discovery are limited
-to the MOPP terminal-leaf triangles present in the validated sidecar. A MOPP
-omission therefore remains an explicit scope limit.
+index. The source edge classes are computed by the exact-weld audit across the
+MOPP terminal-leaf triangles in the validated sidecar, not across zero-area
+non-leaf Level triangles. Connectivity and neighboring-section discovery use
+the same MOPP subset. A MOPP omission therefore remains an explicit scope limit.
 
 The panel is read-only. It does not modify GMP/IBD files, private draft scenes,
 native material assignments, collision, lightmaps, GameSys or TriggerScript.
