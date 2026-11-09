@@ -69,6 +69,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 "native_editor/godot_editor/main.gd",
                 "native_editor/godot_editor/tests/smoke_multi_view_workspace.gd",
                 "native_editor/godot_editor/tests/smoke_orthographic_gizmo_constraints.gd",
+                "native_editor/godot_editor/tests/smoke_transform_pivot_orientation.gd",
                 "native_editor/godot_editor/source_surface_matlib_crossref.gd",
                 "native_editor/godot_editor/tests/smoke_source_surface_matlib_crossref.gd",
                 "native_editor/godot_editor/source_section_topology_panel.gd",
@@ -100,7 +101,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 for file in files))
             self.assertTrue(archive.read(prefix + "native_editor/godot_editor/demo/scene.glb").startswith(b"glTF"))
             doc = json.loads(archive.read(prefix + "prototype-manifest.json"))
-            self.assertEqual(doc["prototype_version"], "0.7.3-alpha")
+            self.assertEqual(doc["prototype_version"], "0.7.4-alpha")
             self.assertTrue(doc["editor_quad_multiview_layout"])
             self.assertTrue(doc["editor_quad_multiview_independent_cameras"])
             self.assertTrue(doc["editor_quad_multiview_per_view_grid_layers"])
@@ -111,6 +112,10 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
             self.assertTrue(doc["editor_orthographic_gizmo_plane_drag"])
             self.assertTrue(doc["editor_orthographic_gizmo_world_grid_snap"])
             self.assertFalse(doc["editor_orthographic_gizmo_native_writer"])
+            self.assertTrue(doc["editor_transform_pivot_modes"])
+            self.assertTrue(doc["editor_transform_orientation_modes"])
+            self.assertTrue(doc["editor_transform_cursor_private_persistence"])
+            self.assertFalse(doc["editor_transform_native_writer"])
             self.assertTrue(doc["editor_source_section_topology_diagnostics"])
             self.assertFalse(doc["editor_source_section_topology_native_bsp_verified"])
             self.assertFalse(doc["editor_source_section_topology_full_render_section_verified"])

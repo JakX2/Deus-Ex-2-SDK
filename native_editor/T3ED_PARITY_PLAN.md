@@ -230,3 +230,8 @@ The reference T3SDK archive inventory lists separate viewer picking,
 map-editor editing and edit-dock scripts. This supports keeping viewport
 interaction and edit transactions distinct; the inventory is not source-level
 proof of T3Ed's exact gizmo implementation, and no T3SDK code is copied.
+
+
+## v0.55: transform pivots and local/world orientation
+
+DX2Ed v0.55 adds Median / Active / 3D Cursor transform pivots, a visible editor-only 3D cursor and World / Local gizmo orientation. Perspective local axes follow the active selected object's orthonormal basis; orthographic views retain world-plane constraints. Cursor placement is one Undo/Redo transaction. The private workspace validates and persists the three preferences while continuing to migrate the earlier three-field and six-field workspace schemas. This advances the transform workflow but remains editor-private preview state, not native DX2 transform serialization.
