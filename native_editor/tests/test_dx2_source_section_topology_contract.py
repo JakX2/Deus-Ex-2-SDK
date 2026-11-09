@@ -162,6 +162,14 @@ class SourceSectionTopologyContractTests(unittest.TestCase):
         self.assertIn("_select_source_section_vertex", main)
         self.assertEqual(main.count("func _clear_source_section_edge_hover() -> void:"), 1)
 
+    def test_source_edge_endpoint_coordinates_follow_sorted_weld_ids(self) -> None:
+        picker = (ROOT / "native_editor/godot_editor/collision_source_picker.gd").read_text("utf-8")
+        smoke = (ROOT / "native_editor/godot_editor/tests/smoke_source_section_topology.gd").read_text("utf-8")
+        self.assertIn("var first_weld_id := int(welds[slot])", picker)
+        self.assertIn("var edge_a_point: Vector3 = first_point if first_weld_id < second_weld_id else second_point", picker)
+        self.assertIn('"a_godot": edge_a_point', picker)
+        self.assertIn("including reversed triangle winding", smoke)
+
     def test_vertex_picker_is_packaged_and_native_writer_stays_disabled(self) -> None:
         builder = (ROOT / "tools/build_dx2ed_windows_prototype.py").read_text("utf-8")
         doctor = (ROOT / "prototype/prototype_doctor.py").read_text("utf-8")

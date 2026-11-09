@@ -116,6 +116,13 @@ func _run() -> void:
             or edge.get("section_triangle_ids", []).size() != int(edge.get("section_incidence_count", -1))):
             _fail("An edge record lost its exact source-weld or raw source-class identity: " + JSON.stringify(edge))
             return
+        var expected_a: Vector3 = picker.vertices[int(welds[0])]
+        var expected_b: Vector3 = picker.vertices[int(welds[1])]
+        var actual_a := Vector3(float(edge["a_godot_xyz"][0]), float(edge["a_godot_xyz"][1]), float(edge["a_godot_xyz"][2]))
+        var actual_b := Vector3(float(edge["b_godot_xyz"][0]), float(edge["b_godot_xyz"][1]), float(edge["b_godot_xyz"][2]))
+        if actual_a != expected_a or actual_b != expected_b:
+            _fail("Edge endpoint coordinates must follow the sorted original weld-ID pair, including reversed triangle winding.")
+            return
     var edge_overlay: Dictionary = EdgeOverlay.build_marker(report)
     var edge_marker: MeshInstance3D = edge_overlay.get("marker", null)
     var edge_material: StandardMaterial3D = null
