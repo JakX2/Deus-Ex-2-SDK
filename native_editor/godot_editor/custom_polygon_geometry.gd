@@ -121,7 +121,7 @@ static func validate_source_material_assignment(raw: Variant) -> Dictionary:
         return {}
     var normalized_catalog := str(catalog_path).simplify_path()
     var private_cache_root := ProjectSettings.globalize_path(
-        "user://dx2ed_material_cache").simplify_path()
+        "user://dx2ed_material_cache").simplify_path().trim_suffix("/")
     if (not normalized_catalog.ends_with(".json")
         or not normalized_catalog.begins_with(private_cache_root + "/")):
         return {}
