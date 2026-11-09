@@ -4,6 +4,7 @@ extends SceneTree
 
 const Editor = preload("res://main.gd")
 const MatLibBrowser = preload("res://matlib_browser.gd")
+const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 
 
 func _initialize() -> void:
@@ -190,10 +191,17 @@ func _run() -> void:
     if not editor.draft_brush_specs["DraftProp_42"]["surface_style"]["sides"]["source_material"].is_empty():
         _fail("Clear source diffuse did not remove the selected slot assignment.")
         return
+    var saved_assignment: Dictionary = saved["copies"][0]["brush"]["surface_style"]["sides"]["source_material"]
+    if CustomPolygon.validate_source_material_assignment(saved_assignment).is_empty():
+        _fail("Serialized source assignment failed structural preflight: " + JSON.stringify(saved_assignment))
+        return
+    if MatLibBrowser.load_assignment_texture(saved_assignment) == null:
+        _fail("Serialized source assignment could not re-verify its catalog/thumbnail.")
+        return
     editor._load_prop_draft()
     if (not editor.draft_brush_specs.has("DraftProp_42")
         or editor.draft_brush_specs["DraftProp_42"]["surface_style"]["sides"]["source_material"].is_empty()):
-        _fail("Private project reopen did not restore the source material assignment.")
+        _fail("Private project reopen did not restore the source material assignment: " + editor.status_label.text)
         return
     var reopened_mesh := editor.draft_prop_copies["DraftProp_42"].mesh as ArrayMesh
     var reopened_material := reopened_mesh.surface_get_material(2) as StandardMaterial3D
