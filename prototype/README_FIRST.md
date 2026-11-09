@@ -1,4 +1,4 @@
-# DX2Ed Windows prototype 0.6.4-alpha
+# DX2Ed Windows prototype 0.6.5-alpha
 
 **Target review: November 9, 2026.** This archive is a portable research **prototype**: it contains the original-source DX2Ed Godot project and official Godot 4.3 Standard Windows x64 engine, launched in project-run mode. It is **not** a Godot exported/published standalone game, a production UnrealEd replacement, or a complete engine-native map writer.
 
@@ -234,6 +234,24 @@ The bundled Materials worker invocation now passes the worker script path to
 the launcher-verified Python executable before its arguments. The real Godot
 smoke runs --help and the audit mode through that same path, covering the
 direct Windows launcher route as well as the py -3 fallback.
+
+## v0.46: raw MatLib category/flags family filters
+
+The Materials workspace now exposes independent filters for the original
+numeric `category_id` and `flags` fields. Values are sorted and displayed
+as raw decimal IDs / hexadecimal flag patterns; the UI does not invent enum
+names or bit meanings. Changing filters clears a selection that is no longer
+visible instead of leaving a stale Inspector target.
+
+The read-only stage-mask audit now includes a bounded cross-tab of the most
+common `(category_id, flags)` cohorts. Each cohort reports material count,
+low-nine mask matches/mismatches, high-bit count, and the most common raw
+low-nine and named-slot masks. The report is aggregate-only, omits source
+paths and material names, and is capped at 24 cohorts. These are exploratory
+correlations, not shader-stage semantics.
+
+No source IBD/Maps ZIP, MatLib, GMP, BSP, collision or lightmap data is changed.
+Native material/BSP writers remain disabled.
 
 ## Get running in Windows 10/11, 64-bit
 

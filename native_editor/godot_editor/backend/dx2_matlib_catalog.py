@@ -32,6 +32,7 @@ MAX_PREVIEW_PIXELS = 2_097_152
 MAX_PREVIEW_SIDE = 96
 MAX_PREVIEW_BYTES = 2 * 1024 * 1024
 MAX_CATALOG_BYTES = 64 * 1024 * 1024
+MAX_AUDIT_COHORTS = 24
 
 
 def _sha256_file(path: Path) -> str:
@@ -264,6 +265,7 @@ def audit_stage_mask_correspondence(materials: list) -> dict:
     nonzero_without_named_count = 0
     named_without_low9_count = 0
     mismatch_examples = []
+    cohort_rows: dict[tuple[int, int], dict] = {}
 
     for material in materials:
         if not isinstance(material, dict):
@@ -307,6 +309,23 @@ def audit_stage_mask_correspondence(materials: list) -> dict:
         xor_mask = low9_mask ^ named_mask
         category_counts[category] += 1
         flags_counts[flags] += 1
+        cohort = cohort_rows.setdefault((category, flags), {
+            "material_count": 0,
+            "exact_low9_match_count": 0,
+            "mismatch_count": 0,
+            "high_bits_set_count": 0,
+            "low9_masks": Counter(),
+            "named_slot_masks": Counter(),
+        })
+        cohort["material_count"] += 1
+        cohort["low9_masks"][low9_mask] += 1
+        cohort["named_slot_masks"][named_mask] += 1
+        if xor_mask == 0:
+            cohort["exact_low9_match_count"] += 1
+        else:
+            cohort["mismatch_count"] += 1
+        if raw_mask & ~0x1FF:
+            cohort["high_bits_set_count"] += 1
         if xor_mask == 0:
             exact_count += 1
             if named_mask:
@@ -350,6 +369,33 @@ def audit_stage_mask_correspondence(materials: list) -> dict:
             ],
         })
 
+    ordered_cohorts = sorted(
+        cohort_rows.items(),
+        key=lambda item: (-item[1]["material_count"], item[0][0], item[0][1]),
+    )
+    cohort_records = []
+    for (category, flags), cohort in ordered_cohorts[:MAX_AUDIT_COHORTS]:
+        cohort_records.append({
+            "category_id": category,
+            "flags": flags,
+            "material_count": cohort["material_count"],
+            "exact_low9_match_count": cohort["exact_low9_match_count"],
+            "mismatch_count": cohort["mismatch_count"],
+            "high_bits_set_count": cohort["high_bits_set_count"],
+            "top_low9_masks": [
+                {"mask": mask, "count": count}
+                for mask, count in sorted(
+                    cohort["low9_masks"].items(), key=lambda item: (-item[1], item[0])
+                )[:4]
+            ],
+            "top_named_slot_masks": [
+                {"mask": mask, "count": count}
+                for mask, count in sorted(
+                    cohort["named_slot_masks"].items(), key=lambda item: (-item[1], item[0])
+                )[:4]
+            ],
+        })
+
     return {
         "schema": "DX2Ed-MatLib-stage-mask-audit-v1",
         "read_only": True,
@@ -372,6 +418,9 @@ def audit_stage_mask_correspondence(materials: list) -> dict:
             {"value": value, "count": count}
             for value, count in flags_counts.most_common(8)
         ],
+        "category_flag_cohort_count": len(cohort_rows),
+        "category_flag_cohorts_omitted": max(0, len(cohort_rows) - MAX_AUDIT_COHORTS),
+        "category_flag_cohorts": cohort_records,
         "mismatch_examples": mismatch_examples,
     }
 

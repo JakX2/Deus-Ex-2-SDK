@@ -314,5 +314,56 @@ class MatLibCatalogTests(unittest.TestCase):
                 audit_catalog_file(path)
 
 
+
+    def test_stage_mask_audit_groups_raw_category_flags_and_bounds_cohorts(self):
+        def record(name, category, flags, stage_mask, occupied_slots):
+            stages = [
+                {
+                    "index": index,
+                    "name": "T_SLOT_%d" % index if index in occupied_slots else "",
+                    "resolved": False,
+                }
+                for index in range(9)
+            ]
+            return {
+                "name": name,
+                "category_id": category,
+                "flags": flags,
+                "stage_mask": stage_mask,
+                "stages": stages,
+            }
+
+        materials = [
+            record("M_EXACT", 7, 3, 0x003, {0, 1}),
+            record("M_MISMATCH", 7, 3, 0x201, {0, 2}),
+            record("M_OTHER", 42, 16, 0x001, {0}),
+        ]
+        report = audit_stage_mask_correspondence(materials)
+        self.assertEqual(report["category_flag_cohort_count"], 2)
+        self.assertEqual(report["category_flag_cohorts_omitted"], 0)
+        first, second = report["category_flag_cohorts"]
+        self.assertEqual((first["category_id"], first["flags"]), (7, 3))
+        self.assertEqual(first["material_count"], 2)
+        self.assertEqual(first["exact_low9_match_count"], 1)
+        self.assertEqual(first["mismatch_count"], 1)
+        self.assertEqual(first["high_bits_set_count"], 1)
+        self.assertEqual(
+            {item["mask"] for item in first["top_named_slot_masks"]}, {0x3, 0x5}
+        )
+        self.assertEqual((second["category_id"], second["flags"]), (42, 16))
+        self.assertEqual(second["material_count"], 1)
+        self.assertNotIn("name", first)
+        self.assertNotIn("source_files", report)
+
+        many = [
+            record("M_COHORT_%02d" % index, index, 100 + index, 0, set())
+            for index in range(26)
+        ]
+        bounded = audit_stage_mask_correspondence(many)
+        self.assertEqual(bounded["category_flag_cohort_count"], 26)
+        self.assertEqual(len(bounded["category_flag_cohorts"]), 24)
+        self.assertEqual(bounded["category_flag_cohorts_omitted"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

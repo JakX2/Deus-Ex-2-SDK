@@ -26,6 +26,11 @@ signal material_apply_requested(assignment: Dictionary, slot_index: int)
 var source_dialog: FileDialog
 var search_box: LineEdit
 var filter_selector: OptionButton
+var category_filter_selector: OptionButton
+var flags_filter_selector: OptionButton
+var raw_filter_summary_label: Label
+var category_filter_values: Array[int] = []
+var flags_filter_values: Array[int] = []
 var material_list: ItemList
 var details_label: Label
 var stage_audit_label: Label
@@ -99,6 +104,34 @@ func _build_ui() -> void:
             ])
     filter_selector.item_selected.connect(func(_index: int): _refresh_list())
     filter_row.add_child(filter_selector)
+
+    var raw_filter_row := HBoxContainer.new()
+    add_child(raw_filter_row)
+    var category_label := Label.new()
+    category_label.text = "Raw category ID"
+    raw_filter_row.add_child(category_label)
+    category_filter_selector = OptionButton.new()
+    category_filter_selector.add_item("All")
+    category_filter_selector.tooltip_text = (
+        "Filter by opaque source category_id values. No category meanings are inferred.")
+    category_filter_selector.item_selected.connect(func(_index: int): _refresh_list())
+    raw_filter_row.add_child(category_filter_selector)
+
+    var flags_label := Label.new()
+    flags_label.text = "Raw flags"
+    raw_filter_row.add_child(flags_label)
+    flags_filter_selector = OptionButton.new()
+    flags_filter_selector.add_item("All")
+    flags_filter_selector.tooltip_text = (
+        "Filter by opaque source flags values. No bit meanings are inferred.")
+    flags_filter_selector.item_selected.connect(func(_index: int): _refresh_list())
+    raw_filter_row.add_child(flags_filter_selector)
+
+    raw_filter_summary_label = Label.new()
+    raw_filter_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    raw_filter_summary_label.text = (
+        "Raw category and flags filters are opaque source values, not decoded material semantics.")
+    add_child(raw_filter_summary_label)
 
     var split := HSplitContainer.new()
     split.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -237,6 +270,7 @@ func load_catalog(path: String) -> bool:
     catalog_path = absolute_path
     materials = parsed["materials"]
     selected_material.clear()
+    _populate_raw_metadata_filters()
     _refresh_list()
     if catalog_audit_button != null:
         catalog_audit_button.disabled = false
@@ -305,6 +339,46 @@ func _validate_catalog(raw: Variant, path: String) -> bool:
     return true
 
 
+func _populate_raw_metadata_filters() -> void:
+    category_filter_values.clear()
+    flags_filter_values.clear()
+    var categories: Dictionary = {}
+    var flag_patterns: Dictionary = {}
+    for material in materials:
+        if typeof(material) != TYPE_DICTIONARY:
+            continue
+        var category := _usage_code_value(material.get("category_id", null))
+        var flags := _usage_code_value(material.get("flags", null))
+        if category >= 0:
+            categories[category] = true
+        if flags >= 0:
+            flag_patterns[flags] = true
+    for value in categories.keys():
+        category_filter_values.append(int(value))
+    for value in flag_patterns.keys():
+        flags_filter_values.append(int(value))
+    category_filter_values.sort()
+    flags_filter_values.sort()
+
+    if category_filter_selector != null:
+        category_filter_selector.clear()
+        category_filter_selector.add_item("All")
+        for value in category_filter_values:
+            category_filter_selector.add_item(str(value))
+        category_filter_selector.select(0)
+    if flags_filter_selector != null:
+        flags_filter_selector.clear()
+        flags_filter_selector.add_item("All")
+        for value in flags_filter_values:
+            flags_filter_selector.add_item("0x%08X" % value)
+        flags_filter_selector.select(0)
+    if raw_filter_summary_label != null:
+        raw_filter_summary_label.text = (
+            "Raw values only: %d category IDs and %d distinct flag patterns. "
+            + "No category or flag semantics are inferred."
+        ) % [category_filter_values.size(), flags_filter_values.size()]
+
+
 func _safe_preview_path(relative_path: String, for_catalog: String) -> String:
     if (relative_path.is_empty() or relative_path.begins_with("/")
         or relative_path.contains("\\") or relative_path.contains(":")):
@@ -338,8 +412,17 @@ func _refresh_list() -> void:
     visible_materials.clear()
     var query := search_box.text.strip_edges().to_lower() if search_box != null else ""
     var mode := filter_selector.selected if filter_selector != null else 0
+    var category_index := category_filter_selector.selected if category_filter_selector != null else 0
+    var flags_index := flags_filter_selector.selected if flags_filter_selector != null else 0
+    var selected_category := category_filter_values[category_index - 1] if category_index > 0 and category_index <= category_filter_values.size() else -1
+    var selected_flags := flags_filter_values[flags_index - 1] if flags_index > 0 and flags_index <= flags_filter_values.size() else -1
+
     for material in materials:
         if typeof(material) != TYPE_DICTIONARY:
+            continue
+        if category_index > 0 and int(material.get("category_id", -1)) != selected_category:
+            continue
+        if flags_index > 0 and int(material.get("flags", -1)) != selected_flags:
             continue
         var stages: Array = material.get("stages", [])
         if stages.size() != 9:
@@ -386,14 +469,36 @@ func _refresh_list() -> void:
             continue
         visible_materials.append(material)
         material_list.add_item(
-            str(material.get("name", "")) + "  [category " + str(material.get("category_id", "?")) + "]"
+            str(material.get("name", ""))
+            + "  [category " + str(material.get("category_id", "?"))
+            + " | flags 0x%08X]" % int(material.get("flags", 0))
         )
+
+    if raw_filter_summary_label != null:
+        var category_text := "all"
+        if selected_category >= 0:
+            category_text = str(selected_category)
+        var flags_text := "all"
+        if selected_flags >= 0:
+            flags_text = "0x%08X" % selected_flags
+        raw_filter_summary_label.text = (
+            "Raw filters: category_id=%s | flags=%s. Catalog has %d category IDs / %d flag patterns; values are opaque."
+            % [category_text, flags_text, category_filter_values.size(), flags_filter_values.size()]
+        )
+
+    var selected_index := visible_materials.find(selected_material) if not selected_material.is_empty() else -1
     if visible_materials.is_empty():
-        selected_material.clear()
+        selected_material = {}
         details_label.text = "No materials match the current filter."
+        stage_audit_label.text = "No material selected."
         _clear_stage_cards()
-    elif selected_material.is_empty():
+    elif selected_index < 0:
+        selected_material = {}
         details_label.text = "%d materials match. Select one to inspect all nine stage slots." % visible_materials.size()
+        stage_audit_label.text = "Select a material to inspect its raw stage references."
+        _clear_stage_cards()
+    else:
+        material_list.select(selected_index)
     status_label.text = "%d / %d materials in current filter." % [visible_materials.size(), materials.size()]
     _refresh_apply_button()
 
@@ -500,7 +605,10 @@ func _run_catalog_stage_mask_audit() -> bool:
         or parsed.get("status", "") != "ok"
         or parsed.get("schema", "") != "DX2Ed-MatLib-stage-mask-audit-v1"
         or parsed.get("native_writer_enabled", true) != false
-        or parsed.get("source_bytes_modified", true) != false):
+        or parsed.get("source_bytes_modified", true) != false
+        or typeof(parsed.get("category_flag_cohorts", null)) != TYPE_ARRAY
+        or _usage_code_value(parsed.get("category_flag_cohort_count", null)) < 0
+        or _usage_code_value(parsed.get("category_flag_cohorts_omitted", null)) < 0):
         catalog_audit_label.text = "Stage-mask audit returned an invalid or writable report."
         return false
     catalog_audit_label.text = _format_catalog_stage_mask_audit(parsed)
@@ -561,6 +669,37 @@ func _format_catalog_stage_mask_audit(report: Dictionary) -> String:
             ])
     lines.append("Most common raw category IDs: " + (", ".join(categories) if not categories.is_empty() else "none"))
     lines.append("Most common raw flags: " + (", ".join(flags) if not flags.is_empty() else "none"))
+    lines.append(
+        "Raw category/flags cohorts: %d unique, %d omitted (opaque grouping only)." % [
+            int(report.get("category_flag_cohort_count", 0)),
+            int(report.get("category_flag_cohorts_omitted", 0))
+        ])
+    for raw_cohort in report.get("category_flag_cohorts", []):
+        if typeof(raw_cohort) != TYPE_DICTIONARY:
+            continue
+        var cohort: Dictionary = raw_cohort
+        var low9_parts := PackedStringArray()
+        for item in cohort.get("top_low9_masks", []):
+            if typeof(item) == TYPE_DICTIONARY:
+                low9_parts.append("0x%03X×%s" % [
+                    int(item.get("mask", 0)), str(item.get("count", 0))
+                ])
+        var named_parts := PackedStringArray()
+        for item in cohort.get("top_named_slot_masks", []):
+            if typeof(item) == TYPE_DICTIONARY:
+                named_parts.append("0x%03X×%s" % [
+                    int(item.get("mask", 0)), str(item.get("count", 0))
+                ])
+        lines.append("Cohort cat=%d flags=0x%08X n=%d exact=%d mismatch=%d high=%d | raw low9 [%s] | named slots [%s]" % [
+            int(cohort.get("category_id", 0)),
+            int(cohort.get("flags", 0)),
+            int(cohort.get("material_count", 0)),
+            int(cohort.get("exact_low9_match_count", 0)),
+            int(cohort.get("mismatch_count", 0)),
+            int(cohort.get("high_bits_set_count", 0)),
+            ", ".join(low9_parts) if not low9_parts.is_empty() else "none",
+            ", ".join(named_parts) if not named_parts.is_empty() else "none"
+        ])
     for item in report.get("mismatch_examples", []):
         if typeof(item) == TYPE_DICTIONARY:
             lines.append("Mismatch %s: raw=0x%08X named=0x%03X xor=0x%03X" % [
