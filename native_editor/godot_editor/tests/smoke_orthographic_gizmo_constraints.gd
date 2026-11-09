@@ -144,6 +144,11 @@ func _run() -> void:
     if editor.undo_stack.size() != 1:
         _fail("One plane drag did not commit exactly one Undo transaction")
         return
+    var committed_before: Variant = editor.undo_stack.back().get("before", {})
+    if (typeof(committed_before) != TYPE_DICTIONARY
+        or not committed_before.get("copies", {}).has("DraftProp_54")):
+        _fail("Committed Undo snapshot lost the private Polygon before-state")
+        return
     editor._undo_edit()
     var undone: MeshInstance3D = editor.draft_prop_copies["DraftProp_54"]
     if not undone.global_position.is_equal_approx(Vector3.ZERO):
