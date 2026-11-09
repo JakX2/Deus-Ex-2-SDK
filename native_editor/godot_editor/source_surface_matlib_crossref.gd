@@ -9,7 +9,7 @@ const MAX_PREVIEW_SIDE := 96
 var catalog_path := ""
 var catalog: Dictionary = {}
 var source_evidence: Dictionary = {}
-var candidates: Array[Dictionary] = []
+var candidates: Array = []
 var match_kind := ""
 var selected_candidate_index := -1
 var source_label: Label
@@ -23,7 +23,7 @@ func initialize() -> void:
     visible = false
     size_flags_vertical = Control.SIZE_EXPAND_FILL
     var heading := Label.new()
-    heading.text = "SOURCE RENDER SECTION → MATLIB NAME CROSS-REFERENCE"
+    heading.text = "SOURCE RENDER SECTION -> MATLIB NAME CROSS-REFERENCE"
     heading.add_theme_font_size_override("font_size", 14)
     add_child(heading)
     var note := Label.new()
@@ -99,7 +99,7 @@ func _is_nonnegative_int(value: Variant, maximum: int = 0x7FFFFFFF) -> bool:
 
 func _safe_preview_path(relative_path: String, for_catalog: String) -> String:
     if (relative_path.is_empty() or relative_path.begins_with("/")
-        or relative_path.contains(String.chr(92)) or relative_path.contains(":")
+        or relative_path.contains("\\") or relative_path.contains(":")
         or relative_path.get_extension().to_lower() != "png"):
         return ""
     for segment in relative_path.split("/", false):
@@ -121,8 +121,8 @@ func _validate_catalog(raw: Variant, path: String) -> bool:
         or raw.get("source_bytes_modified", true) != false
         or not _is_sha256(str(raw.get("catalog_id", "")))):
         return false
-    var source_files: Variant = raw.get("source_files", null)
-    var records: Variant = raw.get("materials", null)
+    var source_files = raw.get("source_files", null)
+    var records = raw.get("materials", null)
     if (typeof(source_files) != TYPE_ARRAY or source_files.is_empty()
         or source_files.size() > 64 or typeof(records) != TYPE_ARRAY
         or records.size() > MAX_MATERIALS):
@@ -138,17 +138,17 @@ func _validate_catalog(raw: Variant, path: String) -> bool:
             or str(material.get("name", "")).is_empty()
             or str(material.get("name", "")).length() > MAX_NAME_LENGTH):
             return false
-        var stages: Variant = material.get("stages", null)
+        var stages = material.get("stages", null)
         if typeof(stages) != TYPE_ARRAY or stages.size() != 9:
             return false
         for index in range(9):
-            var stage: Variant = stages[index]
+            var stage = stages[index]
             if (typeof(stage) != TYPE_DICTIONARY or int(stage.get("index", -1)) != index
                 or typeof(stage.get("name", "")) != TYPE_STRING
                 or typeof(stage.get("resolved", false)) != TYPE_BOOL):
                 return false
             if bool(stage.get("resolved", false)):
-                var texture: Variant = stage.get("texture", null)
+                var texture = stage.get("texture", null)
                 if typeof(texture) != TYPE_DICTIONARY:
                     return false
                 var relative := str(texture.get("preview_path", ""))
@@ -165,7 +165,7 @@ func _validate_source_evidence(value: Dictionary) -> bool:
         value.get("schema", "") == EVIDENCE_SCHEMA
         and not source_map.is_empty()
         and not source_map.contains("/")
-        and not source_map.contains(String.chr(92))
+        and not source_map.contains("\\")
         and source_map.to_lower().ends_with(".gmp")
         and _is_sha256(str(value.get("source_sha256", "")))
         and _is_nonnegative_int(value.get("original_level_triangle_id", null), 299999)
@@ -191,7 +191,7 @@ func _refresh() -> void:
     var source_name := str(source_evidence.get("render_material_name", ""))
     var source_sha := str(source_evidence.get("source_sha256", ""))
     source_label.text = (
-        "Source: %s | GMP SHA-256 %s…\nLevel triangle %d | source block %d | render block %d / section %d | section triangles %d\nRender-material name: %s"
+        "Source: %s | GMP SHA-256 %s...\nLevel triangle %d | source block %d | render block %d / section %d | section triangles %d\nRender-material name: %s"
     ) % [
         str(source_evidence.get("source_map", "")), source_sha.left(12),
         int(source_evidence.get("original_level_triangle_id", -1)),
@@ -231,14 +231,16 @@ func _refresh() -> void:
         match_label.text = "NO MATCH IN IMPORTED CATALOG. The name was not found among currently imported MatLib records; bundle coverage may be incomplete."
         details_label.text = "No material candidate is selected."
         return
-    var duplicate_names: Variant = catalog.get("duplicate_names", {})
-    var duplicate_count := int(duplicate_names.get("materials", 0)) if typeof(duplicate_names) == TYPE_DICTIONARY else 0
+    var duplicate_names = catalog.get("duplicate_names", {})
+    var duplicate_count := 0
+    if typeof(duplicate_names) == TYPE_DICTIONARY:
+        duplicate_count = int(duplicate_names.get("materials", 0))
     if candidates.size() > 1:
         match_label.text = "AMBIGUOUS: %d %s name candidates. Select one; none is an authenticated native material index." % [candidates.size(), "exact-string" if match_kind == "exact" else "case-insensitive"]
     elif match_kind == "exact":
-        match_label.text = "EXACT STRING MATCH — one candidate in this imported catalog only; this is not proof of the native surface material index."
+        match_label.text = "EXACT STRING MATCH - one candidate in this imported catalog only; this is not proof of the native surface material index."
     else:
-        match_label.text = "CASE-INSENSITIVE MATCH ONLY — spelling differs; treat this as a weaker candidate."
+        match_label.text = "CASE-INSENSITIVE MATCH ONLY - spelling differs; treat this as a weaker candidate."
     if duplicate_count > 0:
         match_label.text += "\nCatalog reports %d duplicate MatLib name collisions overall; per-name duplicate variants are not retained, so source-level uniqueness is not established." % duplicate_count
     for material in candidates:
@@ -268,7 +270,12 @@ func _candidate_selected(index: int) -> void:
     for index in range(9):
         var stage: Dictionary = stages[index]
         var name := str(stage.get("name", ""))
-        var state := "empty" if name.is_empty() else ("resolved" if bool(stage.get("resolved", false)) else "unresolved")
+        var state := "empty"
+        if not name.is_empty():
+            if bool(stage.get("resolved", false)):
+                state = "resolved"
+            else:
+                state = "unresolved"
         lines.append("Slot %d: %s [%s]" % [index, name if not name.is_empty() else "(empty)", state])
     lines.append("Native material index: NOT VERIFIED.")
     lines.append("Shader-stage semantics: NOT VERIFIED.")
@@ -280,7 +287,7 @@ func _candidate_selected(index: int) -> void:
         var slot_zero: Dictionary = stages[0]
         if bool(slot_zero.get("resolved", false)):
             if _load_slot_zero_preview(slot_zero.get("texture", {})):
-                preview_label.text = "Slot 0 thumbnail — parser-decoded pixels; native shader use is unverified."
+                preview_label.text = "Slot 0 thumbnail - parser-decoded pixels; native shader use is unverified."
 
 func _load_slot_zero_preview(texture: Dictionary) -> bool:
     var relative := str(texture.get("preview_path", ""))

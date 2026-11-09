@@ -31,6 +31,10 @@ jobs:
             "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip"
           unzip -q /tmp/godot-4.3.zip -d /tmp
           chmod +x /tmp/Godot_v4.3-stable_linux.x86_64
+      - name: Compile source-surface MatLib cross-reference panel (Godot 4.3)
+        run: timeout 20s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://source_surface_matlib_crossref.gd
+      - name: Exercise source-surface MatLib cross-reference panel
+        run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_source_surface_matlib_crossref.gd
       - name: Compile custom polygon geometry in isolation (Godot 4.3)
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://custom_polygon_geometry.gd
       - name: Exercise actual custom polygon authoring and full private scene reopen
@@ -39,8 +43,6 @@ jobs:
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_matlib_browser.gd
       - name: Verify source-backed MatLib diffuse assignment to private Polygon surface
         run: timeout 30s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_matlib_polygon_assignment.gd
-      - name: Verify original source render-section to MatLib name cross-reference
-        run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_source_surface_matlib_crossref.gd
       - name: Verify original mission versus Kernel TriggerScript payload comparison
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_mission_kernel_script_view.gd
       - name: Verify map-wide original actor script index offset audit
