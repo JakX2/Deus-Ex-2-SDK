@@ -100,9 +100,9 @@ func _run() -> void:
         return
     var preview_result: Dictionary = FillPreview.build_marker(picker, 0)
     var preview_marker: MeshInstance3D = preview_result.get("marker", null)
-    var preview_material: StandardMaterial3D = (
-        preview_marker.material_override as StandardMaterial3D
-        if is_instance_valid(preview_marker) else null)
+    var preview_material: StandardMaterial3D = null
+    if is_instance_valid(preview_marker):
+        preview_material = preview_marker.material_override as StandardMaterial3D
     if (preview_result.is_empty() or not is_instance_valid(preview_marker)
         or preview_marker.mesh == null or preview_marker.mesh.get_surface_count() != 1
         or preview_result.get("preview_vertex_count", -1) != 9
