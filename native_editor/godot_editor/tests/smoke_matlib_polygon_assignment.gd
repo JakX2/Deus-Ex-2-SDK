@@ -122,7 +122,7 @@ func _run() -> void:
     var draft := editor._new_draft_copy(
         "Brush::Polygon", "DraftProp_42", Transform3D.IDENTITY)
     var second_draft := editor._new_draft_copy(
-        "Brush::Polygon", "DraftProp_43", Transform3D(Basis.IDENTITY, Vector3(3.0, 0.0, 0.0)))
+        "Brush::Polygon", "DraftProp_43", Transform3D(Basis(), Vector3(3.0, 0.0, 0.0)))
     var box_draft := editor._new_draft_copy(
         "Brush::Box", "DraftProp_44", Transform3D.IDENTITY)
     if (not is_instance_valid(draft) or not is_instance_valid(second_draft)
@@ -228,18 +228,20 @@ func _run() -> void:
         _fail("Saved project omitted one or both source material/thumbnail identities.")
         return
 
-    editor._select_mesh_only(draft)
+    editor._select_mesh_only(editor.draft_prop_copies["DraftProp_42"])
     editor._clear_polygon_surface_source_material()
     if not editor.draft_brush_specs["DraftProp_42"]["surface_style"]["sides"]["source_material"].is_empty():
         _fail("Clear source diffuse did not remove the selected slot assignment.")
         return
     var saved_assignment: Dictionary = saved_by_name["DraftProp_42"]["brush"]["surface_style"]["sides"]["source_material"]
     var saved_assignment_b: Dictionary = saved_by_name["DraftProp_43"]["brush"]["surface_style"]["sides"]["source_material"]
-    if CustomPolygon.validate_source_material_assignment(saved_assignment).is_empty():
-        _fail("Serialized source assignment failed structural preflight: " + JSON.stringify(saved_assignment))
+    if (CustomPolygon.validate_source_material_assignment(saved_assignment).is_empty()
+        or CustomPolygon.validate_source_material_assignment(saved_assignment_b).is_empty()):
+        _fail("Serialized source assignments failed structural preflight.")
         return
-    if MatLibBrowser.load_assignment_texture(saved_assignment) == null:
-        _fail("Serialized source assignment could not re-verify its catalog/thumbnail.")
+    if (MatLibBrowser.load_assignment_texture(saved_assignment) == null
+        or MatLibBrowser.load_assignment_texture(saved_assignment_b) == null):
+        _fail("Serialized source assignments could not re-verify their catalog/thumbnails.")
         return
     editor._load_prop_draft()
     if (not editor.draft_brush_specs.has("DraftProp_42")
