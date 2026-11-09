@@ -94,6 +94,7 @@ var multi_light_color_panel: VBoxContainer
 var native_scalar_panel: VBoxContainer
 var multi_native_scalar_panel: VBoxContainer
 var workbench_tabs: TabContainer
+var matlib_browser
 var workbench_handoff_button: Button
 var source_gamesys_filter: LineEdit
 var source_gamesys_list: ItemList
@@ -321,6 +322,7 @@ var polygon_vertex_z: SpinBox
 var polygon_surface_selector: OptionButton
 var polygon_surface_preset_selector: OptionButton
 var polygon_surface_uv_controls: Array[SpinBox] = []
+var polygon_surface_source_label: Label
 var polygon_surface_slot := 0
 var polygon_uv_preview_texture: Texture2D
 var polygon_selected_name := ""
@@ -781,10 +783,11 @@ func _make_ui() -> void:
     var assets_tab := VBoxContainer.new()
     assets_tab.name = "Assets"
     left_tabs.add_child(assets_tab)
-    var materials_tab := MatLibBrowser.new()
-    materials_tab.name = "Materials"
-    materials_tab.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    left_tabs.add_child(materials_tab)
+    matlib_browser = MatLibBrowser.new()
+    matlib_browser.name = "Materials"
+    matlib_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    matlib_browser.material_apply_requested.connect(_apply_matlib_material_to_polygon_surface)
+    left_tabs.add_child(matlib_browser)
     asset_filter = LineEdit.new()
     asset_filter.placeholder_text = "Search IBD resources..."
     asset_filter.text_changed.connect(func(_text): _refresh_asset_list())
@@ -1649,8 +1652,15 @@ func _make_ui() -> void:
     surface_note.text = (
         "Top cap, bottom cap and side walls have separate slots. The procedural checker makes "
         + "UV scale/offset visible; original MatLib shaders and native BSP materials are not written.")
+    surface_note.text = (
+        "Top, bottom and side slots keep independent UVs and preview materials. Choose a resolved "
+        + "diffuse in Materials and apply it to the currently selected slot; this only changes a "
+        + "private Polygon preview. Presets control tint/roughness, not DX2 shader semantics.")
     surface_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     polygon_inspector_panel.add_child(surface_note)
+    polygon_surface_source_label = Label.new()
+    polygon_surface_source_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    polygon_inspector_panel.add_child(polygon_surface_source_label)
     var surface_slot_row := HBoxContainer.new()
     polygon_inspector_panel.add_child(surface_slot_row)
     polygon_surface_selector = OptionButton.new()
@@ -1686,9 +1696,14 @@ func _make_ui() -> void:
         polygon_surface_uv_controls.append(uv_control)
     var surface_apply := Button.new()
     surface_apply.text = "Apply surface style"
-    surface_apply.tooltip_text = "Apply the selected preview preset and UV transform as one undoable private-draft edit."
+    surface_apply.tooltip_text = "Apply the selected preview preset and UV transform as one undoable private-draft edit; any source diffuse assignment is retained."
     surface_apply.pressed.connect(_apply_polygon_surface_style)
     polygon_inspector_panel.add_child(surface_apply)
+    var surface_clear := Button.new()
+    surface_clear.text = "Clear source diffuse"
+    surface_clear.tooltip_text = "Remove the source-backed thumbnail from this private Polygon slot and return to the procedural checker."
+    surface_clear.pressed.connect(_clear_polygon_surface_source_material)
+    polygon_inspector_panel.add_child(surface_clear)
     var property_heading := Label.new()
     property_heading.text = "Source actor details (read-only)"
     inspector_pane.add_child(property_heading)
@@ -7073,7 +7088,12 @@ func _make_polygon_surface_material(raw: Dictionary) -> StandardMaterial3D:
                       float(tint_values[2]), float(tint_values[3]))
     var material := StandardMaterial3D.new()
     material.albedo_color = base_color * tint
-    material.albedo_texture = _polygon_uv_checker_texture()
+    var source_assignment: Dictionary = raw.get("source_material", {})
+    var source_texture: Texture2D = null
+    if not source_assignment.is_empty():
+        source_texture = MatLibBrowser.load_assignment_texture(source_assignment)
+    material.albedo_texture = (
+        source_texture if source_texture != null else _polygon_uv_checker_texture())
     material.roughness = roughness
     material.metallic = metallic
     material.uv1_scale = Vector3(
@@ -7111,6 +7131,18 @@ func _refresh_polygon_surface_controls(name: String) -> void:
     polygon_surface_uv_controls[2].set_value_no_signal(float(row["uv_offset"][0]))
     polygon_surface_uv_controls[3].set_value_no_signal(float(row["uv_offset"][1]))
     brush_inspector_syncing = false
+    if polygon_surface_source_label != null:
+        var source_assignment: Dictionary = row.get("source_material", {})
+        if source_assignment.is_empty():
+            polygon_surface_source_label.text = "Source diffuse: procedural checker"
+        elif MatLibBrowser.load_assignment_texture(source_assignment) == null:
+            polygon_surface_source_label.text = (
+                "Source diffuse: " + str(source_assignment.get("material_name", "unknown"))
+                + " (catalog/thumbnail unavailable or changed; checker fallback)")
+        else:
+            polygon_surface_source_label.text = (
+                "Source diffuse: " + str(source_assignment["material_name"])
+                + " · " + str(source_assignment["material_source_bundle"]))
 
 
 func _apply_polygon_surface_style() -> void:
@@ -7152,6 +7184,71 @@ func _apply_polygon_surface_style() -> void:
         status_label.text = (
             "Applied " + str(validated[slot]["preset"]) + " preview to " + slot
             + "; UV scale/offset saved in the private draft. No native material changed.")
+
+
+
+func _apply_matlib_material_to_polygon_surface(raw: Dictionary) -> void:
+    var name := _selected_custom_polygon_name()
+    if name.is_empty():
+        status_label.text = "Select one private Polygon brush before applying a MatLib diffuse preview."
+        return
+    var assignment := CustomPolygon.validate_source_material_assignment(raw)
+    if (assignment.is_empty()
+        or MatLibBrowser.load_assignment_texture(assignment) == null):
+        status_label.text = "MatLib diffuse assignment refused: catalog identity or thumbnail verification failed."
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    var style: Dictionary = CustomPolygon.validate_surface_style(
+        spec.get("surface_style", null))
+    if style.is_empty():
+        status_label.text = "Polygon surface metadata is invalid; no assignment was made."
+        return
+    var slot_index := clampi(polygon_surface_slot, 0, CustomPolygon.SURFACE_SLOTS.size() - 1)
+    var slot: String = CustomPolygon.SURFACE_SLOTS[slot_index]
+    var row: Dictionary = style[slot]
+    row["source_material"] = assignment
+    style[slot] = row
+    var validated := CustomPolygon.validate_surface_style(style)
+    if validated.is_empty():
+        status_label.text = "Source material identity failed private surface validation."
+        return
+    var before := _capture_edit_state()
+    spec["surface_style"] = validated
+    if _set_brush_spec(name, spec):
+        _record_edit("Assign MatLib diffuse to Polygon " + slot, before)
+        _refresh_brush_inspector()
+        _refresh_prop_inspection()
+        status_label.text = (
+            "Applied verified diffuse " + str(assignment["texture_name"]) + " to " + slot
+            + ". Catalog/thumbnail hashes are stored in the private draft; source bundles and native BSP remain read-only.")
+
+
+func _clear_polygon_surface_source_material() -> void:
+    var name := _selected_custom_polygon_name()
+    if name.is_empty():
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    var style: Dictionary = CustomPolygon.validate_surface_style(
+        spec.get("surface_style", null))
+    if style.is_empty():
+        return
+    var slot_index := clampi(polygon_surface_slot, 0, CustomPolygon.SURFACE_SLOTS.size() - 1)
+    var slot: String = CustomPolygon.SURFACE_SLOTS[slot_index]
+    var row: Dictionary = style[slot]
+    if row.get("source_material", {}).is_empty():
+        return
+    row["source_material"] = {}
+    style[slot] = row
+    var validated := CustomPolygon.validate_surface_style(style)
+    if validated.is_empty():
+        return
+    var before := _capture_edit_state()
+    spec["surface_style"] = validated
+    if _set_brush_spec(name, spec):
+        _record_edit("Clear Polygon " + slot + " source diffuse", before)
+        _refresh_brush_inspector()
+        _refresh_prop_inspection()
+        status_label.text = "Cleared source diffuse from " + slot + "; procedural checker restored."
 
 
 func _refresh_brush_inspector() -> void:
