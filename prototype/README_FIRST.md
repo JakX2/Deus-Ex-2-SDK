@@ -1,6 +1,6 @@
 # DX2Ed Windows prototype 0.6.3-alpha
 
-**Target review: November 8, 2026.** This archive is a portable research **prototype**: it contains the original-source DX2Ed Godot project and official Godot 4.3 Standard Windows x64 engine, launched in project-run mode. It is **not** a Godot exported/published standalone game, a production UnrealEd replacement, or a complete engine-native map writer.
+**Target review: November 9, 2026.** This archive is a portable research **prototype**: it contains the original-source DX2Ed Godot project and official Godot 4.3 Standard Windows x64 engine, launched in project-run mode. It is **not** a Godot exported/published standalone game, a production UnrealEd replacement, or a complete engine-native map writer.
 
 ## DX2SDK v0.27 unified build: original Actor Workbench + archive audit
 
@@ -179,6 +179,40 @@ Polygon surfaces. It does not interpret original DX2 shader stages, edit
 imported source meshes, modify IBD/GMP files, write native BSP material
 indices, or prove a game-compatible cooked level. Original bundles remain
 read-only and the native material writer stays disabled.
+
+## v0.43: batch source-backed preview assignment
+
+Select multiple editor-only **Polygon** brushes in the Hierarchy, open
+**Materials**, choose a MatLib record with a verified slot-0 texture preview,
+choose **Top cap**, **Bottom cap**, or **Side walls**, then apply. The entire
+selection is preflighted first: a Box, original actor, imported BSP mesh or
+other non-Polygon target refuses the whole batch before mutation. Successful
+assignments use one Undo/Redo transaction and survive private JSON Save/reopen.
+
+**Important:** slot 0 is the parser's existing preview candidate. Its diffuse
+shader meaning is not independently verified. This is a private Godot preview
+binding, not a native material or BSP surface assignment.
+
+## v0.44: MatLib stage-resource diagnostics
+
+The Materials workspace now preserves each decoded texture's raw numeric
+**usage code** alongside the existing parser label, and offers filters for
+usage codes 0–6. Each selected material shows a nine-slot audit with the
+uninterpreted raw stage mask, counts of named/resolved/unresolved/empty slots,
+and the per-resource usage code and parser label.
+
+The diagnostic deliberately separates three facts: the MatLib's nine ordered
+resource-name slots are source data; the texture usage integer is decoded from
+the referenced texture resource; and the parser's human-readable usage label
+is only a label. The editor does **not** infer that a particular MatLib slot
+implements normal mapping, specular blending, animation, environment mapping,
+or any other shader effect. Unknown usage codes are preserved numerically
+rather than guessed. Existing cached catalogs without the additive
+usage_code field remain readable.
+
+The old slot-0 preview action is now described as a **legacy preview candidate**
+rather than a proven diffuse shader binding. All catalog/source files remain
+read-only, and native MatLib/BSP material writers remain disabled.
 
 ## Get running in Windows 10/11, 64-bit
 
