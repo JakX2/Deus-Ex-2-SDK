@@ -853,3 +853,27 @@ or shader result. Native GMP/IBD/BSP/material/collision/lightmap writers remain
 disabled. Synthetic Godot 4.3 tests cover exact-weld neighbor provenance,
 representative-ID navigation, the filled mesh, transparent material, size-cap
 refusal, selection changes and source-inspection cleanup.
+
+## v0.52: interactive exact-weld source-section vertex selection
+
+The source-section topology Inspector can now show selectable handles for the
+unique original Level float32 weld identities represented by the selected
+section's authenticated MOPP terminal-leaf edge subset. Hover and click use a
+camera-aware 32-pixel spatial index with a 12-pixel hit radius. The index
+tracks camera transform, projection, orthographic size, FOV, near/far clip,
+aspect policy, projection offsets and viewport dimensions. Points outside the
+active clip range are not indexed.
+
+The selected-vertex Inspector exposes the original Level weld ID, preview XYZ,
+incident exact-weld edge keys, incident original Level triangle IDs, and
+representative triangles for adjacent MOPP-linked sections. It can navigate
+to an incident triangle or an adjacent section and copy source-pinned JSON.
+The Windows prototype includes the helper and runs the same Godot regression
+inside its bundled self-test.
+
+These are **MOPP terminal-leaf subset weld identities**, not native BSP vertex
+IDs or complete Flesh render vertices. The screen-space picker is a viewport
+convenience, not a ray/occlusion proof. The handles are transient and
+read-only. Native GMP/IBD/BSP/MOPP/collision/lightmap/material/GameSys/
+TriggerScript writers remain disabled; no retail game runtime acceptance or
+playable native custom level is claimed.

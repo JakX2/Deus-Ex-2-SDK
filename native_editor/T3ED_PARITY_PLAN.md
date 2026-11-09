@@ -145,3 +145,25 @@ BSP edge/vertex picking, a native BSP surface identity, Havok adjacency,
 walkability, physics material, or a writable map. Screen-space selection and
 its highlights are transient editor overlays. No original GMP/IBD, imported
 mesh or private draft geometry is changed.
+
+## v0.52: exact-weld source vertex handles
+
+DX2Ed v0.52 adds a **Show exact-weld vertex handles** toggle to the original
+source-section topology Inspector. It derives a bounded vertex report from
+the already validated v0.50 edge report, preserving exact original Level
+float32 weld IDs, preview XYZ, incident edge keys, incident original Level
+triangle IDs and observed adjacent-section representative triangles.
+
+The 3D viewport displays transient editor-only MultiMesh handles. A
+camera-aware screen-space index supports hover and click selection with a
+12-pixel radius; camera movement, projection changes, near/far clipping,
+aspect/offset changes and viewport resizing invalidate the index. The
+selected-vertex Inspector can select an incident source triangle, navigate
+to an adjacent MOPP-linked section representative and copy source-pinned
+JSON.
+
+This is a useful T3Ed-style vertex-inspection interaction, but its source
+authority remains the authenticated MOPP terminal-leaf subset. It does not
+establish native BSP vertex identity, complete render-section vertices,
+Havok adjacency, physical materials, or a writable map. Native map writers
+remain disabled.

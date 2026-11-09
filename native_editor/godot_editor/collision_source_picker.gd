@@ -623,20 +623,28 @@ func section_topology_details(original_id: int,
         for weld in welds:
             unique_vertices[int(weld)] = true
         for slot in range(3):
-            var low := mini(int(welds[slot]), int(welds[(slot + 1) % 3]))
-            var high := maxi(int(welds[slot]), int(welds[(slot + 1) % 3]))
+            var first_weld_id := int(welds[slot])
+            var second_weld_id := int(welds[(slot + 1) % 3])
+            if first_weld_id == second_weld_id:
+                return {}
+            var low := mini(first_weld_id, second_weld_id)
+            var high := maxi(first_weld_id, second_weld_id)
             var edge_key := "%d:%d" % [low, high]
             var source_class := int(kinds[slot])
             if source_class < 0 or source_class > 3:
                 return {}
+            var first_point: Vector3 = vertices[int(vertex_indices[slot])]
+            var second_point: Vector3 = vertices[int(vertex_indices[(slot + 1) % 3])]
+            var edge_a_point: Vector3 = first_point if first_weld_id < second_weld_id else second_point
+            var edge_b_point: Vector3 = second_point if first_weld_id < second_weld_id else first_point
             var edge_record: Dictionary = edge_records.get(edge_key, {})
             if edge_record.is_empty():
                 edge_record = {
                     "triangle_ids": [],
                     "source_class_code": source_class,
                     "source_weld_ids": [low, high],
-                    "a_godot": vertices[int(vertex_indices[slot])],
-                    "b_godot": vertices[int(vertex_indices[(slot + 1) % 3])],
+                    "a_godot": edge_a_point,
+                    "b_godot": edge_b_point,
                 }
             elif int(edge_record.get("source_class_code", -1)) != source_class:
                 return {}

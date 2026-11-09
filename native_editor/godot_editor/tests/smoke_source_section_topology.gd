@@ -7,11 +7,14 @@ const TopologyPanel = preload("res://source_section_topology_panel.gd")
 const FillPreview = preload("res://source_section_fill_preview.gd")
 const EdgeOverlay = preload("res://source_section_edge_overlay.gd")
 const EdgePicker = preload("res://source_section_edge_picker.gd")
+const VertexPicker = preload("res://source_section_vertex_picker.gd")
 const SHA := "1111111111111111111111111111111111111111111111111111111111111111"
 
 var requested_neighbor_triangle_id := -1
 var requested_edge_overlay_enabled := false
 var edge_selection_cleared := false
+var requested_vertex_overlay_enabled := false
+var vertex_selection_cleared := false
 
 func _initialize() -> void:
     call_deferred("_run")
@@ -24,6 +27,12 @@ func _on_edge_overlay_toggled(enabled: bool) -> void:
 
 func _on_edge_selection_cleared() -> void:
     edge_selection_cleared = true
+
+func _on_vertex_overlay_toggled(enabled: bool) -> void:
+    requested_vertex_overlay_enabled = enabled
+
+func _on_vertex_selection_cleared() -> void:
+    vertex_selection_cleared = true
 
 func _fail(reason: String) -> void:
     push_error("DX2Ed source section topology smoke: " + reason)
@@ -107,6 +116,13 @@ func _run() -> void:
             or edge.get("section_triangle_ids", []).size() != int(edge.get("section_incidence_count", -1))):
             _fail("An edge record lost its exact source-weld or raw source-class identity: " + JSON.stringify(edge))
             return
+        var expected_a: Vector3 = picker.vertices[int(welds[0])]
+        var expected_b: Vector3 = picker.vertices[int(welds[1])]
+        var actual_a := Vector3(float(edge["a_godot_xyz"][0]), float(edge["a_godot_xyz"][1]), float(edge["a_godot_xyz"][2]))
+        var actual_b := Vector3(float(edge["b_godot_xyz"][0]), float(edge["b_godot_xyz"][1]), float(edge["b_godot_xyz"][2]))
+        if actual_a != expected_a or actual_b != expected_b:
+            _fail("Edge endpoint coordinates must follow the sorted original weld-ID pair, including reversed triangle winding.")
+            return
     var edge_overlay: Dictionary = EdgeOverlay.build_marker(report)
     var edge_marker: MeshInstance3D = edge_overlay.get("marker", null)
     var edge_material: StandardMaterial3D = null
@@ -184,6 +200,126 @@ func _run() -> void:
     if not EdgeOverlay.build_marker(tampered_report).is_empty():
         _fail("Malformed duplicate-weld edge identity must refuse the entire overlay.")
         return
+
+    var vertex_report: Dictionary = VertexPicker.build_vertex_report(report)
+    var vertex_records: Array = vertex_report.get("vertex_records", [])
+    if (vertex_report.is_empty() or vertex_records.size() != 7
+        or vertex_report.get("schema", "") != "DX2Ed-source-section-vertex-report-v1"
+        or vertex_report.get("exact_original_float32_weld_ids", false) != true
+        or vertex_report.get("mopp_leaf_subset_only", false) != true
+        or vertex_report.get("native_bsp_vertex_verified", true) != false
+        or vertex_report.get("native_map_written", true) != false):
+        _fail("Exact-weld vertex report did not derive a bounded read-only MOPP-subset vertex inventory.")
+        return
+    var target_vertex: Dictionary = {}
+    for raw_vertex in vertex_records:
+        var candidate: Dictionary = raw_vertex
+        if int(candidate.get("weld_id", -1)) == 1:
+            target_vertex = candidate
+            break
+    if (target_vertex.is_empty()
+        or target_vertex.get("incident_edge_keys", []).size() < 2
+        or target_vertex.get("incident_level_triangle_ids", []) != [0,1]
+        or target_vertex.get("external_section_representative_triangle_ids", []) != [3]):
+        _fail("Source weld ID 1 did not retain its incident local triangles and adjacent-section representative.")
+        return
+    var vertex_overlay: Dictionary = VertexPicker.build_overlay(
+        vertex_report, camera, viewport_size)
+    var vertex_marker: MultiMeshInstance3D = vertex_overlay.get("marker", null)
+    var vertex_material: StandardMaterial3D = null
+    if is_instance_valid(vertex_marker):
+        vertex_material = vertex_marker.material_override as StandardMaterial3D
+    if (vertex_overlay.is_empty() or not is_instance_valid(vertex_marker)
+        or vertex_marker.multimesh == null
+        or vertex_marker.multimesh.instance_count <= 0
+        or vertex_material == null or not vertex_material.no_depth_test
+        or vertex_material.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED
+        or vertex_marker.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        or vertex_marker.get_meta("editor_only", false) != true):
+        _fail("Exact-weld vertex handle overlay was not built as a bounded editor-only MultiMesh.")
+        return
+    var target_point := Vector3(
+        float(target_vertex["godot_xyz"][0]),
+        float(target_vertex["godot_xyz"][1]),
+        float(target_vertex["godot_xyz"][2]))
+    var target_vertex_screen := camera.unproject_position(target_point)
+    var vertex_index: Dictionary = VertexPicker.build_screen_index(
+        vertex_report, camera, viewport_size)
+    var picked_vertex: Dictionary = VertexPicker.pick_vertex(
+        vertex_index, target_vertex_screen, 12.0)
+    if (vertex_index.is_empty()
+        or vertex_index.get("projected_vertex_count", -1) <= 0
+        or not VertexPicker.camera_signature_matches(vertex_index, camera, viewport_size)
+        or picked_vertex.get("vertex_key", "") != "1"
+        or int(picked_vertex.get("source_weld_id", -1)) != 1
+        or not is_equal_approx(float(picked_vertex.get("depth_godot_units", -1.0)),
+            -camera.global_basis.z.dot(target_point - camera.global_position))
+        or not VertexPicker.record_belongs_to_report(vertex_report, picked_vertex.get("record", {}))):
+        _fail("Screen-space vertex picking did not recover the exact original Level weld identity.")
+        return
+    if not VertexPicker.pick_vertex(vertex_index, Vector2(-10000.0, -10000.0), 12.0).is_empty():
+        _fail("Screen-space vertex picker selected a handle outside its bounded viewport index.")
+        return
+    var tampered_vertex_index: Dictionary = vertex_index.duplicate(true)
+    tampered_vertex_index["cell_size"] = 64.0
+    if not VertexPicker.pick_vertex(tampered_vertex_index, target_vertex_screen).is_empty():
+        _fail("Screen-space vertex picker accepted a tampered spatial-index cell size.")
+        return
+    if not VertexPicker.pick_vertex(vertex_index, target_vertex_screen, 13.0).is_empty():
+        _fail("Screen-space vertex picker accepted a radius wider than its indexed 12-pixel envelope.")
+        return
+    var vertex_highlight: Node3D = VertexPicker.build_highlight(
+        picked_vertex, camera, viewport_size.y, Color(0.2, 1.0, 0.5, 1.0))
+    if (not is_instance_valid(vertex_highlight) or vertex_highlight.get_child_count() != 2
+        or vertex_highlight.get_meta("editor_only", false) != true):
+        _fail("Selected source vertex did not receive a transient editor-only sphere/crosshair highlight.")
+        return
+    vertex_highlight.free()
+    var stale_vertex_index: Dictionary = vertex_index.duplicate(true)
+    camera.position += Vector3(0.25, 0.0, 0.0)
+    if VertexPicker.camera_signature_matches(stale_vertex_index, camera, viewport_size):
+        _fail("Camera motion must invalidate the projected screen-space source vertex index.")
+        return
+    camera.position -= Vector3(0.25, 0.0, 0.0)
+    var original_near := camera.near
+    var original_far := camera.far
+    camera.near = original_near + 0.01
+    if VertexPicker.camera_signature_matches(stale_vertex_index, camera, viewport_size):
+        _fail("Camera near-plane changes must invalidate the projected source vertex index.")
+        return
+    camera.near = original_near
+    camera.far = camera.near + 0.01
+    if not VertexPicker.build_screen_index(vertex_report, camera, viewport_size).is_empty():
+        _fail("Vertices outside the active camera far clip plane must not receive selectable handles.")
+        return
+    camera.far = original_far
+    var invalid_vertex_report: Dictionary = vertex_report.duplicate(true)
+    var invalid_vertex_records: Array = invalid_vertex_report["vertex_records"]
+    for record_index in range(invalid_vertex_records.size()):
+        var invalid_record: Dictionary = invalid_vertex_records[record_index]
+        if int(invalid_record.get("weld_id", -1)) == 1:
+            invalid_record["incident_edge_keys"] = ["2:3"]
+            invalid_vertex_records[record_index] = invalid_record
+            break
+    invalid_vertex_report["vertex_records"] = invalid_vertex_records
+    if VertexPicker._valid_vertex_report(invalid_vertex_report):
+        _fail("A vertex report must reject incident edge keys that do not contain that exact weld ID.")
+        return
+    var mismatched_weld_report: Dictionary = report.duplicate(true)
+    var mismatched_edges: Array = mismatched_weld_report["edge_records"]
+    var mismatched_first: Dictionary = mismatched_edges[0]
+    mismatched_first["b_godot_xyz"] = [999.0, 0.0, 0.0]
+    mismatched_edges[0] = mismatched_first
+    mismatched_weld_report["edge_records"] = mismatched_edges
+    if not VertexPicker.build_vertex_report(mismatched_weld_report).is_empty():
+        _fail("Conflicting coordinates for one exact original weld ID must refuse the complete vertex report.")
+        return
+    var tampered_vertex: Dictionary = target_vertex.duplicate(true)
+    tampered_vertex["weld_id"] = 99
+    if VertexPicker.record_belongs_to_report(vertex_report, tampered_vertex):
+        _fail("A copied vertex record with a different weld ID must not validate against the source report.")
+        return
+
     var preview_details: Dictionary = picker.section_surface_preview_details(0)
     var preview_vertices: PackedVector3Array = preview_details.get(
         "triangle_vertices_godot", PackedVector3Array())
@@ -339,6 +475,8 @@ func _run() -> void:
     panel.triangle_requested.connect(_on_neighbor_triangle_requested)
     panel.edge_overlay_toggled.connect(_on_edge_overlay_toggled)
     panel.edge_selection_cleared.connect(_on_edge_selection_cleared)
+    panel.vertex_overlay_toggled.connect(_on_vertex_overlay_toggled)
+    panel.vertex_selection_cleared.connect(_on_vertex_selection_cleared)
     if panel.visible:
         _fail("Topology Inspector should start hidden.")
         return
@@ -399,6 +537,57 @@ func _run() -> void:
         or selected_payload.get("edge", {}).get("source_weld_ids", []) != cross_section_edge.get("source_weld_ids", [])):
         _fail("Selected-edge evidence JSON lost exact source identity or read-only scope.")
         return
+
+    if (panel.vertex_toggle.disabled or panel.copy_vertices_button.disabled
+        or panel.vertex_report.get("vertex_record_count", -1) != 7):
+        _fail("Topology Inspector did not expose the complete exact-weld vertex handle/report controls.")
+        return
+    panel.vertex_toggle.set_pressed_no_signal(true)
+    panel.vertex_toggle.emit_signal("toggled", true)
+    if not requested_vertex_overlay_enabled:
+        _fail("Topology Inspector vertex handle toggle did not emit its viewport request.")
+        return
+    var copied_vertex_report: Dictionary = panel.vertex_report_payload()
+    if (copied_vertex_report.get("schema", "") != "DX2Ed-source-section-vertex-report-v1"
+        or copied_vertex_report.get("vertex_record_count", -1) != 7
+        or copied_vertex_report.get("native_map_written", true) != false):
+        _fail("Copyable source vertex report lost exact weld identity or read-only scope.")
+        return
+    if not panel.set_selected_vertex(target_vertex, vertex_report):
+        _fail("Topology Inspector refused an exact-weld vertex present in its authenticated report.")
+        return
+    if (not panel.vertex_selection_panel.visible
+        or panel.vertex_triangle_selector.get_item_count() != 2
+        or panel.vertex_triangle_button.disabled
+        or panel.vertex_neighbor_selector.get_item_count() != 1
+        or panel.vertex_neighbor_button.disabled
+        or panel.vertex_copy_button.disabled
+        or not panel.vertex_selection_label.text.contains("Original Level float32 weld ID: 1")
+        or not panel.vertex_selection_label.text.contains("not native BSP vertex IDs")):
+        _fail("Selected-vertex Inspector did not expose weld ID, local incident triangles and observed adjacent representative.")
+        return
+    panel.vertex_triangle_selector.select(0)
+    panel._select_vertex_triangle()
+    if requested_neighbor_triangle_id != 0:
+        _fail("Selected-vertex Inspector did not navigate to an incident original Level triangle.")
+        return
+    panel.vertex_neighbor_selector.select(0)
+    panel._select_vertex_neighbor()
+    if requested_neighbor_triangle_id != 3:
+        _fail("Selected-vertex Inspector did not navigate to the adjacent MOPP-section representative.")
+        return
+    var selected_vertex_json: Dictionary = panel.selected_vertex_payload()
+    if (selected_vertex_json.get("schema", "") != "DX2Ed-selected-source-section-vertex-v1"
+        or selected_vertex_json.get("native_map_written", true) != false
+        or selected_vertex_json.get("native_bsp_vertex_verified", true) != false
+        or selected_vertex_json.get("vertex", {}).get("weld_id", -1) != 1):
+        _fail("Selected-vertex evidence JSON lost source identity or read-only scope.")
+        return
+    panel.clear_selected_vertex()
+    if not vertex_selection_cleared or panel.vertex_selection_panel.visible:
+        _fail("Clearing selected vertex did not notify the viewport lifecycle and hide its Inspector.")
+        return
+
     panel.clear_selected_edge()
     if not edge_selection_cleared or panel.edge_selection_panel.visible:
         _fail("Clearing selected edge did not notify the viewport lifecycle and hide its Inspector.")
@@ -408,12 +597,17 @@ func _run() -> void:
         or requested_edge_overlay_enabled
         or not panel.edge_toggle.disabled or panel.edge_toggle.button_pressed
         or not panel.copy_edges_button.disabled
+        or panel.vertex_toggle.button_pressed or not panel.vertex_toggle.disabled
+        or not panel.copy_vertices_button.disabled
+        or not panel.vertex_report.is_empty()
+        or requested_vertex_overlay_enabled
         or panel.neighbor_selector.get_item_count() != 0
         or not panel.neighbor_button.disabled or panel.neighbor_row.visible):
         _fail("Clearing source selection left stale topology or neighbor-navigation state visible.")
         return
     edge_marker.free()
     preview_marker.free()
+    vertex_marker.free()
     camera.free()
-    print("DX2Ed source section topology, exact-weld overlay, screen-space edge picking, selected-edge Inspector and adjacent navigation smoke: PASS")
+    print("DX2Ed source section topology, exact-weld edge and vertex overlays, screen-space picking, selected-edge/vertex Inspectors and adjacent navigation smoke: PASS")
     quit(0)
