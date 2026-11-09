@@ -1650,9 +1650,6 @@ func _make_ui() -> void:
     polygon_inspector_panel.add_child(surface_heading)
     var surface_note := Label.new()
     surface_note.text = (
-        "Top cap, bottom cap and side walls have separate slots. The procedural checker makes "
-        + "UV scale/offset visible; original MatLib shaders and native BSP materials are not written.")
-    surface_note.text = (
         "Top, bottom and side slots keep independent UVs and preview materials. Choose a resolved "
         + "diffuse in Materials and apply it to the currently selected slot; this only changes a "
         + "private Polygon preview. Presets control tint/roughness, not DX2 shader semantics.")
