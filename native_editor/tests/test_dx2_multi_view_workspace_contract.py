@@ -24,8 +24,8 @@ class DX2EdMultiViewWorkspaceContractTests(unittest.TestCase):
 
     def test_workspace_migrates_legacy_and_persists_all_four_cameras(self):
         main = (ROOT / "native_editor/godot_editor/main.gd").read_text("utf-8")
-        self.assertIn("var legacy := value.size() == 3", main)
-        self.assertIn("var extended := value.size() == 6", main)
+        self.assertIn("var legacy: bool = value.size() == 3", main)
+        self.assertIn("var extended: bool = value.size() == 6", main)
         self.assertIn('"view_states": view_states.duplicate(true)', main)
         self.assertIn("_apply_draft_workspace(workspace)", main)
 
