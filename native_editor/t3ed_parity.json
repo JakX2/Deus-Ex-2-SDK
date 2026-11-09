@@ -203,6 +203,14 @@
       "phase": 1,
       "evidence": "DX2Ed v0.48 adds bounded read-only analysis of the MOPP terminal-leaf subset for a selected original Flesh render-section tuple: exact source-weld connectivity, connected components, summed per-triangle Level-unit area/bounds/centroid, MOPP-leaf source edge-class counts, perimeter and adjacent MOPP-linked sections. The 8,192-triangle section and 1,024-incidence-per-edge caps skip atomically. This is not a complete render/BSP surface or Havok adjacency graph.",
       "next_step": "Authenticate complete BSP surface polygons and native material indices; validate against independently rendered geometry and the retail runtime."
+    },
+    {
+      "id": "source_section_navigation_fill",
+      "title": "Source-section neighbor navigation and filled MOPP subset preview",
+      "status": "partial",
+      "phase": 1,
+      "evidence": "DX2Ed v0.49 adds exact-weld MOPP-leaf adjacent-section navigation using a deterministic representative original triangle ID, plus a translucent editor-only fill overlay for the selected MOPP terminal-leaf subset. Preview is capped atomically at 8,192 triangles and uses a display-only normal offset. This is not complete Flesh/BSP topology, Havok adjacency, native collision or writable geometry.",
+      "next_step": "Authenticate complete original BSP surface polygons and native surface/material identities; compare source-section fills against independently rendered original maps."
     }
   ]
 }
