@@ -118,6 +118,21 @@ func _run() -> void:
     mismatch_material["stage_mask"] = 0x201
     mismatch_material["stages"] = mismatch_stages
 
+    var variant_stages: Array = []
+    for index in range(9):
+        if index == 0:
+            var normal_stage: Dictionary = stages[2].duplicate(true)
+            normal_stage["index"] = 0
+            variant_stages.append(normal_stage)
+        else:
+            variant_stages.append({"index": index, "name": "", "resolved": false})
+    var variant_material: Dictionary = material.duplicate(true)
+    variant_material["name"] = "M_SYNTH_VARIANT"
+    variant_material["category_id"] = 42
+    variant_material["flags"] = 16
+    variant_material["stage_mask"] = 1
+    variant_material["stages"] = variant_stages
+
     var catalog := {
         "schema": "DX2Ed-MatLib-catalog-v1",
         "read_only": true,
@@ -125,8 +140,8 @@ func _run() -> void:
         "source_bytes_modified": false,
         "catalog_id": "a".repeat(64),
         "source_files": [{"path": source_path, "sha256": source_sha, "bytes": 6}],
-        "materials": [material, mismatch_material],
-        "material_count": 2,
+        "materials": [material, mismatch_material, variant_material],
+        "material_count": 3,
         "texture_count": 2,
         "preview_count": 2,
         "unresolved_stage_count": 1
@@ -139,7 +154,7 @@ func _run() -> void:
     if not browser.load_catalog(catalog_path):
         _fail("Valid source-backed synthetic catalog was rejected.")
         return
-    if browser.materials.size() != 2:
+    if browser.materials.size() != 3:
         _fail("Material records were not loaded.")
         return
 
@@ -195,17 +210,54 @@ func _run() -> void:
     if not browser._run_catalog_stage_mask_audit():
         _fail("Catalog-wide stage-mask / slot audit failed.")
         return
-    if (not browser.catalog_audit_label.text.contains("Materials: 2")
-        or not browser.catalog_audit_label.text.contains("exact low-nine matches: 1")
+    if (not browser.catalog_audit_label.text.contains("Materials: 3")
+        or not browser.catalog_audit_label.text.contains("exact low-nine matches: 2")
         or not browser.catalog_audit_label.text.contains("mismatches: 1")
-        or not browser.catalog_audit_label.text.contains("Records with high bits set: 1")):
+        or not browser.catalog_audit_label.text.contains("Records with high bits set: 1")
+        or not browser.catalog_audit_label.text.contains("Raw category/flags cohorts: 2 unique, 0 omitted")
+        or not browser.catalog_audit_label.text.contains("Cohort cat=7 flags=0x00000003 n=2 exact=1 mismatch=1")):
         _fail("Catalog-wide stage-mask audit did not report exact, mismatch and high-bit controls.")
+        return
+
+    browser.search_box.text = ""
+    browser.filter_selector.select(0)
+    browser.category_filter_selector.select(2)
+    browser._refresh_list()
+    if (browser.visible_materials.size() != 1
+        or str(browser.visible_materials[0].get("name", "")) != "M_SYNTH_VARIANT"
+        or not browser.selected_material.is_empty()):
+        _fail("Raw category ID filter did not isolate the opaque category 42 cohort or clear stale selection.")
+        return
+    if (browser.category_filter_selector.get_item_text(2) != "42"
+        or browser.flags_filter_selector.get_item_text(2) != "0x00000010"):
+        _fail("Raw category/flags selectors did not expose deterministic numeric values.")
+        return
+    browser.flags_filter_selector.select(2)
+    browser._refresh_list()
+    if browser.visible_materials.size() != 1:
+        _fail("Raw flags filter did not isolate the matching source flag pattern.")
+        return
+    browser.category_filter_selector.select(1)
+    browser._refresh_list()
+    if not browser.visible_materials.is_empty():
+        _fail("Combined raw category/flags filters admitted a nonmatching material.")
+        return
+    browser.flags_filter_selector.select(1)
+    browser._refresh_list()
+    if browser.visible_materials.size() != 2:
+        _fail("Raw category 7 / flags 3 filters did not retain both matching records.")
+        return
+    browser.category_filter_selector.select(0)
+    browser.flags_filter_selector.select(0)
+    browser._refresh_list()
+    if browser.visible_materials.size() != 3:
+        _fail("Resetting raw metadata filters did not restore the full catalog.")
         return
 
     browser.filter_selector.select(5)
     browser._refresh_list()
-    if browser.visible_materials.size() != 1:
-        _fail("Parser usage-code 1 filter did not find the synthetic normal-usage resource.")
+    if browser.visible_materials.size() != 3:
+        _fail("Parser usage-code 1 filter did not find all synthetic normal-usage resources.")
         return
     browser.filter_selector.select(10)
     browser._refresh_list()
@@ -220,7 +272,7 @@ func _run() -> void:
     if browser.load_catalog(hostile_path):
         _fail("Path-traversing thumbnail reference passed catalog validation.")
         return
-    if browser.materials.size() != 2:
+    if browser.materials.size() != 3:
         _fail("Rejected catalog destroyed the last valid browser state.")
         return
 
@@ -235,5 +287,5 @@ func _run() -> void:
         _fail("Modified thumbnail bytes passed SHA-256 verification.")
         return
 
-    print("DX2Ed v0.45 MatLib stage-mask / slot correspondence audit smoke: PASS")
+    print("DX2Ed v0.46 MatLib raw category/flags cohort browser smoke: PASS")
     quit(0)
