@@ -1,6 +1,7 @@
 extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
 const CustomPolygon = preload("res://custom_polygon_geometry.gd")
+const DraftLight = preload("res://draft_light_authoring.gd")
 const MatLibBrowser = preload("res://matlib_browser.gd")
 const OrthoGuides = preload("res://orthographic_authoring_guides.gd")
 const PythonRuntime = preload("res://python_runtime.gd")
@@ -352,6 +353,18 @@ var draft_groups: Dictionary = {} # private group name -> editor-only Node3D par
 var draft_group_original_parents: Dictionary = {} # mesh name -> original Node parent
 var selected_group_names: Array[String] = []
 var draft_brush_specs: Dictionary = {} # draft name -> validated dimensions and type
+var draft_light_specs: Dictionary = {} # DraftProp name -> editor-private point/spot preview specification
+var draft_light_kind_control: OptionButton
+var draft_light_add_button: Button
+var draft_light_panel: VBoxContainer
+var draft_light_color_control: ColorPickerButton
+var draft_light_energy_control: SpinBox
+var draft_light_range_control: SpinBox
+var draft_light_angle_control: SpinBox
+var draft_light_angle_row: HBoxContainer
+var draft_light_shadow_control: CheckBox
+var draft_light_enabled_control: CheckBox
+var draft_light_syncing := false
 var brush_kind_control: OptionButton
 var brush_size_controls: Array[SpinBox] = []
 var brush_steps_control: SpinBox
@@ -882,6 +895,18 @@ func _make_ui() -> void:
     group_ungroup_button.pressed.connect(_ungroup_selected)
     group_row.add_child(group_ungroup_button)
     hierarchy_tab.add_child(group_row)
+    var draft_light_row := HFlowContainer.new()
+    draft_light_kind_control = OptionButton.new()
+    draft_light_kind_control.add_item("Point")
+    draft_light_kind_control.add_item("Spot")
+    draft_light_kind_control.tooltip_text = "Godot-only draft light type; this does not create a native DX2 Light actor."
+    draft_light_row.add_child(draft_light_kind_control)
+    draft_light_add_button = Button.new()
+    draft_light_add_button.text = "Add draft light"
+    draft_light_add_button.tooltip_text = "Add a private Point or Spot preview at the selected pivot, or the current view target."
+    draft_light_add_button.pressed.connect(_add_draft_light)
+    draft_light_row.add_child(draft_light_add_button)
+    hierarchy_tab.add_child(draft_light_row)
     hierarchy_tab.add_child(hierarchy_tree)
     var assets_tab := VBoxContainer.new()
     assets_tab.name = "Assets"
@@ -1606,6 +1631,59 @@ func _make_ui() -> void:
             spin.value_changed.connect(_inspector_transform_changed.bind(mode, axis))
             transform_grid.add_child(spin)
             inspector_spins[mode + str(axis)] = spin
+    draft_light_panel = VBoxContainer.new()
+    draft_light_panel.visible = false
+    inspector_pane.add_child(draft_light_panel)
+    var draft_light_heading := Label.new()
+    draft_light_heading.text = "Draft Light  |  Godot preview only"
+    draft_light_panel.add_child(draft_light_heading)
+    var draft_light_note := Label.new()
+    draft_light_note.text = "Private editor light. No native DX2 actor, projector, lightmap or GameSys writer."
+    draft_light_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    draft_light_panel.add_child(draft_light_note)
+    var draft_light_color_row := HBoxContainer.new()
+    var draft_light_color_label := Label.new()
+    draft_light_color_label.text = "Color"
+    draft_light_color_row.add_child(draft_light_color_label)
+    draft_light_color_control = ColorPickerButton.new()
+    draft_light_color_control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    draft_light_color_control.color_changed.connect(_draft_light_value_changed.bind("color"))
+    draft_light_color_row.add_child(draft_light_color_control)
+    draft_light_panel.add_child(draft_light_color_row)
+    draft_light_energy_control = SpinBox.new()
+    draft_light_energy_control.min_value = 0.0
+    draft_light_energy_control.max_value = 16.0
+    draft_light_energy_control.step = 0.05
+    draft_light_energy_control.prefix = "Energy "
+    draft_light_energy_control.value_changed.connect(_draft_light_value_changed.bind("energy"))
+    draft_light_panel.add_child(draft_light_energy_control)
+    draft_light_range_control = SpinBox.new()
+    draft_light_range_control.min_value = 0.5
+    draft_light_range_control.max_value = 128.0
+    draft_light_range_control.step = 0.25
+    draft_light_range_control.prefix = "Range "
+    draft_light_range_control.value_changed.connect(_draft_light_value_changed.bind("range"))
+    draft_light_panel.add_child(draft_light_range_control)
+    draft_light_angle_row = HBoxContainer.new()
+    var draft_light_angle_label := Label.new()
+    draft_light_angle_label.text = "Spot cone"
+    draft_light_angle_row.add_child(draft_light_angle_label)
+    draft_light_angle_control = SpinBox.new()
+    draft_light_angle_control.min_value = 5.0
+    draft_light_angle_control.max_value = 80.0
+    draft_light_angle_control.step = 1.0
+    draft_light_angle_control.suffix = "°"
+    draft_light_angle_control.value_changed.connect(_draft_light_value_changed.bind("spot_angle"))
+    draft_light_angle_row.add_child(draft_light_angle_control)
+    draft_light_panel.add_child(draft_light_angle_row)
+    draft_light_shadow_control = CheckBox.new()
+    draft_light_shadow_control.text = "Cast dynamic shadows (costly)"
+    draft_light_shadow_control.toggled.connect(_draft_light_value_changed.bind("shadows"))
+    draft_light_panel.add_child(draft_light_shadow_control)
+    draft_light_enabled_control = CheckBox.new()
+    draft_light_enabled_control.text = "Light enabled"
+    draft_light_enabled_control.toggled.connect(_draft_light_value_changed.bind("enabled"))
+    draft_light_panel.add_child(draft_light_enabled_control)
     rotation_lab_panel = VBoxContainer.new()
     inspector_pane.add_child(rotation_lab_panel)
     var rotation_lab_heading := Label.new()
@@ -2990,6 +3068,8 @@ func _clear_current_scene() -> void:
     draft_prop_copies.clear()
     draft_prop_sources.clear()
     draft_brush_specs.clear()
+    draft_light_specs.clear()
+    _refresh_draft_light_inspector()
     native_clone_pending.clear()
     native_multi_pending.clear()
     next_prop_copy_id = 1
@@ -5746,6 +5826,8 @@ func _draft_source_is_valid(source: String) -> bool:
         return not _asset_record(source.trim_prefix("AssetMesh::")).is_empty()
     if source.begins_with("Brush::"):
         return BrushGeometry.TYPES.has(source.trim_prefix("Brush::"))
+    if source.begins_with("Light::"):
+        return DraftLight.KINDS.has(source.trim_prefix("Light::"))
     return false
 
 
@@ -6015,11 +6097,13 @@ func _refresh_hierarchy() -> void:
         authored_brushes.set_text(0, "Brushes (" + str(draft_brush_specs.size()) + ")")
         authored_brushes.set_selectable(0, false)
         var drafts := hierarchy_tree.create_item(scene_item)
-        drafts.set_text(0, "Draft props (" + str(draft_prop_copies.size() - draft_brush_specs.size()) + ")")
+        drafts.set_text(0, "Draft props (" + str(draft_prop_copies.size() - draft_brush_specs.size() - draft_light_specs.size()) + ")")
         drafts.set_selectable(0, false)
         for name in draft_prop_copies:
             var source_name := str(draft_prop_sources.get(name, ""))
             var is_brush := draft_brush_specs.has(name)
+            if draft_light_specs.has(name):
+                continue
             if not _group_name_for_node(draft_prop_copies[name]).is_empty():
                 continue
             if query != "" and query not in str(name).to_lower() and query not in source_name.to_lower():
@@ -6059,6 +6143,26 @@ func _refresh_hierarchy() -> void:
                     leaf.set_tooltip_text(0, "Private group member. Parent transforms affect this preview mesh only.")
                     leaf.set_metadata(0, str(member.name))
                     hierarchy_items[str(member.name)] = leaf
+
+    if category_filter.selected in [0, 3] and not draft_light_specs.is_empty():
+        var draft_lights := hierarchy_tree.create_item(scene_item)
+        draft_lights.set_text(0, "Draft lights (" + str(draft_light_specs.size()) + ")")
+        draft_lights.set_selectable(0, false)
+        var light_names: Array = draft_light_specs.keys()
+        light_names.sort()
+        for value in light_names:
+            var light_name := str(value)
+            var grouped_light := not _group_name_for_node(draft_prop_copies.get(light_name, null)).is_empty()
+            if category_filter.selected == 0 and grouped_light:
+                continue
+            if query != "" and query not in light_name.to_lower():
+                continue
+            var light_item := hierarchy_tree.create_item(draft_lights)
+            var light_spec: Dictionary = draft_light_specs[light_name]
+            light_item.set_text(0, light_name + "  [" + str(light_spec.get("kind", "Point")) + "]")
+            light_item.set_tooltip_text(0, "Editor-private Godot light preview. Not a native DX2 Light actor or lightmap.")
+            light_item.set_metadata(0, light_name)
+            hierarchy_items[light_name] = light_item
 
     if category_filter.selected == 0:
         var unlinked := hierarchy_tree.create_item(scene_item)
@@ -6999,6 +7103,14 @@ func _refresh_selection_inspector() -> void:
             selected_actor = actors_by_name[name]
             selected_diagnostic = _format_actor_diagnostic(selected_actor)
             inspector.text = selected_diagnostic + "\n\n--- ORIGINAL ACTOR PROPERTIES ---\n" + JSON.stringify(selected_actor, "  ")
+        elif draft_light_specs.has(name):
+            selected_actor = {}
+            var light_spec: Dictionary = draft_light_specs[name]
+            selected_diagnostic = (
+                "DX2Ed editor-private light preview\nType: " + str(light_spec.get("kind", "Point"))
+                + "\nGodot-only light node and marker. Native DX2 Light/GameSys semantics are not inferred."
+            )
+            inspector.text = selected_diagnostic
         else:
             selected_actor = {}
             selected_diagnostic = _format_mesh_diagnostic(node)
@@ -7312,6 +7424,7 @@ func _refresh_inspector_panel() -> void:
         return
     _refresh_geometry_debug_buttons()
     _refresh_brush_inspector()
+    _refresh_draft_light_inspector()
     _refresh_placement_panel()
     var nodes := _selection_nodes()
     var current_actor: Dictionary = {}
@@ -7323,6 +7436,12 @@ func _refresh_inspector_panel() -> void:
     elif nodes.is_empty() and not selected_actor.is_empty():
         current_actor = selected_actor
     inspector_summary.text = _mesh_geometry_material_summary(current_actor, current_mesh)
+    if nodes.size() == 1 and draft_light_specs.has(str(nodes[0].name)):
+        var light_spec: Dictionary = draft_light_specs[str(nodes[0].name)]
+        inspector_summary.text = (
+            "Editor-private " + str(light_spec.get("kind", "Point")) + " light preview\n"
+            + "Real-time Godot illumination; no native DX2 bake or actor serialization."
+        )
     if _actor_on_original_ai_layer(current_actor):
         var tag: Variant = _environment_game_value(current_actor, 41)
         var skin: Variant = _environment_game_value(current_actor, 1659)
@@ -7351,6 +7470,12 @@ func _refresh_inspector_panel() -> void:
     inspector_title.text = name if nodes.size() == 1 else str(nodes.size()) + " selected objects"
     if nodes.size() > 1:
         inspector_details.text = "Group selection | Position = shared pivot\nTransforms are drafts; source map unchanged."
+    elif draft_light_specs.has(name):
+        var light_spec: Dictionary = draft_light_specs[name]
+        inspector_details.text = (
+            "Editor-private " + str(light_spec.get("kind", "Point")) + " Light3D preview"
+            + "\nColor, energy, range and spot cone are Godot-only approximations."
+            + "\nNot a native DX2 Light actor, projector, lightmap or GameSys record.")
     elif draft_prop_copies.has(name):
         var template: Dictionary = draft_template_provenance.get(name, {})
         inspector_details.text = (
@@ -7780,7 +7905,8 @@ func _capture_edit_state() -> Dictionary:
                 "source": str(draft_prop_sources.get(name, "")),
                 "transform": copy.global_transform,
                 "class_template": draft_template_provenance.get(name, {}).duplicate(true),
-                "brush": draft_brush_specs.get(name, {}).duplicate(true)
+                "brush": draft_brush_specs.get(name, {}).duplicate(true),
+                "light": draft_light_specs.get(name, {}).duplicate(true)
             }
     return {
         "moved": moved,
@@ -7814,6 +7940,7 @@ func _apply_edit_state(state: Dictionary) -> void:
     draft_prop_sources.clear()
     draft_template_provenance.clear()
     draft_brush_specs.clear()
+    draft_light_specs.clear()
     next_prop_copy_id = 1
     var moved: Dictionary = state.get("moved", {})
     for name in moved:
@@ -7833,6 +7960,13 @@ func _apply_edit_state(state: Dictionary) -> void:
                 var brush: Variant = info.get("brush", {})
                 if typeof(brush) == TYPE_DICTIONARY and not brush.is_empty():
                     _set_brush_spec(str(name), brush)
+                var light: Variant = info.get("light", {})
+                if source.begins_with("Light::"):
+                    var checked_light: Dictionary = DraftLight.validate(
+                        light, source.trim_prefix("Light::"))
+                    if not checked_light.is_empty():
+                        draft_light_specs[str(name)] = checked_light
+                        DraftLight.apply_to_node(rebuilt, checked_light)
                 var prov: Variant = info.get("class_template", {})
                 if typeof(prov) == TYPE_DICTIONARY and _valid_template_provenance(prov, source):
                     if not prov.is_empty():
@@ -8960,35 +9094,44 @@ func _draft_source_name(instance: MeshInstance3D) -> String:
 func _new_draft_copy(source_name: String, copy_name: String, world_transform: Transform3D) -> MeshInstance3D:
     if draft_prop_copies.has(copy_name) or not _draft_source_is_valid(source_name):
         return null
+    var duplicate: MeshInstance3D = null
     var mesh: Mesh = null
     var source: MeshInstance3D = null
-    if source_name.begins_with("Brush::"):
-        var kind := source_name.trim_prefix("Brush::")
-        mesh = BrushGeometry.build_mesh(BrushGeometry.default_spec(kind))
-    elif source_name.begins_with("AssetMesh::"):
-        var resource_name := source_name.trim_prefix("AssetMesh::")
-        if not _load_asset_mesh(resource_name):
+    if source_name.begins_with("Light::"):
+        duplicate = DraftLight.create_preview_node(source_name.trim_prefix("Light::"))
+        if not is_instance_valid(duplicate):
             return null
-        mesh = asset_mesh_resources[resource_name]
     else:
-        source = meshes_by_actor[source_name]
-        if not is_instance_valid(source):
+        if source_name.begins_with("Brush::"):
+            var kind := source_name.trim_prefix("Brush::")
+            mesh = BrushGeometry.build_mesh(BrushGeometry.default_spec(kind))
+        elif source_name.begins_with("AssetMesh::"):
+            var resource_name := source_name.trim_prefix("AssetMesh::")
+            if not _load_asset_mesh(resource_name):
+                return null
+            mesh = asset_mesh_resources[resource_name]
+        else:
+            source = meshes_by_actor[source_name]
+            if not is_instance_valid(source):
+                return null
+            mesh = source.mesh
+        if mesh == null:
             return null
-        mesh = source.mesh
-    if mesh == null:
-        return null
-    var duplicate := MeshInstance3D.new()
+        duplicate = MeshInstance3D.new()
+        duplicate.mesh = mesh
+        if is_instance_valid(source):
+            duplicate.material_override = source.material_override
+            duplicate.cast_shadow = source.cast_shadow
     duplicate.name = copy_name
-    duplicate.mesh = mesh
-    if is_instance_valid(source):
-        duplicate.material_override = source.material_override
-        duplicate.cast_shadow = source.cast_shadow
+    duplicate.set_meta("editor_only", true)
     world_root.add_child(duplicate)
     duplicate.global_transform = world_transform
     draft_prop_copies[copy_name] = duplicate
     draft_prop_sources[copy_name] = source_name
     if source_name.begins_with("Brush::"):
         _set_brush_spec(copy_name, BrushGeometry.default_spec(source_name.trim_prefix("Brush::")))
+    elif source_name.begins_with("Light::"):
+        draft_light_specs[copy_name] = DraftLight.default_spec(source_name.trim_prefix("Light::"))
     all_mesh_instances.append(duplicate)
     return duplicate
 
@@ -9011,6 +9154,10 @@ func _duplicate_selected_prop() -> void:
         if is_instance_valid(new_copy):
             if draft_brush_specs.has(str(node.name)):
                 _set_brush_spec(name, draft_brush_specs[str(node.name)])
+            if draft_light_specs.has(str(node.name)):
+                var light_spec: Dictionary = draft_light_specs[str(node.name)].duplicate(true)
+                draft_light_specs[name] = light_spec
+                DraftLight.apply_to_node(new_copy, light_spec)
             if draft_template_provenance.has(str(node.name)):
                 draft_template_provenance[name] = draft_template_provenance[str(node.name)].duplicate(true)
             copies.append(new_copy)
@@ -9102,6 +9249,7 @@ func _reset_selected_prop() -> void:
             draft_prop_sources.erase(name)
             draft_template_provenance.erase(name)
             draft_brush_specs.erase(name)
+            draft_light_specs.erase(name)
             all_mesh_instances.erase(node)
             node.free()
             removed += 1
@@ -9913,7 +10061,8 @@ func _save_prop_draft() -> void:
             copies.append({"name": name, "from_actor": draft_prop_sources[name],
                            "transform": _transform_to_array(duplicate.global_transform),
                            "class_template": draft_template_provenance.get(name, {}).duplicate(true),
-                           "brush": draft_brush_specs.get(name, {}).duplicate(true)})
+                           "brush": draft_brush_specs.get(name, {}).duplicate(true),
+                           "light": draft_light_specs.get(name, {}).duplicate(true)})
     var groups := _serialize_draft_groups()
     var document := {
         "schema": "DX2Ed-prop-draft-v1",
@@ -9931,7 +10080,7 @@ func _save_prop_draft() -> void:
     if not _write_private_draft_transaction(path, JSON.stringify(document, "  ")):
         status_label.text = "Private draft save failed; existing draft preserved: " + path
         return
-    status_label.text = "Saved " + str(moved.size()) + " moved props, " + str(copies.size()) + " copies, " + str(groups.size()) + " private groups and " + str(document["property_edits"].size()) + " actor property overrides (not GMP)."
+    status_label.text = "Saved " + str(moved.size()) + " moved props, " + str(copies.size()) + " copies including " + str(draft_light_specs.size()) + " private lights, " + str(groups.size()) + " groups and " + str(document["property_edits"].size()) + " actor property overrides (not GMP)."
 
 func _draft_record_preflight(moved: Array, copies: Array) -> String:
     var seen_moves := {}
@@ -9946,6 +10095,8 @@ func _draft_record_preflight(moved: Array, copies: Array) -> String:
             return "Moved actor has no live preview mesh."
         seen_moves[name] = true
     var seen_copies := {}
+    var draft_light_count := 0
+    var shadow_light_count := 0
     for entry in copies:
         if typeof(entry) != TYPE_DICTIONARY or typeof(entry.get("name", null)) != TYPE_STRING or typeof(entry.get("from_actor", null)) != TYPE_STRING:
             return "Invalid draft copy identity."
@@ -9957,6 +10108,23 @@ func _draft_record_preflight(moved: Array, copies: Array) -> String:
             return "Duplicate or invalid draft copy name."
         if not _draft_source_is_valid(source):
             return "Draft copy source is unavailable."
+        var light: Variant = entry.get("light", {})
+        if typeof(light) != TYPE_DICTIONARY:
+            return "Draft light metadata must be an object."
+        if source.begins_with("Light::"):
+            var checked_light: Dictionary = DraftLight.validate(
+                light, source.trim_prefix("Light::"))
+            if checked_light.is_empty():
+                return "Draft light kind, color, energy, range or flags are invalid."
+            draft_light_count += 1
+            if bool(checked_light["shadows"]):
+                shadow_light_count += 1
+            if draft_light_count > DraftLight.MAX_LIGHTS:
+                return "Draft exceeds the editor light preview limit."
+            if shadow_light_count > DraftLight.MAX_SHADOW_LIGHTS:
+                return "Draft exceeds the editor shadow-light limit."
+        elif not light.is_empty():
+            return "Light metadata cannot be attached to a non-light draft."
         if source.begins_with("AssetMesh::"):
             # Existing catalog entry alone is insufficient to reconstruct a copy.
             # A local preview GLB must be available before mutating editor state.
@@ -10075,6 +10243,7 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
     draft_prop_sources.clear()
     draft_template_provenance.clear()
     draft_brush_specs.clear()
+    draft_light_specs.clear()
     next_prop_copy_id = 1
     for entry in moved:
         var name := str(entry.get("actor", ""))
@@ -10090,6 +10259,12 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
             var brush: Dictionary = entry.get("brush", {})
             if not brush.is_empty():
                 _set_brush_spec(name, brush)
+            if from_actor.begins_with("Light::"):
+                var checked_light: Dictionary = DraftLight.validate(
+                    entry.get("light", {}), from_actor.trim_prefix("Light::"))
+                if not checked_light.is_empty():
+                    draft_light_specs[name] = checked_light
+                    DraftLight.apply_to_node(instance, checked_light)
             var prov: Dictionary = entry.get("class_template", {})
             if not prov.is_empty():
                 draft_template_provenance[name] = prov.duplicate(true)
@@ -10115,7 +10290,7 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
         _record_edit("Load draft", history_before)
     _refresh_hierarchy()
     _refresh_inspector_panel()
-    status_label.text = "Loaded private prop/property/group draft. Original GMP unchanged."
+    status_label.text = "Loaded private prop/light/property/group draft. Original GMP unchanged."
 
 func focus_selected() -> void:
     if is_instance_valid(selected_mesh):
