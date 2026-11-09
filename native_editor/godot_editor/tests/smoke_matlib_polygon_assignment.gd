@@ -1,5 +1,5 @@
 extends SceneTree
-## End-to-end source-backed diffuse assignment to one private Polygon surface.
+## End-to-end source-backed diffuse assignment to multiple private Polygon surfaces.
 ## All IBD identity bytes and texture pixels are invented synthetic fixtures.
 
 const Editor = preload("res://main.gd")
@@ -12,7 +12,7 @@ func _initialize() -> void:
 
 
 func _fail(message: String) -> void:
-    push_error("DX2Ed v0.42 MatLib-to-Polygon assignment: " + message)
+    push_error("DX2Ed v0.43 MatLib batch-to-Polygon assignment: " + message)
     quit(1)
 
 
@@ -121,10 +121,18 @@ func _run() -> void:
         "user://dx2ed_matlib_polygon_assignment_map")
     var draft := editor._new_draft_copy(
         "Brush::Polygon", "DraftProp_42", Transform3D.IDENTITY)
-    if not is_instance_valid(draft):
-        _fail("Could not create an editor-only Polygon draft.")
+    var second_draft := editor._new_draft_copy(
+        "Brush::Polygon", "DraftProp_43", Transform3D(Basis(), Vector3(3.0, 0.0, 0.0)))
+    var box_draft := editor._new_draft_copy(
+        "Brush::Box", "DraftProp_44", Transform3D.IDENTITY)
+    if (not is_instance_valid(draft) or not is_instance_valid(second_draft)
+        or not is_instance_valid(box_draft)):
+        _fail("Could not create the two Polygon targets and mixed-selection Box fixture.")
         return
-    editor._select_mesh_only(draft)
+    editor._clear_selection()
+    editor._add_selection_mesh(draft)
+    editor._add_selection_mesh(second_draft)
+    editor._refresh_selection_inspector()
 
     var browser = editor.matlib_browser
     if browser == null or not browser.load_catalog(catalog_path):
@@ -141,33 +149,64 @@ func _run() -> void:
         _fail("Resolved diffuse did not produce a source-pinned assignment.")
         return
 
-    editor.polygon_surface_selector.select(2)
-    editor._polygon_surface_slot_selected(2)
+    browser.target_slot_selector.select(2)
     var history_before := editor.undo_stack.size()
     browser._request_apply_selected_material()
-    var spec: Dictionary = editor.draft_brush_specs["DraftProp_42"]
-    var assignment: Dictionary = spec["surface_style"]["sides"]["source_material"]
-    var mesh := editor.draft_prop_copies["DraftProp_42"].mesh as ArrayMesh
-    var side_material := mesh.surface_get_material(2) as StandardMaterial3D
+    var spec_a: Dictionary = editor.draft_brush_specs["DraftProp_42"]
+    var spec_b: Dictionary = editor.draft_brush_specs["DraftProp_43"]
+    var assignment_a: Dictionary = spec_a["surface_style"]["sides"]["source_material"]
+    var assignment_b: Dictionary = spec_b["surface_style"]["sides"]["source_material"]
+    var mesh_a := editor.draft_prop_copies["DraftProp_42"].mesh as ArrayMesh
+    var mesh_b := editor.draft_prop_copies["DraftProp_43"].mesh as ArrayMesh
+    var side_material_a := mesh_a.surface_get_material(2) as StandardMaterial3D
+    var side_material_b := mesh_b.surface_get_material(2) as StandardMaterial3D
     if (editor.undo_stack.size() != history_before + 1
-        or assignment.is_empty()
-        or assignment["catalog_id"] != "b".repeat(64)
-        or assignment["catalog_sha256"] != FileAccess.get_sha256(catalog_path).to_lower()
-        or assignment["preview_sha256"] != preview_sha
-        or side_material == null or side_material.albedo_texture == null
-        or side_material.albedo_texture.get_image().get_width() != 8
-        or mesh.surface_get_material(0) == side_material
-        or mesh.surface_get_material(1) == side_material):
-        _fail("Diffuse was not bound to only the selected Polygon side surface as one undoable edit.")
+        or assignment_a.is_empty() or assignment_b != assignment_a
+        or assignment_a["catalog_id"] != "b".repeat(64)
+        or assignment_a["catalog_sha256"] != FileAccess.get_sha256(catalog_path).to_lower()
+        or assignment_a["preview_sha256"] != preview_sha
+        or side_material_a == null or side_material_b == null
+        or side_material_a.albedo_texture == null or side_material_b.albedo_texture == null
+        or side_material_a.albedo_texture.get_image().get_width() != 8
+        or side_material_b.albedo_texture.get_image().get_width() != 8
+        or mesh_a.surface_get_material(0) == side_material_a
+        or mesh_a.surface_get_material(1) == side_material_a
+        or mesh_b.surface_get_material(0) == side_material_b
+        or mesh_b.surface_get_material(1) == side_material_b):
+        _fail("Diffuse was not assigned to both selected Polygon side slots as one undoable batch.")
+        return
+    var no_op_history_before := editor.undo_stack.size()
+    browser._request_apply_selected_material()
+    if editor.undo_stack.size() != no_op_history_before:
+        _fail("Reapplying an identical batch created a redundant Undo entry.")
         return
 
+    # A mixed selection must reject the whole operation without changing either Polygon.
+    editor._clear_selection()
+    editor._add_selection_mesh(draft)
+    editor._add_selection_mesh(box_draft)
+    var mixed_history_before := editor.undo_stack.size()
+    browser._request_apply_selected_material()
+    if (editor.undo_stack.size() != mixed_history_before
+        or editor.draft_brush_specs["DraftProp_42"]["surface_style"]["sides"]["source_material"] != assignment_a
+        or editor.draft_brush_specs["DraftProp_43"]["surface_style"]["sides"]["source_material"] != assignment_b
+        or not editor.draft_brush_specs["DraftProp_44"].get("surface_style", {}).is_empty()):
+        _fail("Mixed Polygon/Box selection was not refused atomically.")
+        return
+    editor._clear_selection()
+    editor._add_selection_mesh(draft)
+    editor._add_selection_mesh(second_draft)
+    editor._refresh_selection_inspector()
+
     editor._undo_edit()
-    if not editor.draft_brush_specs["DraftProp_42"]["surface_style"]["sides"]["source_material"].is_empty():
-        _fail("Source diffuse assignment Undo did not restore the procedural side slot.")
+    if (not editor.draft_brush_specs["DraftProp_42"]["surface_style"]["sides"]["source_material"].is_empty()
+        or not editor.draft_brush_specs["DraftProp_43"]["surface_style"]["sides"]["source_material"].is_empty()):
+        _fail("Batch Undo did not restore both procedural side slots.")
         return
     editor._redo_edit()
-    if editor.draft_brush_specs["DraftProp_42"]["surface_style"]["sides"]["source_material"].is_empty():
-        _fail("Source diffuse assignment Redo did not restore its source identity.")
+    if (editor.draft_brush_specs["DraftProp_42"]["surface_style"]["sides"]["source_material"].is_empty()
+        or editor.draft_brush_specs["DraftProp_43"]["surface_style"]["sides"]["source_material"].is_empty()):
+        _fail("Batch Redo did not restore both source identities.")
         return
 
     var draft_path := editor._draft_file_path()
@@ -182,32 +221,50 @@ func _run() -> void:
         _fail("Private JSON Save did not persist the material assignment.")
         return
     var saved: Variant = JSON.parse_string(FileAccess.get_file_as_string(draft_path))
-    if (typeof(saved) != TYPE_DICTIONARY or saved.get("copies", []).size() != 1
-        or saved["copies"][0]["brush"]["surface_style"]["sides"]["source_material"]["preview_sha256"] != preview_sha):
-        _fail("Saved project omitted source material and thumbnail provenance.")
+    if typeof(saved) != TYPE_DICTIONARY or saved.get("copies", []).size() != 3:
+        _fail("Private JSON Save did not persist both Polygon targets and the Box fixture.")
+        return
+    var saved_by_name: Dictionary = {}
+    for saved_copy in saved["copies"]:
+        saved_by_name[str(saved_copy.get("name", ""))] = saved_copy
+    if (not saved_by_name.has("DraftProp_42") or not saved_by_name.has("DraftProp_43")
+        or saved_by_name["DraftProp_42"]["brush"]["surface_style"]["sides"]["source_material"]["preview_sha256"] != preview_sha
+        or saved_by_name["DraftProp_43"]["brush"]["surface_style"]["sides"]["source_material"]["preview_sha256"] != preview_sha):
+        _fail("Saved project omitted one or both source material/thumbnail identities.")
         return
 
+    editor._select_mesh_only(editor.draft_prop_copies["DraftProp_42"])
     editor._clear_polygon_surface_source_material()
     if not editor.draft_brush_specs["DraftProp_42"]["surface_style"]["sides"]["source_material"].is_empty():
         _fail("Clear source diffuse did not remove the selected slot assignment.")
         return
-    var saved_assignment: Dictionary = saved["copies"][0]["brush"]["surface_style"]["sides"]["source_material"]
-    if CustomPolygon.validate_source_material_assignment(saved_assignment).is_empty():
-        _fail("Serialized source assignment failed structural preflight: " + JSON.stringify(saved_assignment))
+    var saved_assignment: Dictionary = saved_by_name["DraftProp_42"]["brush"]["surface_style"]["sides"]["source_material"]
+    var saved_assignment_b: Dictionary = saved_by_name["DraftProp_43"]["brush"]["surface_style"]["sides"]["source_material"]
+    if (CustomPolygon.validate_source_material_assignment(saved_assignment).is_empty()
+        or CustomPolygon.validate_source_material_assignment(saved_assignment_b).is_empty()):
+        _fail("Serialized source assignments failed structural preflight.")
         return
-    if MatLibBrowser.load_assignment_texture(saved_assignment) == null:
-        _fail("Serialized source assignment could not re-verify its catalog/thumbnail.")
+    if (MatLibBrowser.load_assignment_texture(saved_assignment) == null
+        or MatLibBrowser.load_assignment_texture(saved_assignment_b) == null):
+        _fail("Serialized source assignments could not re-verify their catalog/thumbnails.")
         return
     editor._load_prop_draft()
     if (not editor.draft_brush_specs.has("DraftProp_42")
-        or editor.draft_brush_specs["DraftProp_42"]["surface_style"]["sides"]["source_material"].is_empty()):
-        _fail("Private project reopen did not restore the source material assignment: " + editor.status_label.text)
+        or not editor.draft_brush_specs.has("DraftProp_43")
+        or editor.draft_brush_specs["DraftProp_42"]["surface_style"]["sides"]["source_material"].is_empty()
+        or editor.draft_brush_specs["DraftProp_43"]["surface_style"]["sides"]["source_material"].is_empty()
+        or editor._selection_nodes().size() != 2):
+        _fail("Private project reopen did not restore both source assignments and the multi-selection: " + editor.status_label.text)
         return
     var reopened_mesh := editor.draft_prop_copies["DraftProp_42"].mesh as ArrayMesh
     var reopened_material := reopened_mesh.surface_get_material(2) as StandardMaterial3D
+    var reopened_mesh_b := editor.draft_prop_copies["DraftProp_43"].mesh as ArrayMesh
+    var reopened_material_b := reopened_mesh_b.surface_get_material(2) as StandardMaterial3D
     if (reopened_material == null or reopened_material.albedo_texture == null
-        or reopened_material.albedo_texture.get_image().get_width() != 8):
-        _fail("Private project reopen did not re-verify and restore the diffuse preview texture.")
+        or reopened_material.albedo_texture.get_image().get_width() != 8
+        or reopened_material_b == null or reopened_material_b.albedo_texture == null
+        or reopened_material_b.albedo_texture.get_image().get_width() != 8):
+        _fail("Private project reopen did not re-verify and restore both diffuse preview textures.")
         return
 
     # A changed thumbnail must not silently keep rendering as the source texture.
@@ -216,7 +273,7 @@ func _run() -> void:
     if changed_image.save_png(preview_path) != OK:
         _fail("Could not write the tampered preview fixture.")
         return
-    if MatLibBrowser.load_assignment_texture(assignment) != null:
+    if MatLibBrowser.load_assignment_texture(saved_assignment) != null:
         _fail("Tampered source thumbnail passed its recorded SHA-256.")
         return
     editor.polygon_source_texture_cache.clear()
@@ -231,7 +288,14 @@ func _run() -> void:
 
     # Malformed provenance is rejected before the existing editor scene is cleared.
     var malformed: Variant = JSON.parse_string(FileAccess.get_file_as_string(draft_path))
-    malformed["copies"][0]["brush"]["surface_style"]["sides"]["source_material"].erase("preview_sha256")
+    var malformed_target_found := false
+    for malformed_copy in malformed.get("copies", []):
+        if str(malformed_copy.get("name", "")) == "DraftProp_42":
+            malformed_copy["brush"]["surface_style"]["sides"]["source_material"].erase("preview_sha256")
+            malformed_target_found = true
+    if not malformed_target_found:
+        _fail("Could not find the first Polygon in the saved document for malformed-preflight coverage.")
+        return
     _write_json(draft_path, malformed)
     var retained_node: MeshInstance3D = editor.draft_prop_copies["DraftProp_42"]
     var retained_assignment: Dictionary = editor.draft_brush_specs["DraftProp_42"]["surface_style"]["sides"]["source_material"].duplicate(true)
@@ -244,5 +308,5 @@ func _run() -> void:
         _fail("Synthetic source IBD sentinel changed during preview authoring.")
         return
 
-    print("DX2Ed v0.42 source-backed MatLib diffuse to private Polygon surface PASS")
+    print("DX2Ed v0.43 source-backed MatLib diffuse batch to private Polygon surfaces PASS")
     quit(0)
