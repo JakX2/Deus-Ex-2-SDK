@@ -323,6 +323,7 @@ var polygon_surface_selector: OptionButton
 var polygon_surface_preset_selector: OptionButton
 var polygon_surface_uv_controls: Array[SpinBox] = []
 var polygon_surface_source_label: Label
+var polygon_source_texture_cache: Dictionary = {}
 var polygon_surface_slot := 0
 var polygon_uv_preview_texture: Texture2D
 var polygon_selected_name := ""
@@ -7057,6 +7058,21 @@ func _polygon_uv_checker_texture() -> Texture2D:
     return polygon_uv_preview_texture
 
 
+func _load_polygon_source_texture(assignment: Dictionary) -> Texture2D:
+    if assignment.is_empty():
+        return null
+    var cache_key := (
+        str(assignment.get("catalog_sha256", "")) + ":"
+        + str(assignment.get("preview_sha256", "")))
+    var cached: Variant = polygon_source_texture_cache.get(cache_key, null)
+    if cached is Texture2D and is_instance_valid(cached):
+        return cached
+    var texture := MatLibBrowser.load_assignment_texture(assignment)
+    if texture != null:
+        polygon_source_texture_cache[cache_key] = texture
+    return texture
+
+
 func _make_polygon_surface_material(raw: Dictionary) -> StandardMaterial3D:
     var preset := str(raw.get("preset", "Neutral"))
     var base_color := Color(0.78, 0.82, 0.86, 1.0)
@@ -7088,7 +7104,7 @@ func _make_polygon_surface_material(raw: Dictionary) -> StandardMaterial3D:
     var source_assignment: Dictionary = raw.get("source_material", {})
     var source_texture: Texture2D = null
     if not source_assignment.is_empty():
-        source_texture = MatLibBrowser.load_assignment_texture(source_assignment)
+        source_texture = _load_polygon_source_texture(source_assignment)
     material.albedo_texture = (
         source_texture if source_texture != null else _polygon_uv_checker_texture())
     material.roughness = roughness
@@ -7132,7 +7148,7 @@ func _refresh_polygon_surface_controls(name: String) -> void:
         var source_assignment: Dictionary = row.get("source_material", {})
         if source_assignment.is_empty():
             polygon_surface_source_label.text = "Source diffuse: procedural checker"
-        elif MatLibBrowser.load_assignment_texture(source_assignment) == null:
+        elif _load_polygon_source_texture(source_assignment) == null:
             polygon_surface_source_label.text = (
                 "Source diffuse: " + str(source_assignment.get("material_name", "unknown"))
                 + " (catalog/thumbnail unavailable or changed; checker fallback)")
