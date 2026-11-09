@@ -428,3 +428,14 @@ DX2Ed_Windows_Prototype/
 The prototype does not bundle an original DX2 binary or any source-assets-derived collision profile. It is distributed as a short-lived GitHub Actions artifact for testing, not a signed installer.
 
 **Reporting a blocker:** share a screenshot or the **fixed-code** result from `CHECK_DX2ED.cmd` / `--self-test`, plus whether the demo and direct GMP loaded. Do not post source GMPs, IBDs, private profile JSONs or original map paths.
+
+
+## DX2Ed v0.6.8-alpha: source-section inspection
+
+When an authenticated GMP is open, enable **Inspect source collision** and pick
+a MOPP-linked triangle. The topology Inspector can analyze the bounded MOPP
+subset, navigate to an adjacent section through exact-weld shared-edge
+provenance, and the source-collision toolbar can draw a translucent **Fill
+MOPP subset** preview. This is read-only editor visualization, capped at 8,192
+triangles; it is not a complete BSP surface or a game-compatible collision
+mesh. Original GMP/IBD files remain untouched.

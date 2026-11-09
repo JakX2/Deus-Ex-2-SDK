@@ -20,6 +20,7 @@ const CapsuleSweepPanel = preload("res://capsule_sweep_panel.gd")
 const SourceSurfacePanel = preload("res://source_surface_panel.gd")
 const SourceSurfaceMatLibCrossref = preload("res://source_surface_matlib_crossref.gd")
 const SourceSectionTopologyPanel = preload("res://source_section_topology_panel.gd")
+const SourceSectionFillPreview = preload("res://source_section_fill_preview.gd")
 const SourceEdgeTransitionPanel = preload("res://source_edge_transition_panel.gd")
 ## DX2Ed native viewer: a READ-ONLY Godot 4 GLB + GMP actor inspector.
 ## Can open an original DX2 .gmp using the bundled read-only Python backend.
@@ -74,8 +75,10 @@ var source_collision_pending_map := ""
 var source_collision_pending_sha := ""
 var source_collision_marker: MeshInstance3D
 var source_collision_section_marker: MeshInstance3D
+var source_collision_section_fill_marker: MeshInstance3D
 var source_collision_section_actions: HFlowContainer
 var source_collision_section_toggle: CheckBox
+var source_collision_section_fill_toggle: CheckBox
 var source_collision_previous_button: Button
 var source_collision_next_button: Button
 var source_collision_copy_button: Button
@@ -1379,6 +1382,7 @@ func _make_ui() -> void:
     source_section_topology_panel.name = "SourceSectionTopologyPanel"
     inspector_pane.add_child(source_section_topology_panel)
     source_section_topology_panel.initialize()
+    source_section_topology_panel.triangle_requested.connect(_navigate_source_collision_triangle)
     source_surface_matlib_crossref = SourceSurfaceMatLibCrossref.new()
     source_surface_matlib_crossref.name = "SourceSurfaceMatLibCrossref"
     inspector_pane.add_child(source_surface_matlib_crossref)
@@ -1415,6 +1419,15 @@ func _make_ui() -> void:
     )
     source_collision_section_toggle.toggled.connect(_toggle_source_collision_section_outline)
     source_collision_section_actions.add_child(source_collision_section_toggle)
+    source_collision_section_fill_toggle = CheckBox.new()
+    source_collision_section_fill_toggle.text = "Fill MOPP subset"
+    source_collision_section_fill_toggle.tooltip_text = (
+        "Translucent editor-only preview of every authenticated MOPP terminal-leaf triangle "
+        + "in this render-section subset, capped at 8192 triangles. "
+        + "Not a complete BSP surface, Havok collision or writable geometry."
+    )
+    source_collision_section_fill_toggle.toggled.connect(_toggle_source_collision_section_fill)
+    source_collision_section_actions.add_child(source_collision_section_fill_toggle)
     source_collision_copy_button = Button.new()
     source_collision_copy_button.text = "Copy triangle evidence"
     source_collision_copy_button.pressed.connect(_copy_source_collision_evidence)
@@ -9657,6 +9670,8 @@ func _reset_source_collision_inspection() -> void:
         source_collision_section_actions.visible = false
     if source_collision_section_toggle != null:
         source_collision_section_toggle.set_pressed_no_signal(false)
+    if source_collision_section_fill_toggle != null:
+        source_collision_section_fill_toggle.set_pressed_no_signal(false)
 
 
 func _clear_source_collision_highlights() -> void:
@@ -9666,6 +9681,9 @@ func _clear_source_collision_highlights() -> void:
     if is_instance_valid(source_collision_section_marker):
         source_collision_section_marker.queue_free()
     source_collision_section_marker = null
+    if is_instance_valid(source_collision_section_fill_marker):
+        source_collision_section_fill_marker.queue_free()
+    source_collision_section_fill_marker = null
 
 
 func _toggle_source_collision_inspection() -> void:
@@ -9902,6 +9920,8 @@ func _show_source_collision_hit(hit: Dictionary) -> void:
         world_root.add_child(source_collision_marker)
     if source_collision_section_toggle.button_pressed:
         _draw_source_collision_section_outline(section)
+    if source_collision_section_fill_toggle.button_pressed:
+        _draw_source_collision_section_fill()
 
 
 func _draw_source_collision_section_outline(section: Dictionary) -> void:
@@ -9946,6 +9966,61 @@ func _toggle_source_collision_section_outline(enabled: bool) -> void:
         return
     var tid := int(source_collision_last_hit["original_level_triangle_id"])
     _draw_source_collision_section_outline(source_collision_picker.section_details(tid))
+
+
+func _draw_source_collision_section_fill() -> void:
+    if is_instance_valid(source_collision_section_fill_marker):
+        source_collision_section_fill_marker.queue_free()
+    source_collision_section_fill_marker = null
+    if (not source_collision_mode or not source_collision_picker.ready
+        or source_collision_last_hit.is_empty() or world_root == null):
+        return
+    var tid := int(source_collision_last_hit.get("original_level_triangle_id", -1))
+    var preview: Dictionary = SourceSectionFillPreview.build_marker(source_collision_picker, tid)
+    if preview.is_empty():
+        source_collision_details.text += "\nFilled MOPP subset preview refused: source geometry is unavailable or invalid."
+        return
+    var details: Dictionary = preview.get("details", {})
+    if details.is_empty():
+        return
+    if bool(details.get("preview_skipped_for_size", false)):
+        source_collision_details.text += (
+            "\nFilled MOPP subset skipped atomically: %d triangles exceeds the %d-triangle preview cap."
+            % [int(details.get("triangle_count", 0)), int(details.get("preview_cap", 0))]
+        )
+        return
+    var marker: Variant = preview.get("marker", null)
+    if not (marker is MeshInstance3D) or marker.mesh == null:
+        source_collision_details.text += "\nFilled MOPP subset preview refused: mesh construction failed."
+        return
+    source_collision_section_fill_marker = marker
+    world_root.add_child(source_collision_section_fill_marker)
+    source_collision_details.text += (
+        "\nFilled MOPP terminal-leaf subset preview: %d triangles. "
+        + "Translucent, editor-only; 0.0015 Godot-unit display offset; no source geometry changed."
+    ) % int(details.get("triangle_count", 0))
+
+
+func _toggle_source_collision_section_fill(enabled: bool) -> void:
+    if is_instance_valid(source_collision_section_fill_marker):
+        source_collision_section_fill_marker.queue_free()
+    source_collision_section_fill_marker = null
+    if (not enabled or not source_collision_mode or source_collision_last_hit.is_empty()
+        or not source_collision_picker.ready):
+        return
+    _draw_source_collision_section_fill()
+
+
+func _navigate_source_collision_triangle(original_id: int) -> void:
+    if (not source_collision_mode or not source_collision_picker.ready
+        or original_id < 0):
+        return
+    var hit: Dictionary = source_collision_picker.triangle_details(original_id)
+    if hit.is_empty():
+        status_label.text = "Adjacent MOPP section target is no longer available in the authenticated source cache."
+        return
+    hit["selection_is_ray_hit"] = false
+    _show_source_collision_hit(hit)
 
 
 func _step_source_collision_triangle(step: int) -> void:

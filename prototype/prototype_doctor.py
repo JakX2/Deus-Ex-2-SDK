@@ -62,6 +62,7 @@ REQUIRED = (
     "native_editor/godot_editor/source_surface_matlib_crossref.gd",
     "native_editor/godot_editor/tests/smoke_source_surface_matlib_crossref.gd",
     "native_editor/godot_editor/source_section_topology_panel.gd",
+    "native_editor/godot_editor/source_section_fill_preview.gd",
     "native_editor/godot_editor/tests/smoke_source_section_topology.gd",
     "native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py",
     "native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py",
@@ -170,6 +171,12 @@ def examine(root: Path) -> list[str]:
                 or manifest.get("editor_source_section_topology_full_render_section_verified") is not False
                 or manifest.get("editor_source_section_topology_havok_adjacency_verified") is not False
                 or manifest.get("editor_source_section_topology_area_is_triangle_sum") is not True
+                or manifest.get("editor_source_section_fill_preview") is not True
+                or manifest.get("editor_source_section_fill_preview_triangle_cap") != 8192
+                or manifest.get("editor_source_section_fill_preview_native_writer") is not False
+                or manifest.get("editor_source_section_fill_preview_mopp_subset_only") is not True
+                or manifest.get("editor_source_section_neighbor_navigation") is not True
+                or manifest.get("editor_source_section_neighbor_navigation_native_surface_verified") is not False
                 or manifest.get("editor_matlib_python_worker_invocation_verified") is not True
                 or manifest.get("editor_matlib_shader_stage_semantics_verified") is not False
                 or manifest.get("editor_polygon_surface_source_diffuse_assignment_preview") is not True

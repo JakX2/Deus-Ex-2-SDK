@@ -103,3 +103,22 @@ edge; either limit skips atomically without partial statistics. It is not a comp
 prove Havok runtime adjacency, physics materials, shader behavior or native
 material identity. MOPP leaf connectivity and neighbor discovery remain
 limited to the authenticated collision sidecar subset.
+
+
+## v0.49: topology-guided section navigation and filled MOPP subset preview
+
+DX2Ed adds a selectable adjacent-section list to the read-only source topology
+Inspector. Neighbor links are derived from exact source-weld edge incidence
+among authenticated MOPP terminal-leaf triangles. Each neighbor exposes the
+lowest observed original triangle ID as a deterministic navigation target;
+selecting it updates the main source-triangle Inspector and its provenance.
+
+A separate **Fill MOPP subset** toggle draws the selected section's MOPP leaf
+triangles as a translucent viewport overlay. It uses a bounded 8,192-triangle
+payload and a display-only 0.0015 Godot-unit normal offset. Neither operation
+writes source or private draft geometry.
+
+This advances T3Ed-like section navigation and visual inspection, but does not
+establish complete Flesh/BSP surface topology, native surface IDs, Havok
+adjacency, physical materials, shader semantics or playable native level
+authoring. The source remains a MOPP terminal-leaf subset only.

@@ -4,10 +4,16 @@ extends SceneTree
 
 const Picker = preload("res://collision_source_picker.gd")
 const TopologyPanel = preload("res://source_section_topology_panel.gd")
+const FillPreview = preload("res://source_section_fill_preview.gd")
 const SHA := "1111111111111111111111111111111111111111111111111111111111111111"
+
+var requested_neighbor_triangle_id := -1
 
 func _initialize() -> void:
     call_deferred("_run")
+
+func _on_neighbor_triangle_requested(triangle_id: int) -> void:
+    requested_neighbor_triangle_id = triangle_id
 
 func _fail(reason: String) -> void:
     push_error("DX2Ed source section topology smoke: " + reason)
@@ -71,6 +77,41 @@ func _run() -> void:
     if report.is_empty() or report.get("analysis_skipped_for_size", true):
         _fail("Bounded source section topology report was not generated.")
         return
+    var preview_details: Dictionary = picker.section_surface_preview_details(0)
+    var preview_vertices: PackedVector3Array = preview_details.get(
+        "triangle_vertices_godot", PackedVector3Array())
+    if (preview_details.is_empty()
+        or preview_details.get("preview_skipped_for_size", true)
+        or preview_details.get("triangle_count", -1) != 3
+        or preview_details.get("preview_vertex_count", -1) != 9
+        or preview_vertices.size() != 9
+        or preview_details.get("mopp_leaf_subset_only", false) != true
+        or preview_details.get("native_map_written", true) != false
+        or preview_details.get("native_bsp_surface_verified", true) != false):
+        _fail("Bounded filled-section preview geometry or read-only provenance is incorrect.")
+        return
+    var preview_capped: Dictionary = picker.section_surface_preview_details(0, 2)
+    if (preview_capped.get("preview_skipped_for_size", false) != true
+        or preview_capped.get("triangle_count", -1) != 3
+        or preview_capped.has("triangle_vertices_godot")
+        or not picker.section_surface_preview_details(0, 0).is_empty()
+        or not picker.section_surface_preview_details(0, 8193).is_empty()):
+        _fail("Filled-section preview cap must refuse atomically and reject invalid caps.")
+        return
+    var preview_result: Dictionary = FillPreview.build_marker(picker, 0)
+    var preview_marker: MeshInstance3D = preview_result.get("marker", null)
+    var preview_material: StandardMaterial3D = null
+    if is_instance_valid(preview_marker):
+        preview_material = preview_marker.material_override as StandardMaterial3D
+    if (preview_result.is_empty() or not is_instance_valid(preview_marker)
+        or preview_marker.mesh == null or preview_marker.mesh.get_surface_count() != 1
+        or preview_result.get("preview_vertex_count", -1) != 9
+        or preview_material == null
+        or preview_material.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA
+        or preview_material.no_depth_test
+        or preview_marker.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF):
+        _fail("Translucent filled MOPP-subset preview marker was not built safely.")
+        return
     if (report.get("schema", "") != "DX2Ed-source-section-topology-v1"
         or report.get("section_triangle_count", -1) != 3
         or report.get("unique_source_vertex_count", -1) != 7
@@ -96,8 +137,58 @@ func _run() -> void:
     if (neighbors.size() != 1
         or neighbors[0].get("render_section_ordinal", -1) != 1
         or neighbors[0].get("render_material_name", "") != "MatB"
-        or neighbors[0].get("shared_edge_count", -1) != 1):
+        or neighbors[0].get("shared_edge_count", -1) != 1
+        or neighbors[0].get("representative_triangle_id", -1) != 3):
         _fail("Adjacent render-section provenance was not preserved.")
+        return
+
+    # A three-way source edge can expose two neighboring sections on the same
+    # edge. Their representative IDs must remain attached to their own section,
+    # rather than inheriting the final incidence-loop ID.
+    var multi_doc := _fixture()
+    multi_doc["source_flat_vertex_count"] = 5
+    multi_doc["source_triangle_count"] = 3
+    multi_doc["mopp_leaf_triangle_count"] = 3
+    multi_doc["source_topology_summary"] = {
+        "source_exact_welded_vertex_count": 5,
+        "unique_source_edges": 7,
+        "open_boundary_edges": 6,
+        "two_triangle_same_material_edges": 0,
+        "two_triangle_render_material_seams": 0,
+        "three_or_more_triangle_edges": 1,
+        "max_triangles_using_one_edge": 3,
+    }
+    multi_doc["vertices_godot_xyz"] = [
+        [0.0,0.0,0.0], [2.0,0.0,0.0], [0.0,0.0,2.0],
+        [2.0,0.0,2.0], [4.0,0.0,0.0],
+    ]
+    multi_doc["render_material_names"] = ["MatA", "MatB", "MatC"]
+    multi_doc["leaf_triangles"] = [
+        {"triangle_id": 0, "vertex_indices": [0,1,2], "source_block_id": 3,
+         "render_block_ordinal": 0, "render_section_ordinal": 0,
+         "render_material_id": 0, "source_edge_kinds": [1,3,1],
+         "source_weld_ids": [0,1,2]},
+        {"triangle_id": 1, "vertex_indices": [1,3,2], "source_block_id": 3,
+         "render_block_ordinal": 0, "render_section_ordinal": 1,
+         "render_material_id": 1, "source_edge_kinds": [1,1,3],
+         "source_weld_ids": [1,3,2]},
+        {"triangle_id": 2, "vertex_indices": [1,4,2], "source_block_id": 3,
+         "render_block_ordinal": 0, "render_section_ordinal": 2,
+         "render_material_id": 2, "source_edge_kinds": [1,1,3],
+         "source_weld_ids": [1,4,2]},
+    ]
+    var multi_picker := Picker.new()
+    if not multi_picker.load_document(multi_doc, SHA, "Fixture.gmp"):
+        _fail("Three-way exact-weld edge fixture refused: " + multi_picker.last_error)
+        return
+    var multi_report: Dictionary = multi_picker.section_topology_details(0)
+    var multi_neighbors: Array = multi_report.get("neighbor_sections", [])
+    if (multi_neighbors.size() != 2
+        or int(multi_neighbors[0].get("render_section_ordinal", -1)) != 1
+        or int(multi_neighbors[0].get("representative_triangle_id", -1)) != 1
+        or int(multi_neighbors[1].get("render_section_ordinal", -1)) != 2
+        or int(multi_neighbors[1].get("representative_triangle_id", -1)) != 2):
+        _fail("Three-way edge neighbor representative IDs crossed between adjacent sections: " + JSON.stringify(multi_neighbors))
         return
     if (report.get("mopp_leaf_subset_only", false) != true
         or report.get("area_measure", "") != "sum_of_mopp_leaf_triangle_areas"
@@ -138,6 +229,7 @@ func _run() -> void:
     var panel := TopologyPanel.new()
     root.add_child(panel)
     panel.initialize()
+    panel.triangle_requested.connect(_on_neighbor_triangle_requested)
     if panel.visible:
         _fail("Topology Inspector should start hidden.")
         return
@@ -149,12 +241,21 @@ func _run() -> void:
     panel._analyze()
     if (panel.summary.is_empty() or panel.copy_button.disabled
         or not panel.report_label.text.contains("Connected components in MOPP subset: 2")
-        or not panel.report_label.text.contains("Native map written: NO.")):
-        _fail("Actual topology panel did not render the bounded analysis.")
+        or not panel.report_label.text.contains("Native map written: NO.")
+        or panel.neighbor_selector.get_item_count() != 1
+        or panel.neighbor_button.disabled):
+        _fail("Actual topology panel did not render the bounded analysis and adjacent-section selector.")
+        return
+    panel._select_neighbor()
+    if requested_neighbor_triangle_id != 3:
+        _fail("Selecting an adjacent section did not emit its representative original triangle ID.")
         return
     panel.clear_selection()
-    if panel.visible or not panel.summary.is_empty() or not panel.copy_button.disabled:
-        _fail("Clearing source selection left stale topology diagnostics visible.")
+    if (panel.visible or not panel.summary.is_empty() or not panel.copy_button.disabled
+        or panel.neighbor_selector.get_item_count() != 0
+        or not panel.neighbor_button.disabled or panel.neighbor_row.visible):
+        _fail("Clearing source selection left stale topology or neighbor-navigation state visible.")
         return
-    print("DX2Ed source section topology exact-weld/area/components/neighbors/read-only smoke: PASS")
+    preview_marker.free()
+    print("DX2Ed source section topology, neighbor navigation and filled MOPP preview smoke: PASS")
     quit(0)

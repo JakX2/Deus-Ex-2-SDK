@@ -209,8 +209,9 @@ func _run() -> void:
         return
     if (editor.source_section_topology_panel == null
         or not editor.source_section_topology_panel.visible
-        or editor.source_section_topology_panel.selected_triangle_id != 0):
-        _fail("Original source triangle selection did not reach the section topology Inspector.")
+        or editor.source_section_topology_panel.selected_triangle_id != 0
+        or editor.source_collision_section_fill_toggle == null):
+        _fail("Original source triangle selection did not reach the section topology Inspector and fill control.")
         return
     if (not editor.source_collision_section_actions.visible
         or editor.source_collision_last_hit.get("original_level_triangle_id", -1) != 0
@@ -235,10 +236,29 @@ func _run() -> void:
         or evidence.get("render_material_is_physics_material", true) != false):
         _fail("Copyable evidence mismatch: " + JSON.stringify(evidence))
         return
+    editor.source_collision_section_fill_toggle.set_pressed_no_signal(true)
+    editor._toggle_source_collision_section_fill(true)
+    if (not is_instance_valid(editor.source_collision_section_fill_marker)
+        or editor.source_collision_section_fill_marker.mesh == null
+        or editor.source_collision_section_fill_marker.mesh.get_surface_count() != 1):
+        _fail("Translucent filled MOPP-subset preview was not created in the actual editor.")
+        return
+    editor.source_section_topology_panel._analyze()
+    if (editor.source_section_topology_panel.neighbor_selector.get_item_count() != 1
+        or editor.source_section_topology_panel.neighbor_button.disabled):
+        _fail("Actual source topology Inspector did not expose its adjacent render section.")
+        return
+    editor.source_section_topology_panel._select_neighbor()
+    if (editor.source_collision_last_hit.get("original_level_triangle_id", -1) != 1
+        or editor.source_collision_last_hit.get("render_material_name", "") != "MatB"
+        or not is_instance_valid(editor.source_collision_section_fill_marker)):
+        _fail("Adjacent-section navigation did not update the selected source triangle and filled preview.")
+        return
+    editor._show_source_collision_hit(chosen)
     editor.source_collision_section_toggle.set_pressed_no_signal(true)
     editor._toggle_source_collision_section_outline(true)
     if not is_instance_valid(editor.source_collision_section_marker):
-        _fail("Editor-only original render-section preview was not created")
+        _fail("Editor-only original render-section outline was not created")
         return
     editor._step_source_collision_triangle(1)
     if (editor.source_collision_last_hit.get("original_level_triangle_id", -1) != 0
@@ -254,6 +274,8 @@ func _run() -> void:
         or not editor.source_collision_last_hit.is_empty()
         or editor.source_collision_marker != null
         or editor.source_collision_section_marker != null
+        or editor.source_collision_section_fill_marker != null
+        or editor.source_collision_section_fill_toggle.button_pressed
         or editor.source_section_topology_panel.visible):
         _fail("Turning off collision inspect must clean up source-only overlays and navigation")
         return
