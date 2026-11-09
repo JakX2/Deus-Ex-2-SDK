@@ -502,6 +502,8 @@ func section_topology_details(original_id: int,
         "read_only": true,
         "native_map_written": false,
         "native_bsp_surface_verified": false,
+        "source_edge_classification_full_original_level": false,
+        "source_edge_classification_mopp_leaf_subset": true,
         "full_render_section_geometry_verified": false,
         "havok_runtime_adjacency_verified": false,
         "render_material_is_physics_material": false,
@@ -691,7 +693,8 @@ func section_topology_details(original_id: int,
     base["area_weighted_centroid_level_xyz"] = [centroid.x, centroid.y, centroid.z]
     base["bounds_min_level_xyz"] = [bounds_min.x, bounds_min.y, bounds_min.z]
     base["bounds_max_level_xyz"] = [bounds_max.x, bounds_max.y, bounds_max.z]
-    base["source_edge_classification_full_original_level"] = true
+    base["source_edge_classification_full_original_level"] = false
+    base["source_edge_classification_mopp_leaf_subset"] = true
     base["connectivity_uses_exact_original_level_weld_ids"] = true
     base["mopp_neighbor_scope_only"] = true
     return base
