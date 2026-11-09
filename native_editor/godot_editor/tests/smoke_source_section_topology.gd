@@ -5,15 +5,20 @@ extends SceneTree
 const Picker = preload("res://collision_source_picker.gd")
 const TopologyPanel = preload("res://source_section_topology_panel.gd")
 const FillPreview = preload("res://source_section_fill_preview.gd")
+const EdgeOverlay = preload("res://source_section_edge_overlay.gd")
 const SHA := "1111111111111111111111111111111111111111111111111111111111111111"
 
 var requested_neighbor_triangle_id := -1
+var requested_edge_overlay_enabled := false
 
 func _initialize() -> void:
     call_deferred("_run")
 
 func _on_neighbor_triangle_requested(triangle_id: int) -> void:
     requested_neighbor_triangle_id = triangle_id
+
+func _on_edge_overlay_toggled(enabled: bool) -> void:
+    requested_edge_overlay_enabled = enabled
 
 func _fail(reason: String) -> void:
     push_error("DX2Ed source section topology smoke: " + reason)
@@ -76,6 +81,50 @@ func _run() -> void:
     var report: Dictionary = picker.section_topology_details(0)
     if report.is_empty() or report.get("analysis_skipped_for_size", true):
         _fail("Bounded source section topology report was not generated.")
+        return
+    var edge_records: Array = report.get("edge_records", [])
+    var edge_counts: Dictionary = report.get("edge_classification_counts", {})
+    if (edge_records.size() != 8
+        or report.get("edge_record_count", -1) != 8
+        or report.get("edge_report_uses_original_float32_weld_ids", false) != true
+        or report.get("edge_report_is_mopp_leaf_subset_only", false) != true
+        or edge_counts.get("subset_open_boundary", -1) != 6
+        or edge_counts.get("within_section_shared", -1) != 1
+        or edge_counts.get("cross_section_mopp_shared", -1) != 1
+        or edge_counts.get("subset_nonmanifold", -1) != 0):
+        _fail("Exact-weld subset edge classifications or counts are incorrect: " + JSON.stringify(edge_counts))
+        return
+    for edge in edge_records:
+        var welds: Array = edge.get("source_weld_ids", [])
+        if (welds.size() != 2 or int(welds[0]) >= int(welds[1])
+            or str(edge.get("edge_key", "")) != "%d:%d" % [int(welds[0]), int(welds[1])]
+            or int(edge.get("source_edge_class_code", -1)) not in range(4)
+            or edge.get("section_triangle_ids", []).size() != int(edge.get("section_incidence_count", -1))):
+            _fail("An edge record lost its exact source-weld or raw source-class identity: " + JSON.stringify(edge))
+            return
+    var edge_overlay: Dictionary = EdgeOverlay.build_marker(report)
+    var edge_marker: MeshInstance3D = edge_overlay.get("marker", null)
+    var edge_material: StandardMaterial3D = null
+    if is_instance_valid(edge_marker):
+        edge_material = edge_marker.material_override as StandardMaterial3D
+    if (edge_overlay.is_empty() or not is_instance_valid(edge_marker)
+        or edge_marker.mesh == null or edge_marker.mesh.get_surface_count() != 1
+        or edge_overlay.get("edge_count", -1) != 8
+        or edge_overlay.get("preview_vertex_count", -1) != 16
+        or edge_material == null or not edge_material.vertex_color_use_as_albedo
+        or not edge_material.no_depth_test
+        or edge_material.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED
+        or edge_marker.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF):
+        _fail("Exact-weld MOPP-subset edge overlay was not built as a bounded editor-only line mesh.")
+        return
+    var tampered_report: Dictionary = report.duplicate(true)
+    var tampered_records: Array = tampered_report["edge_records"]
+    var tampered_first: Dictionary = tampered_records[0]
+    tampered_first["source_weld_ids"] = [1, 1]
+    tampered_records[0] = tampered_first
+    tampered_report["edge_records"] = tampered_records
+    if not EdgeOverlay.build_marker(tampered_report).is_empty():
+        _fail("Malformed duplicate-weld edge identity must refuse the entire overlay.")
         return
     var preview_details: Dictionary = picker.section_surface_preview_details(0)
     var preview_vertices: PackedVector3Array = preview_details.get(
@@ -230,6 +279,7 @@ func _run() -> void:
     root.add_child(panel)
     panel.initialize()
     panel.triangle_requested.connect(_on_neighbor_triangle_requested)
+    panel.edge_overlay_toggled.connect(_on_edge_overlay_toggled)
     if panel.visible:
         _fail("Topology Inspector should start hidden.")
         return
@@ -240,11 +290,24 @@ func _run() -> void:
         return
     panel._analyze()
     if (panel.summary.is_empty() or panel.copy_button.disabled
+        or panel.edge_toggle.disabled or panel.copy_edges_button.disabled
         or not panel.report_label.text.contains("Connected components in MOPP subset: 2")
+        or not panel.report_label.text.contains("Exact-weld overlay edges: open 6")
         or not panel.report_label.text.contains("Native map written: NO.")
         or panel.neighbor_selector.get_item_count() != 1
         or panel.neighbor_button.disabled):
         _fail("Actual topology panel did not render the bounded analysis and adjacent-section selector.")
+        return
+    panel.edge_toggle.set_pressed_no_signal(true)
+    panel.edge_toggle.emit_signal("toggled", true)
+    if not requested_edge_overlay_enabled:
+        _fail("Topology Inspector edge overlay toggle did not emit its viewport request.")
+        return
+    var edge_payload: Dictionary = panel.edge_report_payload()
+    if (edge_payload.get("schema", "") != "DX2Ed-source-section-edge-report-v1"
+        or edge_payload.get("edge_record_count", -1) != 8
+        or edge_payload.get("native_map_written", true) != false):
+        _fail("Copyable edge report payload lost source identity or read-only scope.")
         return
     panel._select_neighbor()
     if requested_neighbor_triangle_id != 3:
@@ -252,10 +315,14 @@ func _run() -> void:
         return
     panel.clear_selection()
     if (panel.visible or not panel.summary.is_empty() or not panel.copy_button.disabled
+        or requested_edge_overlay_enabled
+        or not panel.edge_toggle.disabled or panel.edge_toggle.button_pressed
+        or not panel.copy_edges_button.disabled
         or panel.neighbor_selector.get_item_count() != 0
         or not panel.neighbor_button.disabled or panel.neighbor_row.visible):
         _fail("Clearing source selection left stale topology or neighbor-navigation state visible.")
         return
+    edge_marker.free()
     preview_marker.free()
-    print("DX2Ed source section topology, neighbor navigation and filled MOPP preview smoke: PASS")
+    print("DX2Ed source section topology, exact-weld edge overlay, neighbor navigation and filled MOPP preview smoke: PASS")
     quit(0)

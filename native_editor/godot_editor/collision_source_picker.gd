@@ -514,6 +514,7 @@ func section_surface_preview_details(original_id: int,
 
 
 const MAX_SECTION_TOPOLOGY_TRIANGLES := 8192
+const MAX_SECTION_TOPOLOGY_EDGES := 24576
 const MAX_SECTION_EDGE_INCIDENCE := 1024
 const MAX_SECTION_TOPOLOGY_NEIGHBORS := 64
 const MAX_SECTION_TOPOLOGY_COMPONENTS := 16
@@ -633,6 +634,7 @@ func section_topology_details(original_id: int,
                 edge_record = {
                     "triangle_ids": [],
                     "source_class_code": source_class,
+                    "source_weld_ids": [low, high],
                     "a_godot": vertices[int(vertex_indices[slot])],
                     "b_godot": vertices[int(vertex_indices[(slot + 1) % 3])],
                 }
@@ -702,6 +704,38 @@ func section_topology_details(original_id: int,
             cross_section_mopp_shared_edge_length_level_units += (edge_a - edge_b).length() * 10.0
             if local_count == 1:
                 section_perimeter_shared_with_other_sections += 1
+
+        # Edge classes describe this MOPP-leaf subset only; source codes stay raw.
+        var cross_section_neighbor_count := other_sections_for_edge.size()
+        var representative_external_triangle_id := -1
+        for raw_external_record in other_sections_for_edge.values():
+            var external_record: Dictionary = raw_external_record
+            var external_id := int(external_record.get("representative_triangle_id", -1))
+            if external_id >= 0 and (representative_external_triangle_id < 0
+                or external_id < representative_external_triangle_id):
+                representative_external_triangle_id = external_id
+        var edge_classification := "subset_open_boundary"
+        if local_count >= 3:
+            edge_classification = "subset_nonmanifold"
+        elif cross_section_neighbor_count > 0:
+            edge_classification = "cross_section_mopp_shared"
+        elif local_count == 2:
+            edge_classification = "within_section_shared"
+        var edge_a_point: Vector3 = edge_record["a_godot"]
+        var edge_b_point: Vector3 = edge_record["b_godot"]
+        if (not edge_a_point.is_finite() or not edge_b_point.is_finite()
+            or edge_a_point.distance_squared_to(edge_b_point) <= 1e-12):
+            return {}
+        var ordered_local_triangle_ids: Array = local_ids.duplicate()
+        ordered_local_triangle_ids.sort()
+        edge_record["edge_classification"] = edge_classification
+        edge_record["section_incidence_count"] = local_count
+        edge_record["cross_section_neighbor_count"] = cross_section_neighbor_count
+        edge_record["representative_cross_section_triangle_id"] = representative_external_triangle_id
+        edge_record["section_triangle_ids"] = ordered_local_triangle_ids
+        edge_record["a_godot_xyz"] = [edge_a_point.x, edge_a_point.y, edge_a_point.z]
+        edge_record["b_godot_xyz"] = [edge_b_point.x, edge_b_point.y, edge_b_point.z]
+        edge_records[edge_key] = edge_record
         if local_count == 1:
             var perimeter_a: Vector3 = edge_record["a_godot"]
             var perimeter_b: Vector3 = edge_record["b_godot"]
@@ -752,7 +786,47 @@ func section_topology_details(original_id: int,
         or not is_finite(cross_section_mopp_shared_edge_length_level_units)):
         return {}
 
+    if edge_records.size() > MAX_SECTION_TOPOLOGY_EDGES:
+        base["analysis_skipped_for_edge_count"] = true
+        base["edge_record_count"] = edge_records.size()
+        base["edge_report_cap"] = MAX_SECTION_TOPOLOGY_EDGES
+        return base
+    var edge_report: Array = []
+    var edge_classification_counts := {
+        "subset_open_boundary": 0,
+        "within_section_shared": 0,
+        "cross_section_mopp_shared": 0,
+        "subset_nonmanifold": 0,
+    }
+    for edge_key in section_edge_keys:
+        var edge_record: Dictionary = edge_records[edge_key]
+        var edge_classification := str(edge_record.get("edge_classification", ""))
+        if not edge_classification_counts.has(edge_classification):
+            return {}
+        edge_classification_counts[edge_classification] = (
+            int(edge_classification_counts[edge_classification]) + 1)
+        edge_report.append({
+            "edge_key": str(edge_key),
+            "source_weld_ids": edge_record["source_weld_ids"].duplicate(),
+            "source_edge_class_code": int(edge_record["source_class_code"]),
+            "edge_classification": edge_classification,
+            "section_triangle_ids": edge_record["section_triangle_ids"].duplicate(),
+            "section_incidence_count": int(edge_record["section_incidence_count"]),
+            "cross_section_neighbor_count": int(edge_record["cross_section_neighbor_count"]),
+            "representative_cross_section_triangle_id": int(edge_record["representative_cross_section_triangle_id"]),
+            "a_godot_xyz": edge_record["a_godot_xyz"].duplicate(),
+            "b_godot_xyz": edge_record["b_godot_xyz"].duplicate(),
+        })
+    if edge_report.size() != edge_records.size():
+        return {}
+
     base["analysis_skipped_for_size"] = false
+    base["edge_report_cap"] = MAX_SECTION_TOPOLOGY_EDGES
+    base["edge_record_count"] = edge_report.size()
+    base["edge_records"] = edge_report
+    base["edge_classification_counts"] = edge_classification_counts
+    base["edge_report_uses_original_float32_weld_ids"] = true
+    base["edge_report_is_mopp_leaf_subset_only"] = true
     base["unique_source_vertex_count"] = unique_vertices.size()
     base["unique_source_edge_count"] = edge_records.size()
     base["section_perimeter_edge_count"] = section_perimeter_edge_count

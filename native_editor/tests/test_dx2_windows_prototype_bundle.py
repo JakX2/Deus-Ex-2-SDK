@@ -71,6 +71,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 "native_editor/godot_editor/tests/smoke_source_surface_matlib_crossref.gd",
                 "native_editor/godot_editor/source_section_topology_panel.gd",
                 "native_editor/godot_editor/source_section_fill_preview.gd",
+                "native_editor/godot_editor/source_section_edge_overlay.gd",
                 "native_editor/godot_editor/tests/smoke_source_section_topology.gd",
                 "native_editor/godot_editor/python_runtime.gd",
                 "native_editor/godot_editor/startup_route.gd",
@@ -95,7 +96,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 for file in files))
             self.assertTrue(archive.read(prefix + "native_editor/godot_editor/demo/scene.glb").startswith(b"glTF"))
             doc = json.loads(archive.read(prefix + "prototype-manifest.json"))
-            self.assertEqual(doc["prototype_version"], "0.6.8-alpha")
+            self.assertEqual(doc["prototype_version"], "0.6.9-alpha")
             self.assertTrue(doc["editor_source_section_topology_diagnostics"])
             self.assertFalse(doc["editor_source_section_topology_native_bsp_verified"])
             self.assertFalse(doc["editor_source_section_topology_full_render_section_verified"])
@@ -105,6 +106,11 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
             self.assertEqual(doc["editor_source_section_fill_preview_triangle_cap"], 8192)
             self.assertFalse(doc["editor_source_section_fill_preview_native_writer"])
             self.assertTrue(doc["editor_source_section_fill_preview_mopp_subset_only"])
+            self.assertTrue(doc["editor_source_section_edge_overlay"])
+            self.assertEqual(doc["editor_source_section_edge_overlay_max_edges"], 24576)
+            self.assertTrue(doc["editor_source_section_edge_overlay_exact_weld_ids"])
+            self.assertFalse(doc["editor_source_section_edge_overlay_native_surface_verified"])
+            self.assertFalse(doc["editor_source_section_edge_overlay_native_writer"])
             self.assertTrue(doc["editor_source_section_neighbor_navigation"])
             self.assertFalse(doc["editor_source_section_neighbor_navigation_native_surface_verified"])
             self.assertEqual(doc["runtime_sha256"]["Godot_v4.3-stable_win64.exe"],

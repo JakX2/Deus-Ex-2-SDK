@@ -3,6 +3,7 @@ extends VBoxContainer
 ## It never edits a map, native BSP surface, material assignment or physics object.
 
 signal triangle_requested(original_level_triangle_id: int)
+signal edge_overlay_toggled(enabled: bool)
 
 const ANALYSIS_CAP := 8192
 const EDGE_NAMES := ["same-material interior", "open boundary", "render-material seam", "non-manifold"]
@@ -18,6 +19,8 @@ var copy_button: Button
 var neighbor_row: HBoxContainer
 var neighbor_selector: OptionButton
 var neighbor_button: Button
+var edge_toggle: CheckBox
+var copy_edges_button: Button
 
 func initialize() -> void:
     visible = false
@@ -42,6 +45,17 @@ func initialize() -> void:
     copy_button.disabled = true
     copy_button.pressed.connect(_copy_report)
     controls.add_child(copy_button)
+    edge_toggle = CheckBox.new()
+    edge_toggle.text = "Show exact-weld edge overlay"
+    edge_toggle.tooltip_text = "Color the authenticated MOPP-leaf subset edges by local incidence; not complete BSP topology."
+    edge_toggle.disabled = true
+    edge_toggle.toggled.connect(_on_edge_overlay_toggled)
+    controls.add_child(edge_toggle)
+    copy_edges_button = Button.new()
+    copy_edges_button.text = "Copy edge report JSON"
+    copy_edges_button.disabled = true
+    copy_edges_button.pressed.connect(_copy_edge_report)
+    controls.add_child(copy_edges_button)
     neighbor_row = HBoxContainer.new()
     neighbor_row.visible = false
     add_child(neighbor_row)
@@ -98,6 +112,13 @@ func clear_selection() -> void:
         analyze_button.disabled = true
     if copy_button != null:
         copy_button.disabled = true
+    if edge_toggle != null:
+        if edge_toggle.button_pressed:
+            edge_overlay_toggled.emit(false)
+        edge_toggle.set_pressed_no_signal(false)
+        edge_toggle.disabled = true
+    if copy_edges_button != null:
+        copy_edges_button.disabled = true
     _clear_neighbors()
     visible = false
 
@@ -172,16 +193,25 @@ func _analyze() -> void:
     if picker == null or not bool(picker.get("ready")) or selected_triangle_id < 0:
         clear_selection()
         return
+    if edge_toggle.button_pressed:
+        edge_toggle.set_pressed_no_signal(false)
+        edge_overlay_toggled.emit(false)
+    edge_toggle.disabled = true
+    copy_edges_button.disabled = true
     var result: Dictionary = picker.call("section_topology_details", selected_triangle_id, ANALYSIS_CAP)
     if result.is_empty():
         summary.clear()
         copy_button.disabled = true
+        edge_toggle.disabled = true
+        copy_edges_button.disabled = true
         _clear_neighbors()
         report_label.text = "Topology analysis refused: source section identity or geometry is unavailable."
         return
     summary = result.duplicate(true)
     copy_button.disabled = false
     if bool(result.get("analysis_skipped_for_size", false)):
+        edge_toggle.disabled = true
+        copy_edges_button.disabled = true
         _clear_neighbors()
         report_label.text = (
             "Analysis skipped without partial results.\n"
@@ -190,6 +220,8 @@ func _analyze() -> void:
         ) % [int(result["section_triangle_count"]), int(result["analysis_cap"])]
         return
     if bool(result.get("analysis_skipped_for_edge_incidence", false)):
+        edge_toggle.disabled = true
+        copy_edges_button.disabled = true
         _clear_neighbors()
         report_label.text = (
             "Analysis skipped without partial results.\n"
@@ -198,6 +230,16 @@ func _analyze() -> void:
         ) % [int(result["edge_incidence_count"]), int(result["edge_incidence_cap"])]
         return
     _populate_neighbors(result)
+    var raw_edge_records: Variant = result.get("edge_records", null)
+    var edge_records: Array = raw_edge_records if typeof(raw_edge_records) == TYPE_ARRAY else []
+    var has_complete_edge_report := (
+        not edge_records.is_empty()
+        and edge_records.size() == int(result.get("unique_source_edge_count", -1))
+        and edge_records.size() == int(result.get("edge_record_count", -2))
+        and result.has("edge_classification_counts")
+    )
+    edge_toggle.disabled = not has_complete_edge_report
+    copy_edges_button.disabled = not has_complete_edge_report
     var lines := PackedStringArray([
         "MOPP-linked triangles in section subset: %d" % int(result["section_triangle_count"]),
         "Unique exact-welded source vertices / edges: %d / %d" % [
@@ -222,6 +264,15 @@ func _analyze() -> void:
         lines.append("MOPP-leaf source edge classes on touched edges:")
         for index in range(4):
             lines.append("  %s: %d" % [EDGE_NAMES[index], int(class_counts[index])])
+    if has_complete_edge_report:
+        var overlay_counts: Dictionary = result["edge_classification_counts"]
+        lines.append("Exact-weld overlay edges: open %d | within-section shared %d | cross-section MOPP shared %d | subset non-manifold %d" % [
+            int(overlay_counts["subset_open_boundary"]),
+            int(overlay_counts["within_section_shared"]),
+            int(overlay_counts["cross_section_mopp_shared"]),
+            int(overlay_counts["subset_nonmanifold"]),
+        ])
+        lines.append("Overlay classifications describe this MOPP-leaf subset only; source edge class codes remain raw.")
     lines.append("Adjacent MOPP-linked render sections: %d" % int(result["neighbor_section_count"]))
     if int(result.get("neighbor_section_count", 0)) > 0:
         lines.append("Choose an adjacent section above to jump to its representative MOPP-linked triangle.")
@@ -244,3 +295,41 @@ func _copy_report() -> void:
         return
     DisplayServer.clipboard_set(JSON.stringify(summary, "  "))
     note_label.text = "Copied bounded read-only source-section topology JSON."
+
+
+func edge_report_payload() -> Dictionary:
+    if summary.is_empty():
+        return {}
+    var raw_records: Variant = summary.get("edge_records", null)
+    if typeof(raw_records) != TYPE_ARRAY:
+        return {}
+    return {
+        "schema": "DX2Ed-source-section-edge-report-v1",
+        "source_map": str(summary.get("source_map", "")),
+        "source_sha256": str(summary.get("source_sha256", "")),
+        "source_section_key": str(summary.get("source_section_key", "")),
+        "source_block_id": int(summary.get("source_block_id", -1)),
+        "render_block_ordinal": int(summary.get("render_block_ordinal", -1)),
+        "render_section_ordinal": int(summary.get("render_section_ordinal", -1)),
+        "edge_record_count": int(summary.get("edge_record_count", -1)),
+        "edge_classification_counts": summary.get("edge_classification_counts", {}),
+        "edge_records": raw_records,
+        "mopp_leaf_subset_only": true,
+        "edge_report_uses_original_float32_weld_ids": true,
+        "native_bsp_surface_verified": false,
+        "native_map_written": false,
+    }
+
+
+func _on_edge_overlay_toggled(enabled: bool) -> void:
+    if enabled and (summary.is_empty() or not summary.has("edge_records")):
+        return
+    edge_overlay_toggled.emit(enabled)
+
+
+func _copy_edge_report() -> void:
+    var payload := edge_report_payload()
+    if payload.is_empty():
+        return
+    DisplayServer.clipboard_set(JSON.stringify(payload, "  "))
+    note_label.text = "Copied bounded exact-weld MOPP-subset edge report JSON."
