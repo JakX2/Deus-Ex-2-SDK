@@ -273,7 +273,7 @@ func _run() -> void:
     if changed_image.save_png(preview_path) != OK:
         _fail("Could not write the tampered preview fixture.")
         return
-    if MatLibBrowser.load_assignment_texture(assignment) != null:
+    if MatLibBrowser.load_assignment_texture(saved_assignment) != null:
         _fail("Tampered source thumbnail passed its recorded SHA-256.")
         return
     editor.polygon_source_texture_cache.clear()
