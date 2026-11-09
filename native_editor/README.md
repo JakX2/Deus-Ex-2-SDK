@@ -828,3 +828,28 @@ when a touched edge exceeds 1,024 MOPP incidences.
 Native map/material/physics writers remain disabled.
 
 The Windows prototype workflow downloads the official Godot 4.3 Standard Windows x64 archive, retries transient release-CDN 504 responses, and still requires the published SHA-512 verification before packaging.
+
+
+## v0.49: topology-guided section navigation and filled MOPP subset preview
+
+With **Inspect source collision** active, the source-section topology Inspector can
+now navigate across adjacent MOPP-linked render-section tuples. After running
+**Analyze MOPP subset**, choose an adjacent section and select it to jump to the
+lowest observed original triangle ID in that neighboring section. The link is
+derived from exact original Level float32 weld IDs and the authenticated
+MOPP-leaf edge-incidence table, not spatial proximity or material-name matching.
+
+The source-collision toolbar also adds **Fill MOPP subset**. It draws every
+triangle in the selected section's MOPP terminal-leaf subset as a translucent,
+double-sided editor-only overlay. The geometry is built from the validated
+source cache, capped atomically at 8,192 triangles. A 0.0015-Godot-unit normal
+offset is applied only to the display mesh to reduce z-fighting; it never
+changes the source vertices, imported map, collision cache or draft geometry.
+
+The new workflow is intentionally narrow: adjacent-section navigation targets
+one representative MOPP triangle, and the filled preview is not a complete
+Flesh render section, native BSP surface, Havok contact mesh, physics material
+or shader result. Native GMP/IBD/BSP/material/collision/lightmap writers remain
+disabled. Synthetic Godot 4.3 tests cover exact-weld neighbor provenance,
+representative-ID navigation, the filled mesh, transparent material, size-cap
+refusal, selection changes and source-inspection cleanup.
