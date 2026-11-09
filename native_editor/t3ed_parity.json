@@ -195,6 +195,14 @@
       "phase": 1,
       "evidence": "DX2Ed 0.5.1 read-only Location audit, output-manifest and full byte-diff verification; synthetic v95 roundtrip, no-op/tamper/identity refusal tests; game load still unverified.",
       "next_step": "Golden fixture audits, export/import idempotence, engine playtesting"
+    },
+    {
+      "id": "source_surface_topology",
+      "title": "Original source surface topology Inspector",
+      "status": "partial",
+      "phase": 1,
+      "evidence": "DX2Ed v0.48 adds bounded read-only analysis of the MOPP terminal-leaf subset for a selected original Flesh render-section tuple: exact source-weld connectivity, connected components, Level-unit area/bounds/centroid, original Level edge-class counts, perimeter and adjacent MOPP-linked sections. It is not a complete render/BSP surface or Havok adjacency graph; oversized sections skip atomically.",
+      "next_step": "Authenticate complete BSP surface polygons and native material indices; validate against independently rendered geometry and the retail runtime."
     }
   ]
 }
