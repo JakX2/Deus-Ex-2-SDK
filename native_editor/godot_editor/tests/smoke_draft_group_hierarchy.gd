@@ -143,7 +143,7 @@ func _run() -> void:
         or saved_doc.get("selected_groups", []) != ["TestGroup"]):
         _fail("Private JSON did not include group identity and selection")
         return
-    var saved_group_transform := editor.draft_groups["TestGroup"].global_transform
+    var saved_group_transform: Transform3D = editor.draft_groups["TestGroup"].global_transform
     var saved_member_world := {}
     for member in editor._group_member_nodes("TestGroup"):
         saved_member_world[str(member.name)] = member.global_transform
