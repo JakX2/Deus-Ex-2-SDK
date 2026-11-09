@@ -7200,40 +7200,91 @@ func _apply_polygon_surface_style() -> void:
 
 
 
-func _apply_matlib_material_to_polygon_surface(raw: Dictionary) -> void:
-    var name := _selected_custom_polygon_name()
-    if name.is_empty():
-        status_label.text = "Select one private Polygon brush before applying a MatLib diffuse preview."
+func _apply_matlib_material_to_polygon_surface(raw: Dictionary, slot_index: int) -> void:
+    var nodes := _selection_nodes()
+    if nodes.is_empty():
+        status_label.text = "Select one or more private Polygon brushes before applying a MatLib diffuse preview."
         return
+    if slot_index < 0 or slot_index >= CustomPolygon.SURFACE_SLOTS.size():
+        status_label.text = "MatLib diffuse assignment refused: invalid target surface slot."
+        return
+
+    # Refuse the entire batch if even one selected object is an original actor,
+    # imported BSP mesh, prop clone, or non-Polygon brush. No partial edits.
+    var names: Array[String] = []
+    for node in nodes:
+        if not is_instance_valid(node):
+            status_label.text = "MatLib batch assignment refused: selection changed; no objects were edited."
+            return
+        var name := str(node.name)
+        if (not draft_prop_copies.has(name)
+            or draft_prop_copies[name] != node
+            or not draft_brush_specs.has(name)
+            or str(draft_prop_sources.get(name, "")) != "Brush::Polygon"
+            or str(draft_brush_specs[name].get("kind", "")) != "Polygon"):
+            status_label.text = (
+                "MatLib batch assignment refused: every selected object must be a private Polygon brush. "
+                + "No objects were edited.")
+            return
+        names.append(name)
+
     var assignment := CustomPolygon.validate_source_material_assignment(raw)
     if (assignment.is_empty()
         or MatLibBrowser.load_assignment_texture(assignment) == null):
         status_label.text = "MatLib diffuse assignment refused: catalog identity or thumbnail verification failed."
         return
-    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
-    var style: Dictionary = CustomPolygon.validate_surface_style(
-        spec.get("surface_style", null))
-    if style.is_empty():
-        status_label.text = "Polygon surface metadata is invalid; no assignment was made."
-        return
-    var slot_index := clampi(polygon_surface_slot, 0, CustomPolygon.SURFACE_SLOTS.size() - 1)
+
     var slot: String = CustomPolygon.SURFACE_SLOTS[slot_index]
-    var row: Dictionary = style[slot]
-    row["source_material"] = assignment
-    style[slot] = row
-    var validated := CustomPolygon.validate_surface_style(style)
-    if validated.is_empty():
-        status_label.text = "Source material identity failed private surface validation."
-        return
-    var before := _capture_edit_state()
-    spec["surface_style"] = validated
-    if _set_brush_spec(name, spec):
-        _record_edit("Assign MatLib diffuse to Polygon " + slot, before)
-        _refresh_brush_inspector()
-        _refresh_prop_inspection()
+    var updates: Dictionary = {}
+    for name in names:
+        var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+        var style: Dictionary = CustomPolygon.validate_surface_style(
+            spec.get("surface_style", null))
+        if style.is_empty():
+            status_label.text = "Polygon surface metadata is invalid; no assignment was made."
+            return
+        var row: Dictionary = style[slot]
+        if row.get("source_material", {}) == assignment:
+            continue
+        row["source_material"] = assignment.duplicate(true)
+        style[slot] = row
+        var validated_style := CustomPolygon.validate_surface_style(style)
+        if validated_style.is_empty():
+            status_label.text = "Source material identity failed private surface validation."
+            return
+        spec["surface_style"] = validated_style
+        var validated_spec: Dictionary = BrushGeometry.validate(spec)
+        if validated_spec.is_empty() or BrushGeometry.build_mesh(validated_spec) == null:
+            status_label.text = "A selected Polygon could not rebuild safely; no objects were edited."
+            return
+        updates[name] = validated_spec
+
+    polygon_surface_slot = slot_index
+    if polygon_surface_selector != null:
+        polygon_surface_selector.select(slot_index)
+    if updates.is_empty():
         status_label.text = (
-            "Applied verified diffuse " + str(assignment["texture_name"]) + " to " + slot
-            + ". Catalog/thumbnail hashes are stored in the private draft; source bundles and native BSP remain read-only.")
+            "All " + str(names.size()) + " selected Polygon brush(es) already use " + slot + ".")
+        return
+
+    var before := _capture_edit_state()
+    for name in updates:
+        if not _set_brush_spec(name, updates[name]):
+            _apply_edit_state(before)
+            status_label.text = (
+                "MatLib batch assignment rolled back because a Polygon preview could not be rebuilt. "
+                + "No partial batch was retained.")
+            return
+    _record_edit(
+        "Assign MatLib diffuse to " + str(updates.size()) + " Polygon " + slot,
+        before)
+    _refresh_brush_inspector()
+    _refresh_prop_inspection()
+    status_label.text = (
+        "Applied verified diffuse " + str(assignment["texture_name"]) + " to "
+        + str(updates.size()) + " selected Polygon brush(es), surface " + slot
+        + ". One Undo/Redo transaction; catalog/thumbnail hashes are stored in the private draft. "
+        + "Source bundles and native BSP remain read-only.")
 
 
 func _clear_polygon_surface_source_material() -> void:
