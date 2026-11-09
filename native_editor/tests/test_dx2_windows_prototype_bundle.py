@@ -70,6 +70,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 "native_editor/godot_editor/tests/smoke_multi_view_workspace.gd",
                 "native_editor/godot_editor/tests/smoke_orthographic_gizmo_constraints.gd",
                 "native_editor/godot_editor/tests/smoke_transform_pivot_orientation.gd",
+                "native_editor/godot_editor/tests/smoke_draft_group_hierarchy.gd",
                 "native_editor/godot_editor/source_surface_matlib_crossref.gd",
                 "native_editor/godot_editor/tests/smoke_source_surface_matlib_crossref.gd",
                 "native_editor/godot_editor/source_section_topology_panel.gd",
@@ -101,7 +102,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 for file in files))
             self.assertTrue(archive.read(prefix + "native_editor/godot_editor/demo/scene.glb").startswith(b"glTF"))
             doc = json.loads(archive.read(prefix + "prototype-manifest.json"))
-            self.assertEqual(doc["prototype_version"], "0.7.4-alpha")
+            self.assertEqual(doc["prototype_version"], "0.7.5-alpha")
             self.assertTrue(doc["editor_quad_multiview_layout"])
             self.assertTrue(doc["editor_quad_multiview_independent_cameras"])
             self.assertTrue(doc["editor_quad_multiview_per_view_grid_layers"])
@@ -116,6 +117,15 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
             self.assertTrue(doc["editor_transform_orientation_modes"])
             self.assertTrue(doc["editor_transform_cursor_private_persistence"])
             self.assertFalse(doc["editor_transform_native_writer"])
+            self.assertTrue(doc["editor_group_hierarchy_parent_nodes"])
+            self.assertTrue(doc["editor_group_hierarchy_group_transform_targets"])
+            self.assertTrue(doc["editor_group_hierarchy_undo_redo"])
+            self.assertTrue(doc["editor_group_hierarchy_private_persistence"])
+            self.assertTrue(doc["editor_group_hierarchy_preflight"])
+            self.assertTrue(doc["editor_group_hierarchy_duplicate_groups"])
+            self.assertFalse(doc["editor_group_hierarchy_native_writer"])
+            self.assertFalse(doc["editor_group_hierarchy_native_ownership_verified"])
+            self.assertFalse(doc["editor_group_hierarchy_nested_groups"])
             self.assertTrue(doc["editor_source_section_topology_diagnostics"])
             self.assertFalse(doc["editor_source_section_topology_native_bsp_verified"])
             self.assertFalse(doc["editor_source_section_topology_full_render_section_verified"])

@@ -158,7 +158,11 @@ var asset_thread: Thread = null
 var asset_pending_name := ""
 var asset_pending_folder := ""
 var hierarchy_items: Dictionary = {}
+var hierarchy_group_items: Dictionary = {}
 var hierarchy_syncing := false
+var group_name_edit: LineEdit
+var group_create_button: Button
+var group_ungroup_button: Button
 var inspector_title: Label
 var inspector_summary: Label
 var inspector_details: Label
@@ -343,6 +347,10 @@ var prop_edit_step: SpinBox
 var original_mesh_transforms: Dictionary = {}
 var draft_prop_copies: Dictionary = {}
 var draft_prop_sources: Dictionary = {}
+var draft_groups_root: Node3D
+var draft_groups: Dictionary = {} # private group name -> editor-only Node3D parent
+var draft_group_original_parents: Dictionary = {} # mesh name -> original Node parent
+var selected_group_names: Array[String] = []
 var draft_brush_specs: Dictionary = {} # draft name -> validated dimensions and type
 var brush_kind_control: OptionButton
 var brush_size_controls: Array[SpinBox] = []
@@ -857,6 +865,23 @@ func _make_ui() -> void:
     var hierarchy_tab := VBoxContainer.new()
     hierarchy_tab.name = "Hierarchy"
     left_tabs.add_child(hierarchy_tab)
+    var group_row := HBoxContainer.new()
+    group_name_edit = LineEdit.new()
+    group_name_edit.placeholder_text = "Group name (letters, digits, underscore)"
+    group_name_edit.text = "Group_1"
+    group_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    group_row.add_child(group_name_edit)
+    group_create_button = Button.new()
+    group_create_button.text = "Group selected"
+    group_create_button.tooltip_text = "Create a private parent group for the selected preview meshes."
+    group_create_button.pressed.connect(_group_selected)
+    group_row.add_child(group_create_button)
+    group_ungroup_button = Button.new()
+    group_ungroup_button.text = "Ungroup"
+    group_ungroup_button.tooltip_text = "Remove the selected private group parent while preserving world transforms."
+    group_ungroup_button.pressed.connect(_ungroup_selected)
+    group_row.add_child(group_ungroup_button)
+    hierarchy_tab.add_child(group_row)
     hierarchy_tab.add_child(hierarchy_tree)
     var assets_tab := VBoxContainer.new()
     assets_tab.name = "Assets"
@@ -2391,6 +2416,10 @@ func _make_world() -> void:
     world_root = Node3D.new()
     world_root.name = "Scene"
     world_view.add_child(world_root)
+    draft_groups_root = Node3D.new()
+    draft_groups_root.name = "DX2Ed_DraftGroups_EDITOR_ONLY"
+    draft_groups_root.set_meta("editor_only", true)
+    world_root.add_child(draft_groups_root)
     camera = Camera3D.new()
     camera.near = 0.05
     camera.far = 100000.0
@@ -2876,6 +2905,11 @@ func _clear_current_scene() -> void:
     _restore_geometry_all_faces()
     _restore_geometry_isolation()
     _restore_bsp_preview_visibility()
+    _clear_draft_groups()
+    for copy in draft_prop_copies.values():
+        if is_instance_valid(copy):
+            all_mesh_instances.erase(copy)
+            copy.free()
     _clear_selection()
     asset_catalog.clear()
     selected_asset.clear()
@@ -2971,6 +3005,7 @@ func _clear_current_scene() -> void:
     if hierarchy_tree != null:
         hierarchy_tree.clear()
         hierarchy_items.clear()
+        hierarchy_group_items.clear()
     scene_bounds_valid = false
     mesh_count = 0
     if scene_root != null:
@@ -5945,6 +5980,7 @@ func _refresh_hierarchy() -> void:
     hierarchy_syncing = true
     hierarchy_tree.clear()
     hierarchy_items.clear()
+    hierarchy_group_items.clear()
     var scene_item := hierarchy_tree.create_item()
     scene_item.set_text(0, "DX2 Scene  (" + str(actors.size()) + " actors)")
     scene_item.set_selectable(0, false)
@@ -5953,6 +5989,10 @@ func _refresh_hierarchy() -> void:
     for actor in visible_actors:
         if typeof(actor) != TYPE_DICTIONARY:
             continue
+        var name := str(actor.get("name", ""))
+        var actor_node: Variant = meshes_by_actor.get(name, null)
+        if not _group_name_for_node(actor_node).is_empty():
+            continue
         var group := _actor_category(actor)
         if not categories.has(group):
             var folder := hierarchy_tree.create_item(scene_item)
@@ -5960,7 +6000,6 @@ func _refresh_hierarchy() -> void:
             folder.set_selectable(0, false)
             folder.collapsed = group == "Brush" or group == "Gameplay / other"
             categories[group] = folder
-        var name := str(actor.get("name", ""))
         var leaf := hierarchy_tree.create_item(categories[group])
         var evidence: Variant = actor.get("placement_diagnostic", {})
         var needs_review := typeof(evidence) == TYPE_DICTIONARY and bool(evidence.get("needs_review", false))
@@ -5981,6 +6020,8 @@ func _refresh_hierarchy() -> void:
         for name in draft_prop_copies:
             var source_name := str(draft_prop_sources.get(name, ""))
             var is_brush := draft_brush_specs.has(name)
+            if not _group_name_for_node(draft_prop_copies[name]).is_empty():
+                continue
             if query != "" and query not in str(name).to_lower() and query not in source_name.to_lower():
                 continue
             var parent_item: TreeItem = authored_brushes if is_brush else drafts
@@ -5989,6 +6030,35 @@ func _refresh_hierarchy() -> void:
             leaf.set_tooltip_text(0, "Preview geometry " + source_name + " (not a compiled DX2 actor or BSP)")
             leaf.set_metadata(0, str(name))
             hierarchy_items[str(name)] = leaf
+
+        if not draft_groups.is_empty():
+            var groups_root := hierarchy_tree.create_item(scene_item)
+            groups_root.set_text(0, "Groups (" + str(draft_groups.size()) + ")")
+            groups_root.set_selectable(0, false)
+            groups_root.collapsed = false
+            var group_names: Array = draft_groups.keys()
+            group_names.sort()
+            for value in group_names:
+                var group_name := str(value)
+                var members := _group_member_nodes(group_name)
+                var visible_members: Array[MeshInstance3D] = []
+                for member in members:
+                    if (query == "" or query in group_name.to_lower()
+                        or query in str(member.name).to_lower()):
+                        visible_members.append(member)
+                if visible_members.is_empty():
+                    continue
+                var group_item := hierarchy_tree.create_item(groups_root)
+                group_item.set_text(0, group_name + "  (" + str(members.size()) + ")")
+                group_item.set_tooltip_text(0, "Private editor-only parent group. No native DX2 ownership is inferred.")
+                group_item.set_metadata(0, "@group::" + group_name)
+                hierarchy_group_items[group_name] = group_item
+                for member in visible_members:
+                    var leaf := hierarchy_tree.create_item(group_item)
+                    leaf.set_text(0, str(member.name))
+                    leaf.set_tooltip_text(0, "Private group member. Parent transforms affect this preview mesh only.")
+                    leaf.set_metadata(0, str(member.name))
+                    hierarchy_items[str(member.name)] = leaf
 
     if category_filter.selected == 0:
         var unlinked := hierarchy_tree.create_item(scene_item)
@@ -6008,28 +6078,36 @@ func _refresh_hierarchy() -> void:
             leaf.set_metadata(0, name)
             hierarchy_items[name] = leaf
 
-    _sync_hierarchy_selection()
     hierarchy_syncing = false
-
+    _sync_hierarchy_selection()
 
 func _sync_hierarchy_selection() -> void:
     if hierarchy_tree == null or hierarchy_syncing:
         return
     hierarchy_syncing = true
     hierarchy_tree.deselect_all()
+    var selected_group_members := {}
+    for group_name in selected_group_names:
+        if hierarchy_group_items.has(group_name):
+            var group_item: TreeItem = hierarchy_group_items[group_name]
+            group_item.get_parent().collapsed = false
+            group_item.select(0)
+            for member in _group_member_nodes(group_name):
+                selected_group_members[str(member.name)] = true
     for name in selected_meshes:
+        if selected_group_members.has(str(name)):
+            continue
         if hierarchy_items.has(name):
             var item: TreeItem = hierarchy_items[name]
             item.get_parent().collapsed = false
             item.select(0)
-    if selected_meshes.is_empty() and not selected_actor.is_empty():
+    if selected_meshes.is_empty() and selected_group_names.is_empty() and not selected_actor.is_empty():
         var name := str(selected_actor.get("name", ""))
         if hierarchy_items.has(name):
             var item: TreeItem = hierarchy_items[name]
             item.get_parent().collapsed = false
             item.select(0)
     hierarchy_syncing = false
-
 
 func _hierarchy_multi_selected(_item: TreeItem, _column: int, _selected: bool) -> void:
     if not hierarchy_syncing:
@@ -6040,15 +6118,27 @@ func _apply_hierarchy_selection() -> void:
     if hierarchy_tree == null or hierarchy_syncing:
         return
     var chosen_names: Array[String] = []
+    var chosen_groups: Array[String] = []
     var cursor: TreeItem = hierarchy_tree.get_next_selected(null)
     while cursor != null:
         var meta: Variant = cursor.get_metadata(0)
         if typeof(meta) == TYPE_STRING and not str(meta).is_empty():
-            chosen_names.append(str(meta))
+            var value := str(meta)
+            if value.begins_with("@group::"):
+                var group_name := value.trim_prefix("@group::")
+                if draft_groups.has(group_name) and not chosen_groups.has(group_name):
+                    chosen_groups.append(group_name)
+            elif not chosen_names.has(value):
+                chosen_names.append(value)
         cursor = hierarchy_tree.get_next_selected(cursor)
-    if chosen_names.is_empty():
+    if chosen_names.is_empty() and chosen_groups.is_empty():
         return
     _clear_selection()
+    selected_group_names = chosen_groups.duplicate()
+    var selected_nodes: Dictionary = {}
+    for group_name in selected_group_names:
+        for member in _group_member_nodes(group_name):
+            selected_nodes[str(member.name)] = member
     var logical_actor: Dictionary = {}
     for name in chosen_names:
         var node: MeshInstance3D = null
@@ -6062,9 +6152,13 @@ func _apply_hierarchy_selection() -> void:
                     node = mesh_node
                     break
         if is_instance_valid(node):
-            _add_selection_mesh(node)
+            selected_nodes[str(node.name)] = node
         elif actors_by_name.has(name):
             logical_actor = actors_by_name[name]
+    var selected_node_names: Array = selected_nodes.keys()
+    selected_node_names.sort()
+    for name in selected_node_names:
+        _add_selection_mesh(selected_nodes[name])
     if selected_meshes.is_empty() and not logical_actor.is_empty():
         selected_actor = logical_actor
         selected_diagnostic = _format_actor_diagnostic(logical_actor)
@@ -6074,7 +6168,6 @@ func _apply_hierarchy_selection() -> void:
     else:
         _refresh_selection_inspector()
     _sync_actor_list_selection()
-
 
 func _actor_list_selected(index: int) -> void:
     # Backward compatibility with the single-selection signal.
@@ -6224,28 +6317,440 @@ func _selection_nodes() -> Array[MeshInstance3D]:
     return nodes
 
 
-func _selection_pivot_median() -> Vector3:
+## A selected group contributes its actual editor-only parent node to transforms;
+## its child meshes remain the selection/Inspector identities.
+func _selection_transform_targets() -> Array[Node3D]:
+    var targets: Array[Node3D] = []
+    var grouped_members := {}
+    for group_name in selected_group_names:
+        var group: Node3D = draft_groups.get(group_name, null)
+        if not is_instance_valid(group):
+            continue
+        targets.append(group)
+        for member in _group_member_nodes(group_name):
+            grouped_members[str(member.name)] = true
+    for node in _selection_nodes():
+        if not grouped_members.has(str(node.name)):
+            targets.append(node)
+    return targets
+
+
+func _active_transform_target() -> Node3D:
+    if is_instance_valid(selected_mesh):
+        var group_name := _group_name_for_node(selected_mesh)
+        if selected_group_names.has(group_name) and draft_groups.has(group_name):
+            var group: Node3D = draft_groups[group_name]
+            if is_instance_valid(group):
+                return group
+        return selected_mesh
+    var targets := _selection_transform_targets()
+    return targets.back() if not targets.is_empty() else null
+
+
+func _valid_draft_group_name(value: String) -> bool:
+    if value.is_empty() or value.length() > 48 or value.strip_edges() != value:
+        return false
+    for index in range(value.length()):
+        var code := value.unicode_at(index)
+        var allowed := (
+            (code >= 48 and code <= 57)
+            or (code >= 65 and code <= 90)
+            or (code >= 97 and code <= 122)
+            or code == 95
+        )
+        if not allowed:
+            return false
+    return true
+
+
+func _next_draft_group_name() -> String:
+    var index := 1
+    while draft_groups.has("Group_" + str(index)):
+        index += 1
+    return "Group_" + str(index)
+
+
+func _group_name_for_node(value: Variant) -> String:
+    if not (value is Node) or not is_instance_valid(value):
+        return ""
+    var node: Node = value
+    var parent := node.get_parent()
+    if parent is Node3D and parent.has_meta("dx2ed_group_name"):
+        var name := str(parent.get_meta("dx2ed_group_name"))
+        if draft_groups.has(name) and draft_groups[name] == parent:
+            return name
+    return ""
+
+
+func _group_member_nodes(group_name: String) -> Array[MeshInstance3D]:
+    var result: Array[MeshInstance3D] = []
+    var group: Node3D = draft_groups.get(group_name, null)
+    if not is_instance_valid(group):
+        return result
+    for child in group.get_children():
+        if child is MeshInstance3D and is_instance_valid(child):
+            result.append(child)
+    result.sort_custom(func(a, b): return str(a.name) < str(b.name))
+    return result
+
+
+func _create_draft_group(group_name: String, members: Array,
+                         group_transform: Transform3D) -> bool:
+    if (not _valid_draft_group_name(group_name) or draft_groups.has(group_name)
+        or not is_instance_valid(draft_groups_root) or members.size() < 2
+        or not group_transform.is_finite()):
+        return false
+    var determinant := group_transform.basis.determinant()
+    if not is_finite(determinant) or absf(determinant) < 0.000001:
+        return false
+    if (group_transform.basis.x.length() > 1000.0
+        or group_transform.basis.y.length() > 1000.0
+        or group_transform.basis.z.length() > 1000.0):
+        return false
+    var seen := {}
+    var checked_members: Array[MeshInstance3D] = []
+    for value in members:
+        if not (value is MeshInstance3D) or not is_instance_valid(value):
+            return false
+        var node: MeshInstance3D = value
+        var name := str(node.name)
+        if (seen.has(name) or node.mesh == null
+            or (not draft_prop_copies.has(name)
+                and not (meshes_by_actor.has(name) and actors_by_name.has(name)))):
+            return false
+        seen[name] = true
+        checked_members.append(node)
+    var root := Node3D.new()
+    root.name = "DX2Ed_Group_" + group_name
+    root.set_meta("editor_only", true)
+    root.set_meta("dx2ed_group_name", group_name)
+    draft_groups_root.add_child(root)
+    root.global_transform = group_transform
+    draft_groups[group_name] = root
+    for node in checked_members:
+        var name := str(node.name)
+        if not draft_group_original_parents.has(name):
+            draft_group_original_parents[name] = node.get_parent()
+        node.reparent(root, true)
+    _prune_small_draft_groups(group_name)
+    return true
+
+
+func _ungroup_draft_group(group_name: String) -> void:
+    var group: Node3D = draft_groups.get(group_name, null)
+    if not is_instance_valid(group):
+        draft_groups.erase(group_name)
+        return
+    var children := group.get_children()
+    for child in children:
+        if not (child is MeshInstance3D) or not is_instance_valid(child):
+            continue
+        var name := str(child.name)
+        var original_parent: Variant = draft_group_original_parents.get(name, null)
+        var target_parent: Node = world_root
+        if original_parent is Node and is_instance_valid(original_parent):
+            target_parent = original_parent
+        if not is_instance_valid(target_parent) or target_parent == group:
+            target_parent = world_root
+        if is_instance_valid(target_parent):
+            child.reparent(target_parent, true)
+        draft_group_original_parents.erase(name)
+    draft_groups.erase(group_name)
+    group.free()
+
+
+func _ungroup_draft_group_member(node: MeshInstance3D) -> void:
+    if not is_instance_valid(node):
+        return
+    var group_name := _group_name_for_node(node)
+    if group_name.is_empty():
+        return
+    var name := str(node.name)
+    var original_parent: Variant = draft_group_original_parents.get(name, null)
+    var target_parent: Node = world_root
+    if original_parent is Node and is_instance_valid(original_parent):
+        target_parent = original_parent
+    if not is_instance_valid(target_parent) or target_parent == node.get_parent():
+        target_parent = world_root
+    if is_instance_valid(target_parent):
+        node.reparent(target_parent, true)
+    draft_group_original_parents.erase(name)
+    _prune_small_draft_groups()
+
+
+func _prune_small_draft_groups(except_group: String = "") -> void:
+    var names: Array = draft_groups.keys()
+    for value in names:
+        var group_name := str(value)
+        if group_name == except_group:
+            continue
+        var group: Node3D = draft_groups.get(group_name, null)
+        if not is_instance_valid(group):
+            draft_groups.erase(group_name)
+        elif group.get_child_count() < 2:
+            _ungroup_draft_group(group_name)
+
+
+func _clear_draft_groups() -> void:
+    var names: Array = draft_groups.keys()
+    for value in names:
+        _ungroup_draft_group(str(value))
+    draft_groups.clear()
+    draft_group_original_parents.clear()
+    selected_group_names.clear()
+
+
+func _group_selected() -> void:
+    if not _draft_selected_is_prop():
+        status_label.text = "Select at least two editable preview meshes to create a group."
+        return
+    var members := _selection_nodes()
+    if members.size() < 2:
+        status_label.text = "A private group needs at least two preview meshes."
+        return
+    var group_name := group_name_edit.text.strip_edges() if is_instance_valid(group_name_edit) else ""
+    if group_name.is_empty():
+        group_name = _next_draft_group_name()
+    if not _valid_draft_group_name(group_name) or draft_groups.has(group_name):
+        status_label.text = "Group name must be unique and use only letters, digits and underscores (1-48 characters)."
+        return
+    var pivot := Vector3.ZERO
+    for node in members:
+        pivot += node.global_position
+    pivot /= float(members.size())
+    var before := _capture_edit_state()
+    _clear_selection()
+    if not _create_draft_group(group_name, members, Transform3D(Basis.IDENTITY, pivot)):
+        status_label.text = "Group creation refused; preview objects were left unchanged."
+        return
+    selected_group_names = [group_name]
+    for node in members:
+        _add_selection_mesh(node)
+    _refresh_selection_inspector()
+    _refresh_hierarchy()
+    _sync_actor_list_selection()
+    _record_edit("Create group " + group_name, before)
+    if is_instance_valid(group_name_edit):
+        group_name_edit.text = _next_draft_group_name()
+    status_label.text = "Created private group " + group_name + " with " + str(members.size()) + " preview meshes. Group transforms remain editor-only."
+
+
+func _ungroup_selected() -> void:
+    if not _draft_selected_is_prop():
+        status_label.text = "Select a private group or grouped preview mesh first."
+        return
+    var before := _capture_edit_state()
     var nodes := _selection_nodes()
-    if nodes.is_empty():
+    var groups_to_remove: Array[String] = selected_group_names.duplicate()
+    if groups_to_remove.is_empty():
+        for node in nodes:
+            var group_name := _group_name_for_node(node)
+            if not group_name.is_empty() and not groups_to_remove.has(group_name):
+                groups_to_remove.append(group_name)
+    if groups_to_remove.is_empty():
+        status_label.text = "The selected preview meshes are not grouped."
+        return
+    for group_name in groups_to_remove:
+        _ungroup_draft_group(group_name)
+    selected_group_names.clear()
+    _refresh_hierarchy()
+    _refresh_selection_inspector()
+    _record_edit("Ungroup " + str(groups_to_remove.size()) + " group(s)", before)
+    status_label.text = "Ungrouped preview meshes while preserving their world transforms."
+
+
+func _capture_draft_group_state() -> Array:
+    var result: Array = []
+    var names: Array = draft_groups.keys()
+    names.sort()
+    for value in names:
+        var group_name := str(value)
+        var group: Node3D = draft_groups.get(group_name, null)
+        if not is_instance_valid(group):
+            continue
+        var member_names: Array[String] = []
+        for member in _group_member_nodes(group_name):
+            member_names.append(str(member.name))
+        if member_names.size() < 2:
+            continue
+        member_names.sort()
+        result.append({
+            "name": group_name,
+            "transform": group.global_transform,
+            "members": member_names
+        })
+    return result
+
+
+func _serialize_draft_groups() -> Array:
+    var result: Array = []
+    var names: Array = draft_groups.keys()
+    names.sort()
+    for value in names:
+        var group_name := str(value)
+        var group: Node3D = draft_groups.get(group_name, null)
+        if not is_instance_valid(group):
+            continue
+        var member_names: Array[String] = []
+        for member in _group_member_nodes(group_name):
+            member_names.append(str(member.name))
+        if member_names.size() < 2:
+            continue
+        member_names.sort()
+        result.append({
+            "name": group_name,
+            "transform": _transform_to_array(group.global_transform),
+            "members": member_names
+        })
+    return result
+
+
+func _validated_draft_groups(value: Variant, copies: Array) -> Variant:
+    if typeof(value) != TYPE_ARRAY or value.size() > 256:
+        return null
+    var allowed_members := {}
+    for name in meshes_by_actor:
+        var node: Variant = meshes_by_actor[name]
+        if (actors_by_name.has(name) and is_instance_valid(node)
+            and node is MeshInstance3D and node.mesh != null):
+            allowed_members[str(name)] = true
+    for entry in copies:
+        if (typeof(entry) == TYPE_DICTIONARY
+            and typeof(entry.get("name", null)) == TYPE_STRING):
+            allowed_members[str(entry["name"])] = true
+    var seen_groups := {}
+    var seen_members := {}
+    var total_members := 0
+    var result: Array = []
+    for entry in value:
+        if typeof(entry) != TYPE_DICTIONARY:
+            return null
+        var group_name: Variant = entry.get("name", null)
+        var checked_transform: Variant = _array_to_transform(entry.get("transform", null))
+        var members: Variant = entry.get("members", null)
+        if (typeof(group_name) != TYPE_STRING or not _valid_draft_group_name(group_name)
+            or seen_groups.has(group_name) or checked_transform == null
+            or typeof(members) != TYPE_ARRAY or members.size() < 2
+            or members.size() > 10000):
+            return null
+        var group_transform: Transform3D = checked_transform
+        var determinant := group_transform.basis.determinant()
+        if (not group_transform.is_finite() or not is_finite(determinant)
+            or absf(determinant) < 0.000001
+            or group_transform.basis.x.length() > 1000.0
+            or group_transform.basis.y.length() > 1000.0
+            or group_transform.basis.z.length() > 1000.0):
+            return null
+        seen_groups[group_name] = true
+        var clean_members: Array[String] = []
+        var local_seen := {}
+        for member in members:
+            if (typeof(member) != TYPE_STRING or not allowed_members.has(member)
+                or local_seen.has(member) or seen_members.has(member)):
+                return null
+            local_seen[member] = true
+            seen_members[member] = true
+            clean_members.append(member)
+        total_members += clean_members.size()
+        if total_members > 10000:
+            return null
+        clean_members.sort()
+        result.append({
+            "name": group_name,
+            "transform": group_transform,
+            "members": clean_members
+        })
+    return result
+
+
+func _validated_draft_group_selection(value: Variant, groups: Array) -> Variant:
+    if typeof(value) != TYPE_ARRAY or value.size() > 256:
+        return null
+    var allowed := {}
+    for entry in groups:
+        if typeof(entry) == TYPE_DICTIONARY:
+            allowed[str(entry.get("name", ""))] = true
+    var seen := {}
+    var result: Array[String] = []
+    for name in value:
+        if (typeof(name) != TYPE_STRING or not allowed.has(name)
+            or seen.has(name)):
+            return null
+        seen[name] = true
+        result.append(name)
+    return result
+
+
+func _restore_draft_groups(value: Variant) -> bool:
+    if (typeof(value) != TYPE_ARRAY or value.size() > 256
+        or not draft_groups.is_empty() or not is_instance_valid(draft_groups_root)):
+        return false
+    var plans: Array = []
+    var seen_groups := {}
+    var seen_members := {}
+    for entry in value:
+        if typeof(entry) != TYPE_DICTIONARY:
+            return false
+        var group_name: Variant = entry.get("name", null)
+        var transform_value: Variant = entry.get("transform", null)
+        var group_transform: Variant = transform_value
+        if typeof(transform_value) == TYPE_ARRAY:
+            group_transform = _array_to_transform(transform_value)
+        var member_names: Variant = entry.get("members", null)
+        if (typeof(group_name) != TYPE_STRING or not _valid_draft_group_name(group_name)
+            or seen_groups.has(group_name) or typeof(group_transform) != TYPE_TRANSFORM3D
+            or typeof(member_names) != TYPE_ARRAY or member_names.size() < 2
+            or member_names.size() > 10000):
+            return false
+        var transform: Transform3D = group_transform
+        var determinant := transform.basis.determinant()
+        if (not transform.is_finite() or not is_finite(determinant)
+            or absf(determinant) < 0.000001):
+            return false
+        var members: Array[MeshInstance3D] = []
+        for member_name in member_names:
+            if typeof(member_name) != TYPE_STRING or seen_members.has(member_name):
+                return false
+            var node: Variant = draft_prop_copies.get(
+                member_name, meshes_by_actor.get(member_name, null))
+            if not is_instance_valid(node) or not (node is MeshInstance3D):
+                return false
+            seen_members[member_name] = true
+            members.append(node)
+        seen_groups[group_name] = true
+        plans.append({
+            "name": group_name,
+            "transform": transform,
+            "members": members
+        })
+    for plan in plans:
+        if not _create_draft_group(
+            str(plan["name"]), plan["members"], plan["transform"]):
+            _clear_draft_groups()
+            return false
+    return true
+
+func _selection_pivot_median() -> Vector3:
+    var targets := _selection_transform_targets()
+    if targets.is_empty():
         return Vector3.ZERO
     var pivot := Vector3.ZERO
-    for node in nodes:
+    for node in targets:
         pivot += node.global_position
-    return pivot / float(nodes.size())
-
+    return pivot / float(targets.size())
 
 func _selection_pivot() -> Vector3:
     var nodes := _selection_nodes()
     if nodes.is_empty():
         return transform_cursor_position if transform_pivot_mode == "cursor" else Vector3.ZERO
     if transform_pivot_mode == "active":
-        if is_instance_valid(selected_mesh) and nodes.has(selected_mesh):
-            return selected_mesh.global_position
+        var active_target := _active_transform_target()
+        if is_instance_valid(active_target):
+            return active_target.global_position
         return nodes.back().global_position
     if transform_pivot_mode == "cursor":
         return transform_cursor_position
     return _selection_pivot_median()
-
 
 func _refresh_transform_cursor_marker() -> void:
     if not is_instance_valid(transform_cursor_marker):
@@ -6317,14 +6822,12 @@ func _set_transform_cursor_from_selection() -> void:
 
 func _gizmo_root_basis() -> Basis:
     var active_basis := Basis.IDENTITY
-    if is_instance_valid(selected_mesh):
-        active_basis = selected_mesh.global_basis
+    var target := _active_transform_target()
+    if is_instance_valid(target):
+        active_basis = target.global_basis
     return OrthoGuides.gizmo_basis(
         editor_view_mode, transform_orientation_mode, active_basis)
 
-
-## Geometry debugging never writes an editor draft or a native map.
-## This is intentionally separate from the experimental actor writers.
 func _refresh_geometry_debug_buttons() -> void:
     var available := _selection_nodes().size() == 1
     if geometry_isolation_button != null:
@@ -7113,28 +7616,26 @@ func _validate_property_edits(rows: Variant) -> Variant:
 func _inspector_transform_changed(value: float, mode: String, axis: int) -> void:
     if inspector_syncing or not _draft_selected_is_prop():
         return
-    var nodes := _selection_nodes()
-    if nodes.size() > 1 and mode != "Position":
+    var targets := _selection_transform_targets()
+    if targets.is_empty() or (targets.size() > 1 and mode != "Position"):
         return
     var before := _capture_edit_state()
     if mode == "Position":
         var pivot := _selection_pivot()
         var offset := Vector3.ZERO
         offset[axis] = value - pivot[axis]
-        for node in nodes:
+        for node in targets:
             node.global_position += offset
     elif mode == "Rotation":
-        var angles := nodes[0].global_rotation_degrees
+        var angles := targets[0].global_rotation_degrees
         angles[axis] = value
-        nodes[0].global_rotation_degrees = angles
+        targets[0].global_rotation_degrees = angles
     elif mode == "Scale":
-        var new_scale := nodes[0].scale
+        var new_scale := targets[0].scale
         new_scale[axis] = maxf(0.001, value)
-        nodes[0].scale = new_scale
+        targets[0].scale = new_scale
     _refresh_prop_inspection()
     _record_edit("Inspector " + mode + " " + ["X", "Y", "Z"][axis], before)
-
-
 
 func _source_scene_workbench_candidate() -> Dictionary:
     # Visual preview mesh identity is not enough: source-only native fields
@@ -7238,6 +7739,7 @@ func _clear_selection() -> void:
             node.material_overlay = selection_original_overlays.get(name, null)
     selected_meshes.clear()
     selection_original_overlays.clear()
+    selected_group_names.clear()
     selected_mesh = null
     selected_overlay_original = null
     selected_diagnostic = ""
@@ -7283,16 +7785,18 @@ func _capture_edit_state() -> Dictionary:
     return {
         "moved": moved,
         "copies": copies,
+        "groups": _capture_draft_group_state(),
         "property_edits": property_overrides.duplicate(true),
         "selected": selected_meshes.keys().duplicate(),
+        "selected_groups": selected_group_names.duplicate(),
         "selected_logical_actor": str(selected_actor.get("name", "")) if selected_meshes.is_empty() else "",
         "next_id": next_prop_copy_id,
         "cursor_position": transform_cursor_position
     }
 
-
 func _apply_edit_state(state: Dictionary) -> void:
     _clear_selection()
+    _clear_draft_groups()
     # Restore baseline first. A reverted move must not linger if absent
     # from the snapshot.
     for name in original_mesh_transforms:
@@ -7334,6 +7838,10 @@ func _apply_edit_state(state: Dictionary) -> void:
                     if not prov.is_empty():
                         draft_template_provenance[str(name)] = prov.duplicate(true)
     next_prop_copy_id = max(1, int(state.get("next_id", 1)))
+    _restore_draft_groups(state.get("groups", []))
+    for group_name in state.get("selected_groups", []):
+        if draft_groups.has(str(group_name)):
+            selected_group_names.append(str(group_name))
     property_overrides = state.get("property_edits", {}).duplicate(true)
     var cursor_value: Variant = state.get("cursor_position", transform_cursor_position)
     if typeof(cursor_value) == TYPE_VECTOR3:
@@ -7350,6 +7858,8 @@ func _apply_edit_state(state: Dictionary) -> void:
             node = meshes_by_actor[name]
         if is_instance_valid(node):
             _add_selection_mesh(node)
+    if _selection_nodes().is_empty() and not actors_by_name.has(str(state.get("selected_logical_actor", ""))):
+        selected_group_names.clear()
     if _selection_nodes().is_empty() and actors_by_name.has(str(state.get("selected_logical_actor", ""))):
         selected_actor = actors_by_name[str(state["selected_logical_actor"])]
         selected_diagnostic = _format_actor_diagnostic(selected_actor)
@@ -7361,7 +7871,6 @@ func _apply_edit_state(state: Dictionary) -> void:
     _refresh_hierarchy()
     _refresh_transform_cursor_marker()
     _update_gizmo_pose()
-
 
 func _refresh_history_buttons() -> void:
     if undo_button != null:
@@ -7381,6 +7890,7 @@ func _record_edit(label: String, before: Dictionary) -> void:
         == after.get("cursor_position", Vector3.ZERO))
     if (before.get("moved") == after.get("moved")
         and before.get("copies") == after.get("copies")
+        and before.get("groups", []) == after.get("groups", [])
         and before.get("property_edits", {}) == after.get("property_edits", {})
         and cursor_unchanged):
         return
@@ -8487,8 +8997,10 @@ func _duplicate_selected_prop() -> void:
         status_label.text = "Select a rendered static mesh actor first (BSP cannot be duplicated)."
         return
     var history_before := _capture_edit_state()
+    var source_group_names: Array[String] = selected_group_names.duplicate()
     var originals := _selection_nodes()
     var copies: Array[MeshInstance3D] = []
+    var copy_by_original: Dictionary = {}
     for node in originals:
         var source := _draft_source_name(node)
         if source.is_empty():
@@ -8502,16 +9014,35 @@ func _duplicate_selected_prop() -> void:
             if draft_template_provenance.has(str(node.name)):
                 draft_template_provenance[name] = draft_template_provenance[str(node.name)].duplicate(true)
             copies.append(new_copy)
+            copy_by_original[str(node.name)] = new_copy
     if copies.is_empty():
         return
+    var duplicate_group_names: Array[String] = []
+    for source_group_name in source_group_names:
+        var source_group: Node3D = draft_groups.get(source_group_name, null)
+        if not is_instance_valid(source_group):
+            continue
+        var grouped_copies: Array[MeshInstance3D] = []
+        for member in _group_member_nodes(source_group_name):
+            var original_name := str(member.name)
+            if copy_by_original.has(original_name):
+                grouped_copies.append(copy_by_original[original_name])
+        if grouped_copies.size() >= 2:
+            var duplicate_group_name := _next_draft_group_name()
+            if _create_draft_group(
+                duplicate_group_name, grouped_copies, source_group.global_transform):
+                duplicate_group_names.append(duplicate_group_name)
     _clear_selection()
+    selected_group_names = duplicate_group_names
     for node in copies:
         _add_selection_mesh(node)
     _refresh_selection_inspector()
     _sync_actor_list_selection()
+    _refresh_hierarchy()
     _record_edit("Duplicate " + str(copies.size()) + " prop(s)", history_before)
-    status_label.text = "Duplicated " + str(copies.size()) + " prop(s). Move the copies, then Save draft."
-
+    if is_instance_valid(group_name_edit):
+        group_name_edit.text = _next_draft_group_name()
+    status_label.text = "Duplicated " + str(copies.size()) + " prop(s)" + (" with " + str(duplicate_group_names.size()) + " group(s)" if not duplicate_group_names.is_empty() else "") + ". Move the copies, then Save draft."
 
 func _refresh_prop_inspection() -> void:
     _refresh_selection_inspector()
@@ -8526,11 +9057,10 @@ func _move_selected_prop(axis: Vector3) -> void:
         return
     var history_before := _capture_edit_state()
     var delta := axis * float(prop_edit_step.value)
-    for node in _selection_nodes():
+    for node in _selection_transform_targets():
         node.global_position += delta
     _refresh_prop_inspection()
-    _record_edit("Move " + str(_selection_nodes().size()) + " prop(s)", history_before)
-
+    _record_edit("Move " + str(_selection_transform_targets().size()) + " prop/group target(s)", history_before)
 
 func _rotate_selected_prop(angle: float) -> void:
     if not _draft_selected_is_prop():
@@ -8539,24 +9069,33 @@ func _rotate_selected_prop(angle: float) -> void:
     var history_before := _capture_edit_state()
     var pivot := _selection_pivot()
     var turn := Basis(Vector3.UP, deg_to_rad(angle))
-    for node in _selection_nodes():
+    for node in _selection_transform_targets():
         var pose := node.global_transform
         pose.origin = pivot + turn * (pose.origin - pivot)
         pose.basis = turn * pose.basis
         node.global_transform = pose
     _refresh_prop_inspection()
-    _record_edit("Rotate " + str(_selection_nodes().size()) + " prop(s)", history_before)
-
+    _record_edit("Rotate " + str(_selection_transform_targets().size()) + " prop/group target(s)", history_before)
 
 func _reset_selected_prop() -> void:
     if not _draft_selected_is_prop():
         return
     var history_before := _capture_edit_state()
     var nodes := _selection_nodes()
+    var groups_to_ungroup: Array[String] = selected_group_names.duplicate()
+    for node in nodes:
+        var group_name := _group_name_for_node(node)
+        if not group_name.is_empty() and not groups_to_ungroup.has(group_name):
+            groups_to_ungroup.append(group_name)
+    for group_name in groups_to_ungroup:
+        _ungroup_draft_group(group_name)
+    selected_group_names.clear()
     _clear_selection()
     var restored: Array[MeshInstance3D] = []
     var removed := 0
     for node in nodes:
+        if not is_instance_valid(node):
+            continue
         var name := str(node.name)
         if draft_prop_copies.has(name):
             draft_prop_copies.erase(name)
@@ -8573,10 +9112,9 @@ func _reset_selected_prop() -> void:
         _add_selection_mesh(node)
     _refresh_selection_inspector()
     _sync_actor_list_selection()
+    _refresh_hierarchy()
     _record_edit("Reset " + str(restored.size()) + " / delete " + str(removed), history_before)
     status_label.text = "Restored " + str(restored.size()) + " original(s), deleted " + str(removed) + " copy/copies. Save draft to persist."
-
-
 
 func _draft_file_path() -> String:
     if current_folder.is_empty():
@@ -9376,6 +9914,7 @@ func _save_prop_draft() -> void:
                            "transform": _transform_to_array(duplicate.global_transform),
                            "class_template": draft_template_provenance.get(name, {}).duplicate(true),
                            "brush": draft_brush_specs.get(name, {}).duplicate(true)})
+    var groups := _serialize_draft_groups()
     var document := {
         "schema": "DX2Ed-prop-draft-v1",
         "map_cache": current_folder,
@@ -9383,17 +9922,17 @@ func _save_prop_draft() -> void:
         "read_only_source": true,
         "moved": moved,
         "copies": copies,
+        "groups": groups,
         "property_edits": _serialize_property_edits(),
         "selection": selected_meshes.keys().map(func(name): return str(name)),
+        "selected_groups": selected_group_names.duplicate(),
         "workspace": _capture_draft_workspace()
     }
     if not _write_private_draft_transaction(path, JSON.stringify(document, "  ")):
         status_label.text = "Private draft save failed; existing draft preserved: " + path
         return
-    status_label.text = "Saved " + str(moved.size()) + " moved props, " + str(copies.size()) + " copies and " + str(document["property_edits"].size()) + " actor property overrides (not GMP)."
+    status_label.text = "Saved " + str(moved.size()) + " moved props, " + str(copies.size()) + " copies, " + str(groups.size()) + " private groups and " + str(document["property_edits"].size()) + " actor property overrides (not GMP)."
 
-## Reject missing, ambiguous and unbuildable private draft records BEFORE clearing
-## current editor state. Source-only validation; never authorizes native GMP writes.
 func _draft_record_preflight(moved: Array, copies: Array) -> String:
     var seen_moves := {}
     for entry in moved:
@@ -9447,8 +9986,10 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
         return
     var moved: Variant = doc.get("moved", [])
     var copies: Variant = doc.get("copies", [])
+    var groups: Variant = doc.get("groups", [])
     var property_rows: Variant = doc.get("property_edits", [])
-    if typeof(moved) != TYPE_ARRAY or typeof(copies) != TYPE_ARRAY or moved.size() > 10000 or copies.size() > 10000:
+    if (typeof(moved) != TYPE_ARRAY or typeof(copies) != TYPE_ARRAY
+        or moved.size() > 10000 or copies.size() > 10000):
         status_label.text = "Prop draft contains invalid record arrays."
         return
     # Validate every transform before applying any of the saved changes.
@@ -9479,6 +10020,17 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
     if not record_error.is_empty():
         status_label.text = "Prop draft refused: " + record_error + " Nothing loaded."
         return
+    var checked_groups: Variant = _validated_draft_groups(groups, copies)
+    if checked_groups == null:
+        status_label.text = "Prop draft has invalid group names, transforms or member identities; nothing loaded."
+        return
+    var saved_group_selection: Variant = []
+    if doc.has("selected_groups"):
+        saved_group_selection = _validated_draft_group_selection(
+            doc["selected_groups"], checked_groups)
+        if saved_group_selection == null:
+            status_label.text = "Prop draft has invalid or duplicate selected group identities; nothing loaded."
+            return
     # Legacy drafts without workspace metadata remain readable.
     # Refuse malformed workspace records before clearing any editor edits.
     var workspace: Variant = {}
@@ -9493,12 +10045,24 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
         if saved_selection == null:
             status_label.text = "Prop draft has invalid or duplicate preview selection; nothing loaded."
             return
+    var selected_name_set := {}
+    for selected_name in saved_selection:
+        selected_name_set[str(selected_name)] = true
+    for group_name in saved_group_selection:
+        for group_entry in checked_groups:
+            if str(group_entry.get("name", "")) != str(group_name):
+                continue
+            for member_name in group_entry.get("members", []):
+                if not selected_name_set.has(str(member_name)):
+                    status_label.text = "Prop draft group selection is missing one or more member identities; nothing loaded."
+                    return
     var loaded_properties: Variant = _validate_property_edits(property_rows)
     if loaded_properties == null:
         status_label.text = "Prop draft has invalid or unmatched actor properties; nothing loaded."
         return
     var history_before := _capture_edit_state()
     _clear_selection()
+    _clear_draft_groups()
     property_overrides = loaded_properties
     for name in original_mesh_transforms:
         if meshes_by_actor.has(name) and is_instance_valid(meshes_by_actor[name]):
@@ -9532,6 +10096,12 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
             var suffix := name.trim_prefix("DraftProp_")
             if suffix.is_valid_int():
                 next_prop_copy_id = max(next_prop_copy_id, int(suffix) + 1)
+    if not _restore_draft_groups(checked_groups):
+        status_label.text = "Validated group records could not be reconstructed; draft load stopped."
+        return
+    selected_group_names.clear()
+    for group_name in saved_group_selection:
+        selected_group_names.append(str(group_name))
     for selected_name in saved_selection:
         var selected_node: Variant = draft_prop_copies.get(
             selected_name, meshes_by_actor.get(selected_name, null))
@@ -9545,7 +10115,7 @@ func _load_prop_draft(silent_if_absent: bool = false) -> void:
         _record_edit("Load draft", history_before)
     _refresh_hierarchy()
     _refresh_inspector_panel()
-    status_label.text = "Loaded private prop/property draft. Original GMP unchanged."
+    status_label.text = "Loaded private prop/property/group draft. Original GMP unchanged."
 
 func focus_selected() -> void:
     if is_instance_valid(selected_mesh):
@@ -9886,9 +10456,11 @@ func _begin_gizmo_drag_at(mouse_position: Vector2) -> bool:
     environment_light_gizmo_drag = is_light
     gizmo_start_transforms.clear()
     if not is_light:
-        for node in _selection_nodes():
+        for node in _selection_transform_targets():
             gizmo_start_transforms[str(node.name)] = node.global_transform
-        gizmo_start_transform = selected_mesh.global_transform
+        var active_target := _active_transform_target()
+        if is_instance_valid(active_target):
+            gizmo_start_transform = active_target.global_transform
     gizmo_drag_start_screen = mouse_position
     if is_light:
         gizmo_undo_before.clear()
@@ -9979,7 +10551,7 @@ func _apply_gizmo_drag_at(mouse_position: Vector2) -> void:
             scale_factor = clampf(1.0 + change / maxf(0.5, distance * 0.18), 0.05, 100.0)
             if Input.is_key_pressed(KEY_CTRL):
                 scale_factor = maxf(0.05, snapped(scale_factor, 0.1))
-    for node in _selection_nodes():
+    for node in _selection_transform_targets():
         var name := str(node.name)
         if not gizmo_start_transforms.has(name):
             continue
