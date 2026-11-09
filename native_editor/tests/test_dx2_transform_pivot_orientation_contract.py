@@ -26,8 +26,8 @@ class DX2EdTransformPivotOrientationContractTests(unittest.TestCase):
             "best_axis = (gizmo_basis * best_axis).normalized()",
         ):
             self.assertIn(token, main)
-        self.assertIn('value.get("pivot_mode"', main)
-        self.assertIn('value.get("orientation_mode"', main)
+        self.assertIn('value["pivot_mode"]', main)
+        self.assertIn('value["orientation_mode"]', main)
 
     def test_real_godot_smoke_is_in_windows_and_linux_launchers(self):
         smoke = "native_editor/godot_editor/tests/smoke_transform_pivot_orientation.gd"
