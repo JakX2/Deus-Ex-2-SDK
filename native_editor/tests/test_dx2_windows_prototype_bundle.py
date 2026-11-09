@@ -97,6 +97,9 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
             self.assertEqual(doc["prototype_version"], "0.6.7-alpha")
             self.assertTrue(doc["editor_source_section_topology_diagnostics"])
             self.assertFalse(doc["editor_source_section_topology_native_bsp_verified"])
+            self.assertFalse(doc["editor_source_section_topology_full_render_section_verified"])
+            self.assertFalse(doc["editor_source_section_topology_havok_adjacency_verified"])
+            self.assertTrue(doc["editor_source_section_topology_area_is_triangle_sum"])
             self.assertEqual(doc["runtime_sha256"]["Godot_v4.3-stable_win64.exe"],
                              hashlib.sha256(self.expected_fake_exe).hexdigest())
             extracted = Path(self.tmp.name) / "unpacked"
