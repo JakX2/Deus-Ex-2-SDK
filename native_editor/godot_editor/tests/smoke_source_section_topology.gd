@@ -124,8 +124,8 @@ func _run() -> void:
         return
     var camera := Camera3D.new()
     camera.position = Vector3(0.0, 10.0, 10.0)
-    camera.look_at(Vector3.ZERO, Vector3.UP)
     root.add_child(camera)
+    camera.look_at(Vector3.ZERO, Vector3.UP)
     camera.current = true
     var viewport_size := camera.get_viewport().get_visible_rect().size
     var screen_index: Dictionary = EdgePicker.build_screen_index(report, camera, viewport_size)

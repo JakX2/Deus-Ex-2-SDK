@@ -110,6 +110,7 @@ class SourceSectionTopologyContractTests(unittest.TestCase):
         self.assertIn("CELL_SIZE := 64.0", helper)
         self.assertIn("camera_signature_matches", helper)
         self.assertIn("record_belongs_to_report", helper)
+        self.assertIn('analysis_skipped_for_edge_incidence", false', helper)
         self.assertIn("screen_distance_px", helper)
         self.assertIn("edge_selection_cleared", panel)
         self.assertIn("set_selected_edge", panel)

@@ -97,7 +97,7 @@ static func _valid_report(details: Dictionary) -> bool:
         or details.get("edge_report_uses_original_float32_weld_ids", false) != true
         or details.get("edge_report_is_mopp_leaf_subset_only", false) != true
         or details.get("analysis_skipped_for_size", true)
-        or details.get("analysis_skipped_for_edge_incidence", true)):
+        or details.get("analysis_skipped_for_edge_incidence", false) == true):
         return false
     var source_map := str(details.get("source_map", ""))
     var section_key := str(details.get("source_section_key", ""))
