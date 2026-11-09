@@ -122,3 +122,26 @@ This advances T3Ed-like section navigation and visual inspection, but does not
 establish complete Flesh/BSP surface topology, native surface IDs, Havok
 adjacency, physical materials, shader semantics or playable native level
 authoring. The source remains a MOPP terminal-leaf subset only.
+
+
+## v0.51: interactive exact-weld MOPP-subset edge selection
+
+DX2Ed v0.51 turns the v0.50 edge overlay into a viewport interaction. A
+camera-signature-cached 64-pixel screen-space index limits hover queries to
+nearby edge candidates. The index is rebuilt when the camera transform,
+projection settings or viewport size changes. Hover draws a transient
+screen-width highlight; clicking selects an edge without changing the source
+triangle selection.
+
+The selected-edge Inspector exposes the exact original float32 weld-ID pair,
+the selected MOPP-subset incident Level triangle IDs, local incidence, raw
+source edge-class code (still uninterpreted), and any observed external
+MOPP-linked section representative. It can navigate to a local incident
+triangle or to the adjacent section's representative original triangle, and
+copy a source-pinned read-only JSON record.
+
+This is still **MOPP terminal-leaf subset interaction**, not complete Flesh
+BSP edge/vertex picking, a native BSP surface identity, Havok adjacency,
+walkability, physics material, or a writable map. Screen-space selection and
+its highlights are transient editor overlays. No original GMP/IBD, imported
+mesh or private draft geometry is changed.
