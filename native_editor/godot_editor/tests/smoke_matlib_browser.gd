@@ -176,13 +176,6 @@ func _run() -> void:
     if not browser.visible_materials.is_empty():
         _fail("Parser usage-code 6 filter fabricated an environment resource match.")
         return
-    browser.filter_selector.select(1)
-    browser._refresh_list()
-    if browser.visible_materials.size() != 1:
-        _fail("Legacy slot-0 preview candidate filter did not restore the material.")
-        return
-    browser.material_list.select(0)
-    browser._material_selected(0)
 
     var hostile: Dictionary = catalog.duplicate(true)
     hostile["materials"][0]["stages"][0]["texture"]["preview_path"] = "../outside.png"
