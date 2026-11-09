@@ -7876,6 +7876,109 @@ func _clear_selection() -> void:
 ## Editable *preview* operations. Native GMP/IBD save remains intentionally disabled.
 ## Drafts live in user:// and are never written next to retail files.
 
+func _add_draft_light() -> void:
+    if scene_root == null or world_root == null:
+        status_label.text = "Load a map or the synthetic demo before adding a draft light."
+        return
+    if draft_light_specs.size() >= DraftLight.MAX_LIGHTS:
+        status_label.text = "Draft light preview limit reached (" + str(DraftLight.MAX_LIGHTS) + ")."
+        return
+    var kind := draft_light_kind_control.get_item_text(draft_light_kind_control.selected)
+    if not DraftLight.KINDS.has(kind):
+        status_label.text = "Choose a supported Point or Spot preview light."
+        return
+    var history_before := _capture_edit_state()
+    var name := "DraftProp_" + str(next_prop_copy_id)
+    next_prop_copy_id += 1
+    var position := _selection_pivot() if not _selection_nodes().is_empty() else camera_target
+    var created := _new_draft_copy(
+        "Light::" + kind, name, Transform3D(Basis.IDENTITY, position))
+    if not is_instance_valid(created):
+        next_prop_copy_id = max(1, next_prop_copy_id - 1)
+        status_label.text = "Could not create the private " + kind + " preview light."
+        return
+    _clear_selection()
+    _add_selection_mesh(created)
+    _refresh_selection_inspector()
+    _sync_actor_list_selection()
+    _refresh_hierarchy()
+    _record_edit("Add " + kind + " draft light", history_before)
+    status_label.text = (
+        "Added editor-private " + kind + " light at " + str(position)
+        + ". Move/rotate it and Save draft; no native DX2 Light actor is created."
+    )
+
+
+func _refresh_draft_light_inspector() -> void:
+    if draft_light_panel == null:
+        return
+    var nodes := _selection_nodes()
+    var spec: Dictionary = {}
+    if nodes.size() == 1:
+        spec = draft_light_specs.get(str(nodes[0].name), {})
+    draft_light_panel.visible = not spec.is_empty()
+    if spec.is_empty():
+        return
+    var color_values: Array = spec.get("color", [1.0, 1.0, 1.0, 1.0])
+    draft_light_syncing = true
+    draft_light_color_control.color = Color(
+        float(color_values[0]), float(color_values[1]),
+        float(color_values[2]), float(color_values[3]))
+    draft_light_energy_control.set_value_no_signal(float(spec.get("energy", 1.0)))
+    draft_light_range_control.set_value_no_signal(float(spec.get("range", 8.0)))
+    draft_light_angle_control.set_value_no_signal(float(spec.get("spot_angle", 42.0)))
+    draft_light_angle_row.visible = str(spec.get("kind", "Point")) == "Spot"
+    draft_light_shadow_control.set_pressed_no_signal(bool(spec.get("shadows", false)))
+    draft_light_enabled_control.set_pressed_no_signal(bool(spec.get("enabled", true)))
+    draft_light_syncing = false
+
+
+func _draft_light_value_changed(value: Variant, key: String) -> void:
+    if draft_light_syncing:
+        return
+    var nodes := _selection_nodes()
+    if nodes.size() != 1:
+        return
+    var name := str(nodes[0].name)
+    if not draft_light_specs.has(name) or not draft_prop_copies.has(name):
+        return
+    var current: Dictionary = draft_light_specs[name]
+    var updated: Dictionary = current.duplicate(true)
+    if key == "color":
+        if typeof(value) != TYPE_COLOR:
+            return
+        updated["color"] = [value.r, value.g, value.b, 1.0]
+    elif key in ["energy", "range", "spot_angle", "shadows", "enabled"]:
+        updated[key] = value
+    else:
+        return
+    var source := str(draft_prop_sources.get(name, ""))
+    var expected_kind := source.trim_prefix("Light::")
+    var checked: Dictionary = DraftLight.validate(updated, expected_kind)
+    if checked.is_empty():
+        status_label.text = "Invalid draft light value; the current preview was preserved."
+        _refresh_draft_light_inspector()
+        return
+    if key == "shadows" and bool(checked["shadows"]) and not bool(current.get("shadows", false)):
+        var shadow_count := 0
+        for existing in draft_light_specs.values():
+            if bool(existing.get("shadows", false)):
+                shadow_count += 1
+        if shadow_count >= DraftLight.MAX_SHADOW_LIGHTS:
+            status_label.text = "Shadow preview limit reached (" + str(DraftLight.MAX_SHADOW_LIGHTS) + ")."
+            _refresh_draft_light_inspector()
+            return
+    var node: MeshInstance3D = draft_prop_copies[name]
+    if not DraftLight.apply_to_node(node, checked):
+        status_label.text = "Draft light preview node is unavailable; no edit was recorded."
+        return
+    var history_before := _capture_edit_state()
+    draft_light_specs[name] = checked
+    _record_edit("Edit " + expected_kind + " light " + key, history_before)
+    _refresh_draft_light_inspector()
+    status_label.text = "Updated editor-private " + expected_kind + " light " + key + ". Original DX2 data is unchanged."
+
+
 func _draft_selected_is_prop() -> bool:
     var nodes := _selection_nodes()
     if nodes.is_empty():
