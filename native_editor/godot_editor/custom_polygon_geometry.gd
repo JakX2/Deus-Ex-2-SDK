@@ -14,11 +14,14 @@ const SURFACE_PRESETS := ["Neutral", "Concrete", "Metal", "Ceramic", "Hazard"]
 static func default_surface_style() -> Dictionary:
     return {
         "top": {"preset": "Concrete", "tint": [1.0, 1.0, 1.0, 1.0],
-                "uv_scale": [1.0, 1.0], "uv_offset": [0.0, 0.0]},
+                "uv_scale": [1.0, 1.0], "uv_offset": [0.0, 0.0],
+                "source_material": {}},
         "bottom": {"preset": "Neutral", "tint": [1.0, 1.0, 1.0, 1.0],
-                   "uv_scale": [1.0, 1.0], "uv_offset": [0.0, 0.0]},
+                   "uv_scale": [1.0, 1.0], "uv_offset": [0.0, 0.0],
+                   "source_material": {}},
         "sides": {"preset": "Metal", "tint": [1.0, 1.0, 1.0, 1.0],
-                  "uv_scale": [1.0, 1.0], "uv_offset": [0.0, 0.0]}
+                  "uv_scale": [1.0, 1.0], "uv_offset": [0.0, 0.0],
+                  "source_material": {}}
     }
 
 
@@ -60,16 +63,129 @@ static func validate_surface_style(raw: Variant) -> Dictionary:
             entry.get("uv_scale", fallback["uv_scale"]), 2, 0.05, 64.0)
         var uv_offset := _bounded_number_array(
             entry.get("uv_offset", fallback["uv_offset"]), 2, -64.0, 64.0)
+        var source_raw: Variant = entry.get("source_material", fallback["source_material"])
         if tint.is_empty() or uv_scale.is_empty() or uv_offset.is_empty():
             return {}
+        if typeof(source_raw) != TYPE_DICTIONARY:
+            return {}
+        var source_material: Dictionary = {}
+        if not source_raw.is_empty():
+            source_material = validate_source_material_assignment(source_raw)
+            if source_material.is_empty():
+                return {}
         result[slot] = {
             "preset": preset,
             "tint": tint,
             "uv_scale": uv_scale,
-            "uv_offset": uv_offset
+            "uv_offset": uv_offset,
+            "source_material": source_material
         }
     return result
 
+
+static func _valid_assignment_text(
+        value: Variant, maximum: int, allow_empty: bool = false) -> bool:
+    if typeof(value) != TYPE_STRING or str(value).length() > maximum:
+        return false
+    return allow_empty or not str(value).strip_edges().is_empty()
+
+
+static func _valid_sha256(value: Variant) -> bool:
+    if typeof(value) != TYPE_STRING or str(value).length() != 64:
+        return false
+    for index in range(64):
+        if "0123456789abcdef".find(str(value).substr(index, 1).to_lower()) < 0:
+            return false
+    return true
+
+
+## Exact, source-pinned metadata for one resolved diffuse preview. Paths point
+## only to the private catalog/cache; they never authorize source or BSP writes.
+static func validate_source_material_assignment(raw: Variant) -> Dictionary:
+    if typeof(raw) != TYPE_DICTIONARY or raw.is_empty() or raw.size() != 19:
+        return {}
+    var required := [
+        "catalog_path", "catalog_sha256", "catalog_id", "material_name",
+        "material_source_bundle", "material_source", "material_version",
+        "material_flags", "material_stage_mask", "material_category_id",
+        "diffuse_name", "texture_name", "texture_source_bundle", "texture_format",
+        "texture_width", "texture_height", "texture_usage", "preview_path",
+        "preview_sha256"
+    ]
+    for key in required:
+        if not raw.has(key):
+            return {}
+    var catalog_path: Variant = raw["catalog_path"]
+    if (not _valid_assignment_text(catalog_path, 4096)
+        or not str(catalog_path).is_absolute_path()):
+        return {}
+    var normalized_catalog := str(catalog_path).simplify_path()
+    var private_cache_root := ProjectSettings.globalize_path(
+        "user://dx2ed_material_cache").simplify_path().trim_suffix("/")
+    if (not normalized_catalog.ends_with(".json")
+        or not normalized_catalog.begins_with(private_cache_root + "/")):
+        return {}
+    for key in ["catalog_sha256", "catalog_id", "preview_sha256"]:
+        if not _valid_sha256(raw[key]):
+            return {}
+    for key in [
+        "material_name", "material_source_bundle",
+        "diffuse_name", "texture_name", "texture_source_bundle", "texture_format",
+        "texture_usage"
+    ]:
+        if not _valid_assignment_text(raw[key], 260):
+            return {}
+    if not _valid_assignment_text(raw["material_source"], 260, true):
+        return {}
+    if str(raw["diffuse_name"]).to_lower() != str(raw["texture_name"]).to_lower():
+        return {}
+    var integer_limits := {
+        "material_version": [0, 65535],
+        "material_flags": [0, 4294967295],
+        "material_stage_mask": [0, 4294967295],
+        "material_category_id": [0, 65535],
+        "texture_width": [1, 16384],
+        "texture_height": [1, 16384]
+    }
+    for key in integer_limits:
+        if typeof(raw[key]) not in [TYPE_INT, TYPE_FLOAT]:
+            return {}
+        var number := float(raw[key])
+        if not is_finite(number) or not is_equal_approx(number, round(number)):
+            return {}
+        var value := int(round(number))
+        if value < integer_limits[key][0] or value > integer_limits[key][1]:
+            return {}
+    var preview_path: Variant = raw["preview_path"]
+    if (not _valid_assignment_text(preview_path, 260)
+        or str(preview_path).begins_with("/")
+        or str(preview_path).contains("\\")
+        or str(preview_path).contains(":")):
+        return {}
+    for segment in str(preview_path).split("/", false):
+        if segment.is_empty() or segment == "." or segment == "..":
+            return {}
+    return {
+        "catalog_path": str(catalog_path),
+        "catalog_sha256": str(raw["catalog_sha256"]).to_lower(),
+        "catalog_id": str(raw["catalog_id"]).to_lower(),
+        "material_name": str(raw["material_name"]),
+        "material_source_bundle": str(raw["material_source_bundle"]),
+        "material_source": str(raw["material_source"]),
+        "material_version": int(raw["material_version"]),
+        "material_flags": int(raw["material_flags"]),
+        "material_stage_mask": int(raw["material_stage_mask"]),
+        "material_category_id": int(raw["material_category_id"]),
+        "diffuse_name": str(raw["diffuse_name"]),
+        "texture_name": str(raw["texture_name"]),
+        "texture_source_bundle": str(raw["texture_source_bundle"]),
+        "texture_format": str(raw["texture_format"]),
+        "texture_width": int(raw["texture_width"]),
+        "texture_height": int(raw["texture_height"]),
+        "texture_usage": str(raw["texture_usage"]),
+        "preview_path": str(preview_path),
+        "preview_sha256": str(raw["preview_sha256"]).to_lower()
+    }
 
 static func default_outline() -> Array:
     # An L-shaped six-corner footprint invites real editing, not another box.

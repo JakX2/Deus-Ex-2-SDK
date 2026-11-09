@@ -32,6 +32,7 @@ if /I "%~1"=="--self-test" (
     smoke_draft_brush_viewport_face_pick.gd
     smoke_custom_polygon_geometry.gd
     smoke_matlib_browser.gd
+    smoke_matlib_polygon_assignment.gd
     smoke_mission_logic_draft.gd
     smoke_dialogue_design_draft.gd
     smoke_original_script_ibd_provenance.gd

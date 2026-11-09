@@ -4,11 +4,14 @@ extends VBoxContainer
 ## never edits source bundles or writes native material/BSP data.
 
 const PythonRuntime = preload("res://python_runtime.gd")
+const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const CATALOG_SCHEMA := "DX2Ed-MatLib-catalog-v1"
 const MAX_CATALOG_BYTES := 64 * 1024 * 1024
 const MAX_MATERIALS := 50000
 const MAX_SOURCE_FILES := 64
 const MAX_PREVIEW_BYTES := 2 * 1024 * 1024
+
+signal material_apply_requested(assignment: Dictionary)
 
 var source_dialog: FileDialog
 var search_box: LineEdit
@@ -17,6 +20,7 @@ var material_list: ItemList
 var details_label: Label
 var stage_grid: GridContainer
 var status_label: Label
+var apply_button: Button
 
 var catalog_path := ""
 var catalog: Dictionary = {}
@@ -98,6 +102,15 @@ func _build_ui() -> void:
     details_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     details_label.custom_minimum_size.y = 96
     detail_column.add_child(details_label)
+
+    apply_button = Button.new()
+    apply_button.text = "Apply diffuse to selected Polygon slot"
+    apply_button.tooltip_text = (
+        "Assign the selected material's verified diffuse thumbnail to the currently selected "
+        + "private Polygon surface slot. Preview only; no native material or BSP write.")
+    apply_button.disabled = true
+    apply_button.pressed.connect(_request_apply_selected_material)
+    detail_column.add_child(apply_button)
 
     var stage_scroll := ScrollContainer.new()
     stage_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -304,6 +317,7 @@ func _refresh_list() -> void:
     elif selected_material.is_empty():
         details_label.text = "%d materials match. Select one to inspect all nine stage slots." % visible_materials.size()
     status_label.text = "%d / %d materials in current filter." % [visible_materials.size(), materials.size()]
+    _refresh_apply_button()
 
 
 func _material_selected(index: int) -> void:
@@ -326,6 +340,62 @@ func _material_selected(index: int) -> void:
     _clear_stage_cards()
     for stage in selected_material.get("stages", []):
         _add_stage_card(stage)
+    _refresh_apply_button()
+
+
+func selected_diffuse_assignment() -> Dictionary:
+    if (selected_material.is_empty() or catalog_path.is_empty()
+        or not FileAccess.file_exists(catalog_path)):
+        return {}
+    var stages: Variant = selected_material.get("stages", null)
+    if typeof(stages) != TYPE_ARRAY or stages.size() != 9:
+        return {}
+    var diffuse: Variant = stages[0]
+    if typeof(diffuse) != TYPE_DICTIONARY or not bool(diffuse.get("resolved", false)):
+        return {}
+    var texture: Variant = diffuse.get("texture", null)
+    if typeof(texture) != TYPE_DICTIONARY or _preview_texture(diffuse) == null:
+        return {}
+    var catalog_sha := FileAccess.get_sha256(catalog_path).to_lower()
+    var assignment := {
+        "catalog_path": catalog_path,
+        "catalog_sha256": catalog_sha,
+        "catalog_id": str(catalog.get("catalog_id", "")),
+        "material_name": str(selected_material.get("name", "")),
+        "material_source_bundle": str(selected_material.get("source_bundle", "")),
+        "material_source": str(selected_material.get("source", "")),
+        "material_version": int(selected_material.get("version", -1)),
+        "material_flags": int(selected_material.get("flags", -1)),
+        "material_stage_mask": int(selected_material.get("stage_mask", -1)),
+        "material_category_id": int(selected_material.get("category_id", -1)),
+        "diffuse_name": str(diffuse.get("name", "")),
+        "texture_name": str(texture.get("name", "")),
+        "texture_source_bundle": str(texture.get("source_bundle", "")),
+        "texture_format": str(texture.get("format", "")),
+        "texture_width": int(texture.get("width", 0)),
+        "texture_height": int(texture.get("height", 0)),
+        "texture_usage": str(texture.get("usage", "")),
+        "preview_path": str(texture.get("preview_path", "")),
+        "preview_sha256": str(texture.get("preview_sha256", ""))
+    }
+    var checked := CustomPolygon.validate_source_material_assignment(assignment)
+    if checked.is_empty() or load_assignment_texture(checked) == null:
+        return {}
+    return checked
+
+
+func _refresh_apply_button() -> void:
+    if apply_button != null:
+        apply_button.disabled = selected_diffuse_assignment().is_empty()
+
+
+func _request_apply_selected_material() -> void:
+    var assignment := selected_diffuse_assignment()
+    if assignment.is_empty():
+        status_label.text = "Select a material with a verified resolved diffuse preview first."
+        return
+    material_apply_requested.emit(assignment)
+    status_label.text = "Requested preview-only diffuse assignment to the selected Polygon slot."
 
 
 func _clear_stage_cards() -> void:
@@ -401,5 +471,99 @@ func _preview_texture(stage: Dictionary) -> Texture2D:
         return null
     var image := Image.new()
     if image.load(absolute) != OK or image.get_width() > 512 or image.get_height() > 512:
+        return null
+    return ImageTexture.create_from_image(image)
+
+
+static func _safe_assignment_preview_path(relative_path: String, for_catalog: String) -> String:
+    if (relative_path.is_empty() or relative_path.begins_with("/")
+        or relative_path.contains("\\") or relative_path.contains(":")):
+        return ""
+    for segment in relative_path.split("/", false):
+        if segment.is_empty() or segment == "." or segment == "..":
+            return ""
+    var base := ProjectSettings.globalize_path(for_catalog.get_base_dir()).simplify_path()
+    var candidate := ProjectSettings.globalize_path(
+        for_catalog.get_base_dir().path_join(relative_path)
+    ).simplify_path()
+    if candidate == base or not candidate.begins_with(base + "/"):
+        return ""
+    return candidate
+
+
+## Re-open and re-verify the catalog, exact material/stage identity, preview
+## confinement and thumbnail digest before using a saved assignment on a mesh.
+## If a source cache disappears or changes, callers fall back to the procedural
+## checker while retaining the source identity in the private project.
+static func load_assignment_texture(raw: Variant) -> Texture2D:
+    var assignment := CustomPolygon.validate_source_material_assignment(raw)
+    if assignment.is_empty():
+        return null
+    var catalog_file: String = assignment["catalog_path"]
+    if (not FileAccess.file_exists(catalog_file)
+        or FileAccess.get_sha256(catalog_file).to_lower() != assignment["catalog_sha256"]):
+        return null
+    var file := FileAccess.open(catalog_file, FileAccess.READ)
+    if file == null or file.get_length() > MAX_CATALOG_BYTES:
+        return null
+    var parsed: Variant = JSON.parse_string(file.get_as_text())
+    if (typeof(parsed) != TYPE_DICTIONARY
+        or parsed.get("schema", "") != CATALOG_SCHEMA
+        or parsed.get("read_only", false) != true
+        or parsed.get("native_writer_enabled", true) != false
+        or parsed.get("source_bytes_modified", true) != false
+        or str(parsed.get("catalog_id", "")).to_lower() != assignment["catalog_id"]):
+        return null
+    var records: Variant = parsed.get("materials", null)
+    if typeof(records) != TYPE_ARRAY or records.size() > MAX_MATERIALS:
+        return null
+    var matched := false
+    for material in records:
+        if typeof(material) != TYPE_DICTIONARY:
+            continue
+        if (str(material.get("name", "")) != assignment["material_name"]
+            or str(material.get("source_bundle", "")) != assignment["material_source_bundle"]
+            or str(material.get("source", "")) != assignment["material_source"]
+            or int(material.get("version", -1)) != assignment["material_version"]
+            or int(material.get("flags", -1)) != assignment["material_flags"]
+            or int(material.get("stage_mask", -1)) != assignment["material_stage_mask"]
+            or int(material.get("category_id", -1)) != assignment["material_category_id"]):
+            continue
+        var stages: Variant = material.get("stages", null)
+        if typeof(stages) != TYPE_ARRAY or stages.size() != 9:
+            continue
+        var diffuse: Variant = stages[0]
+        if (typeof(diffuse) != TYPE_DICTIONARY
+            or not bool(diffuse.get("resolved", false))
+            or str(diffuse.get("name", "")) != assignment["diffuse_name"]):
+            continue
+        var texture: Variant = diffuse.get("texture", null)
+        if typeof(texture) != TYPE_DICTIONARY:
+            continue
+        if (str(texture.get("name", "")) != assignment["texture_name"]
+            or str(texture.get("source_bundle", "")) != assignment["texture_source_bundle"]
+            or str(texture.get("format", "")) != assignment["texture_format"]
+            or int(texture.get("width", 0)) != assignment["texture_width"]
+            or int(texture.get("height", 0)) != assignment["texture_height"]
+            or str(texture.get("usage", "")) != assignment["texture_usage"]
+            or str(texture.get("preview_path", "")) != assignment["preview_path"]
+            or str(texture.get("preview_sha256", "")).to_lower() != assignment["preview_sha256"]):
+            continue
+        matched = true
+        break
+    if not matched:
+        return null
+    var absolute := _safe_assignment_preview_path(
+        assignment["preview_path"], catalog_file)
+    if absolute.is_empty() or not FileAccess.file_exists(absolute):
+        return null
+    var preview_file := FileAccess.open(absolute, FileAccess.READ)
+    if (preview_file == null or preview_file.get_length() <= 0
+        or preview_file.get_length() > MAX_PREVIEW_BYTES
+        or FileAccess.get_sha256(absolute).to_lower() != assignment["preview_sha256"]):
+        return null
+    var image := Image.new()
+    if (image.load(absolute) != OK or image.get_width() <= 0 or image.get_height() <= 0
+        or image.get_width() > 512 or image.get_height() > 512):
         return null
     return ImageTexture.create_from_image(image)
