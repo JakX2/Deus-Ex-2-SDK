@@ -811,3 +811,17 @@ binding. The current MatLib inventory keeps the first case-folded duplicate
 name, so a catalog-wide duplicate count is surfaced as a uniqueness caveat.
 Render-material names are not Havok physical materials; no source GMP/IBD
 bytes, native material indices, BSP data or shader data are written.
+
+
+## v0.48: read-only source-section topology diagnostics
+
+When **Inspect source collision** is active and an original MOPP-linked
+triangle is selected, the Inspector can analyze the triangle's original
+Flesh render-section subset. It reports exact source-weld connectivity,
+bounded connected components, Level-unit area/bounds/centroid, source edge
+classes, and adjacent MOPP-linked sections. The JSON report is derived and
+read-only.
+
+This is only the MOPP terminal-leaf subset, not a complete render/BSP surface
+or Havok graph. Oversized sections skip atomically above 8,192 triangles.
+Native map/material/physics writers remain disabled.
