@@ -823,5 +823,6 @@ classes, and adjacent MOPP-linked sections. The JSON report is derived and
 read-only.
 
 This is only the MOPP terminal-leaf subset, not a complete render/BSP surface
-or Havok graph. Oversized sections skip atomically above 8,192 triangles.
+or Havok graph. Oversized sections skip atomically above 8,192 triangles or
+when a touched edge exceeds 1,024 MOPP incidences.
 Native map/material/physics writers remain disabled.
