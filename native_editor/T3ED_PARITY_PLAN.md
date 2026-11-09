@@ -201,3 +201,32 @@ that Thief 3 and DX2 share native geometry formats.
 The four cameras render the same preview scene and read-only source overlays.
 They do not establish native BSP topology, a playable native level, or
 independent scene/world contents per pane.
+
+
+## v0.54: active-pane orthographic transform gizmos
+
+DX2Ed v0.54 assigns a private interaction cull layer to the currently hovered
+viewport. Custom Polygon corner handles, the footprint wire and transform
+gizmos render only in that active pane; imported geometry, material previews
+and read-only source diagnostics continue to share the preview world. This
+avoids the previous quad-view ambiguity where a gizmo shaped for one camera
+was visible in all four panes.
+
+Move and scale gizmos expose only the two axes visible in Top (X/Z), Front
+(X/Y) or Side (Y/Z). Rotate exposes only the view-normal ring. Move adds a
+small plane handle between the visible axes, allowing direct two-dimensional
+translation in the orthographic plane. Ctrl snapping aligns the resulting
+world pivot to the existing Grid m increment. Perspective retains all three
+world axes.
+
+The real Godot smoke creates an invented private Polygon, switches all four
+views and all three tools, checks camera cull masks and handle identities,
+drags the Top plane handle through the viewport ray, commits one Undo item,
+performs Undo/Redo, then saves and reopens the transformed private draft.
+The portable Windows doctor and self-test require the new smoke. No native
+GMP/IBD/BSP/CSG/collision writer is enabled.
+
+The reference T3SDK archive inventory lists separate viewer picking,
+map-editor editing and edit-dock scripts. This supports keeping viewport
+interaction and edit transactions distinct; the inventory is not source-level
+proof of T3Ed's exact gizmo implementation, and no T3SDK code is copied.

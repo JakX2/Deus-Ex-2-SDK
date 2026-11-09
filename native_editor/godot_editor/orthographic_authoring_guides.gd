@@ -11,6 +11,7 @@ const VIEW_IDS := ["perspective", "top", "front", "side"]
 const SINGLE_LAYOUT := "single"
 const QUAD_LAYOUT := "quad"
 const MAX_GRID_HALF_LINES := 64
+const INTERACTION_LAYER_MASK := 1 << 5
 
 
 static func valid_mode(mode: String) -> bool:
@@ -260,3 +261,101 @@ static func apply_view_camera(camera: Camera3D, view_id: String,
         float(state.get("distance", 25.0)),
         float(state.get("yaw", 0.8)),
         float(state.get("pitch", 0.37)))
+
+
+## Active-pane editor overlays and orthographic transform constraints.
+
+static func interaction_layer_mask(view_id: String, active_view_id: String) -> int:
+    if not VIEW_IDS.has(view_id) or view_id != active_view_id:
+        return 0
+    return INTERACTION_LAYER_MASK
+
+
+static func viewport_cull_mask(view_id: String, active_view_id: String) -> int:
+    var grid_mask := grid_layer_mask(view_id)
+    if grid_mask == 0:
+        return 0
+    return 1 | grid_mask | interaction_layer_mask(view_id, active_view_id)
+
+
+static func gizmo_plane_axes(mode: String) -> Array[Vector3]:
+    match mode:
+        TOP:
+            return [Vector3.RIGHT, Vector3.BACK]
+        FRONT:
+            return [Vector3.RIGHT, Vector3.UP]
+        SIDE:
+            return [Vector3.UP, Vector3.BACK]
+        _:
+            return []
+
+
+static func gizmo_view_normal(mode: String) -> Vector3:
+    match mode:
+        TOP:
+            return Vector3.UP
+        FRONT:
+            return Vector3.BACK
+        SIDE:
+            return Vector3.RIGHT
+        _:
+            return Vector3.ZERO
+
+
+static func gizmo_axes(mode: String, tool: String) -> Array[Vector3]:
+    if tool not in ["move", "rotate", "scale"]:
+        return []
+    if mode == PERSPECTIVE:
+        return [Vector3.RIGHT, Vector3.UP, Vector3.BACK]
+    if tool == "rotate":
+        var normal := gizmo_view_normal(mode)
+        return [] if normal == Vector3.ZERO else [normal]
+    return gizmo_plane_axes(mode)
+
+
+static func plane_drag_delta(pivot: Vector3, start_point: Vector3,
+                             current_point: Vector3, axes: Array,
+                             step: float, snap_enabled: bool) -> Variant:
+    if (not pivot.is_finite() or not start_point.is_finite()
+        or not current_point.is_finite() or axes.size() != 2):
+        return null
+    if typeof(axes[0]) != TYPE_VECTOR3 or typeof(axes[1]) != TYPE_VECTOR3:
+        return null
+    var axis_a: Vector3 = axes[0]
+    var axis_b: Vector3 = axes[1]
+    if (not axis_a.is_finite() or not axis_b.is_finite()
+        or absf(axis_a.length_squared() - 1.0) > 0.001
+        or absf(axis_b.length_squared() - 1.0) > 0.001
+        or absf(axis_a.dot(axis_b)) > 0.001):
+        return null
+    if snap_enabled and (not is_finite(step) or step < 0.25 or step > 64.0):
+        return null
+    var raw_delta := current_point - start_point
+    var result := Vector3.ZERO
+    for axis in [axis_a, axis_b]:
+        var amount := raw_delta.dot(axis)
+        if snap_enabled:
+            var pivot_coordinate := pivot.dot(axis)
+            amount = snappedf(pivot_coordinate + amount, step) - pivot_coordinate
+        result += axis * amount
+    if not result.is_finite() or result.length() > 1000000.0:
+        return null
+    return result
+
+
+static func axis_drag_delta(pivot: Vector3, raw_change: float, axis: Vector3,
+                            step: float, snap_enabled: bool) -> Variant:
+    if (not pivot.is_finite() or not is_finite(raw_change)
+        or not axis.is_finite()
+        or absf(axis.length_squared() - 1.0) > 0.001):
+        return null
+    if snap_enabled and (not is_finite(step) or step < 0.25 or step > 64.0):
+        return null
+    var amount := raw_change
+    if snap_enabled:
+        var pivot_coordinate := pivot.dot(axis)
+        amount = snappedf(pivot_coordinate + amount, step) - pivot_coordinate
+    var result := axis * amount
+    if not result.is_finite() or result.length() > 1000000.0:
+        return null
+    return result
