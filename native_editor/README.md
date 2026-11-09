@@ -811,3 +811,20 @@ binding. The current MatLib inventory keeps the first case-folded duplicate
 name, so a catalog-wide duplicate count is surfaced as a uniqueness caveat.
 Render-material names are not Havok physical materials; no source GMP/IBD
 bytes, native material indices, BSP data or shader data are written.
+
+
+## v0.48: read-only source-section topology diagnostics
+
+When **Inspect source collision** is active and an original MOPP-linked
+triangle is selected, the Inspector can analyze the triangle's original
+Flesh render-section subset. It reports exact source-weld connectivity,
+bounded connected components, summed Level-unit triangle area/bounds/centroid, MOPP-leaf source edge
+classes, and adjacent MOPP-linked sections. The JSON report is derived and
+read-only.
+
+This is only the MOPP terminal-leaf subset, not a complete render/BSP surface
+or Havok graph. Oversized sections skip atomically above 8,192 triangles or
+when a touched edge exceeds 1,024 MOPP incidences.
+Native map/material/physics writers remain disabled.
+
+The Windows prototype workflow downloads the official Godot 4.3 Standard Windows x64 archive, retries transient release-CDN 504 responses, and still requires the published SHA-512 verification before packaging.

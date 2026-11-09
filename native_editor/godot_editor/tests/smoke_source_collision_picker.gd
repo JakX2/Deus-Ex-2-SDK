@@ -207,6 +207,11 @@ func _run() -> void:
         or int(editor.source_surface_matlib_crossref.source_evidence.get("original_level_triangle_id", -1)) != 0):
         _fail("Original source triangle selection did not reach the MatLib cross-reference panel.")
         return
+    if (editor.source_section_topology_panel == null
+        or not editor.source_section_topology_panel.visible
+        or editor.source_section_topology_panel.selected_triangle_id != 0):
+        _fail("Original source triangle selection did not reach the section topology Inspector.")
+        return
     if (not editor.source_collision_section_actions.visible
         or editor.source_collision_last_hit.get("original_level_triangle_id", -1) != 0
         or not editor.source_collision_details.text.contains("1 of 1")
@@ -248,7 +253,8 @@ func _run() -> void:
         or editor.source_collision_section_actions.visible
         or not editor.source_collision_last_hit.is_empty()
         or editor.source_collision_marker != null
-        or editor.source_collision_section_marker != null):
+        or editor.source_collision_section_marker != null
+        or editor.source_section_topology_panel.visible):
         _fail("Turning off collision inspect must clean up source-only overlays and navigation")
         return
     editor.queue_free()

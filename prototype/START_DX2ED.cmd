@@ -34,6 +34,7 @@ if /I "%~1"=="--self-test" (
     smoke_matlib_browser.gd
     smoke_matlib_polygon_assignment.gd
     smoke_source_surface_matlib_crossref.gd
+    smoke_source_section_topology.gd
     smoke_mission_logic_draft.gd
     smoke_dialogue_design_draft.gd
     smoke_original_script_ibd_provenance.gd

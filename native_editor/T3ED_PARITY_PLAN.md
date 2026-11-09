@@ -87,3 +87,19 @@ catalog-wide duplicate count, so source-level uniqueness cannot be inferred.
 Texture-stage semantics and Havok physical materials remain unverified, and
 the panel has no writer. This adds a useful T3Ed-like surface inspection step
 without crossing the DX2 native-format evidence boundary.
+
+
+## v0.48: original source render-section topology subset Inspector
+
+DX2Ed v0.48 adds a bounded read-only analysis of the MOPP terminal-leaf
+triangles belonging to the selected original Flesh render-section tuple. It
+reports exact source-weld connectivity, section-subset components, summed Level-unit
+triangle area/bounds/centroid, MOPP-leaf edge-class counts, perimeter and cross-section
+MOPP-shared edges, and adjacent MOPP-linked render sections. The report can be
+copied as derived JSON without source bytes or paths.
+
+The analysis cap is 8,192 section triangles and 1,024 incidences per touched
+edge; either limit skips atomically without partial statistics. It is not a complete render section or BSP surface, and it does not
+prove Havok runtime adjacency, physics materials, shader behavior or native
+material identity. MOPP leaf connectivity and neighbor discovery remain
+limited to the authenticated collision sidecar subset.

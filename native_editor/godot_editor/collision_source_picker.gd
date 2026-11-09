@@ -448,3 +448,255 @@ func section_details(original_id: int, preview_cap: int = 1024) -> Dictionary:
         "preview_triangle_cap": preview_cap,
         "not_a_havok_contact_or_native_surface": true,
     }
+const MAX_SECTION_TOPOLOGY_TRIANGLES := 8192
+const MAX_SECTION_EDGE_INCIDENCE := 1024
+const MAX_SECTION_TOPOLOGY_NEIGHBORS := 64
+const MAX_SECTION_TOPOLOGY_COMPONENTS := 16
+const SECTION_TOPOLOGY_SCHEMA := "DX2Ed-source-section-topology-v1"
+
+func _section_find_root(parent: Dictionary, node: int) -> int:
+    var root := node
+    while int(parent[root]) != root:
+        root = int(parent[root])
+    var current := node
+    while int(parent[current]) != current:
+        var next := int(parent[current])
+        parent[current] = root
+        current = next
+    return root
+
+func _section_union(parent: Dictionary, left: int, right: int) -> void:
+    var left_root := _section_find_root(parent, left)
+    var right_root := _section_find_root(parent, right)
+    if left_root != right_root:
+        parent[right_root] = left_root
+
+# Read-only geometry report for the MOPP terminal-leaf subset of one original
+# Flesh render section. It is not a complete render/BSP surface or Havok mesh.
+func section_topology_details(original_id: int,
+        analysis_cap: int = MAX_SECTION_TOPOLOGY_TRIANGLES) -> Dictionary:
+    if (not ready or not face_index_by_id.has(original_id)
+        or analysis_cap < 1 or analysis_cap > MAX_SECTION_TOPOLOGY_TRIANGLES):
+        return {}
+    var selected_face: Dictionary = faces[int(face_index_by_id[original_id])]
+    var section_key: String = str(selected_face["source_section_key"])
+    var triangle_ids: Array = section_triangle_ids.get(section_key, [])
+    if triangle_ids.is_empty():
+        return {}
+    var base := {
+        "schema": SECTION_TOPOLOGY_SCHEMA,
+        "source_map": source_map,
+        "source_sha256": source_sha256,
+        "source_section_key": section_key,
+        "source_block_id": int(selected_face["source_block_id"]),
+        "render_block_ordinal": int(selected_face["render_block_ordinal"]),
+        "render_section_ordinal": int(selected_face["render_section_ordinal"]),
+        "render_material_name": materials[int(selected_face["render_material_id"])],
+        "selected_triangle_id": original_id,
+        "selected_triangle_index_in_section": triangle_ids.find(original_id),
+        "section_triangle_count": triangle_ids.size(),
+        "analysis_cap": analysis_cap,
+        "mopp_leaf_subset_only": true,
+        "area_measure": "sum_of_mopp_leaf_triangle_areas",
+        "area_is_triangle_sum": true,
+        "read_only": true,
+        "native_map_written": false,
+        "native_bsp_surface_verified": false,
+        "source_edge_classification_full_original_level": false,
+        "source_edge_classification_mopp_leaf_subset": true,
+        "full_render_section_geometry_verified": false,
+        "havok_runtime_adjacency_verified": false,
+        "render_material_is_physics_material": false,
+        "shader_semantics_verified": false,
+    }
+    if triangle_ids.size() > analysis_cap:
+        base["analysis_skipped_for_size"] = true
+        return base
+
+    var parent: Dictionary = {}
+    var edge_records: Dictionary = {}
+    var unique_vertices: Dictionary = {}
+    var bounds_min := Vector3(1e30, 1e30, 1e30)
+    var bounds_max := Vector3(-1e30, -1e30, -1e30)
+    var area_level_units_squared := 0.0
+    var weighted_centroid_level := Vector3.ZERO
+
+    for raw_tid in triangle_ids:
+        var tid := int(raw_tid)
+        if not face_index_by_id.has(tid):
+            return {}
+        var face: Dictionary = faces[int(face_index_by_id[tid])]
+        var vertex_indices: Array = face["vertex_indices"]
+        var p0: Vector3 = vertices[int(vertex_indices[0])]
+        var p1: Vector3 = vertices[int(vertex_indices[1])]
+        var p2: Vector3 = vertices[int(vertex_indices[2])]
+        var area_level := (p1 - p0).cross(p2 - p0).length() * 50.0
+        if not is_finite(area_level) or area_level <= 0.0:
+            return {}
+        var center_godot := (p0 + p1 + p2) / 3.0
+        var center_level := Vector3(center_godot.x, center_godot.z, center_godot.y) * 10.0
+        area_level_units_squared += area_level
+        weighted_centroid_level += center_level * area_level
+
+        for point in [p0, p1, p2]:
+            var level_point := Vector3(point.x, point.z, point.y) * 10.0
+            bounds_min = Vector3(
+                minf(bounds_min.x, level_point.x),
+                minf(bounds_min.y, level_point.y),
+                minf(bounds_min.z, level_point.z))
+            bounds_max = Vector3(
+                maxf(bounds_max.x, level_point.x),
+                maxf(bounds_max.y, level_point.y),
+                maxf(bounds_max.z, level_point.z))
+
+        parent[tid] = tid
+        var welds: Array = face["source_weld_ids"]
+        var kinds: Array = face["source_edge_kinds"]
+        if welds.size() != 3 or kinds.size() != 3:
+            return {}
+        for weld in welds:
+            unique_vertices[int(weld)] = true
+        for slot in range(3):
+            var low := mini(int(welds[slot]), int(welds[(slot + 1) % 3]))
+            var high := maxi(int(welds[slot]), int(welds[(slot + 1) % 3]))
+            var edge_key := "%d:%d" % [low, high]
+            var source_class := int(kinds[slot])
+            if source_class < 0 or source_class > 3:
+                return {}
+            var edge_record: Dictionary = edge_records.get(edge_key, {})
+            if edge_record.is_empty():
+                edge_record = {
+                    "triangle_ids": [],
+                    "source_class_code": source_class,
+                    "a_godot": vertices[int(vertex_indices[slot])],
+                    "b_godot": vertices[int(vertex_indices[(slot + 1) % 3])],
+                }
+            elif int(edge_record.get("source_class_code", -1)) != source_class:
+                return {}
+            var edge_triangle_ids: Array = edge_record["triangle_ids"]
+            edge_triangle_ids.append(tid)
+            edge_record["triangle_ids"] = edge_triangle_ids
+            edge_records[edge_key] = edge_record
+
+    if edge_records.is_empty() or area_level_units_squared <= 0.0:
+        return {}
+    var source_edge_class_counts := [0, 0, 0, 0]
+    var section_perimeter_edge_count := 0
+    var section_shared_edge_count := 0
+    var section_nonmanifold_edge_count := 0
+    var cross_section_mopp_shared_edge_count := 0
+    var section_perimeter_shared_with_other_sections := 0
+    var section_perimeter_length_level_units := 0.0
+    var cross_section_mopp_shared_edge_length_level_units := 0.0
+    var neighbor_records: Dictionary = {}
+
+    var section_edge_keys: Array = edge_records.keys()
+    section_edge_keys.sort()
+    for edge_key in section_edge_keys:
+        var edge_record: Dictionary = edge_records[edge_key]
+        var local_ids: Array = edge_record["triangle_ids"]
+        var local_count := local_ids.size()
+        if local_count >= 2:
+            for index in range(1, local_count):
+                _section_union(parent, int(local_ids[0]), int(local_ids[index]))
+        if local_count == 1:
+            section_perimeter_edge_count += 1
+        elif local_count == 2:
+            section_shared_edge_count += 1
+        else:
+            section_nonmanifold_edge_count += 1
+
+        var source_class := int(edge_record["source_class_code"])
+        source_edge_class_counts[source_class] = int(source_edge_class_counts[source_class]) + 1
+        var other_sections_for_edge: Dictionary = {}
+        var incidence: Array = original_edge_incidence.get(edge_key, [])
+        if incidence.size() > MAX_SECTION_EDGE_INCIDENCE:
+            base["analysis_skipped_for_edge_incidence"] = true
+            base["edge_incidence_count"] = incidence.size()
+            base["edge_incidence_cap"] = MAX_SECTION_EDGE_INCIDENCE
+            return base
+        for incident in incidence:
+            var other_id := int(incident.get("triangle_id", -1))
+            if other_id == original_id or not face_index_by_id.has(other_id):
+                continue
+            var other_face: Dictionary = faces[int(face_index_by_id[other_id])]
+            var other_key := str(other_face["source_section_key"])
+            if other_key == section_key:
+                continue
+            if not other_sections_for_edge.has(other_key):
+                other_sections_for_edge[other_key] = other_face
+        if not other_sections_for_edge.is_empty():
+            cross_section_mopp_shared_edge_count += 1
+            var edge_a: Vector3 = edge_record["a_godot"]
+            var edge_b: Vector3 = edge_record["b_godot"]
+            cross_section_mopp_shared_edge_length_level_units += (edge_a - edge_b).length() * 10.0
+            if local_count == 1:
+                section_perimeter_shared_with_other_sections += 1
+        if local_count == 1:
+            var perimeter_a: Vector3 = edge_record["a_godot"]
+            var perimeter_b: Vector3 = edge_record["b_godot"]
+            section_perimeter_length_level_units += (perimeter_a - perimeter_b).length() * 10.0
+        for other_key in other_sections_for_edge.keys():
+            var other_face: Dictionary = other_sections_for_edge[other_key]
+            var neighbor: Dictionary = neighbor_records.get(other_key, {
+                "source_block_id": int(other_face["source_block_id"]),
+                "render_block_ordinal": int(other_face["render_block_ordinal"]),
+                "render_section_ordinal": int(other_face["render_section_ordinal"]),
+                "render_material_name": materials[int(other_face["render_material_id"])],
+                "shared_edge_count": 0,
+            })
+            neighbor["shared_edge_count"] = int(neighbor["shared_edge_count"]) + 1
+            neighbor_records[other_key] = neighbor
+
+    var component_counts: Dictionary = {}
+    for raw_tid in triangle_ids:
+        var root_id := _section_find_root(parent, int(raw_tid))
+        component_counts[root_id] = int(component_counts.get(root_id, 0)) + 1
+    var component_sizes: Array[int] = []
+    for component_root in component_counts.keys():
+        component_sizes.append(int(component_counts[component_root]))
+    component_sizes.sort_custom(func(a: int, b: int) -> bool: return a > b)
+
+    var neighbor_keys: Array = neighbor_records.keys()
+    neighbor_keys.sort()
+    var neighbors: Array = []
+    for neighbor_key in neighbor_keys:
+        if neighbors.size() >= MAX_SECTION_TOPOLOGY_NEIGHBORS:
+            break
+        neighbors.append(neighbor_records[neighbor_key])
+
+    var largest_components: Array[int] = []
+    for index in range(mini(component_sizes.size(), MAX_SECTION_TOPOLOGY_COMPONENTS)):
+        largest_components.append(component_sizes[index])
+    var centroid := weighted_centroid_level / area_level_units_squared
+    if (not centroid.is_finite() or not bounds_min.is_finite()
+        or not bounds_max.is_finite() or not is_finite(section_perimeter_length_level_units)
+        or not is_finite(cross_section_mopp_shared_edge_length_level_units)):
+        return {}
+
+    base["analysis_skipped_for_size"] = false
+    base["unique_source_vertex_count"] = unique_vertices.size()
+    base["unique_source_edge_count"] = edge_records.size()
+    base["section_perimeter_edge_count"] = section_perimeter_edge_count
+    base["section_shared_edge_count"] = section_shared_edge_count
+    base["section_nonmanifold_edge_count"] = section_nonmanifold_edge_count
+    base["cross_section_mopp_shared_edge_count"] = cross_section_mopp_shared_edge_count
+    base["section_perimeter_shared_with_other_sections"] = section_perimeter_shared_with_other_sections
+    base["section_perimeter_length_level_units"] = section_perimeter_length_level_units
+    base["cross_section_mopp_shared_edge_length_level_units"] = cross_section_mopp_shared_edge_length_level_units
+    base["source_edge_class_counts"] = source_edge_class_counts
+    base["connected_component_count"] = component_sizes.size()
+    base["largest_component_sizes"] = largest_components
+    base["omitted_component_count"] = maxi(0, component_sizes.size() - largest_components.size())
+    base["neighbor_sections"] = neighbors
+    base["neighbor_section_count"] = neighbor_records.size()
+    base["omitted_neighbor_section_count"] = maxi(0, neighbor_records.size() - neighbors.size())
+    base["area_level_units_squared"] = area_level_units_squared
+    base["area_weighted_centroid_level_xyz"] = [centroid.x, centroid.y, centroid.z]
+    base["bounds_min_level_xyz"] = [bounds_min.x, bounds_min.y, bounds_min.z]
+    base["bounds_max_level_xyz"] = [bounds_max.x, bounds_max.y, bounds_max.z]
+    base["source_edge_classification_full_original_level"] = false
+    base["source_edge_classification_mopp_leaf_subset"] = true
+    base["connectivity_uses_exact_original_level_weld_ids"] = true
+    base["mopp_neighbor_scope_only"] = true
+    return base
