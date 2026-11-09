@@ -121,6 +121,19 @@ func _run() -> void:
         _fail("Invalid triangle IDs or analysis caps must refuse.")
         return
 
+    var original_incidence: Array = picker.original_edge_incidence["0:1"].duplicate(true)
+    var crowded_incidence: Array = []
+    for incidence_index in range(1025):
+        crowded_incidence.append({"triangle_id": 0, "edge_slot": 0})
+    picker.original_edge_incidence["0:1"] = crowded_incidence
+    var incidence_skipped: Dictionary = picker.section_topology_details(0)
+    if (incidence_skipped.get("analysis_skipped_for_edge_incidence", false) != true
+        or incidence_skipped.get("edge_incidence_cap", -1) != 1024
+        or incidence_skipped.has("unique_source_edge_count")):
+        _fail("Pathological edge incidence must skip atomically without partial statistics.")
+        return
+    picker.original_edge_incidence["0:1"] = original_incidence
+
     var panel := TopologyPanel.new()
     root.add_child(panel)
     panel.initialize()
