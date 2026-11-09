@@ -1,6 +1,6 @@
 extends SceneTree
 ## Synthetic Godot 4.3 tests for source MOPP render-section → MatLib name correlation.
-const Panel = preload("res://source_surface_matlib_crossref.gd")
+const CrossrefPanel = preload("res://source_surface_matlib_crossref.gd")
 const SHA := "1111111111111111111111111111111111111111111111111111111111111111"
 
 func _initialize() -> void:
@@ -81,7 +81,7 @@ func _run() -> void:
         return
     var preview_sha := FileAccess.get_sha256(png_path)
     var catalog_path := root_path.path_join("catalog.json")
-    var panel := Panel.new()
+    var panel := CrossrefPanel.new()
     root.add_child(panel)
     panel.initialize()
     if panel.visible:
