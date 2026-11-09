@@ -877,3 +877,13 @@ convenience, not a ray/occlusion proof. The handles are transient and
 read-only. Native GMP/IBD/BSP/MOPP/collision/lightmap/material/GameSys/
 TriggerScript writers remain disabled; no retail game runtime acceptance or
 playable native custom level is claimed.
+
+## DX2Ed v0.54 orthographic transform gizmos
+
+The v0.54 quad viewport routes transient transform gizmos and custom Polygon
+corner handles through a cull layer visible only in the active pane. Top
+constrains Move/Scale to X/Z and Rotate to Y; Front uses X/Y and Z; Side uses
+Y/Z and X. Orthographic Move adds a two-axis plane handle with Ctrl world-grid
+snapping. Drag commits one Undo/Redo transaction and survives private JSON
+Save/reopen. This is editor-only preview state; native DX2 map writers remain
+disabled. See docs/research/dx2ed-orthographic-gizmo-constraints-v0-54.md.

@@ -52,7 +52,7 @@ func _run() -> void:
         var view_camera: Camera3D = editor.cameras_by_view[view_id]
         var grid: MeshInstance3D = editor.ortho_grid_nodes[view_id]
         if (viewport.world_3d != shared_world
-            or view_camera.cull_mask != (1 | Guides.grid_layer_mask(view_id))
+            or view_camera.cull_mask != Guides.viewport_cull_mask(view_id, editor.active_view_id)
             or grid.layers != Guides.grid_layer_mask(view_id)
             or not view_camera.current):
             _fail("Shared world, camera or isolated grid layer failed: " + view_id)
@@ -84,6 +84,10 @@ func _run() -> void:
             return
 
     editor._activate_view("top", false, false, true)
+    for view_id in Guides.VIEW_IDS:
+        if editor.cameras_by_view[view_id].cull_mask != Guides.viewport_cull_mask(view_id, "top"):
+            _fail("Interactive overlay cull layer did not follow the active Top pane")
+            return
     editor.camera_target = Vector3(12, 3, -8)
     editor.orbit_distance = 40.0
     editor._update_camera()

@@ -442,6 +442,10 @@ var gizmo_start_transform := Transform3D.IDENTITY
 var gizmo_drag_start_scalar := 0.0
 var gizmo_drag_start_screen := Vector2.ZERO
 var gizmo_drag_active := false
+var gizmo_plane_drag_active := false
+var gizmo_drag_plane := Plane(Vector3.UP, 0.0)
+var gizmo_drag_plane_start := Vector3.ZERO
+var gizmo_drag_plane_axes: Array[Vector3] = []
 var scene_bounds := AABB()
 var scene_bounds_valid := false
 var mesh_count := 0
@@ -2360,7 +2364,7 @@ func _make_world() -> void:
     camera = Camera3D.new()
     camera.near = 0.05
     camera.far = 100000.0
-    camera.cull_mask = 1 | OrthoGuides.grid_layer_mask("perspective")
+    camera.cull_mask = OrthoGuides.viewport_cull_mask("perspective", active_view_id)
     world_root.add_child(camera)
     camera.current = true
     cameras_by_view["perspective"] = camera
@@ -2379,6 +2383,7 @@ func _make_world() -> void:
     world_root.add_child(polygon_vertex_handle_root)
     polygon_vertex_outline_node = MeshInstance3D.new()
     polygon_vertex_outline_node.name = "DX2Ed_PolygonFootprintOutline_EDITOR_ONLY"
+    polygon_vertex_outline_node.layers = OrthoGuides.INTERACTION_LAYER_MASK
     polygon_vertex_outline_node.set_meta("editor_only", true)
     polygon_vertex_outline_node.mesh = ImmediateMesh.new()
     polygon_vertex_outline_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -2494,7 +2499,7 @@ func _create_secondary_view(view_id: String) -> void:
     var view_camera := Camera3D.new()
     view_camera.near = 0.05
     view_camera.far = 100000.0
-    view_camera.cull_mask = 1 | OrthoGuides.grid_layer_mask(view_id)
+    view_camera.cull_mask = OrthoGuides.viewport_cull_mask(view_id, active_view_id)
     viewport.add_child(view_camera)
     view_camera.current = true
     cameras_by_view[view_id] = view_camera
@@ -2543,6 +2548,14 @@ func _sync_view_layout_visibility() -> void:
         editor_view_mode_select.select(OrthoGuides.MODES.find(editor_view_mode))
 
 
+func _sync_view_interaction_layers() -> void:
+    for view_id in OrthoGuides.VIEW_IDS:
+        var view_camera: Camera3D = cameras_by_view.get(view_id, null)
+        if is_instance_valid(view_camera):
+            view_camera.cull_mask = OrthoGuides.viewport_cull_mask(
+                view_id, active_view_id)
+
+
 func _activate_view(view_id: String, preserve_current: bool = true,
                     announce: bool = true, force: bool = false) -> void:
     if (not OrthoGuides.VIEW_IDS.has(view_id)
@@ -2567,8 +2580,10 @@ func _activate_view(view_id: String, preserve_current: bool = true,
     editor_view_mode = OrthoGuides.mode_for_view_id(view_id)
     _load_active_view_state()
     _sync_view_layout_visibility()
+    _sync_view_interaction_layers()
     ortho_grid_last_mode = ""
     _update_camera()
+    _refresh_gizmo_shape()
     _refresh_polygon_vertex_handles()
     if announce and status_label != null:
         status_label.text = (
@@ -7184,7 +7199,13 @@ func _record_edit(label: String, before: Dictionary) -> void:
     # Selection changes alone do not count as edits.
     if before.get("moved") == after.get("moved") and before.get("copies") == after.get("copies") and before.get("property_edits", {}) == after.get("property_edits", {}):
         return
-    undo_stack.append({"label": label, "before": before, "after": after})
+    # History owns immutable snapshots. Callers may clear/reuse their working
+    # dictionaries after recording (gizmo drag does this on mouse release).
+    undo_stack.append({
+        "label": label,
+        "before": before.duplicate(true),
+        "after": after.duplicate(true)
+    })
     if undo_stack.size() > HISTORY_LIMIT:
         undo_stack.pop_front()
     redo_stack.clear()
@@ -7238,6 +7259,9 @@ func _finish_gizmo_drag() -> void:
     if not gizmo_drag_active:
         return
     gizmo_drag_active = false
+    gizmo_plane_drag_active = false
+    gizmo_drag_plane_axes.clear()
+    gizmo_drag_plane_start = Vector3.ZERO
     if environment_light_gizmo_drag:
         environment_light_gizmo_drag = false
         gizmo_undo_before.clear()
@@ -7724,6 +7748,7 @@ func _refresh_polygon_vertex_handles() -> void:
         for i in range(outline.size()):
             var marker := MeshInstance3D.new()
             marker.name = "DX2Ed_PolygonVertex_" + str(i + 1) + "_EDITOR_ONLY"
+            marker.layers = OrthoGuides.INTERACTION_LAYER_MASK
             var sphere := SphereMesh.new()
             sphere.radius = 0.13
             sphere.height = 0.26
@@ -9453,11 +9478,12 @@ func _refresh_gizmo_shape() -> void:
         if is_instance_valid(old_handle):
             old_handle.queue_free()
     gizmo_handles.clear()
-    var axes := [Vector3.RIGHT, Vector3.UP, Vector3.BACK]
+    var axes := OrthoGuides.gizmo_axes(editor_view_mode, editor_tool)
     for axis in axes:
         var handle := MeshInstance3D.new()
         handle.name = editor_tool + "_axis_" + str(gizmo_handles.size())
         handle.set_meta("axis", axis)
+        handle.layers = OrthoGuides.INTERACTION_LAYER_MASK
         var tint := StandardMaterial3D.new()
         tint.albedo_color = _gizmo_color(axis)
         tint.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -9486,9 +9512,9 @@ func _refresh_gizmo_shape() -> void:
             handle.quaternion = Quaternion(Vector3.UP, axis)
         gizmo_root.add_child(handle)
         if editor_tool == "move":
-            # Unity-style arrow tip stays a child of its own pickable axis.
             var tip := MeshInstance3D.new()
             tip.name = "arrow_tip"
+            tip.layers = OrthoGuides.INTERACTION_LAYER_MASK
             var cone := CylinderMesh.new()
             cone.top_radius = 0.0
             cone.bottom_radius = 0.16
@@ -9500,6 +9526,33 @@ func _refresh_gizmo_shape() -> void:
             tip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
             handle.add_child(tip)
         gizmo_handles.append(handle)
+    var plane_axes := OrthoGuides.gizmo_plane_axes(editor_view_mode)
+    if editor_tool == "move" and plane_axes.size() == 2:
+        var plane_handle := MeshInstance3D.new()
+        plane_handle.name = "move_plane_" + active_view_id
+        plane_handle.set_meta("plane_axes", plane_axes)
+        plane_handle.layers = OrthoGuides.INTERACTION_LAYER_MASK
+        var plane_box := BoxMesh.new()
+        match editor_view_mode:
+            OrthoGuides.TOP:
+                plane_box.size = Vector3(0.30, 0.035, 0.30)
+            OrthoGuides.FRONT:
+                plane_box.size = Vector3(0.30, 0.30, 0.035)
+            OrthoGuides.SIDE:
+                plane_box.size = Vector3(0.035, 0.30, 0.30)
+            _:
+                plane_box.size = Vector3.ZERO
+        plane_handle.mesh = plane_box
+        plane_handle.position = (plane_axes[0] + plane_axes[1]) * 0.32
+        var plane_material := StandardMaterial3D.new()
+        plane_material.albedo_color = Color(1.0, 0.88, 0.28, 0.96)
+        plane_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+        plane_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+        plane_material.no_depth_test = true
+        plane_handle.material_override = plane_material
+        plane_handle.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        gizmo_root.add_child(plane_handle)
+        gizmo_handles.append(plane_handle)
     _update_gizmo_pose()
 
 
@@ -9516,11 +9569,17 @@ func _update_gizmo_pose() -> void:
         gizmo_root.global_position = position
     else:
         gizmo_root.global_position = _selection_pivot()
-    # Keep the handles about the same apparent size while zooming.
-    var distance := camera.global_position.distance_to(gizmo_root.global_position)
-    # Unity-sized move handle: 75% larger on screen than the old preview.
-    var size_ratio := 0.19 if editor_tool == "move" else 0.13
-    var scale_size: float = clampf(distance * size_ratio, 0.22, 15.0)
+    var scale_size := 0.22
+    if is_instance_valid(camera) and camera.projection == Camera3D.PROJECTION_ORTHOGONAL:
+        var viewport_height := (
+            float(world_view.size.y) if is_instance_valid(world_view)
+            else float(view_container.size.y))
+        scale_size = clampf(
+            camera.size * 42.0 / maxf(1.0, viewport_height), 0.22, 15.0)
+    else:
+        var distance := camera.global_position.distance_to(gizmo_root.global_position)
+        var size_ratio := 0.19 if editor_tool == "move" else 0.13
+        scale_size = clampf(distance * size_ratio, 0.22, 15.0)
     gizmo_root.scale = Vector3.ONE * scale_size
 
 
@@ -9542,18 +9601,30 @@ func _gizmo_axis_scalar(mouse_position: Vector2, pivot: Vector3, axis: Vector3) 
 
 
 func _begin_gizmo_drag() -> bool:
+    if not is_instance_valid(view_container):
+        return false
+    return _begin_gizmo_drag_at(view_container.get_local_mouse_position())
+
+
+func _begin_gizmo_drag_at(mouse_position: Vector2) -> bool:
     var is_light := _environment_light_proxy_selected() and editor_tool == "move"
     if not is_light and not _draft_selected_is_prop():
         return false
     _update_gizmo_pose()
-    var ray := _mouse_ray(view_container.get_local_mouse_position())
+    var ray := _mouse_ray(mouse_position)
     if ray.is_empty():
         return false
     var best_distance := INF
     var best_axis := Vector3.ZERO
+    var best_plane_axes: Array[Vector3] = []
     for handle in gizmo_handles:
         if not is_instance_valid(handle):
             continue
+        var plane_meta: Variant = handle.get_meta("plane_axes", [])
+        var candidate_plane: Array[Vector3] = []
+        if typeof(plane_meta) == TYPE_ARRAY and plane_meta.size() == 2:
+            if typeof(plane_meta[0]) == TYPE_VECTOR3 and typeof(plane_meta[1]) == TYPE_VECTOR3:
+                candidate_plane = [plane_meta[0], plane_meta[1]]
         var parts: Array[MeshInstance3D] = [handle]
         for child in handle.get_children():
             if child is MeshInstance3D:
@@ -9562,25 +9633,47 @@ func _begin_gizmo_drag() -> bool:
             var hit := _ray_mesh_triangles(part, ray["origin"], ray["direction"])
             if not hit.is_empty() and float(hit["distance"]) < best_distance:
                 best_distance = float(hit["distance"])
-                best_axis = handle.get_meta("axis")
-    if best_axis == Vector3.ZERO:
+                if candidate_plane.size() == 2:
+                    best_plane_axes = candidate_plane.duplicate()
+                    best_axis = Vector3.ZERO
+                else:
+                    best_plane_axes.clear()
+                    best_axis = handle.get_meta("axis", Vector3.ZERO)
+    if best_axis == Vector3.ZERO and best_plane_axes.size() != 2:
         return false
-    gizmo_drag_axis = best_axis
-    environment_light_gizmo_drag = is_light
     if is_light:
         gizmo_drag_pivot = _environment_light_preview_position(selected_actor)
     else:
         gizmo_drag_pivot = _selection_pivot()
+    gizmo_drag_axis = best_axis
+    gizmo_plane_drag_active = false
+    gizmo_drag_plane_axes.clear()
+    if best_plane_axes.size() == 2:
+        var normal := OrthoGuides.gizmo_view_normal(editor_view_mode)
+        if normal == Vector3.ZERO:
+            return false
+        gizmo_drag_plane = Plane(normal, normal.dot(gizmo_drag_pivot))
+        var plane_hit: Variant = gizmo_drag_plane.intersects_ray(
+            ray["origin"], ray["direction"])
+        if plane_hit == null:
+            return false
+        gizmo_plane_drag_active = true
+        gizmo_drag_plane_start = plane_hit
+        gizmo_drag_plane_axes = best_plane_axes.duplicate()
+    else:
+        var scalar: Variant = _gizmo_axis_scalar(mouse_position, gizmo_drag_pivot, best_axis)
+        if scalar == null:
+            return false
+        gizmo_drag_start_scalar = float(scalar)
+    environment_light_gizmo_drag = is_light
     gizmo_start_transforms.clear()
     if not is_light:
         for node in _selection_nodes():
             gizmo_start_transforms[str(node.name)] = node.global_transform
         gizmo_start_transform = selected_mesh.global_transform
-    gizmo_drag_start_screen = view_container.get_local_mouse_position()
-    var scalar: Variant = _gizmo_axis_scalar(gizmo_drag_start_screen, gizmo_drag_pivot, best_axis)
-    gizmo_drag_start_scalar = float(scalar) if scalar != null else 0.0
+    gizmo_drag_start_screen = mouse_position
     if is_light:
-        gizmo_undo_before.clear() # This light proxy must NEVER enter prop undo/draft records.
+        gizmo_undo_before.clear()
     else:
         gizmo_undo_before = _capture_edit_state()
     gizmo_drag_active = true
@@ -9588,20 +9681,39 @@ func _begin_gizmo_drag() -> bool:
 
 
 func _apply_gizmo_drag() -> void:
+    if is_instance_valid(view_container):
+        _apply_gizmo_drag_at(view_container.get_local_mouse_position())
+
+
+func _apply_gizmo_drag_at(mouse_position: Vector2) -> void:
     if not gizmo_drag_active:
         return
     if environment_light_gizmo_drag:
         if editor_tool != "move" or not _environment_light_proxy_selected():
             return
-        var scalar: Variant = _gizmo_axis_scalar(
-            view_container.get_local_mouse_position(), gizmo_drag_pivot, gizmo_drag_axis)
-        if scalar == null:
+        var light_delta: Variant = null
+        if gizmo_plane_drag_active:
+            var ray := _mouse_ray(mouse_position)
+            if ray.is_empty():
+                return
+            var point: Variant = gizmo_drag_plane.intersects_ray(ray["origin"], ray["direction"])
+            if point == null:
+                return
+            light_delta = OrthoGuides.plane_drag_delta(
+                gizmo_drag_pivot, gizmo_drag_plane_start, point,
+                gizmo_drag_plane_axes, float(prop_edit_step.value),
+                Input.is_key_pressed(KEY_CTRL))
+        else:
+            var scalar: Variant = _gizmo_axis_scalar(mouse_position, gizmo_drag_pivot, gizmo_drag_axis)
+            if scalar == null:
+                return
+            light_delta = OrthoGuides.axis_drag_delta(
+                gizmo_drag_pivot, float(scalar) - gizmo_drag_start_scalar,
+                gizmo_drag_axis, float(prop_edit_step.value),
+                Input.is_key_pressed(KEY_CTRL))
+        if light_delta == null:
             return
-        var shift := float(scalar) - gizmo_drag_start_scalar
-        if Input.is_key_pressed(KEY_CTRL):
-            shift = snapped(shift, float(prop_edit_step.value))
-        _set_environment_light_preview_position(
-            selected_actor, gizmo_drag_pivot + gizmo_drag_axis * shift)
+        _set_environment_light_preview_position(selected_actor, gizmo_drag_pivot + light_delta)
         status_label.text = (
             "Editor-only " + str(selected_actor.get("name", "")) +
             " light gizmo: " + str(_environment_light_preview_position(selected_actor))
@@ -9611,24 +9723,40 @@ func _apply_gizmo_drag() -> void:
     if not _draft_selected_is_prop():
         return
     var distance := camera.global_position.distance_to(gizmo_drag_pivot)
-    var mouse := view_container.get_local_mouse_position()
     var rotate := Basis.IDENTITY
     var scale_factor := 1.0
     var movement := Vector3.ZERO
     if editor_tool == "rotate":
-        var angle := (mouse.x - gizmo_drag_start_screen.x) * 0.012
+        var angle := (mouse_position.x - gizmo_drag_start_screen.x) * 0.012
         if Input.is_key_pressed(KEY_CTRL):
             angle = snapped(angle, deg_to_rad(15.0))
         rotate = Basis(gizmo_drag_axis, angle)
+    elif gizmo_plane_drag_active:
+        var ray := _mouse_ray(mouse_position)
+        if ray.is_empty():
+            return
+        var point: Variant = gizmo_drag_plane.intersects_ray(ray["origin"], ray["direction"])
+        if point == null:
+            return
+        var plane_delta: Variant = OrthoGuides.plane_drag_delta(
+            gizmo_drag_pivot, gizmo_drag_plane_start, point,
+            gizmo_drag_plane_axes, float(prop_edit_step.value),
+            Input.is_key_pressed(KEY_CTRL))
+        if plane_delta == null:
+            return
+        movement = plane_delta
     else:
-        var scalar: Variant = _gizmo_axis_scalar(mouse, gizmo_drag_pivot, gizmo_drag_axis)
+        var scalar: Variant = _gizmo_axis_scalar(mouse_position, gizmo_drag_pivot, gizmo_drag_axis)
         if scalar == null:
             return
         var change := float(scalar) - gizmo_drag_start_scalar
         if editor_tool == "move":
-            if Input.is_key_pressed(KEY_CTRL):
-                change = snapped(change, float(prop_edit_step.value))
-            movement = gizmo_drag_axis * change
+            var axis_delta: Variant = OrthoGuides.axis_drag_delta(
+                gizmo_drag_pivot, change, gizmo_drag_axis,
+                float(prop_edit_step.value), Input.is_key_pressed(KEY_CTRL))
+            if axis_delta == null:
+                return
+            movement = axis_delta
         elif editor_tool == "scale":
             scale_factor = clampf(1.0 + change / maxf(0.5, distance * 0.18), 0.05, 100.0)
             if Input.is_key_pressed(KEY_CTRL):
@@ -9646,7 +9774,6 @@ func _apply_gizmo_drag() -> void:
         elif editor_tool == "scale":
             var offset := pose.origin - gizmo_drag_pivot
             pose.origin = gizmo_drag_pivot + offset + gizmo_drag_axis * offset.dot(gizmo_drag_axis) * (scale_factor - 1.0)
-            # Apply scale along the *world* gizmo axis to all three basis columns.
             for axis_index in range(3):
                 var vector: Vector3 = pose.basis[axis_index]
                 pose.basis[axis_index] = vector + gizmo_drag_axis * vector.dot(gizmo_drag_axis) * (scale_factor - 1.0)

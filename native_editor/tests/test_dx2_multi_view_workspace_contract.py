@@ -1,4 +1,4 @@
-"""Contract tests for the v0.53 independent quad-camera workspace."""
+"""Contract tests for the v0.54 active-pane quad-camera workspace."""
 from pathlib import Path
 import unittest
 
@@ -17,7 +17,8 @@ class DX2EdMultiViewWorkspaceContractTests(unittest.TestCase):
     def test_quad_viewports_share_preview_world_but_isolate_camera_and_grid(self):
         main = (ROOT / "native_editor/godot_editor/main.gd").read_text("utf-8")
         self.assertIn("viewport.world_3d = world_view.world_3d", main)
-        self.assertIn("view_camera.cull_mask = 1 | OrthoGuides.grid_layer_mask(view_id)", main)
+        self.assertIn("view_camera.cull_mask = OrthoGuides.viewport_cull_mask(view_id, active_view_id)", main)
+        self.assertIn("func _sync_view_interaction_layers() -> void:", main)
         self.assertIn("func _activate_view_at_mouse() -> void:", main)
         self.assertIn("func _sync_view_layout_visibility() -> void:", main)
         self.assertIn('view_grid.columns = 2 if view_layout == "quad" else 1', main)
