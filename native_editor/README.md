@@ -818,7 +818,7 @@ bytes, native material indices, BSP data or shader data are written.
 When **Inspect source collision** is active and an original MOPP-linked
 triangle is selected, the Inspector can analyze the triangle's original
 Flesh render-section subset. It reports exact source-weld connectivity,
-bounded connected components, summed Level-unit triangle area/bounds/centroid, source edge
+bounded connected components, summed Level-unit triangle area/bounds/centroid, MOPP-leaf source edge
 classes, and adjacent MOPP-linked sections. The JSON report is derived and
 read-only.
 
