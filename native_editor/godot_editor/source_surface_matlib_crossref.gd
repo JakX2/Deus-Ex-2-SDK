@@ -94,7 +94,7 @@ func _is_sha256(value: String) -> bool:
             return false
     return true
 
-func _is_nonnegative_int(value: Variant, maximum: int = 0x7FFFFFFF) -> bool:
+func _is_nonnegative_int(value, maximum: int = 0x7FFFFFFF) -> bool:
     return typeof(value) == TYPE_INT and int(value) >= 0 and int(value) <= maximum
 
 func _safe_preview_path(relative_path: String, for_catalog: String) -> String:
@@ -111,7 +111,7 @@ func _safe_preview_path(relative_path: String, for_catalog: String) -> String:
         return ""
     return candidate
 
-func _validate_catalog(raw: Variant, path: String) -> bool:
+func _validate_catalog(raw, path: String) -> bool:
     if (typeof(raw) != TYPE_DICTIONARY or path.is_empty()
         or not FileAccess.file_exists(path) or path.get_extension().to_lower() != "json"):
         return false
@@ -236,7 +236,10 @@ func _refresh() -> void:
     if typeof(duplicate_names) == TYPE_DICTIONARY:
         duplicate_count = int(duplicate_names.get("materials", 0))
     if candidates.size() > 1:
-        match_label.text = "AMBIGUOUS: %d %s name candidates. Select one; none is an authenticated native material index." % [candidates.size(), "exact-string" if match_kind == "exact" else "case-insensitive"]
+        var candidate_match_kind := "exact-string"
+        if match_kind != "exact":
+            candidate_match_kind = "case-insensitive"
+        match_label.text = "AMBIGUOUS: %d %s name candidates. Select one; none is an authenticated native material index." % [candidates.size(), candidate_match_kind]
     elif match_kind == "exact":
         match_label.text = "EXACT STRING MATCH - one candidate in this imported catalog only; this is not proof of the native surface material index."
     else:
@@ -276,7 +279,10 @@ func _candidate_selected(index: int) -> void:
                 state = "resolved"
             else:
                 state = "unresolved"
-        lines.append("Slot %d: %s [%s]" % [index, name if not name.is_empty() else "(empty)", state])
+        var display_name := name
+        if display_name.is_empty():
+            display_name = "(empty)"
+        lines.append("Slot %d: %s [%s]" % [index, display_name, state])
     lines.append("Native material index: NOT VERIFIED.")
     lines.append("Shader-stage semantics: NOT VERIFIED.")
     lines.append("Physical material / Havok role: NOT VERIFIED.")
