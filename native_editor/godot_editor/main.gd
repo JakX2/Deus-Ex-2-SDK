@@ -19,6 +19,7 @@ const CapsuleContactPreview = preload("res://capsule_contact_preview.gd")
 const CapsuleSweepPanel = preload("res://capsule_sweep_panel.gd")
 const SourceSurfacePanel = preload("res://source_surface_panel.gd")
 const SourceSurfaceMatLibCrossref = preload("res://source_surface_matlib_crossref.gd")
+const SourceSectionTopologyPanel = preload("res://source_section_topology_panel.gd")
 const SourceEdgeTransitionPanel = preload("res://source_edge_transition_panel.gd")
 ## DX2Ed native viewer: a READ-ONLY Godot 4 GLB + GMP actor inspector.
 ## Can open an original DX2 .gmp using the bundled read-only Python backend.
@@ -89,6 +90,7 @@ var capsule_preview_details: Label
 var interactive_capsule_panel: VBoxContainer
 var source_surface_panel: VBoxContainer
 var source_surface_matlib_crossref
+var source_section_topology_panel
 var source_edge_transition_panel: VBoxContainer
 var source_gamesys_panel: VBoxContainer
 var light_color_panel: VBoxContainer
@@ -1373,6 +1375,10 @@ func _make_ui() -> void:
     source_collision_details.visible = false
     source_collision_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     inspector_pane.add_child(source_collision_details)
+    source_section_topology_panel = SourceSectionTopologyPanel.new()
+    source_section_topology_panel.name = "SourceSectionTopologyPanel"
+    inspector_pane.add_child(source_section_topology_panel)
+    source_section_topology_panel.initialize()
     source_surface_matlib_crossref = SourceSurfaceMatLibCrossref.new()
     source_surface_matlib_crossref.name = "SourceSurfaceMatLibCrossref"
     inspector_pane.add_child(source_surface_matlib_crossref)
@@ -9632,6 +9638,8 @@ func _reset_source_collision_inspection() -> void:
         source_surface_panel.reset()
     if source_surface_matlib_crossref != null:
         source_surface_matlib_crossref.clear_source_evidence()
+    if source_section_topology_panel != null:
+        source_section_topology_panel.clear_selection()
     if source_edge_transition_panel != null:
         source_edge_transition_panel.reset()
     if interactive_capsule_panel != null:
@@ -9793,6 +9801,8 @@ func _pick_source_collision_triangle() -> void:
     if hit.is_empty():
         _clear_source_collision_highlights()
         source_collision_last_hit.clear()
+        if source_section_topology_panel != null:
+            source_section_topology_panel.clear_selection()
         if source_surface_panel != null:
             source_surface_panel.observe_hit({})
         source_collision_section_actions.visible = false
@@ -9815,6 +9825,8 @@ func _show_source_collision_hit(hit: Dictionary) -> void:
     if section.is_empty():
         return
     source_collision_last_hit = hit.duplicate()
+    if source_section_topology_panel != null:
+        source_section_topology_panel.set_selection(source_collision_picker, hit)
     if source_surface_panel != null:
         source_surface_panel.observe_hit(hit)
     if source_edge_transition_panel != null:
