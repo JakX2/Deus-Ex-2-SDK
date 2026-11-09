@@ -12,6 +12,7 @@ class SourceSectionTopologyContractTests(unittest.TestCase):
         source = (ROOT / "native_editor/godot_editor/collision_source_picker.gd").read_text("utf-8")
         self.assertIn("func section_topology_details", source)
         self.assertIn("MAX_SECTION_TOPOLOGY_TRIANGLES := 8192", source)
+        self.assertIn("MAX_SECTION_EDGE_INCIDENCE := 1024", source)
         self.assertIn('face["source_weld_ids"]', source)
         self.assertIn("original_edge_incidence.get(edge_key, [])", source)
         self.assertIn('"mopp_leaf_subset_only": true', source)
