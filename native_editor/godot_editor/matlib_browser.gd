@@ -485,7 +485,7 @@ func _refresh_apply_button() -> void:
 func _request_apply_selected_material() -> void:
     var assignment := selected_diffuse_assignment()
     if assignment.is_empty():
-        status_label.text = "Select a material with a verified resolved diffuse preview first."
+        status_label.text = "Select a material with a verified resolved slot-0 preview candidate first."
         return
     if target_slot_selector == null or target_slot_selector.selected < 0:
         status_label.text = "Choose a Polygon surface slot first."
