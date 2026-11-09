@@ -102,7 +102,8 @@ func _run() -> void:
     if (report.get("mopp_leaf_subset_only", false) != true
         or report.get("area_measure", "") != "sum_of_mopp_leaf_triangle_areas"
         or report.get("area_is_triangle_sum", false) != true
-        or report.get("source_edge_classification_full_original_level", false) != true
+        or report.get("source_edge_classification_full_original_level", true) != false
+        or report.get("source_edge_classification_mopp_leaf_subset", false) != true
         or report.get("connectivity_uses_exact_original_level_weld_ids", false) != true
         or report.get("native_bsp_surface_verified", true) != false
         or report.get("full_render_section_geometry_verified", true) != false
