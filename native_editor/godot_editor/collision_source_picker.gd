@@ -688,8 +688,13 @@ func section_topology_details(original_id: int,
             var other_key := str(other_face["source_section_key"])
             if other_key == section_key:
                 continue
-            if not other_sections_for_edge.has(other_key):
-                other_sections_for_edge[other_key] = other_face
+            var other_record: Dictionary = other_sections_for_edge.get(other_key, {
+                "face": other_face,
+                "representative_triangle_id": other_id,
+            })
+            other_record["representative_triangle_id"] = mini(
+                int(other_record.get("representative_triangle_id", other_id)), other_id)
+            other_sections_for_edge[other_key] = other_record
         if not other_sections_for_edge.is_empty():
             cross_section_mopp_shared_edge_count += 1
             var edge_a: Vector3 = edge_record["a_godot"]
@@ -702,19 +707,22 @@ func section_topology_details(original_id: int,
             var perimeter_b: Vector3 = edge_record["b_godot"]
             section_perimeter_length_level_units += (perimeter_a - perimeter_b).length() * 10.0
         for other_key in other_sections_for_edge.keys():
-            var other_face: Dictionary = other_sections_for_edge[other_key]
+            var other_record: Dictionary = other_sections_for_edge[other_key]
+            var other_face: Dictionary = other_record["face"]
+            var representative_triangle_id := int(other_record["representative_triangle_id"])
             var neighbor: Dictionary = neighbor_records.get(other_key, {
                 "source_block_id": int(other_face["source_block_id"]),
                 "render_block_ordinal": int(other_face["render_block_ordinal"]),
                 "render_section_ordinal": int(other_face["render_section_ordinal"]),
                 "render_material_name": materials[int(other_face["render_material_id"])],
-                "representative_triangle_id": other_id,
+                "representative_triangle_id": representative_triangle_id,
                 "shared_edge_count": 0,
             })
             # Lowest observed MOPP triangle ID is a deterministic navigation
             # target, not a claim that this subset is a complete render surface.
             neighbor["representative_triangle_id"] = mini(
-                int(neighbor.get("representative_triangle_id", other_id)), other_id)
+                int(neighbor.get("representative_triangle_id", representative_triangle_id)),
+                representative_triangle_id)
             neighbor["shared_edge_count"] = int(neighbor["shared_edge_count"]) + 1
             neighbor_records[other_key] = neighbor
 
