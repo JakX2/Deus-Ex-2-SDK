@@ -4,6 +4,7 @@ const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const MatLibBrowser = preload("res://matlib_browser.gd")
 const OrthoGuides = preload("res://orthographic_authoring_guides.gd")
 const PythonRuntime = preload("res://python_runtime.gd")
+const RetailObservationPanel = preload("res://retail_observation_panel.gd")
 const LightColorPanel = preload("res://light_color_panel.gd")
 const MultiLightColorPanel = preload("res://multi_light_color_panel.gd")
 const NativeScalarPanel = preload("res://native_scalar_panel.gd")
@@ -215,6 +216,7 @@ var native_sandbox_candidate_dialog: FileDialog
 var native_sandbox_root_dialog: FileDialog
 var native_sandbox_confirmation: ConfirmationDialog
 var native_sandbox_pending: Dictionary = {}
+var retail_observation_panel
 var native_staged_unplaces: Dictionary = {} # original actor name -> one-based original export
 var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
@@ -859,6 +861,13 @@ func _make_ui() -> void:
     sandbox_button.text = "Disposable Game Trial..."
     sandbox_button.pressed.connect(_open_native_sandbox_trial)
     prop_bar.add_child(sandbox_button)
+    var observations_button := Button.new()
+    observations_button.text = "Record Retail Test..."
+    observations_button.tooltip_text = (
+        "Inspect a verified v0.64 dossier plus v0.65 disposable test map, "
+        + "then record OWNER-REPORTED outcomes. Does not execute the game.")
+    observations_button.pressed.connect(_open_retail_observation_panel)
+    prop_bar.add_child(observations_button)
     prop_edit_step = SpinBox.new()
     prop_edit_step.min_value = 0.05
     prop_edit_step.max_value = 64.0
@@ -2090,6 +2099,8 @@ func _make_ui() -> void:
     native_sandbox_confirmation.title = "Confirm disposable DX2 test game copy operation"
     native_sandbox_confirmation.confirmed.connect(_execute_sandbox_trial)
     add_child(native_sandbox_confirmation)
+    retail_observation_panel = RetailObservationPanel.new()
+    add_child(retail_observation_panel)
     environment_sound_dialog = FileDialog.new()
     environment_sound_dialog.access = FileDialog.ACCESS_FILESYSTEM
     environment_sound_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -11133,6 +11144,20 @@ func _sandbox_trial_finished(code: int, response: String, mode: int,
         + " | Actual gameplay NOT verified."
         + (" Target: " + str(report.get("target_content", "unknown")) if mode == 3 else "")
         + " | Original game files outside test copy unchanged.")
+
+
+## v0.67: editor-native human observation workspace. No retail game execution.
+func _open_retail_observation_panel() -> void:
+    if not _native_clone_source_ready():
+        status_label.text = "Owner observation requires an unchanged original GMP and no active worker."
+        return
+    if retail_observation_panel == null:
+        status_label.text = "Owner observation panel unavailable."
+        return
+    retail_observation_panel.configure(last_gmp_path, source_gamesys_sha256)
+    retail_observation_panel.popup_centered(Vector2i(850, 570))
+    status_label.text = ("Select a source-matched private trial dossier, candidate and "
+        + "disposable test copy. Owner reports are NOT independent gameplay verification.")
 
 
 func _open_native_save_as_dialog() -> void:

@@ -91,6 +91,8 @@ REQUIRED = (
     "native_editor/godot_editor/tests/smoke_crosssource_reference_review.gd",
     "native_editor/godot_editor/tests/smoke_native_retail_trial_dossier.gd",
     "native_editor/godot_editor/tests/smoke_disposable_retail_trial.gd",
+    "native_editor/godot_editor/retail_observation_panel.gd",
+    "native_editor/godot_editor/tests/smoke_retail_observation_panel.gd",
     "native_editor/godot_editor/tests/smoke_t3ed_face_edit_roundtrip.gd",
     "native_editor/godot_editor/tests/smoke_draft_brush_viewport_face_pick.gd",
     "native_editor/godot_editor/custom_polygon_geometry.gd",
