@@ -897,3 +897,7 @@ The prop toolbar now offers Median, Active and 3D Cursor pivots plus World/Local
 ## DX2Ed v0.56 private hierarchy groups
 
 The Hierarchy tab can now create and remove editor-only parent groups for selected editable preview meshes. Selecting a group routes transform operations through its Node3D parent while preserving child local offsets; selecting a child targets that mesh alone. Group duplication, reset, Undo/Redo and optional private JSON persistence are covered by the Godot 4.3 synthetic group-hierarchy smoke and the bundled Windows self-test. Malformed member identities and singular parent transforms are rejected before current editor state is changed. Group nodes are not native DX2 actor ownership, BSP/CSG, or cooked-level data; original GMP/IBD files remain read-only. See docs/research/dx2ed-draft-group-hierarchy-v0-56.md.
+
+## DX2Ed v0.57 private group rename (draft)
+
+Select a single group in the Hierarchy tab, type its replacement name in the existing group-name input and click **Rename**. Names must be unique ASCII letters, digits or underscores (1–48 characters). Rename preserves the original parent and child transforms, is undoable, and persists to private group JSON drafts. It does not rename, rebuild or serialize any native DX2 map entity.
