@@ -30,9 +30,8 @@ from dx2_incoming_ref_audit import (
     SCHEMA, audit_original, require_no_explicit_incoming, scan_package,
 )
 from dx2_native_prop_plan import SCHEMA as PLAN_SCHEMA, compile_in_memory
-from t3common import enc_index
 from upkg import Package
-from upkgwrite import ActorEdit, PackageWriter
+from upkgwrite import ActorEdit, PackageWriter, enc_index
 
 
 class ExplicitIncomingReferencesTests(unittest.TestCase):
