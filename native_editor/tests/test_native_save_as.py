@@ -309,7 +309,7 @@ class NativeGmpSaveAsTests(unittest.TestCase):
         doc = json.loads(manifest.read_text())
         doc["output_sha256"] = hashlib.sha256(self.output.read_bytes()).hexdigest()
         manifest.write_text(json.dumps(doc))
-        with self.assertRaisesRegex(ValueError, "Exported Location.*differs|no changed bytes"):
+        with self.assertRaisesRegex(ValueError, "Exported Location.*differ|no changed bytes"):
             verify_translation_copy(self.source, self.output)
 
     def test_edited_rotation_is_rejected(self):
