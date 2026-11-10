@@ -206,6 +206,10 @@ var native_recipe_import_dialog: FileDialog
 var native_recipe_output_dialog: FileDialog
 var native_recipe_apply_confirmation: ConfirmationDialog
 var native_recipe_apply_pending: Dictionary = {}
+var native_trial_candidate_dialog: FileDialog
+var native_trial_dossier_dialog: FileDialog
+var native_trial_confirmation: ConfirmationDialog
+var native_trial_pending: Dictionary = {}
 var native_staged_unplaces: Dictionary = {} # original actor name -> one-based original export
 var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
@@ -831,6 +835,14 @@ func _make_ui() -> void:
         + "First perform read-only reconstruction, then Save As a NEW isolated test GMP.")
     recipe_import_button.pressed.connect(_open_native_recipe_import_dialog)
     prop_bar.add_child(recipe_import_button)
+    var trial_button := Button.new()
+    trial_button.text = "Prepare Retail Test Dossier..."
+    trial_button.tooltip_text = (
+        "Verify a previously exported isolated combined GMP against the original "
+        + "and prepare a private test checklist and blank owner observations. "
+        + "Does NOT launch or install the game.")
+    trial_button.pressed.connect(_open_native_trial_candidate_dialog)
+    prop_bar.add_child(trial_button)
     prop_edit_step = SpinBox.new()
     prop_edit_step.min_value = 0.05
     prop_edit_step.max_value = 64.0
@@ -2030,6 +2042,22 @@ func _make_ui() -> void:
     native_recipe_apply_confirmation.title = "Confirm offline reconstruction of shared mod recipe"
     native_recipe_apply_confirmation.confirmed.connect(_execute_native_recipe_apply)
     add_child(native_recipe_apply_confirmation)
+    native_trial_candidate_dialog = FileDialog.new()
+    native_trial_candidate_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_trial_candidate_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    native_trial_candidate_dialog.filters = PackedStringArray(["*.gmp ; Already exported isolated candidate GMP"])
+    native_trial_candidate_dialog.file_selected.connect(_stage_native_trial_candidate)
+    add_child(native_trial_candidate_dialog)
+    native_trial_dossier_dialog = FileDialog.new()
+    native_trial_dossier_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_trial_dossier_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    native_trial_dossier_dialog.filters = PackedStringArray(["*.dx2trial.json ; DX2Ed private retail test dossier"])
+    native_trial_dossier_dialog.file_selected.connect(_stage_native_trial_dossier)
+    add_child(native_trial_dossier_dialog)
+    native_trial_confirmation = ConfirmationDialog.new()
+    native_trial_confirmation.title = "Confirm private, no-game-install retail test checklist"
+    native_trial_confirmation.confirmed.connect(_execute_native_trial_dossier)
+    add_child(native_trial_confirmation)
     environment_sound_dialog = FileDialog.new()
     environment_sound_dialog.access = FileDialog.ACCESS_FILESYSTEM
     environment_sound_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -3118,6 +3146,7 @@ func _clear_current_scene() -> void:
     native_combined_pending.clear()
     native_recipe_pending.clear()
     native_recipe_apply_pending.clear()
+    native_trial_pending.clear()
     native_staged_unplaces.clear()
     next_prop_copy_id = 1
     undo_stack.clear()
