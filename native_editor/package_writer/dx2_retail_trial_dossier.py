@@ -81,8 +81,9 @@ def _checklist(plan: dict, compilation: dict) -> list[dict]:
     for i, row in enumerate(compilation["copied"], 1):
         checks.append({
             "id": f"clone-{i:02d}", "category": "manual-new-object",
-            "original_actor": row["actor"],
-            "source_export": row.get("original_export", row.get("source_export")),
+            "original_actor": row["source_actor"],
+            "source_export": row["source_export"],
+            "new_actor": row["new_actor"],
             "new_export": row["new_export"],
             "expected_candidate_location_xyz": row["after"],
             "expectation": "Confirm a new in-game static mesh exists where expected, distinct from the original.",
