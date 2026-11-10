@@ -125,6 +125,7 @@ REQUIRED = (
     "native_editor/godot_editor/dialogue_design_draft.gd",
     "native_editor/godot_editor/tests/smoke_dialogue_design_draft.gd",
     "native_editor/package_writer/dx2_actor_clone_probe.py",
+    "native_editor/package_writer/dx2_actor_unplace_probe.py",
     "map_exporter/dx2_map_exporter.py",
     "actor_explorer/dx2_actor_explorer.py",
     "research/dx2/private_zip_package_audit.py",
