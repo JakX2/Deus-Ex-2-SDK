@@ -196,6 +196,10 @@ var native_multi_pending: Dictionary = {}
 var native_unplace_dialog: FileDialog
 var native_unplace_confirmation: ConfirmationDialog
 var native_unplace_pending: Dictionary = {}
+var native_combined_dialog: FileDialog
+var native_combined_confirmation: ConfirmationDialog
+var native_combined_pending: Dictionary = {}
+var native_staged_unplaces: Dictionary = {} # original actor name -> one-based original export
 var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
 var native_export_target := ""
@@ -785,6 +789,23 @@ func _make_ui() -> void:
         + "this is NOT a full actor deletion.")
     native_unplace_button.pressed.connect(_open_native_unplace_dialog)
     prop_bar.add_child(native_unplace_button)
+    var combined_stage_button := Button.new()
+    combined_stage_button.text = "Stage/Unstage original prop"
+    combined_stage_button.tooltip_text = ("Temporarily mark the selected ORIGINAL eligible StaticMeshActor "
+        + "for native Level-list unplacement in Combined Save As. Does not hide or delete it.")
+    combined_stage_button.pressed.connect(_toggle_native_combined_unplace)
+    prop_bar.add_child(combined_stage_button)
+    var combined_clear_button := Button.new()
+    combined_clear_button.text = "Clear unplace stages"
+    combined_clear_button.pressed.connect(_clear_native_combined_unplaces)
+    prop_bar.add_child(combined_clear_button)
+    var combined_save_button := Button.new()
+    combined_save_button.text = "Experimental Combined Save As..."
+    combined_save_button.tooltip_text = ("Write existing static-prop translations, new preview static props "
+        + "and temporarily staged original-prop Level unplacements into ONE isolated GMP. "
+        + "At least two kinds of changes required; native runtime unverified.")
+    combined_save_button.pressed.connect(_open_native_combined_dialog)
+    prop_bar.add_child(combined_save_button)
     prop_edit_step = SpinBox.new()
     prop_edit_step.min_value = 0.05
     prop_edit_step.max_value = 64.0
@@ -1940,6 +1961,16 @@ func _make_ui() -> void:
     native_unplace_confirmation.title = "Confirm experimental original prop unplace"
     native_unplace_confirmation.confirmed.connect(_execute_native_unplace_export)
     add_child(native_unplace_confirmation)
+    native_combined_dialog = FileDialog.new()
+    native_combined_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_combined_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    native_combined_dialog.filters = PackedStringArray(["*.gmp ; Experimental combined static-prop native GMP"])
+    native_combined_dialog.file_selected.connect(_stage_native_combined_export)
+    add_child(native_combined_dialog)
+    native_combined_confirmation = ConfirmationDialog.new()
+    native_combined_confirmation.title = "Confirm combined experimental DX2 static prop map edits"
+    native_combined_confirmation.confirmed.connect(_execute_native_combined_export)
+    add_child(native_combined_confirmation)
     environment_sound_dialog = FileDialog.new()
     environment_sound_dialog.access = FileDialog.ACCESS_FILESYSTEM
     environment_sound_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -3019,6 +3050,8 @@ func _clear_current_scene() -> void:
     native_clone_pending.clear()
     native_multi_pending.clear()
     native_unplace_pending.clear()
+    native_combined_pending.clear()
+    native_staged_unplaces.clear()
     next_prop_copy_id = 1
     undo_stack.clear()
     redo_stack.clear()
@@ -9921,6 +9954,293 @@ func _native_unplace_export_finished(status: int, response: String) -> void:
             + " | Original export preserved; runtime NOT verified.")
         return
     status_label.text = "Native unplace refused: " + _native_clone_error_reason(response)
+
+
+## v0.60 authoring bridge: existing static-prop moves, clones and optional
+## original Level-list unplacements in ONE source-pinned GMP writer transaction.
+## Stage flags are PRIVATE/TEMPORARY: they do not alter displayed geometry.
+func _toggle_native_combined_unplace() -> void:
+    _finish_gizmo_drag()
+    if not _native_clone_source_ready() or selected_meshes.size() != 1:
+        status_label.text = "Stage unplace: select one original StaticMeshActor from an unchanged imported map."
+        return
+    var name := str(selected_meshes.keys()[0])
+    if (not meshes_by_actor.has(name) or not actors_by_name.has(name)
+        or not original_mesh_transforms.has(name)):
+        status_label.text = "Stage unplace supports original placed mesh actors only."
+        return
+    if native_staged_unplaces.has(name):
+        native_staged_unplaces.erase(name)
+        status_label.text = "Unstaged " + name + " (no native data changed)."
+        return
+    var actor: Dictionary = actors_by_name[name]
+    if (str(actor.get("class", "")) != "StaticMeshActor"
+        or typeof(actor.get("export", null)) != TYPE_INT
+        or int(actor["export"]) < 1):
+        status_label.text = "Only original StaticMeshActor objects can be staged for unplace."
+        return
+    var node: MeshInstance3D = meshes_by_actor[name]
+    if (not is_instance_valid(node)
+        or not node.global_transform.is_equal_approx(original_mesh_transforms[name])):
+        status_label.text = "Stage unplace requires the original prop to be unmoved."
+        return
+    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_clone_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Source preflight script unavailable."
+        return
+    var verdict := _native_clone_check_actor(script, {
+        "actor": name, "export": int(actor["export"])})
+    if not verdict.get("eligible", false):
+        status_label.text = "Stage unplace refused: " + str(verdict.get("reason", "Ineligible actor."))
+        return
+    if native_staged_unplaces.size() >= 8:
+        status_label.text = "Combined native unplace staging is limited to eight actors."
+        return
+    native_staged_unplaces[name] = int(actor["export"])
+    status_label.text = "Staged " + name + " for combined native Level-list unplace; "
+    status_label.text += "object remains visible, no GMP edited."
+
+
+func _clear_native_combined_unplaces() -> void:
+    native_staged_unplaces.clear()
+    native_combined_pending.clear()
+    status_label.text = "Cleared temporary native unplace stages (original GMP unchanged)."
+
+
+func _native_combined_draft_plan() -> Dictionary:
+    if (scene_root == null or not draft_groups.is_empty()
+        or not property_overrides.is_empty() or not draft_brush_specs.is_empty()
+        or not draft_template_provenance.is_empty()):
+        return {}
+    var moves := []
+    var copies := []
+    var unplaces := []
+    var names: Array = original_mesh_transforms.keys()
+    names.sort()
+    for name_variant in names:
+        var name := str(name_variant)
+        if not meshes_by_actor.has(name):
+            continue
+        var node: MeshInstance3D = meshes_by_actor[name]
+        if not is_instance_valid(node):
+            return {}
+        var initial: Transform3D = original_mesh_transforms[name]
+        var actual := node.global_transform
+        if actual.is_equal_approx(initial):
+            continue
+        if not actual.basis.is_equal_approx(initial.basis):
+            return {}  # No native rotation, scaling, or implicit auto-roll.
+        if native_staged_unplaces.has(name) or not actors_by_name.has(name):
+            return {}
+        var actor: Dictionary = actors_by_name[name]
+        if (str(actor.get("class", "")) != "StaticMeshActor"
+            or typeof(actor.get("export", null)) != TYPE_INT
+            or int(actor["export"]) < 1):
+            return {}
+        var shift := actual.origin - initial.origin
+        var delta := [
+            shift.x / NATIVE_CLONE_UNREAL_METRES,
+            shift.z / NATIVE_CLONE_UNREAL_METRES,
+            shift.y / NATIVE_CLONE_UNREAL_METRES
+        ]
+        if (not shift.is_finite() or shift.length_squared() < 0.00000001
+            or abs(float(delta[0])) > 4096.0 or abs(float(delta[1])) > 4096.0
+            or abs(float(delta[2])) > 4096.0):
+            return {}
+        moves.append({"actor": name, "export": int(actor["export"]), "delta": delta})
+    var draft_names: Array = draft_prop_copies.keys()
+    draft_names.sort()
+    for draft_name_variant in draft_names:
+        var draft_name := str(draft_name_variant)
+        var source_name := str(draft_prop_sources.get(draft_name, ""))
+        if (not actors_by_name.has(source_name)
+            or not original_mesh_transforms.has(source_name)
+            or not meshes_by_actor.has(source_name)):
+            return {}
+        var node: MeshInstance3D = draft_prop_copies[draft_name]
+        if not is_instance_valid(node):
+            return {}
+        var source: Dictionary = actors_by_name[source_name]
+        if (str(source.get("class", "")) != "StaticMeshActor"
+            or typeof(source.get("export", null)) != TYPE_INT
+            or int(source["export"]) < 1):
+            return {}
+        var baseline: Transform3D = original_mesh_transforms[source_name]
+        if not node.global_transform.basis.is_equal_approx(baseline.basis):
+            return {}
+        var displacement := node.global_position - baseline.origin
+        var delta := [
+            displacement.x / NATIVE_CLONE_UNREAL_METRES,
+            displacement.z / NATIVE_CLONE_UNREAL_METRES,
+            displacement.y / NATIVE_CLONE_UNREAL_METRES
+        ]
+        if (not displacement.is_finite() or displacement.length_squared() < 0.00000001
+            or abs(float(delta[0])) > 4096.0 or abs(float(delta[1])) > 4096.0
+            or abs(float(delta[2])) > 4096.0):
+            return {}
+        copies.append({"actor": source_name, "export": int(source["export"]), "delta": delta})
+    var staged_names: Array = native_staged_unplaces.keys()
+    staged_names.sort()
+    for name_variant in staged_names:
+        var name := str(name_variant)
+        if (not actors_by_name.has(name) or not original_mesh_transforms.has(name)
+            or not meshes_by_actor.has(name)):
+            return {}
+        var actor: Dictionary = actors_by_name[name]
+        var node: MeshInstance3D = meshes_by_actor[name]
+        if (not is_instance_valid(node)
+            or not node.global_transform.is_equal_approx(original_mesh_transforms[name])
+            or str(actor.get("class", "")) != "StaticMeshActor"
+            or typeof(actor.get("export", null)) != TYPE_INT
+            or int(actor["export"]) != int(native_staged_unplaces[name])):
+            return {}
+        unplaces.append({"actor": name, "export": int(actor["export"])})
+    var total := moves.size() + copies.size() + unplaces.size()
+    var kinds := int(not moves.is_empty()) + int(not copies.is_empty()) + int(not unplaces.is_empty())
+    if (kinds < 2 or total > 16 or moves.size() > 8
+        or copies.size() > 8 or unplaces.size() > 8):
+        return {}
+    return {
+        "schema": "DX2Ed-experimental-native-prop-change-plan-v1",
+        "moves": moves, "copies": copies, "unplaces": unplaces
+    }
+
+
+func _open_native_combined_dialog() -> void:
+    _finish_gizmo_drag()
+    native_combined_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Combined Save As refused: original GMP/hash changed or worker active."
+        return
+    var plan := _native_combined_draft_plan()
+    if plan.is_empty():
+        status_label.text = ("Combined native Save As needs at least TWO change kinds: "
+            + "original static-prop moves, translated draft clones and/or staged unplaces. "
+            + "No groups, property edits, brushes, rotation, scaling or other changes.")
+        return
+    var writer := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_native_prop_plan.py")
+    var checker := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_actor_clone_probe.py")
+    if not FileAccess.file_exists(writer) or not FileAccess.file_exists(checker):
+        status_label.text = "Combined native writer or source preflight is missing."
+        return
+    for kind in ["moves", "copies", "unplaces"]:
+        for row in plan[kind]:
+            var verdict := _native_clone_check_actor(checker, row)
+            if not verdict.get("eligible", false):
+                status_label.text = "Combined " + kind + " blocked " + str(row["actor"])
+                status_label.text += ": " + str(verdict.get("reason", "Unknown source eligibility."))
+                return
+    native_combined_dialog.current_file = last_gmp_path.get_file()
+    native_combined_dialog.popup_centered_ratio(0.75)
+
+
+func _stage_native_combined_export(destination: String) -> void:
+    native_combined_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Combined Save As cancelled: original source changed."
+        return
+    var plan := _native_combined_draft_plan()
+    if plan.is_empty() or destination.get_file().to_lower() != last_gmp_path.get_file().to_lower():
+        status_label.text = "Combined Save As cancelled: draft or destination invalid."
+        return
+    native_combined_pending = {
+        "plan": plan.duplicate(true), "source": last_gmp_path,
+        "source_sha256": source_gamesys_sha256, "destination": destination
+    }
+    native_combined_confirmation.dialog_text = (
+        "EXPERIMENTAL combined native StaticMeshActor Save As."
+        + "\nMove originals: " + str(plan["moves"].size())
+        + "\nCreate copies: " + str(plan["copies"].size())
+        + "\nUnplace Level refs: " + str(plan["unplaces"].size())
+        + "\n\nNo rotation, scaling, scripts, IBD or BSP modifications."
+        + "\nOriginal actors and original game installation remain untouched."
+        + "\nUnplaced exports remain serialized; runtime behavior unverified."
+        + "\n\nCreate in isolated folder: " + destination)
+    native_combined_confirmation.popup_centered(Vector2i(760, 390))
+
+
+func _execute_native_combined_export() -> void:
+    if native_combined_pending.is_empty() or not _native_clone_source_ready():
+        native_combined_pending.clear()
+        status_label.text = "Combined Save As cancelled: source changed or worker active."
+        return
+    var frozen := native_combined_pending.duplicate(true)
+    native_combined_pending.clear()
+    if (frozen["source"] != last_gmp_path
+        or frozen["source_sha256"] != source_gamesys_sha256
+        or _native_combined_draft_plan() != frozen["plan"]):
+        status_label.text = "Combined Save As cancelled: native draft changed after confirmation."
+        return
+    var writer := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_native_prop_plan.py")
+    if not FileAccess.file_exists(writer):
+        status_label.text = "Combined native source writer is unavailable."
+        return
+    var plan_path := OS.get_user_data_dir().path_join("native_prop_plan_v060.json")
+    var stream := FileAccess.open(plan_path, FileAccess.WRITE)
+    if stream == null:
+        status_label.text = "Combined Save As could not write private plan file."
+        return
+    stream.store_string(JSON.stringify(frozen["plan"]))
+    stream.close()
+    frozen["plan_path"] = plan_path
+    native_export_thread = Thread.new()
+    var started := native_export_thread.start(_run_native_combined_export.bind(writer, frozen))
+    if started != OK:
+        native_export_thread = null
+        DirAccess.remove_absolute(plan_path)
+        status_label.text = "Combined native writer thread could not start."
+        return
+    status_label.text = "Validating move/copy/unplace edits and writing isolated native GMP..."
+
+
+func _run_native_combined_export(script: String, frozen: Dictionary) -> void:
+    var args := PackedStringArray([
+        script, str(frozen["source"]), "--source-sha256", str(frozen["source_sha256"]),
+        "--plan-json", str(frozen["plan_path"]), "--output", str(frozen["destination"])
+    ])
+    var output: Array = []
+    var status := OS.execute(PythonRuntime.executable(), args, output, true)
+    if status == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        status = OS.execute("py", pyargs, output, true)
+    call_deferred("_native_combined_export_finished", status, "\n".join(output),
+        str(frozen["plan_path"]), frozen["plan"].duplicate(true))
+
+
+func _native_combined_export_finished(status: int, response: String,
+        plan_path: String, original_plan: Dictionary) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    if FileAccess.file_exists(plan_path):
+        DirAccess.remove_absolute(plan_path)
+    var report: Variant = JSON.parse_string(response.strip_edges())
+    if (status == 0 and typeof(report) == TYPE_DICTIONARY
+        and report.get("schema") == "DX2Ed-experimental-native-prop-change-plan-v1"
+        and report.get("status") == "isolated-GMP-created-runtime-unverified"
+        and report.get("all_changes_scope_verified") == true
+        and report.get("original_source_unchanged") == true
+        and report.get("native_actor_exports_deleted") == false
+        and report.get("runtime_game_verified") == false
+        and report.get("game_installation_modified") == false
+        and typeof(report.get("moved", null)) == TYPE_ARRAY
+        and typeof(report.get("copied", null)) == TYPE_ARRAY
+        and typeof(report.get("unplaced", null)) == TYPE_ARRAY
+        and report["moved"].size() == original_plan["moves"].size()
+        and report["copied"].size() == original_plan["copies"].size()
+        and report["unplaced"].size() == original_plan["unplaces"].size()):
+        native_staged_unplaces.clear()
+        status_label.text = ("Combined static-prop GMP created: " + str(report.get("output_file", ""))
+            + " | " + str(report["moved"].size()) + " moved, "
+            + str(report["copied"].size()) + " cloned, "
+            + str(report["unplaced"].size()) + " unplaced. Runtime unverified.")
+        return
+    status_label.text = "Combined native writer refused: " + _native_clone_error_reason(response)
 
 
 func _open_native_save_as_dialog() -> void:
