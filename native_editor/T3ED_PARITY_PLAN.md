@@ -158,6 +158,26 @@ to-script references. This is an engineering validation bridge,
 not a native mission cooker. Source and full workflow details:
 docs/research/dx2ed-retail-trial-dossier-v0-64.md.
 
+## DX2Ed v0.65: reversible disposable retail game copy testing
+
+Building on v0.64's byte-replayed GMP trial dossier, the editor
+now supports a **guarded one-map A/B stage and rollback** restricted
+to a separately created game copy explicitly named
+`DX2Ed_Disposable_Test`. Prepare verifies the original GMP and
+isolated native candidate, creating a durable original-map backup
+and journal without modifying the map. Stage requires user
+confirmation and rechecks the source-pinned whole-GMP candidate
+before atomically replacing exactly one test-copy GMP. Restore checks
+the test map against known source/candidate hashes and refuses
+unknown data; interrupted operations can be inspected/recovered.
+
+No installer, game runtime automation or gameplay proof is involved.
+The user must verify that the directory is really a disposable copy,
+the game is closed, and saved games are not valuable. The next gate
+is collecting an actual in-game A/B observation dossier covering
+move/copy/unplace collision, re-entry and save/reload. See
+`docs/research/dx2ed-disposable-retail-trial-v0-65.md`.
+
 ## Immediate workflow
 
 Use the parity tracker in code review and keep its `missing`, `partial`, `verified` labels conservative. Do not equate a working preview with a working mod. Next engineering step is the DX2 IBD **Asset Browser**, followed by typed actor properties. Each cross-over feature requires its own DX2 format tests, then Windows/Godot UI tests and in-game validation.
