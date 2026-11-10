@@ -129,6 +129,7 @@ REQUIRED = (
     "native_editor/package_writer/dx2_actor_clone_probe.py",
     "native_editor/package_writer/dx2_actor_unplace_probe.py",
     "native_editor/package_writer/dx2_native_prop_plan.py",
+    "native_editor/package_writer/dx2_mod_recipe.py",
     "map_exporter/dx2_map_exporter.py",
     "actor_explorer/dx2_actor_explorer.py",
     "research/dx2/private_zip_package_audit.py",
