@@ -123,6 +123,23 @@ refs" must not be marketed as "safe native actor deletion." Original
 exports remain serialized and retail gameplay needs separate A/B tests.
 See docs/research/dx2ed-explicit-incoming-reference-audit-v0-62.md.
 
+## DX2Ed v0.63 original GMP / IBD / TriggerScript evidence overlay
+
+Building on the v0.62 explicit GMP incoming-object reference audit,
+v0.63 cross-checks a selected original StaticMeshActor with independently
+validated original TriggerScript ZIP and IBD resource identities.
+The Scripts tab shows confirmed typed GMP links and TSD/IBD exact-
+payload counts in a read-only dialog, recording a full private JSON
+report outside game directories. The CLI verifies original GMP, actor
+cache, ZIP and IBD hashes and refuses stale sources.
+
+**Strict distinction:** exact source TSD/IBD bytes demonstrate resource
+identity, NOT verified actor-to-script binding. Raw GameSys 92 integers
+and package name-table offsets have not been proven to identify
+runtime scripts. This tool does not modify native game packages or
+turn absent known links into an actor-deletion safety claim.
+See docs/research/dx2ed-crosssource-script-ref-review-v0-63.md.
+
 ## Immediate workflow
 
 Use the parity tracker in code review and keep its `missing`, `partial`, `verified` labels conservative. Do not equate a working preview with a working mod. Next engineering step is the DX2 IBD **Asset Browser**, followed by typed actor properties. Each cross-over feature requires its own DX2 format tests, then Windows/Godot UI tests and in-game validation.

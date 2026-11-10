@@ -993,3 +993,26 @@ and actual retail gameplay are outside this check and remain
 **unverified**. Only the original Level actor reference is removed.
 No source map or installed game content is modified by the SDK.
 See docs/research/dx2ed-explicit-incoming-reference-audit-v0-62.md.
+
+## DX2Ed v0.63 read-only original GMP / TriggerScript IBD reference review
+
+The Godot **Scripts** tab now has **Review selected prop: GMP links +
+original IBD scripts...**. First open an unchanged original DX2 map and
+its source-bound actors cache, import original TriggerScript.zip, and
+verify script-resource identities in an original mission or Kernel IBD.
+Select exactly one original StaticMeshActor. This button combines
+v0.62's independently decoded typed GMP incoming-reference hits with
+exact original TSD-to-IBD script-resource provenance in a separate
+read-only source-hash-pinned Python worker. The viewer displays
+reference counts, original matching/differing script payload counts and
+a private JSON report path under Godot's user data.
+
+The reader native_editor/package_writer/dx2_crosssource_ref_review.py
+also runs as a standalone research CLI with optional private JSON
+output. It never edits GMP/IBD/ZIP, changes original game assets or
+executes scripts. **Exact IBD resource byte identity is not evidence
+that any particular actor runs a script**: native GameSys 92 numeric
+binding semantics remain unverified. Even an empty GMP explicit-link
+list does not establish full incoming-link coverage or runtime-safe
+prop removal. See
+docs/research/dx2ed-crosssource-script-ref-review-v0-63.md.

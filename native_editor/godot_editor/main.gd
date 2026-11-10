@@ -243,6 +243,10 @@ var gameplay_index_audit_button: Button
 var gameplay_copy_index_audit_button: Button
 var gameplay_ibd_evidence: Dictionary = {}
 var gameplay_ibd_by_id: Dictionary = {}
+var gameplay_crosssource_button: Button
+var gameplay_crosssource_dialog: AcceptDialog
+var gameplay_crosssource_thread: Thread = null
+var gameplay_crosssource_ibd_path := ""
 # Separate original mission IBD / shared Kernel_TSDALL bytes. Metadata only,
 # never used by game writers, and never sent out of Godot's private cache.
 var gameplay_verified_mission_ibd_path := ""
@@ -1088,6 +1092,14 @@ func _make_ui() -> void:
     gameplay_ibd_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     gameplay_ibd_status.text = "Select your own original TriggerScript ZIP before checking IBD resources."
     gameplay_tab.add_child(gameplay_ibd_status)
+    gameplay_crosssource_button = Button.new()
+    gameplay_crosssource_button.text = "Review selected prop: GMP links + original IBD scripts..."
+    gameplay_crosssource_button.disabled = true
+    gameplay_crosssource_button.tooltip_text = (
+        "Review typed original GMP references plus original TSD/IBD resource identity. "
+        + "Numeric actor-script bindings remain UNKNOWN.")
+    gameplay_crosssource_button.pressed.connect(_review_selected_original_prop_dependencies)
+    gameplay_tab.add_child(gameplay_crosssource_button)
     gameplay_kernel_compare_button = Button.new()
     gameplay_kernel_compare_button.text = "Compare mission IBD against Kernel_TSDALL..."
     gameplay_kernel_compare_button.tooltip_text = (
@@ -2079,6 +2091,9 @@ func _make_ui() -> void:
         "*.ibd ; Original Deus Ex Invisible War mission/Kernel resource IBD"])
     gameplay_ibd_dialog.file_selected.connect(_open_original_script_ibd)
     add_child(gameplay_ibd_dialog)
+    gameplay_crosssource_dialog = AcceptDialog.new()
+    gameplay_crosssource_dialog.title = "Original GMP + TriggerScript IBD actor reference review"
+    add_child(gameplay_crosssource_dialog)
     gameplay_kernel_dialog = FileDialog.new()
     gameplay_kernel_dialog.access = FileDialog.ACCESS_FILESYSTEM
     gameplay_kernel_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -3062,6 +3077,9 @@ func _clear_current_scene() -> void:
     gameplay_ibd_evidence.clear()
     gameplay_ibd_by_id.clear()
     gameplay_actor_name_slots_by_export.clear()
+    gameplay_crosssource_ibd_path = ""
+    if gameplay_crosssource_button != null:
+        gameplay_crosssource_button.disabled = true
     gameplay_verified_mission_ibd_path = ""
     gameplay_kernel_comparison.clear()
     if gameplay_kernel_compare_button != null:
@@ -3333,6 +3351,9 @@ func _original_gameplay_scripts_finished(code: int, response: String,
     gameplay_ibd_evidence.clear()
     gameplay_ibd_by_id.clear()
     gameplay_actor_name_slots_by_export.clear()
+    gameplay_crosssource_ibd_path = ""
+    if gameplay_crosssource_button != null:
+        gameplay_crosssource_button.disabled = true
     gameplay_verified_mission_ibd_path = ""
     gameplay_kernel_comparison.clear()
     if gameplay_kernel_compare_button != null:
@@ -3611,6 +3632,9 @@ func _script_ibd_finished(code: int, response: String, source: String,
     gameplay_ibd_evidence = doc
     gameplay_ibd_by_id = exact
     gameplay_actor_name_slots_by_export = validated_name_slots
+    gameplay_crosssource_ibd_path = ibd
+    if gameplay_crosssource_button != null:
+        gameplay_crosssource_button.disabled = false
     gameplay_verified_mission_ibd_path = ""
     gameplay_kernel_comparison.clear()
     if gameplay_kernel_script_button != null:
@@ -4075,6 +4099,157 @@ func _dialogue_load() -> void:
     status_label.text = (
         "Loaded %d source-pinned dialogue design lines. "
         + "No native conversation export.") % dialogue_design.nodes.size()
+
+
+## v0.63 research: present ORIGINAL GMP typed incoming references beside
+## independently proven TSD/IBD resource identities. Not runtime bindings.
+func _review_selected_original_prop_dependencies() -> void:
+    if (gameplay_crosssource_thread != null or gameplay_ibd_thread != null
+        or gameplay_thread != null or build_thread != null
+        or gameplay_crosssource_ibd_path.is_empty()
+        or gameplay_script_zip_path.is_empty() or loaded_actors_json_path.is_empty()
+        or last_gmp_path.is_empty() or gameplay_catalog.is_empty()
+        or not FileAccess.file_exists(last_gmp_path)
+        or not FileAccess.file_exists(loaded_actors_json_path)
+        or not FileAccess.file_exists(gameplay_crosssource_ibd_path)
+        or not FileAccess.file_exists(gameplay_script_zip_path)
+        or FileAccess.get_sha256(last_gmp_path) != source_gamesys_sha256
+        or FileAccess.get_sha256(gameplay_script_zip_path)
+            != str(gameplay_catalog.get("script_archive_sha256", ""))
+        or FileAccess.get_sha256(gameplay_crosssource_ibd_path)
+            != str(gameplay_ibd_evidence.get("ibd_sha256", ""))):
+        status_label.text = "Review refused: original GMP, script ZIP or IBD evidence missing/changed."
+        return
+    var actor: Dictionary = selected_actor
+    if is_instance_valid(selected_mesh) and actors_by_name.has(str(selected_mesh.name)):
+        actor = actors_by_name[str(selected_mesh.name)]
+    if (actor.is_empty() or str(actor.get("class", "")) != "StaticMeshActor"
+        or typeof(actor.get("export", null)) != TYPE_INT or int(actor["export"]) < 1
+        or not actors_by_name.has(str(actor.get("name", "")))):
+        status_label.text = "Review needs one selected ORIGINAL StaticMeshActor."
+        return
+    var script := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_crosssource_ref_review.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Cross-source reviewer is missing from the prototype."
+        return
+    var target := OS.get_user_data_dir().path_join(
+        "original_prop_reference_review_%d.json" % Time.get_ticks_usec())
+    var frozen := {
+        "map": last_gmp_path, "sha": source_gamesys_sha256,
+        "actor": str(actor["name"]), "export": int(actor["export"]),
+        "actors": loaded_actors_json_path, "scripts": gameplay_script_zip_path,
+        "ibd": gameplay_crosssource_ibd_path,
+        "ibd_sha256": FileAccess.get_sha256(gameplay_crosssource_ibd_path),
+        "target": target
+    }
+    gameplay_crosssource_thread = Thread.new()
+    var err := gameplay_crosssource_thread.start(_crosssource_review_worker.bind(
+        script, frozen))
+    if err != OK:
+        gameplay_crosssource_thread = null
+        status_label.text = "Unable to start read-only cross-source review worker."
+        return
+    status_label.text = "Cross-checking original GMP references with TSD/IBD resource evidence..."
+
+
+func _crosssource_review_worker(script: String, frozen: Dictionary) -> void:
+    var args := PackedStringArray([
+        script, "--map", str(frozen["map"]),
+        "--source-sha256", str(frozen["sha"]),
+        "--actor-export", str(frozen["export"]),
+        "--actor-name", str(frozen["actor"]),
+        "--actors", str(frozen["actors"]),
+        "--scripts", str(frozen["scripts"]),
+        "--ibd", str(frozen["ibd"]), "--output", str(frozen["target"])
+    ])
+    var output: Array = []
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
+    if code == -1:
+        var launcher := PackedStringArray(["-3"])
+        launcher.append_array(args)
+        output.clear()
+        code = OS.execute("py", launcher, output, true)
+    call_deferred("_crosssource_review_finished", code, "\n".join(output), frozen)
+
+
+func _crosssource_review_finished(code: int, response: String, frozen: Dictionary) -> void:
+    if gameplay_crosssource_thread != null:
+        gameplay_crosssource_thread.wait_to_finish()
+        gameplay_crosssource_thread = null
+    if (str(frozen["map"]) != last_gmp_path
+        or str(frozen["sha"]) != source_gamesys_sha256
+        or str(frozen["scripts"]) != gameplay_script_zip_path
+        or str(frozen["ibd"]) != gameplay_crosssource_ibd_path
+        or not FileAccess.file_exists(last_gmp_path)
+        or FileAccess.get_sha256(last_gmp_path) != source_gamesys_sha256
+        or not FileAccess.file_exists(gameplay_crosssource_ibd_path)
+        or FileAccess.get_sha256(gameplay_crosssource_ibd_path) != frozen["ibd_sha256"]):
+        status_label.text = "Stale cross-source evidence discarded after source change."
+        return
+    var parsed: Variant = JSON.parse_string(response.strip_edges())
+    var output_path := str(frozen["target"])
+    if (code != 0 or typeof(parsed) != TYPE_DICTIONARY
+        or parsed.get("schema") != "DX2Ed-original-cross-source-unplace-evidence-v1"
+        or parsed.get("read_only") != true or parsed.get("output_written") != true
+        or parsed.get("actor_to_script_binding_verified") != false
+        or parsed.get("safe_to_unplace_claimed") != false
+        or parsed.get("gameplay_runtime_verified") != false
+        or not FileAccess.file_exists(output_path)):
+        status_label.text = "Cross-source review refused: unverified original resources."
+        return
+    var report: Variant = JSON.parse_string(FileAccess.get_file_as_string(output_path))
+    if (typeof(report) != TYPE_DICTIONARY
+        or report.get("schema") != "DX2Ed-original-cross-source-unplace-evidence-v1"
+        or report.get("source_map_sha256") != source_gamesys_sha256
+        or report.get("target_actor") != frozen["actor"]
+        or report.get("target_export") != frozen["export"]
+        or report.get("original_ibd_sha256") != frozen["ibd_sha256"]
+        or report.get("read_only") != true
+        or report.get("incoming_script_links_verified") != false
+        or report.get("target_actor_to_script_binding_verified") != false
+        or report.get("full_incoming_reference_graph_verified") != false
+        or report.get("safe_to_unplace_claimed") != false
+        or report.get("gameplay_runtime_verified") != false
+        or report.get("source_gmp_modified") != false
+        or report.get("source_ibd_modified") != false):
+        status_label.text = "Cross-source evidence rejected: source identity or flags mismatch."
+        return
+    var hits: Variant = report.get("gmp_explicit_incoming_references", [])
+    var counts: Variant = report.get("original_ibd_script_resource_counts", {})
+    if typeof(hits) != TYPE_ARRAY or typeof(counts) != TYPE_DICTIONARY:
+        status_label.text = "Cross-source evidence structure is malformed."
+        return
+    var lines := PackedStringArray([
+        "Original prop: " + str(frozen["actor"]),
+        "One-based export: " + str(frozen["export"]),
+        "Confirmed incoming GMP object references: "
+            + str(report.get("gmp_explicit_incoming_count", "?")),
+        "GMP opaque/untyped scopes: "
+            + str(report.get("gmp_opaque_or_untyped_scopes", "?")),
+        "Original exact TSD / IBD payloads: " + str(counts.get("exact_payload", 0)),
+        "Original differing TSD / IBD payloads: " + str(counts.get("different_payload", 0)),
+        "Target GameSys 92 native status: "
+            + str(report.get("target_game_property_92_status", "unknown")),
+        "",
+        "Exact TSD/IBD bytes do NOT verify actor-to-script links.",
+        "Unknown incoming script/AI/native references remain unresolved.",
+        "No playable runtime or safe actor deletion claim is made.",
+        "",
+        "Private research JSON: " + output_path
+    ])
+    if not hits.is_empty():
+        lines.append("")
+        lines.append("Confirmed incoming original GMP links:")
+        for hit in hits.slice(0, 10):
+            if typeof(hit) == TYPE_DICTIONARY:
+                lines.append("  " + str(hit.get("source_actor", "?"))
+                    + ": " + str(hit.get("field", "?")))
+        if hits.size() > 10 or report.get("gmp_reference_list_truncated") == true:
+            lines.append("  More confirmed hits are in the private JSON.")
+    gameplay_crosssource_dialog.dialog_text = "\n".join(lines)
+    gameplay_crosssource_dialog.popup_centered(Vector2i(740, 460))
+    status_label.text = "Original GMP + script IBD evidence collected (read-only, unverified bindings)."
 
 
 func _inspect_selected_actor_scripts() -> void:
