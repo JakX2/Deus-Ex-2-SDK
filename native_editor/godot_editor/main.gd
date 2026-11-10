@@ -210,6 +210,11 @@ var native_trial_candidate_dialog: FileDialog
 var native_trial_dossier_dialog: FileDialog
 var native_trial_confirmation: ConfirmationDialog
 var native_trial_pending: Dictionary = {}
+var native_sandbox_action: OptionButton
+var native_sandbox_candidate_dialog: FileDialog
+var native_sandbox_root_dialog: FileDialog
+var native_sandbox_confirmation: ConfirmationDialog
+var native_sandbox_pending: Dictionary = {}
 var native_staged_unplaces: Dictionary = {} # original actor name -> one-based original export
 var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
@@ -843,6 +848,17 @@ func _make_ui() -> void:
         + "Does NOT launch or install the game.")
     trial_button.pressed.connect(_open_native_trial_candidate_dialog)
     prop_bar.add_child(trial_button)
+    native_sandbox_action = OptionButton.new()
+    for mode in ["Prepare backup", "Stage test GMP", "Restore original", "Inspect test copy"]:
+        native_sandbox_action.add_item(mode)
+    native_sandbox_action.tooltip_text = (
+        "Only a separate DX2Ed_Disposable_Test game copy. Stage is explicitly confirmed; "
+        + "rollback backup is preserved. No game is launched.")
+    prop_bar.add_child(native_sandbox_action)
+    var sandbox_button := Button.new()
+    sandbox_button.text = "Disposable Game Trial..."
+    sandbox_button.pressed.connect(_open_native_sandbox_trial)
+    prop_bar.add_child(sandbox_button)
     prop_edit_step = SpinBox.new()
     prop_edit_step.min_value = 0.05
     prop_edit_step.max_value = 64.0
@@ -2058,6 +2074,22 @@ func _make_ui() -> void:
     native_trial_confirmation.title = "Confirm private, no-game-install retail test checklist"
     native_trial_confirmation.confirmed.connect(_execute_native_trial_dossier)
     add_child(native_trial_confirmation)
+    native_sandbox_candidate_dialog = FileDialog.new()
+    native_sandbox_candidate_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_sandbox_candidate_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    native_sandbox_candidate_dialog.filters = PackedStringArray([
+        "*.gmp ; Isolated, already verified experimental GMP"])
+    native_sandbox_candidate_dialog.file_selected.connect(_stage_sandbox_candidate)
+    add_child(native_sandbox_candidate_dialog)
+    native_sandbox_root_dialog = FileDialog.new()
+    native_sandbox_root_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_sandbox_root_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+    native_sandbox_root_dialog.dir_selected.connect(_stage_sandbox_root)
+    add_child(native_sandbox_root_dialog)
+    native_sandbox_confirmation = ConfirmationDialog.new()
+    native_sandbox_confirmation.title = "Confirm disposable DX2 test game copy operation"
+    native_sandbox_confirmation.confirmed.connect(_execute_sandbox_trial)
+    add_child(native_sandbox_confirmation)
     environment_sound_dialog = FileDialog.new()
     environment_sound_dialog.access = FileDialog.ACCESS_FILESYSTEM
     environment_sound_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -3147,6 +3179,7 @@ func _clear_current_scene() -> void:
     native_recipe_pending.clear()
     native_recipe_apply_pending.clear()
     native_trial_pending.clear()
+    native_sandbox_pending.clear()
     native_staged_unplaces.clear()
     next_prop_copy_id = 1
     undo_stack.clear()
