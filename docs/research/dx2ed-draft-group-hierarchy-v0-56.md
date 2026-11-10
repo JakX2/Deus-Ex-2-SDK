@@ -24,3 +24,9 @@ The Godot 4.3 regression creates synthetic Polygon previews plus a synthetic act
 This is a useful T3Ed-style hierarchy milestone, not proof of Thief 3's exact group implementation or native DX2 object ownership. The T3SDK inventory in the parity plan identifies separate editor/viewer concerns but does not establish that the two games share scene or BSP formats. No direct Google Drive connector was exposed during this run, and the Library search did not return a relevant T3Ed grouping source; no proprietary T3SDK code was copied.
 
 All group nodes and membership remain private Godot editor state. They are not serialized into GMP/IBD/BSP/CSG/leaf/zone/collision/lightmap/TriggerScript/GameSys data. Original retail files remain read-only. No native playable custom-level claim is made.
+
+## Follow-on v0.57: safe private group renaming
+
+The Hierarchy row now has a **Rename** action beside Group selected and Ungroup. Select exactly one editor-private group row, enter an ASCII group name (1–48 letters/digits/underscores) and choose Rename. Existing names, invalid names, unchanged names and missing/multiple group selections are refused before mutation. Rename updates the group Dictionary key, the existing Node3D name/identity metadata and selected-group identity without reparenting members or changing any transforms. The change is recorded in the same private Undo/Redo history; serialized JSON uses the new name, while old drafts remain readable. The Godot 4.3 synthetic group smoke now covers rename, Undo, Redo, invalid input and private-serialization identity.
+
+This is still only Godot editor grouping. It neither modifies the original GMP/IBD nor claims DX2 native group/actor support. Manual Windows viewport verification remains outstanding.
