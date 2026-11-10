@@ -199,6 +199,13 @@ var native_unplace_pending: Dictionary = {}
 var native_combined_dialog: FileDialog
 var native_combined_confirmation: ConfirmationDialog
 var native_combined_pending: Dictionary = {}
+var native_recipe_dialog: FileDialog
+var native_recipe_confirmation: ConfirmationDialog
+var native_recipe_pending: Dictionary = {}
+var native_recipe_import_dialog: FileDialog
+var native_recipe_output_dialog: FileDialog
+var native_recipe_apply_confirmation: ConfirmationDialog
+var native_recipe_apply_pending: Dictionary = {}
 var native_staged_unplaces: Dictionary = {} # original actor name -> one-based original export
 var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
@@ -806,6 +813,20 @@ func _make_ui() -> void:
         + "At least two kinds of changes required; native runtime unverified.")
     combined_save_button.pressed.connect(_open_native_combined_dialog)
     prop_bar.add_child(combined_save_button)
+    var recipe_button := Button.new()
+    recipe_button.text = "Export Mod Recipe..."
+    recipe_button.tooltip_text = (
+        "Export a source-SHA-locked JSON recipe of combined native prop moves, "
+        + "copies and staged unplacements, without distributing any GMP bytes.")
+    recipe_button.pressed.connect(_open_native_recipe_dialog)
+    prop_bar.add_child(recipe_button)
+    var recipe_import_button := Button.new()
+    recipe_import_button.text = "Apply Mod Recipe to Isolated GMP..."
+    recipe_import_button.tooltip_text = (
+        "Use a shared .dx2edmod.json recipe with your ORIGINAL matching GMP. "
+        + "First perform read-only reconstruction, then Save As a NEW isolated test GMP.")
+    recipe_import_button.pressed.connect(_open_native_recipe_import_dialog)
+    prop_bar.add_child(recipe_import_button)
     prop_edit_step = SpinBox.new()
     prop_edit_step.min_value = 0.05
     prop_edit_step.max_value = 64.0
@@ -1971,6 +1992,32 @@ func _make_ui() -> void:
     native_combined_confirmation.title = "Confirm combined experimental DX2 static prop map edits"
     native_combined_confirmation.confirmed.connect(_execute_native_combined_export)
     add_child(native_combined_confirmation)
+    native_recipe_dialog = FileDialog.new()
+    native_recipe_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_recipe_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    native_recipe_dialog.filters = PackedStringArray(["*.dx2edmod.json ; Source-pinned native prop mod recipe"])
+    native_recipe_dialog.file_selected.connect(_stage_native_recipe_export)
+    add_child(native_recipe_dialog)
+    native_recipe_confirmation = ConfirmationDialog.new()
+    native_recipe_confirmation.title = "Confirm content-free DX2Ed mod recipe export"
+    native_recipe_confirmation.confirmed.connect(_execute_native_recipe_export)
+    add_child(native_recipe_confirmation)
+    native_recipe_import_dialog = FileDialog.new()
+    native_recipe_import_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_recipe_import_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    native_recipe_import_dialog.filters = PackedStringArray(["*.dx2edmod.json ; Source-pinned DX2Ed mod recipe"])
+    native_recipe_import_dialog.file_selected.connect(_native_recipe_import_selected)
+    add_child(native_recipe_import_dialog)
+    native_recipe_output_dialog = FileDialog.new()
+    native_recipe_output_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_recipe_output_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    native_recipe_output_dialog.filters = PackedStringArray(["*.gmp ; Isolated rebuilt DX2 GMP"])
+    native_recipe_output_dialog.file_selected.connect(_stage_native_recipe_apply_destination)
+    add_child(native_recipe_output_dialog)
+    native_recipe_apply_confirmation = ConfirmationDialog.new()
+    native_recipe_apply_confirmation.title = "Confirm offline reconstruction of shared mod recipe"
+    native_recipe_apply_confirmation.confirmed.connect(_execute_native_recipe_apply)
+    add_child(native_recipe_apply_confirmation)
     environment_sound_dialog = FileDialog.new()
     environment_sound_dialog.access = FileDialog.ACCESS_FILESYSTEM
     environment_sound_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -3051,6 +3098,8 @@ func _clear_current_scene() -> void:
     native_multi_pending.clear()
     native_unplace_pending.clear()
     native_combined_pending.clear()
+    native_recipe_pending.clear()
+    native_recipe_apply_pending.clear()
     native_staged_unplaces.clear()
     next_prop_copy_id = 1
     undo_stack.clear()
@@ -10241,6 +10290,292 @@ func _native_combined_export_finished(status: int, response: String,
             + str(report["unplaced"].size()) + " unplaced. Runtime unverified.")
         return
     status_label.text = "Combined native writer refused: " + _native_clone_error_reason(response)
+
+
+## v0.61: share a source-pinned JSON mod recipe, never a proprietary GMP.
+## All source identities and preview edits are validated by the same combined
+## plan gate and the Python offline whole-file replay compiler.
+func _open_native_recipe_dialog() -> void:
+    _finish_gizmo_drag()
+    native_recipe_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Recipe export refused: original GMP/hash changed or writer active."
+        return
+    var plan := _native_combined_draft_plan()
+    if plan.is_empty():
+        status_label.text = "Recipe needs valid combined move/copy/unplace edits (two distinct kinds)."
+        return
+    var script := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_mod_recipe.py")
+    var checker := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_actor_clone_probe.py")
+    if not FileAccess.file_exists(script) or not FileAccess.file_exists(checker):
+        status_label.text = "Portable recipe writer or source verifier is missing."
+        return
+    for kind in ["moves", "copies", "unplaces"]:
+        for row in plan[kind]:
+            var verdict := _native_clone_check_actor(checker, row)
+            if not verdict.get("eligible", false):
+                status_label.text = "Recipe source refused " + str(row["actor"])
+                status_label.text += ": " + str(verdict.get("reason", "Unverified source."))
+                return
+    native_recipe_dialog.current_file = current_source_map_name.get_basename() + ".dx2edmod.json"
+    native_recipe_dialog.popup_centered_ratio(0.75)
+
+
+func _stage_native_recipe_export(destination: String) -> void:
+    native_recipe_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Recipe cancelled: source GMP changed."
+        return
+    var plan := _native_combined_draft_plan()
+    if (plan.is_empty() or not destination.ends_with(".dx2edmod.json")
+        or destination.get_file().length() < 16):
+        status_label.text = "Recipe cancelled: invalid source, changes or .dx2edmod.json filename."
+        return
+    native_recipe_pending = {
+        "plan": plan.duplicate(true), "source": last_gmp_path,
+        "source_sha256": source_gamesys_sha256, "destination": destination
+    }
+    native_recipe_confirmation.dialog_text = (
+        "Export only a portable JSON recipe. NO GMP, IBD or retail assets."
+        + "\nMoved originals: " + str(plan["moves"].size())
+        + "\nNew copies: " + str(plan["copies"].size())
+        + "\nUnplaced Level refs: " + str(plan["unplaces"].size())
+        + "\n\nThis recipe only works with an exact matching original GMP SHA-256."
+        + "\nIt is NOT a playable mod until the receiver rebuilds and tests it."
+        + "\nNo game files or source GMP will be written or installed."
+        + "\n\nDestination: " + destination)
+    native_recipe_confirmation.popup_centered(Vector2i(740, 390))
+
+
+func _execute_native_recipe_export() -> void:
+    if native_recipe_pending.is_empty() or not _native_clone_source_ready():
+        native_recipe_pending.clear()
+        status_label.text = "Recipe export cancelled: writer busy or source changed."
+        return
+    var frozen := native_recipe_pending.duplicate(true)
+    native_recipe_pending.clear()
+    if (frozen["source"] != last_gmp_path
+        or frozen["source_sha256"] != source_gamesys_sha256
+        or _native_combined_draft_plan() != frozen["plan"]):
+        status_label.text = "Recipe export cancelled: native scene plan changed."
+        return
+    var writer := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_mod_recipe.py")
+    if not FileAccess.file_exists(writer):
+        status_label.text = "Portable native mod recipe writer is unavailable."
+        return
+    var plan_path := OS.get_user_data_dir().path_join("native_mod_recipe_plan_v061.json")
+    var stream := FileAccess.open(plan_path, FileAccess.WRITE)
+    if stream == null:
+        status_label.text = "Recipe export failed to stage a private temporary plan."
+        return
+    stream.store_string(JSON.stringify(frozen["plan"]))
+    stream.close()
+    frozen["plan_path"] = plan_path
+    native_export_thread = Thread.new()
+    var started := native_export_thread.start(_run_native_recipe_export.bind(writer, frozen))
+    if started != OK:
+        native_export_thread = null
+        DirAccess.remove_absolute(plan_path)
+        status_label.text = "Recipe export failed to start Python worker."
+        return
+    status_label.text = "Verifying original GMP and producing portable content-free mod recipe..."
+
+
+func _run_native_recipe_export(script: String, frozen: Dictionary) -> void:
+    var args := PackedStringArray([
+        script, str(frozen["source"]), "--source-sha256", str(frozen["source_sha256"]),
+        "--plan-json", str(frozen["plan_path"]),
+        "--export-recipe", str(frozen["destination"])
+    ])
+    var output: Array = []
+    var status := OS.execute(PythonRuntime.executable(), args, output, true)
+    if status == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        status = OS.execute("py", pyargs, output, true)
+    call_deferred("_native_recipe_export_finished", status, "\n".join(output),
+        str(frozen["plan_path"]), frozen["plan"].duplicate(true))
+
+
+func _native_recipe_export_finished(status: int, response: String,
+        plan_path: String, original_plan: Dictionary) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    if FileAccess.file_exists(plan_path):
+        DirAccess.remove_absolute(plan_path)
+    var report: Variant = JSON.parse_string(response.strip_edges())
+    if (status == 0 and typeof(report) == TYPE_DICTIONARY
+        and report.get("schema") == "DX2Ed-portable-native-static-prop-recipe-v1"
+        and report.get("status") == "source-verified-mod-recipe-created"
+        and report.get("includes_retail_assets") == false
+        and report.get("gmp_output_written") == false
+        and report.get("runtime_game_verified") == false
+        and report.get("game_installation_modified") == false
+        and typeof(report.get("operation_counts", null)) == TYPE_DICTIONARY
+        and int(report["operation_counts"].get("moves", -1)) == original_plan["moves"].size()
+        and int(report["operation_counts"].get("copies", -1)) == original_plan["copies"].size()
+        and int(report["operation_counts"].get("unplaces", -1)) == original_plan["unplaces"].size()):
+        status_label.text = ("Content-free mod recipe exported: " + str(report.get("recipe_file", ""))
+            + " | Share the JSON only. Requires original DX2 map to reconstruct.")
+        return
+    status_label.text = "Portable mod recipe export refused: " + _native_clone_error_reason(response)
+
+
+## v0.61 importing a shared recipe never writes anything until the owner
+## selects a separate GMP output and explicitly confirms the action.
+func _open_native_recipe_import_dialog() -> void:
+    _finish_gizmo_drag()
+    native_recipe_apply_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Recipe import requires the exact original GMP and no active writer."
+        return
+    var script := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_mod_recipe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Portable mod recipe reader is unavailable."
+        return
+    native_recipe_import_dialog.popup_centered_ratio(0.75)
+
+
+func _native_recipe_import_selected(path: String) -> void:
+    native_recipe_apply_pending.clear()
+    if not _native_clone_source_ready() or not path.ends_with(".dx2edmod.json"):
+        status_label.text = "Recipe import refused: source GMP changed or invalid recipe filename."
+        return
+    if not FileAccess.file_exists(path):
+        status_label.text = "Recipe file no longer exists."
+        return
+    var script := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_mod_recipe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Portable recipe checker is missing."
+        return
+    # Python verifies the exact source map hash and locally compiles the
+    # EXPECTED entire GMP in memory, without writing a candidate.
+    var args := PackedStringArray([script, last_gmp_path, "--recipe", path])
+    var output: Array = []
+    var status := OS.execute(PythonRuntime.executable(), args, output, true)
+    if status == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        status = OS.execute("py", pyargs, output, true)
+    var response := "\n".join(output).strip_edges()
+    var parsed: Variant = JSON.parse_string(response)
+    if (status != 0 or typeof(parsed) != TYPE_DICTIONARY
+        or parsed.get("schema") != "DX2Ed-portable-native-static-prop-recipe-v1"
+        or parsed.get("status") != "recipe-recompiled-runtime-unverified"
+        or parsed.get("source_sha256") != source_gamesys_sha256
+        or parsed.get("gmp_output_written") != false
+        or parsed.get("includes_retail_assets") != false
+        or parsed.get("runtime_game_verified") != false
+        or parsed.get("game_installation_modified") != false):
+        status_label.text = "Shared recipe refused: " + _native_clone_error_reason(response)
+        return
+    var candidate_hash := str(parsed.get("candidate_sha256", ""))
+    if candidate_hash.length() != 64:
+        status_label.text = "Recipe refused: reconstructed candidate SHA-256 invalid."
+        return
+    native_recipe_apply_pending = {
+        "source": last_gmp_path, "source_sha256": source_gamesys_sha256,
+        "recipe": path, "recipe_sha256": FileAccess.get_sha256(path),
+        "candidate_sha256": candidate_hash
+    }
+    native_recipe_output_dialog.current_file = last_gmp_path.get_file()
+    native_recipe_output_dialog.popup_centered_ratio(0.75)
+    status_label.text = "Shared recipe validated against your original GMP. Choose a NEW isolated output directory."
+
+
+func _stage_native_recipe_apply_destination(destination: String) -> void:
+    if (native_recipe_apply_pending.is_empty() or not _native_clone_source_ready()
+        or destination.get_file().to_lower() != last_gmp_path.get_file().to_lower()
+        or not FileAccess.file_exists(str(native_recipe_apply_pending.get("recipe", "")))):
+        native_recipe_apply_pending.clear()
+        status_label.text = "Recipe application cancelled: source, recipe or output map name changed."
+        return
+    native_recipe_apply_pending["destination"] = destination
+    native_recipe_apply_confirmation.dialog_text = (
+        "Build a new native GMP from this shareable mod recipe?"
+        + "\nRecipe: " + str(native_recipe_apply_pending["recipe"])
+        + "\nSource SHA-256: " + source_gamesys_sha256
+        + "\nExpected candidate SHA-256: " + str(native_recipe_apply_pending["candidate_sha256"])
+        + "\n\nOutput: " + destination
+        + "\n\nThis is a NEW ISOLATED GMP, not an installation."
+        + "\nNo original map, game content or saved games are modified."
+        + "\nOriginal DX2 runtime behavior remains unverified.")
+    native_recipe_apply_confirmation.popup_centered(Vector2i(760, 440))
+
+
+func _execute_native_recipe_apply() -> void:
+    if native_recipe_apply_pending.is_empty() or not _native_clone_source_ready():
+        native_recipe_apply_pending.clear()
+        status_label.text = "Shared recipe application cancelled: source changed or writer busy."
+        return
+    var frozen := native_recipe_apply_pending.duplicate(true)
+    native_recipe_apply_pending.clear()
+    var recipe_path := str(frozen.get("recipe", ""))
+    if (str(frozen.get("source", "")) != last_gmp_path
+        or str(frozen.get("source_sha256", "")) != source_gamesys_sha256
+        or not FileAccess.file_exists(recipe_path)
+        or FileAccess.get_sha256(recipe_path) != str(frozen.get("recipe_sha256", ""))
+        or not frozen.has("destination")):
+        status_label.text = "Shared recipe refused: source or recipe changed after preflight."
+        return
+    var writer := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_mod_recipe.py")
+    if not FileAccess.file_exists(writer):
+        status_label.text = "Shared recipe Python writer is unavailable."
+        return
+    native_export_thread = Thread.new()
+    var started := native_export_thread.start(_run_native_recipe_apply.bind(writer, frozen))
+    if started != OK:
+        native_export_thread = null
+        status_label.text = "Shared recipe rebuild worker could not start."
+        return
+    status_label.text = "Recompiling shared recipe, verifying each native byte and writing isolated GMP..."
+
+
+func _run_native_recipe_apply(script: String, frozen: Dictionary) -> void:
+    var args := PackedStringArray([
+        script, str(frozen["source"]), "--recipe", str(frozen["recipe"]),
+        "--output", str(frozen["destination"])
+    ])
+    var output: Array = []
+    var status := OS.execute(PythonRuntime.executable(), args, output, true)
+    if status == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        status = OS.execute("py", pyargs, output, true)
+    call_deferred("_native_recipe_apply_finished", status, "\n".join(output),
+        str(frozen["candidate_sha256"]), str(frozen["destination"]))
+
+
+func _native_recipe_apply_finished(status: int, response: String,
+        expected_hash: String, output_path: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    var report: Variant = JSON.parse_string(response.strip_edges())
+    if (status == 0 and typeof(report) == TYPE_DICTIONARY
+        and report.get("schema") == "DX2Ed-portable-native-static-prop-recipe-v1"
+        and report.get("status") == "isolated-GMP-rebuilt-from-portable-recipe-runtime-unverified"
+        and report.get("candidate_sha256") == expected_hash
+        and report.get("output_file") == output_path
+        and report.get("all_candidate_bytes_replayed") == true
+        and report.get("gmp_output_written") == true
+        and report.get("includes_retail_assets") == false
+        and report.get("runtime_game_verified") == false
+        and report.get("game_installation_modified") == false):
+        status_label.text = ("Shared mod recipe reconstructed: " + output_path
+            + " | Binary verified; retail runtime still needs separate testing.")
+        return
+    status_label.text = "Shared recipe GMP reconstruction refused: " + _native_clone_error_reason(response)
 
 
 func _open_native_save_as_dialog() -> void:

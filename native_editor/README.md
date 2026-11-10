@@ -947,3 +947,29 @@ installations or savegames. **No retail runtime acceptance is claimed
 for a combined edit**, nor for new cross-map/baked collision behavior.
 Detailed workflow and limits:
 docs/research/dx2ed-native-prop-plan-v0-60.md.
+
+## DX2Ed v0.61 portable, source-locked static-prop mod recipes
+
+The Godot prop toolbar now offers **Export Mod Recipe...** and
+**Apply Mod Recipe to Isolated GMP...**. Creators share a small
+.dx2edmod.json file containing source SHA-256, normalized original
+StaticMeshActor move/clone/unplace intentions and the expected exact
+candidate GMP SHA-256/size, **not a game map or IBD**. A recipient
+opens the exact same ORIGINAL retail map and imports the recipe.
+The editor first recompiles the GMP entirely **in memory** to validate
+the original source and candidate hash, then requests a distinct,
+never-overwritten isolated GMP destination, explicit confirmation,
+and performs an independent full-binary replay.
+
+The underlying Python native_editor/package_writer/dx2_mod_recipe.py
+has equivalent source-locked export, read-only check, and isolated
+reconstruction CLI operations. It never installs anything into an
+Invisible War game folder. Asset-free tests cover distribution between
+two original map copies, forged plan/hashes, altered original sources,
+unsafe paths, CLI and Godot UI signal/confirmation wiring.
+
+This is a first content-free experimental **static prop recipe**, not
+a complete distributable mission/mod, engine-supported patch format,
+IBD writer or native package compiler. Neither v0.60 combined edits
+nor v0.61 recipe reconstruction are retail gameplay validated. See
+docs/research/dx2ed-portable-mod-recipes-v0-61.md.
