@@ -206,6 +206,10 @@ var native_recipe_import_dialog: FileDialog
 var native_recipe_output_dialog: FileDialog
 var native_recipe_apply_confirmation: ConfirmationDialog
 var native_recipe_apply_pending: Dictionary = {}
+var native_trial_candidate_dialog: FileDialog
+var native_trial_dossier_dialog: FileDialog
+var native_trial_confirmation: ConfirmationDialog
+var native_trial_pending: Dictionary = {}
 var native_staged_unplaces: Dictionary = {} # original actor name -> one-based original export
 var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
@@ -831,6 +835,14 @@ func _make_ui() -> void:
         + "First perform read-only reconstruction, then Save As a NEW isolated test GMP.")
     recipe_import_button.pressed.connect(_open_native_recipe_import_dialog)
     prop_bar.add_child(recipe_import_button)
+    var trial_button := Button.new()
+    trial_button.text = "Prepare Retail Test Dossier..."
+    trial_button.tooltip_text = (
+        "Verify a previously exported isolated combined GMP against the original "
+        + "and prepare a private test checklist and blank owner observations. "
+        + "Does NOT launch or install the game.")
+    trial_button.pressed.connect(_open_native_trial_candidate_dialog)
+    prop_bar.add_child(trial_button)
     prop_edit_step = SpinBox.new()
     prop_edit_step.min_value = 0.05
     prop_edit_step.max_value = 64.0
@@ -2030,6 +2042,22 @@ func _make_ui() -> void:
     native_recipe_apply_confirmation.title = "Confirm offline reconstruction of shared mod recipe"
     native_recipe_apply_confirmation.confirmed.connect(_execute_native_recipe_apply)
     add_child(native_recipe_apply_confirmation)
+    native_trial_candidate_dialog = FileDialog.new()
+    native_trial_candidate_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_trial_candidate_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    native_trial_candidate_dialog.filters = PackedStringArray(["*.gmp ; Already exported isolated candidate GMP"])
+    native_trial_candidate_dialog.file_selected.connect(_stage_native_trial_candidate)
+    add_child(native_trial_candidate_dialog)
+    native_trial_dossier_dialog = FileDialog.new()
+    native_trial_dossier_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_trial_dossier_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    native_trial_dossier_dialog.filters = PackedStringArray(["*.dx2trial.json ; DX2Ed private retail test dossier"])
+    native_trial_dossier_dialog.file_selected.connect(_stage_native_trial_dossier)
+    add_child(native_trial_dossier_dialog)
+    native_trial_confirmation = ConfirmationDialog.new()
+    native_trial_confirmation.title = "Confirm private, no-game-install retail test checklist"
+    native_trial_confirmation.confirmed.connect(_execute_native_trial_dossier)
+    add_child(native_trial_confirmation)
     environment_sound_dialog = FileDialog.new()
     environment_sound_dialog.access = FileDialog.ACCESS_FILESYSTEM
     environment_sound_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -3118,6 +3146,7 @@ func _clear_current_scene() -> void:
     native_combined_pending.clear()
     native_recipe_pending.clear()
     native_recipe_apply_pending.clear()
+    native_trial_pending.clear()
     native_staged_unplaces.clear()
     next_prop_copy_id = 1
     undo_stack.clear()
@@ -10769,6 +10798,135 @@ func _native_recipe_apply_finished(status: int, response: String,
             + " | Binary verified; retail runtime still needs separate testing.")
         return
     status_label.text = "Shared recipe GMP reconstruction refused: " + _native_clone_error_reason(response)
+
+
+## v0.64 private RETAIL TEST DOSSIER for a verified isolated GMP.
+## It creates only a manual testing checklist and blank observations JSON,
+## never runs a game, copies assets or writes to any game Content/DX2/Maps.
+func _open_native_trial_candidate_dialog() -> void:
+    native_trial_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Trial dossier requires an unchanged original GMP and no active native worker."
+        return
+    var script := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_retail_trial_dossier.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Offline trial dossier verifier missing from DX2Ed."
+        return
+    native_trial_candidate_dialog.current_file = last_gmp_path.get_file()
+    native_trial_candidate_dialog.popup_centered_ratio(0.75)
+
+
+func _stage_native_trial_candidate(candidate: String) -> void:
+    native_trial_pending.clear()
+    if (not _native_clone_source_ready()
+        or not FileAccess.file_exists(candidate)
+        or candidate == last_gmp_path
+        or candidate.get_file().to_lower() != last_gmp_path.get_file().to_lower()):
+        status_label.text = "Trial source/candidate mismatch. Select a separate isolated GMP with original map basename."
+        return
+    native_trial_pending = {
+        "source": last_gmp_path, "source_sha256": source_gamesys_sha256,
+        "candidate": candidate,
+        "candidate_sha256": FileAccess.get_sha256(candidate)
+    }
+    native_trial_dossier_dialog.current_file = (
+        last_gmp_path.get_file().get_basename() + ".dx2trial.json")
+    native_trial_dossier_dialog.popup_centered_ratio(0.75)
+    status_label.text = "Select a private report directory outside the game and GMP folders."
+
+
+func _stage_native_trial_dossier(destination: String) -> void:
+    if (native_trial_pending.is_empty() or not _native_clone_source_ready()
+        or not FileAccess.file_exists(str(native_trial_pending.get("candidate", "")))
+        or FileAccess.get_sha256(str(native_trial_pending.get("candidate", "")))
+            != str(native_trial_pending.get("candidate_sha256", ""))
+        or not destination.ends_with(".dx2trial.json")):
+        native_trial_pending.clear()
+        status_label.text = "Trial dossier cancelled: original/candidate changed or output filename invalid."
+        return
+    native_trial_pending["destination"] = destination
+    native_trial_confirmation.dialog_text = (
+        "Prepare a private human RETAIL TEST checklist from an isolated GMP?"
+        + "\nOriginal source SHA-256: " + source_gamesys_sha256
+        + "\nIsolated candidate SHA-256: " + str(native_trial_pending["candidate_sha256"])
+        + "\n\nOutput dossier: " + destination
+        + "\n\nPython replays the ENTIRE GMP from the original and refuses binary drift."
+        + "\nCreates two private JSON files: a fixed plan and blank owner observations."
+        + "\nDoes NOT install, run, or touch any retail game or save data."
+        + "\nEven manually reported success is NOT independent game verification.")
+    native_trial_confirmation.popup_centered(Vector2i(770, 470))
+
+
+func _execute_native_trial_dossier() -> void:
+    if native_trial_pending.is_empty() or not _native_clone_source_ready():
+        native_trial_pending.clear()
+        status_label.text = "Trial dossier refused: original GMP unavailable or writer busy."
+        return
+    var frozen := native_trial_pending.duplicate(true)
+    native_trial_pending.clear()
+    if (str(frozen.get("source", "")) != last_gmp_path
+        or str(frozen.get("source_sha256", "")) != source_gamesys_sha256
+        or not FileAccess.file_exists(str(frozen.get("candidate", "")))
+        or FileAccess.get_sha256(str(frozen.get("candidate", "")))
+            != str(frozen.get("candidate_sha256", ""))
+        or not frozen.has("destination")):
+        status_label.text = "Trial dossier refused: source or candidate changed after confirmation."
+        return
+    var script := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_retail_trial_dossier.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Offline trial dossier compiler unavailable."
+        return
+    native_export_thread = Thread.new()
+    var started := native_export_thread.start(_run_native_trial_dossier.bind(
+        script, frozen))
+    if started != OK:
+        native_export_thread = null
+        status_label.text = "Could not start isolated GMP trial verifier."
+        return
+    status_label.text = "Replaying isolated GMP and preparing private retail A/B test checklist..."
+
+
+func _run_native_trial_dossier(script: String, frozen: Dictionary) -> void:
+    var args := PackedStringArray([
+        script, "--source", str(frozen["source"]),
+        "--candidate", str(frozen["candidate"]),
+        "--source-sha256", str(frozen["source_sha256"]),
+        "--dossier", str(frozen["destination"]), "--prepare"
+    ])
+    var output: Array = []
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
+    if code == -1:
+        var launcher := PackedStringArray(["-3"])
+        launcher.append_array(args)
+        output.clear()
+        code = OS.execute("py", launcher, output, true)
+    call_deferred("_native_trial_dossier_finished", code, "\n".join(output),
+        str(frozen["candidate_sha256"]))
+
+
+func _native_trial_dossier_finished(code: int, response: String,
+        candidate_hash: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    var parsed: Variant = JSON.parse_string(response.strip_edges())
+    if (code == 0 and typeof(parsed) == TYPE_DICTIONARY
+        and parsed.get("schema") == "DX2Ed-retail-static-prop-trial-dossier-v1"
+        and parsed.get("status") == "private-trial-dossier-created-runtime-not-tested"
+        and parsed.get("candidate_sha256") == candidate_hash
+        and parsed.get("automated_whole_gmp_byte_replay_verified") == true
+        and parsed.get("game_installation_modified") == false
+        and parsed.get("gameplay_runtime_verified") == false
+        and typeof(parsed.get("checks_count")) == TYPE_INT
+        and int(parsed["checks_count"]) >= 6):
+        status_label.text = (
+            "Retail test checklist created: " + str(parsed.get("dossier_file", ""))
+            + " | Blank owner observation log: " + str(parsed.get("observations_file", ""))
+            + " | No game files changed or gameplay verified.")
+        return
+    status_label.text = "Trial GMP rejected or report creation refused: " + _native_clone_error_reason(response)
 
 
 func _open_native_save_as_dialog() -> void:

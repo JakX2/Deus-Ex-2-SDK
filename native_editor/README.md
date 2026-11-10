@@ -1016,3 +1016,26 @@ binding semantics remain unverified. Even an empty GMP explicit-link
 list does not establish full incoming-link coverage or runtime-safe
 prop removal. See
 docs/research/dx2ed-crosssource-script-ref-review-v0-63.md.
+
+## DX2Ed v0.64: source-pinned private retail A/B test dossier
+
+A new **Prepare Retail Test Dossier...** command on the Godot static
+prop toolbar takes a previously exported v0.60 **isolated combined GMP**
+and the original source GMP. It independently replays every byte of
+the candidate from its adjacent native plan manifest and requires
+exact original/source SHA identities before creating anything.
+
+After verification it writes two **private content-free JSON reports**
+outside game folders: a fixed test dossier (.dx2trial.json) with actor
+expected positions/changes and a blank observation log
+(.dx2observations.json). Human checks include baseline, fresh candidate
+load, original/moved/copied/unplaced objects, collision, re-entry,
+save/reload and restoring the original map.
+
+The standalone native_editor/package_writer/dx2_retail_trial_dossier.py
+can prepare dossiers and read-only assess later hand-written owner
+observations, always checking the original GMP and expected candidate
+bytes again. Manual owner PASS outcomes are **not independent engine
+verification**; the tool never declares gameplay_runtime_verified,
+does not launch/install maps, alter original game content or edit saves.
+See docs/research/dx2ed-retail-trial-dossier-v0-64.md.
