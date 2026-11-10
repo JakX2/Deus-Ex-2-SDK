@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -185,7 +186,10 @@ class SyntheticCrossSourceReferenceReviewTests(unittest.TestCase):
             "--actors", str(self.actors), "--scripts", str(self.script_zip),
             "--ibd", str(self.ibd),
         ]
-        trial = subprocess.run(args, capture_output=True, text=True)
+        clean_env = dict(os.environ)
+        clean_env.pop("PYTHONPATH", None)
+        trial = subprocess.run(args, cwd=self.root, env=clean_env,
+                               capture_output=True, text=True)
         self.assertEqual(trial.returncode, 0, trial.stdout + trial.stderr)
         doc = json.loads(trial.stdout)
         self.assertFalse(doc["output_written"])
@@ -193,13 +197,13 @@ class SyntheticCrossSourceReferenceReviewTests(unittest.TestCase):
         self.assertNotIn(str(self.root), trial.stdout)
         out = subprocess.run(
             [*args, "--output", str(self.report)],
-            capture_output=True, text=True)
+            cwd=self.root, env=clean_env, capture_output=True, text=True)
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         self.assertTrue(self.report.exists())
         self.assertTrue(json.loads(out.stdout)["output_written"])
         refused = subprocess.run(
             [*args[:-1], str(self.root / "NoSource.ibd")],
-            capture_output=True, text=True)
+            cwd=self.root, env=clean_env, capture_output=True, text=True)
         self.assertEqual(refused.returncode, 2)
         self.assertEqual(json.loads(refused.stdout)["status"], "refused")
         self.assertNotIn(str(self.root), refused.stdout)
