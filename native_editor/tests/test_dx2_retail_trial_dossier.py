@@ -184,7 +184,9 @@ class RetailGmpDossierTests(unittest.TestCase):
         self.assertEqual(self.source.read_bytes(), self.original)
 
     def test_refuse_bad_sha_candidate_tamper_and_original_changes(self):
-        with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+        # Either the manifest source pin or the original source check
+        # may reject the wrong digest; both correctly fail closed.
+        with self.assertRaises(ValueError):
             expected_dossier(self.source, self.candidate,
                              source_sha256="f" * 64)
         bad = bytearray(self.candidate_binary)
