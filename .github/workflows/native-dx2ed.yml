@@ -71,6 +71,10 @@ jobs:
         run: timeout 35s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_native_retail_trial_dossier.gd
       - name: Verify v0.65 isolated disposable game copy UI and no-original-source guard
         run: timeout 35s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_disposable_retail_trial.gd
+      - name: Compile retail observation UI in isolation (Godot 4.3)
+        run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://retail_observation_panel.gd
+      - name: Smoke owner-only retail observation UI with no original source
+        run: timeout 35s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_retail_observation_panel.gd
       - name: Compile custom polygon geometry in isolation (Godot 4.3)
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://custom_polygon_geometry.gd
       - name: Exercise actual custom polygon authoring and full private scene reopen
