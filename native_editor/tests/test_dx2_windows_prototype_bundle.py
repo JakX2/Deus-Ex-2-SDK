@@ -103,6 +103,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 "native_editor/package_writer/dx2_crosssource_ref_review.py",
                 "native_editor/package_writer/dx2_retail_trial_dossier.py",
                 "native_editor/package_writer/dx2_disposable_retail_trial.py",
+                "native_editor/package_writer/dx2_retail_observation_recorder.py",
                 "third_party/t3sdk_assets/LICENSE",
                 "GODOT_LICENSE.txt",
                 "runtime/Godot_v4.3-stable_win64.exe",
