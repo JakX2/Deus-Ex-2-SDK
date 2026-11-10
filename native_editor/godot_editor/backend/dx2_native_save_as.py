@@ -424,6 +424,7 @@ def verify_translation_copy(source: Path, output: Path, manifest: Path | None = 
         raise ValueError("Invalid translation record count")
     accepted_offsets = set()
     exports_seen = set()
+    changed_components = []
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError("Invalid translation record")
@@ -442,20 +443,40 @@ def verify_translation_copy(source: Path, output: Path, manifest: Path | None = 
         new_offsets = location_float_offsets(edited, edited_exp)
         if offsets != new_offsets:
             raise ValueError("Serialized Location field layout changed")
-        for label, before, after in zip(("X", "Y", "Z"), row.get("before", []), row.get("after", [])):
-            _check_float(before, label="manifest before")
-            _check_float(after, label="manifest after")
+        before_values, after_values = row.get("before"), row.get("after")
+        if (not isinstance(before_values, list) or len(before_values) != 3
+                or not isinstance(after_values, list) or len(after_values) != 3):
+            raise ValueError("Manifest requires exactly three coordinates per position")
+        for label, before, after in zip(("X", "Y", "Z"), before_values, after_values):
+            before_value = _check_float(before, label="manifest before")
+            after_value = _check_float(after, label="manifest after")
             offset = offsets[label]
             for index in range(offset, offset + 4):
                 if index in accepted_offsets:
                     raise ValueError("Location payload byte ranges overlap")
                 accepted_offsets.add(index)
-            if not math.isclose(struct.unpack_from("<f", original.data, offset)[0], before, abs_tol=SOURCE_TOLERANCE, rel_tol=0):
+            original_bytes = original.data[offset:offset + 4]
+            edited_bytes = edited.data[offset:offset + 4]
+            original_native = struct.unpack("<f", original_bytes)[0]
+            if not math.isclose(original_native, before_value, abs_tol=SOURCE_TOLERANCE, rel_tol=0):
                 raise ValueError("Original Location differs from manifest")
-            if not math.isclose(struct.unpack_from("<f", edited.data, offset)[0], after, abs_tol=0.01, rel_tol=0):
-                raise ValueError("Exported Location differs from manifest")
-        if len(row.get("before", [])) != 3 or len(row.get("after", [])) != 3:
-            raise ValueError("Manifest requires exactly three coordinates")
+            # The writer packs the proposed location with struct.pack('<f').
+            # Numeric tolerance is NOT suitable for verifying binary output:
+            # a different but nearby float must not be accepted as the field.
+            try:
+                expected_bytes = struct.pack("<f", after_value)
+            except (OverflowError, struct.error) as exc:
+                raise ValueError("Manifest Location cannot be represented as float32") from exc
+            if edited_bytes != expected_bytes:
+                raise ValueError("Exported Location float32 bytes differ from manifest")
+            if original_bytes != edited_bytes:
+                changed_components.append({
+                    "actor": row["actor"], "export": export_id,
+                    "axis": label, "payload_offset": offset,
+                    "source_value": original_native,
+                    "output_value": struct.unpack("<f", edited_bytes)[0],
+                    "changed_bytes": sum(a != b for a, b in zip(original_bytes, edited_bytes)),
+                })
     changed_bytes = 0
     for position, (a, b) in enumerate(zip(original.data, edited.data)):
         if a != b:
@@ -464,6 +485,8 @@ def verify_translation_copy(source: Path, output: Path, manifest: Path | None = 
                 raise ValueError("Unexpected byte modification outside audited Location floats")
     if changed_bytes == 0:
         raise ValueError("Exported GMP has no changed bytes")
+    if changed_bytes != sum(row["changed_bytes"] for row in changed_components):
+        raise ValueError("Location component ledger disagrees with exact package byte diff")
     return {
         "schema": "DX2Ed-native-verify-report-v1",
         "verified_binary_structure": True,
@@ -473,6 +496,9 @@ def verify_translation_copy(source: Path, output: Path, manifest: Path | None = 
         "translated_existing_actors": len(rows),
         "changed_bytes": changed_bytes,
         "changed_field_bytes_allowed": len(accepted_offsets),
+        "strict_serialized_float32_match": True,
+        "changed_component_count": len(changed_components),
+        "changed_components": changed_components,
         "source_sha256": _sha(original.data),
         "output_sha256": _sha(edited.data),
         "warnings": [
