@@ -243,6 +243,10 @@ var gameplay_index_audit_button: Button
 var gameplay_copy_index_audit_button: Button
 var gameplay_ibd_evidence: Dictionary = {}
 var gameplay_ibd_by_id: Dictionary = {}
+var gameplay_crosssource_button: Button
+var gameplay_crosssource_dialog: AcceptDialog
+var gameplay_crosssource_thread: Thread = null
+var gameplay_crosssource_ibd_path := ""
 # Separate original mission IBD / shared Kernel_TSDALL bytes. Metadata only,
 # never used by game writers, and never sent out of Godot's private cache.
 var gameplay_verified_mission_ibd_path := ""
@@ -1088,6 +1092,14 @@ func _make_ui() -> void:
     gameplay_ibd_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     gameplay_ibd_status.text = "Select your own original TriggerScript ZIP before checking IBD resources."
     gameplay_tab.add_child(gameplay_ibd_status)
+    gameplay_crosssource_button = Button.new()
+    gameplay_crosssource_button.text = "Review selected prop: GMP links + original IBD scripts..."
+    gameplay_crosssource_button.disabled = true
+    gameplay_crosssource_button.tooltip_text = (
+        "Review typed original GMP references plus original TSD/IBD resource identity. "
+        + "Numeric actor-script bindings remain UNKNOWN.")
+    gameplay_crosssource_button.pressed.connect(_review_selected_original_prop_dependencies)
+    gameplay_tab.add_child(gameplay_crosssource_button)
     gameplay_kernel_compare_button = Button.new()
     gameplay_kernel_compare_button.text = "Compare mission IBD against Kernel_TSDALL..."
     gameplay_kernel_compare_button.tooltip_text = (
@@ -2079,6 +2091,9 @@ func _make_ui() -> void:
         "*.ibd ; Original Deus Ex Invisible War mission/Kernel resource IBD"])
     gameplay_ibd_dialog.file_selected.connect(_open_original_script_ibd)
     add_child(gameplay_ibd_dialog)
+    gameplay_crosssource_dialog = AcceptDialog.new()
+    gameplay_crosssource_dialog.title = "Original GMP + TriggerScript IBD actor reference review"
+    add_child(gameplay_crosssource_dialog)
     gameplay_kernel_dialog = FileDialog.new()
     gameplay_kernel_dialog.access = FileDialog.ACCESS_FILESYSTEM
     gameplay_kernel_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -3062,6 +3077,9 @@ func _clear_current_scene() -> void:
     gameplay_ibd_evidence.clear()
     gameplay_ibd_by_id.clear()
     gameplay_actor_name_slots_by_export.clear()
+    gameplay_crosssource_ibd_path = ""
+    if gameplay_crosssource_button != null:
+        gameplay_crosssource_button.disabled = true
     gameplay_verified_mission_ibd_path = ""
     gameplay_kernel_comparison.clear()
     if gameplay_kernel_compare_button != null:
@@ -3333,6 +3351,9 @@ func _original_gameplay_scripts_finished(code: int, response: String,
     gameplay_ibd_evidence.clear()
     gameplay_ibd_by_id.clear()
     gameplay_actor_name_slots_by_export.clear()
+    gameplay_crosssource_ibd_path = ""
+    if gameplay_crosssource_button != null:
+        gameplay_crosssource_button.disabled = true
     gameplay_verified_mission_ibd_path = ""
     gameplay_kernel_comparison.clear()
     if gameplay_kernel_compare_button != null:
@@ -3611,6 +3632,9 @@ func _script_ibd_finished(code: int, response: String, source: String,
     gameplay_ibd_evidence = doc
     gameplay_ibd_by_id = exact
     gameplay_actor_name_slots_by_export = validated_name_slots
+    gameplay_crosssource_ibd_path = ibd
+    if gameplay_crosssource_button != null:
+        gameplay_crosssource_button.disabled = false
     gameplay_verified_mission_ibd_path = ""
     gameplay_kernel_comparison.clear()
     if gameplay_kernel_script_button != null:
