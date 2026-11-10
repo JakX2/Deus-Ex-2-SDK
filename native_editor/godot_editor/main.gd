@@ -193,6 +193,9 @@ var native_clone_pending: Dictionary = {}
 var native_multi_dialog: FileDialog
 var native_multi_confirmation: ConfirmationDialog
 var native_multi_pending: Dictionary = {}
+var native_unplace_dialog: FileDialog
+var native_unplace_confirmation: ConfirmationDialog
+var native_unplace_pending: Dictionary = {}
 var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
 var native_export_target := ""
@@ -775,6 +778,13 @@ func _make_ui() -> void:
     native_multi_button.tooltip_text = "Save 2 to 8 translated preview StaticMeshActor copies in ONE isolated GMP. No game installation writes."
     native_multi_button.pressed.connect(_open_native_multi_dialog)
     prop_bar.add_child(native_multi_button)
+    var native_unplace_button := Button.new()
+    native_unplace_button.text = "Experimental Unplace Original Prop Save As..."
+    native_unplace_button.tooltip_text = ("Remove exactly ONE eligible original StaticMeshActor "
+        + "from the native Level list in an isolated GMP. Source export is preserved; "
+        + "this is NOT a full actor deletion.")
+    native_unplace_button.pressed.connect(_open_native_unplace_dialog)
+    prop_bar.add_child(native_unplace_button)
     prop_edit_step = SpinBox.new()
     prop_edit_step.min_value = 0.05
     prop_edit_step.max_value = 64.0
@@ -1920,6 +1930,16 @@ func _make_ui() -> void:
     native_multi_confirmation.title = "Confirm 2..8 experimental static prop clones"
     native_multi_confirmation.confirmed.connect(_execute_native_multi_export)
     add_child(native_multi_confirmation)
+    native_unplace_dialog = FileDialog.new()
+    native_unplace_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_unplace_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    native_unplace_dialog.filters = PackedStringArray(["*.gmp ; Experimental ONE native static-prop unplace"])
+    native_unplace_dialog.file_selected.connect(_stage_native_unplace_export)
+    add_child(native_unplace_dialog)
+    native_unplace_confirmation = ConfirmationDialog.new()
+    native_unplace_confirmation.title = "Confirm experimental original prop unplace"
+    native_unplace_confirmation.confirmed.connect(_execute_native_unplace_export)
+    add_child(native_unplace_confirmation)
     environment_sound_dialog = FileDialog.new()
     environment_sound_dialog.access = FileDialog.ACCESS_FILESYSTEM
     environment_sound_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -2998,6 +3018,7 @@ func _clear_current_scene() -> void:
     draft_brush_specs.clear()
     native_clone_pending.clear()
     native_multi_pending.clear()
+    native_unplace_pending.clear()
     next_prop_copy_id = 1
     undo_stack.clear()
     redo_stack.clear()
@@ -9722,6 +9743,184 @@ func _native_multi_export_finished(code: int, response: String, plan_path: Strin
         status_label.text = "Multi Duplicate GMP saved: " + str(result.get("output_file", "")) + " | New static props: " + str(result["copies"].size()) + " | Runtime unverified."
         return
     status_label.text = "Multi Duplicate refused: " + _native_clone_error_reason(response)
+
+
+## v0.59: native unplace experiment. This removes a Level actor reference
+## ONLY. It is not a native export deletion or a general "Delete" command.
+func _native_unplace_draft_plan() -> Dictionary:
+    if (scene_root == null or selected_meshes.size() != 1
+        or not selected_group_names.is_empty() or not draft_groups.is_empty()
+        or not draft_prop_copies.is_empty() or not property_overrides.is_empty()
+        or not draft_brush_specs.is_empty() or not draft_template_provenance.is_empty()):
+        return {}
+    for actor_name in original_mesh_transforms:
+        if meshes_by_actor.has(actor_name):
+            var original_node: MeshInstance3D = meshes_by_actor[actor_name]
+            if (is_instance_valid(original_node)
+                and not original_node.global_transform.is_equal_approx(
+                    original_mesh_transforms[actor_name])):
+                return {}  # Never discard original actor edits.
+    var selected_name := str(selected_meshes.keys()[0])
+    if (not meshes_by_actor.has(selected_name)
+        or not actors_by_name.has(selected_name)
+        or not original_mesh_transforms.has(selected_name)):
+        return {}
+    var node: MeshInstance3D = meshes_by_actor[selected_name]
+    if (not is_instance_valid(node) or selected_meshes[selected_name] != node
+        or node.mesh == null):
+        return {}
+    var source_actor: Dictionary = actors_by_name[selected_name]
+    if (str(source_actor.get("name", "")) != selected_name
+        or str(source_actor.get("class", "")) != "StaticMeshActor"
+        or typeof(source_actor.get("export", null)) != TYPE_INT
+        or int(source_actor["export"]) < 1):
+        return {}
+    return {"actor": selected_name, "export": int(source_actor["export"])}
+
+
+func _native_unplace_preflight(script: String, plan: Dictionary) -> Dictionary:
+    var args := PackedStringArray([
+        script, last_gmp_path, "--source-sha256", source_gamesys_sha256,
+        "--check-actor", "--actor-export", str(plan["export"]),
+        "--actor-name", str(plan["actor"])
+    ])
+    var output: Array = []
+    var status := OS.execute(PythonRuntime.executable(), args, output, true)
+    if status == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        status = OS.execute("py", pyargs, output, true)
+    var response := "\n".join(output).strip_edges()
+    var parsed: Variant = JSON.parse_string(response)
+    if (status == 0 and typeof(parsed) == TYPE_DICTIONARY
+        and parsed.get("schema") == "DX2Ed-experimental-static-prop-unplace-v1"
+        and parsed.get("status") == "unplace-source-eligible"
+        and parsed.get("source_sha256") == source_gamesys_sha256
+        and parsed.get("actor") == plan["actor"]
+        and parsed.get("export") == plan["export"]
+        and parsed.get("native_actor_deleted") == false
+        and parsed.get("output_written") == false):
+        return {"eligible": true}
+    return {"eligible": false, "reason": _native_clone_error_reason(response)}
+
+
+func _open_native_unplace_dialog() -> void:
+    _finish_gizmo_drag()
+    native_unplace_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Unplace Save As refused: source GMP changed or writer busy."
+        return
+    var plan := _native_unplace_draft_plan()
+    if plan.is_empty():
+        status_label.text = ("Unplace needs exactly one ORIGINAL StaticMeshActor "
+            + "selected; no draft copies, groups, moved originals or other edits.")
+        return
+    var script := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_actor_unplace_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Experimental unplace writer is missing."
+        return
+    var verdict := _native_unplace_preflight(script, plan)
+    if not verdict.get("eligible", false):
+        status_label.text = "Unplace refused: " + str(verdict.get("reason", "Source actor ineligible."))
+        return
+    native_unplace_dialog.current_file = last_gmp_path.get_file()
+    native_unplace_dialog.popup_centered_ratio(0.75)
+
+
+func _stage_native_unplace_export(destination: String) -> void:
+    native_unplace_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Unplace cancelled: source GMP changed."
+        return
+    var plan := _native_unplace_draft_plan()
+    if plan.is_empty() or destination.get_file().to_lower() != last_gmp_path.get_file().to_lower():
+        status_label.text = "Unplace cancelled: selection changed or output GMP name differs."
+        return
+    native_unplace_pending = {
+        "actor": plan["actor"], "export": plan["export"],
+        "source": last_gmp_path, "source_sha256": source_gamesys_sha256,
+        "destination": destination
+    }
+    native_unplace_confirmation.dialog_text = (
+        "EXPERIMENTAL Level-reference unplace, not actor deletion."
+        + "\nSource actor: " + str(plan["actor"])
+        + "\nOriginal one-based export: " + str(plan["export"])
+        + "\n\nRemoves ONE reference from the original Level actor list."
+        + "\nAll actor export payloads remain byte-identical."
+        + "\nIncoming references and actual game behavior are NOT verified."
+        + "\n\nNew isolated GMP: " + destination
+        + "\n\nNever installs into a game directory or overwrites the source."
+        + "\nConfirm to write the experimental candidate."
+    )
+    native_unplace_confirmation.popup_centered(Vector2i(750, 390))
+
+
+func _execute_native_unplace_export() -> void:
+    if native_unplace_pending.is_empty() or not _native_clone_source_ready():
+        native_unplace_pending.clear()
+        status_label.text = "Unplace cancelled: original GMP changed or writer busy."
+        return
+    var frozen := native_unplace_pending.duplicate(true)
+    native_unplace_pending.clear()
+    var current := _native_unplace_draft_plan()
+    if (current.is_empty() or current["actor"] != frozen["actor"]
+        or current["export"] != frozen["export"]
+        or frozen["source"] != last_gmp_path
+        or frozen["source_sha256"] != source_gamesys_sha256):
+        status_label.text = "Unplace cancelled: selected source actor or draft state changed."
+        return
+    var script := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_actor_unplace_probe.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Native unplace writer unavailable."
+        return
+    native_export_thread = Thread.new()
+    var status := native_export_thread.start(
+        _run_native_unplace_export.bind(script, frozen))
+    if status != OK:
+        native_export_thread = null
+        status_label.text = "Cannot start native unplace worker."
+        return
+    status_label.text = "Preparing source-verified unplace candidate in an isolated GMP..."
+
+
+func _run_native_unplace_export(script: String, frozen: Dictionary) -> void:
+    var args := PackedStringArray([
+        script, str(frozen["source"]), "--source-sha256", str(frozen["source_sha256"]),
+        "--actor-export", str(frozen["export"]), "--actor-name", str(frozen["actor"]),
+        "--output", str(frozen["destination"])
+    ])
+    var output: Array = []
+    var status := OS.execute(PythonRuntime.executable(), args, output, true)
+    if status == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        status = OS.execute("py", pyargs, output, true)
+    call_deferred("_native_unplace_export_finished", status, "\n".join(output))
+
+
+func _native_unplace_export_finished(status: int, response: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    var report: Variant = JSON.parse_string(response.strip_edges())
+    if (status == 0 and typeof(report) == TYPE_DICTIONARY
+        and report.get("schema") == "DX2Ed-experimental-static-prop-unplace-v1"
+        and report.get("status") == "isolated-GMP-created-runtime-unverified"
+        and report.get("level_ref_removed") == true
+        and report.get("all_original_actor_payloads_preserved") == true
+        and report.get("native_actor_deleted") == false
+        and report.get("runtime_game_verified") == false
+        and int(report.get("level_actor_count_before", -1))
+            == int(report.get("level_actor_count_after", -1)) + 1):
+        status_label.text = ("Experimental unplace GMP created: "
+            + str(report.get("output_file", ""))
+            + " | Original export preserved; runtime NOT verified.")
+        return
+    status_label.text = "Native unplace refused: " + _native_clone_error_reason(response)
 
 
 func _open_native_save_as_dialog() -> void:
