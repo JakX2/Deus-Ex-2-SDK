@@ -55,6 +55,24 @@ class DX2EdDraftGroupHierarchyContractTests(unittest.TestCase):
         self.assertIn("smoke_draft_group_hierarchy.gd", self.launcher)
         self.assertIn("smoke_draft_group_hierarchy.gd", self.workflow)
 
+    def test_v057_private_rename_keeps_group_identity_local(self):
+        self.assertIn('group_rename_button.pressed.connect(_rename_selected_group)', self.main)
+        self.assertIn('func _rename_selected_group() -> void:', self.main)
+        self.assertIn('if selected_group_names.size() != 1:', self.main)
+        self.assertIn('if not _valid_draft_group_name(new_name):', self.main)
+        self.assertIn('if draft_groups.has(new_name):', self.main)
+        self.assertIn('group.set_meta("dx2ed_group_name", new_name)', self.main)
+        self.assertIn('selected_group_names = [new_name]', self.main)
+        self.assertIn('_record_edit("Rename group " + old_name + " to " + new_name, before)', self.main)
+        for marker in (
+            '_rename_selected_group()', 'Renamed_Group',
+            'Rename did not preserve the same parent node',
+            'Undo did not restore the original group name',
+            'Redo did not restore the renamed group',
+            'Invalid group name was accepted',
+        ):
+            self.assertIn(marker, self.smoke)
+
     def test_parity_record_keeps_native_group_writer_unverified(self):
         transforms = next(row for row in self.parity["capabilities"] if row["id"] == "transforms")
         self.assertEqual(transforms["status"], "partial")
