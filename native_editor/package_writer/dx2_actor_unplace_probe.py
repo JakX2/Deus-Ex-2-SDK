@@ -20,6 +20,7 @@ if str(HERE) not in sys.path:
 
 from dx2_actor_clone_probe import _candidate, _destination, _pin, MAX_FILE
 from dx2_package_roundtrip import _parse_both, _validate_input, inspect_noop, sha256
+from dx2_incoming_ref_audit import require_no_explicit_incoming
 from t3pack import apply_edits, verify_patch
 
 SCHEMA = "DX2Ed-experimental-static-prop-unplace-v1"
@@ -56,6 +57,7 @@ def check_actor(source: Path, *, source_sha256: str,
         raise ValueError("Actor is not exactly once in the original Level list")
     if actor_export in refs[:2]:
         raise ValueError("Cannot remove protected LevelInfo or builder entry")
+    audit = require_no_explicit_incoming(pkg, actor_export)
     return {
         "schema": SCHEMA, "status": "unplace-source-eligible",
         "source_name": source.name, "source_sha256": sha256(raw),
@@ -65,6 +67,9 @@ def check_actor(source: Path, *, source_sha256: str,
         "original_export_count": len(pkg.exports),
         "output_written": False, "runtime_game_verified": False,
         "incoming_references_verified": False,
+        "explicit_incoming_references_checked": True,
+        "explicit_incoming_reference_count": 0,
+        "incoming_reference_opaque_scopes": audit["opaque_or_untyped_scopes"],
         "native_actor_deleted": False,
     }
 

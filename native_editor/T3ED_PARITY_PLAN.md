@@ -105,6 +105,24 @@ Combined native edits still need disposable-install retail tests before
 we call them playable. See
 docs/research/dx2ed-portable-mod-recipes-v0-61.md.
 
+## DX2Ed v0.62: conservative source-only incoming actor references
+
+The first native object-unplace prototypes could not detect when another
+source actor already pointed to the targeted static prop. v0.62 adds a
+read-only decoder audit across explicitly typed UE2 object/class
+properties, GameSys object/class blocks, scripted object-link lists,
+native script-frame node pointers and export table references. A confirmed
+external reference blocks unplace in both the single and combined
+source-SHA-pinned writers, including shared mod recipe reconstruction.
+Godot refuses staging and Save As for known referenced originals.
+
+This improves source evidence but **does not** provide a complete
+reference graph. Unknown native arrays/tails, IBD/TriggerScript and
+runtime collision/AI/save behavior are not decoded. "No known incoming
+refs" must not be marketed as "safe native actor deletion." Original
+exports remain serialized and retail gameplay needs separate A/B tests.
+See docs/research/dx2ed-explicit-incoming-reference-audit-v0-62.md.
+
 ## Immediate workflow
 
 Use the parity tracker in code review and keep its `missing`, `partial`, `verified` labels conservative. Do not equate a working preview with a working mod. Next engineering step is the DX2 IBD **Asset Browser**, followed by typed actor properties. Each cross-over feature requires its own DX2 format tests, then Windows/Godot UI tests and in-game validation.

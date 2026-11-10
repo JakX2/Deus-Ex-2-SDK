@@ -973,3 +973,23 @@ a complete distributable mission/mod, engine-supported patch format,
 IBD writer or native package compiler. Neither v0.60 combined edits
 nor v0.61 recipe reconstruction are retail gameplay validated. See
 docs/research/dx2ed-portable-mod-recipes-v0-61.md.
+
+## DX2Ed v0.62 incoming native actor reference audit
+
+The experimental native StaticMeshActor **Unplace Save As...**, combined
+Save As, staged unplaces and content-free recipe reconstruction now reject
+a source actor when the original GMP explicitly points to it from
+another decoded export's tagged Object/Class property, GameSys object/class
+block, object links, script frame or export-table metadata.
+
+Use native_editor/package_writer/dx2_incoming_ref_audit.py to run a
+**read-only source-SHA-locked audit** and list detected source actor/export
+IDs and reference fields, before attempting an isolated GMP export.
+
+An empty hit list is only "no explicitly decoded incoming reference
+found", not proof that a prop is safe to remove. Unknown native tails,
+untyped arrays, IBD/TriggerScript, runtime AI, save states, collision
+and actual retail gameplay are outside this check and remain
+**unverified**. Only the original Level actor reference is removed.
+No source map or installed game content is modified by the SDK.
+See docs/research/dx2ed-explicit-incoming-reference-audit-v0-62.md.
