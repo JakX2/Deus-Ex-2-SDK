@@ -59,7 +59,9 @@ jobs:
         run: timeout 35s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_transform_pivot_orientation.gd
       - name: Exercise editor-private group hierarchy, parent transforms and private JSON reopen
         run: timeout 40s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_draft_group_hierarchy.gd
-      - name: Compile custom polygon geometry in isolation (Godot 4.3)
+      - name: Compile custom polygon geometry in isolation (Godot 4.3)      - name: Exercise exact source actor unplace selection and refusal of mixed draft changes
+        run: timeout 30s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_native_static_unplace.gd
+
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://custom_polygon_geometry.gd
       - name: Exercise actual custom polygon authoring and full private scene reopen
         run: timeout 25s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_custom_polygon_geometry.gd
