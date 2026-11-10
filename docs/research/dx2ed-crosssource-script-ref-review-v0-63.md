@@ -103,9 +103,19 @@ TSD/IBD provenance without invented actor links, read-only CLI mode,
 private JSON export, refusal of game-root or overwrite destinations,
 and rejection of stale source/cache hashes.
 
-The Windows prototype ZIP and doctor include the reader. For now it is
-a research CLI using original files available to source browsing, not a
-native script authoring UI or an in-game runtime test.
+The Windows prototype ZIP and doctor include the reader. The Godot
+**Scripts** tab also provides **Review selected prop: GMP links + original
+IBD scripts...** once the original GMP/actors cache, TriggerScript ZIP and
+IBD resource evidence have been source-verified. Select one original
+StaticMeshActor; this starts a read-only Python worker and opens an
+editor dialog with confirmed typed GMP links and independently checked
+TSD/IBD resource counts. The private full JSON is saved under the
+editor's user data folder, never the original game directory.
+
+No report is produced if the original source data changed or was not
+independently verified. The dialog explicitly warns that original
+actor-to-script bindings and in-game removal behavior remain unproven.
+This is **not** a native script authoring UI or an in-game runtime test.
 
 ## Next gates
 
