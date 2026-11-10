@@ -162,6 +162,7 @@ var hierarchy_group_items: Dictionary = {}
 var hierarchy_syncing := false
 var group_name_edit: LineEdit
 var group_create_button: Button
+var group_rename_button: Button
 var group_ungroup_button: Button
 var inspector_title: Label
 var inspector_summary: Label
@@ -867,7 +868,7 @@ func _make_ui() -> void:
     left_tabs.add_child(hierarchy_tab)
     var group_row := HBoxContainer.new()
     group_name_edit = LineEdit.new()
-    group_name_edit.placeholder_text = "Group name (letters, digits, underscore)"
+    group_name_edit.placeholder_text = "Group name (create / rename; A-Z, 0-9, _)"
     group_name_edit.text = "Group_1"
     group_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     group_row.add_child(group_name_edit)
@@ -876,6 +877,11 @@ func _make_ui() -> void:
     group_create_button.tooltip_text = "Create a private parent group for the selected preview meshes."
     group_create_button.pressed.connect(_group_selected)
     group_row.add_child(group_create_button)
+    group_rename_button = Button.new()
+    group_rename_button.text = "Rename"
+    group_rename_button.tooltip_text = "Rename exactly one selected private group, with Undo/Redo support."
+    group_rename_button.pressed.connect(_rename_selected_group)
+    group_row.add_child(group_rename_button)
     group_ungroup_button = Button.new()
     group_ungroup_button.text = "Ungroup"
     group_ungroup_button.tooltip_text = "Remove the selected private group parent while preserving world transforms."
@@ -6533,6 +6539,39 @@ func _group_selected() -> void:
     if is_instance_valid(group_name_edit):
         group_name_edit.text = _next_draft_group_name()
     status_label.text = "Created private group " + group_name + " with " + str(members.size()) + " preview meshes. Group transforms remain editor-only."
+
+
+## Renaming changes only editor-owned group identity and preserves the parent node,
+## member transforms, group selection, and private draft/Undo history.
+func _rename_selected_group() -> void:
+    if selected_group_names.size() != 1:
+        status_label.text = "Select exactly one private group row to rename."
+        return
+    var old_name := selected_group_names[0]
+    var group: Node3D = draft_groups.get(old_name, null)
+    if not is_instance_valid(group):
+        status_label.text = "Selected private group is no longer available."
+        return
+    var new_name := group_name_edit.text if is_instance_valid(group_name_edit) else ""
+    if not _valid_draft_group_name(new_name):
+        status_label.text = "Group name must use only letters, digits and underscores (1-48 characters)."
+        return
+    if new_name == old_name:
+        status_label.text = "Private group name is unchanged."
+        return
+    if draft_groups.has(new_name):
+        status_label.text = "Another private group already uses that name."
+        return
+    var before := _capture_edit_state()
+    draft_groups.erase(old_name)
+    draft_groups[new_name] = group
+    group.set_meta("dx2ed_group_name", new_name)
+    group.name = "DX2Ed_Group_" + new_name
+    selected_group_names = [new_name]
+    _refresh_hierarchy()
+    _refresh_selection_inspector()
+    _record_edit("Rename group " + old_name + " to " + new_name, before)
+    status_label.text = "Renamed private group " + old_name + " to " + new_name + " (editor-only; not GMP)."
 
 
 func _ungroup_selected() -> void:
