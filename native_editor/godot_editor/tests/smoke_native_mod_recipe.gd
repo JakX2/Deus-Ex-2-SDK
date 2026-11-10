@@ -52,6 +52,41 @@ func _run() -> void:
             Callable(editor, "_open_native_recipe_dialog")):
         _fail("Godot toolbar has no wired recipe button")
         return
+    var import_button := _find_button(editor, "Apply Mod Recipe to Isolated GMP...")
+    if import_button == null or not import_button.pressed.is_connected(
+            Callable(editor, "_open_native_recipe_import_dialog")):
+        _fail("Native mod recipe import button is not wired")
+        return
+    if (not is_instance_valid(editor.native_recipe_import_dialog)
+        or not is_instance_valid(editor.native_recipe_output_dialog)
+        or not is_instance_valid(editor.native_recipe_apply_confirmation)):
+        _fail("Shared recipe import file chooser/confirmation setup is missing")
+        return
+    if (editor.native_recipe_import_dialog.file_mode != FileDialog.FILE_MODE_OPEN_FILE
+        or editor.native_recipe_output_dialog.file_mode != FileDialog.FILE_MODE_SAVE_FILE
+        or editor.native_recipe_import_dialog.filters.size() != 1
+        or not editor.native_recipe_import_dialog.filters[0].begins_with("*.dx2edmod.json")
+        or editor.native_recipe_output_dialog.filters.size() != 1
+        or not editor.native_recipe_output_dialog.filters[0].begins_with("*.gmp")):
+        _fail("Shared recipe import must open JSON, output must save GMP")
+        return
+    if (not editor.native_recipe_import_dialog.file_selected.is_connected(
+            Callable(editor, "_native_recipe_import_selected"))
+        or not editor.native_recipe_output_dialog.file_selected.is_connected(
+            Callable(editor, "_stage_native_recipe_apply_destination"))
+        or not editor.native_recipe_apply_confirmation.confirmed.is_connected(
+            Callable(editor, "_execute_native_recipe_apply"))):
+        _fail("Shared recipe import must have two file choosers and an explicit confirmation")
+        return
+    if not editor.native_recipe_apply_pending.is_empty():
+        _fail("No shareable recipe may be pending automatically")
+        return
+    editor._open_native_recipe_import_dialog()
+    if (not editor.native_recipe_apply_pending.is_empty()
+        or editor.native_export_thread != null
+        or editor.native_recipe_import_dialog.visible):
+        _fail("Import attempted recipe operations without an original GMP")
+        return
     if not editor.native_recipe_pending.is_empty():
         _fail("Recipe operation must not be pending on startup")
         return
@@ -62,5 +97,5 @@ func _run() -> void:
         _fail("Recipe action attempted an export without a source GMP")
         return
     editor.queue_free()
-    print("DX2Ed v0.61 content-free mod recipe chooser and source refusal smoke PASS")
+    print("DX2Ed v0.61 portable mod recipe export/import choosers and source refusal smoke PASS")
     quit(0)
