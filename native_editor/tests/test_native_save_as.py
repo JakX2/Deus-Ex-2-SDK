@@ -237,6 +237,48 @@ class NativeGmpSaveAsTests(unittest.TestCase):
         self.assertEqual(verified["translated_existing_actors"], 1)
         self.assertGreater(verified["changed_bytes"], 0)
         self.assertLessEqual(verified["changed_bytes"], 12)
+        self.assertTrue(verified["strict_serialized_float32_match"])
+        self.assertEqual(verified["changed_component_count"], 3)
+        self.assertEqual([row["axis"] for row in verified["changed_components"]], ["X", "Y", "Z"])
+        self.assertEqual([row["output_value"] for row in verified["changed_components"]], [120.0, 240.0, 320.0])
+        self.assertEqual(
+            sum(row["changed_bytes"] for row in verified["changed_components"]),
+            verified["changed_bytes"],
+        )
+
+    def test_verify_rejects_nearby_float_tampering_even_with_updated_hash(self):
+        """A 0.004-unit deviation formerly passed the approximate 0.01 test."""
+        export_translation_copy(self.source, self.actors_file, self.draft_path, self.output)
+        edited = bytearray(self.output.read_bytes())
+        pkg = Package(self.output)
+        offset = location_float_offsets(pkg, pkg.exports[0])["X"]
+        struct.pack_into("<f", edited, offset, 120.004)
+        self.output.write_bytes(edited)
+        manifest = self.output.with_suffix(".dx2ed-manifest.json")
+        record = json.loads(manifest.read_text())
+        record["output_sha256"] = hashlib.sha256(edited).hexdigest()
+        manifest.write_text(json.dumps(record))
+        with self.assertRaisesRegex(ValueError, "float32 bytes differ"):
+            verify_translation_copy(self.source, self.output)
+
+    def test_verify_rejects_nearby_manifest_tampering(self):
+        """Do not tolerate a manifest that describes nearby but different output."""
+        export_translation_copy(self.source, self.actors_file, self.draft_path, self.output)
+        manifest = self.output.with_suffix(".dx2ed-manifest.json")
+        record = json.loads(manifest.read_text())
+        record["translated_existing_actors"][0]["after"][0] = 120.003
+        manifest.write_text(json.dumps(record))
+        with self.assertRaisesRegex(ValueError, "float32 bytes differ"):
+            verify_translation_copy(self.source, self.output)
+
+    def test_verify_rejects_malformed_manifest_coordinate_lists(self):
+        export_translation_copy(self.source, self.actors_file, self.draft_path, self.output)
+        manifest = self.output.with_suffix(".dx2ed-manifest.json")
+        record = json.loads(manifest.read_text())
+        record["translated_existing_actors"][0]["after"] = "120, 240, 320"
+        manifest.write_text(json.dumps(record))
+        with self.assertRaisesRegex(ValueError, "exactly three coordinates"):
+            verify_translation_copy(self.source, self.output)
 
     def test_verify_rejects_unrelated_edits_even_if_hash_is_updated(self):
         export_translation_copy(self.source, self.actors_file, self.draft_path, self.output)
@@ -267,7 +309,7 @@ class NativeGmpSaveAsTests(unittest.TestCase):
         doc = json.loads(manifest.read_text())
         doc["output_sha256"] = hashlib.sha256(self.output.read_bytes()).hexdigest()
         manifest.write_text(json.dumps(doc))
-        with self.assertRaisesRegex(ValueError, "Exported Location differs|no changed bytes"):
+        with self.assertRaisesRegex(ValueError, "Exported Location.*differs|no changed bytes"):
             verify_translation_copy(self.source, self.output)
 
     def test_edited_rotation_is_rejected(self):
