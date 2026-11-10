@@ -172,8 +172,8 @@ func _run() -> void:
     # transforms; Undo/Redo must restore names and serialized identity.
     editor.selected_group_names = ["TestGroup"]
     editor.group_name_edit.text = "Renamed_Group"
-    var rename_parent := editor.draft_groups["TestGroup"]
-    var rename_world := rename_parent.global_transform
+    var rename_parent: Node3D = editor.draft_groups["TestGroup"]
+    var rename_world: Transform3D = rename_parent.global_transform
     editor._rename_selected_group()
     if (editor.draft_groups.has("TestGroup")
         or not editor.draft_groups.has("Renamed_Group")
@@ -282,5 +282,6 @@ func _run() -> void:
         if FileAccess.file_exists(draft_path + suffix):
             DirAccess.remove_absolute(draft_path + suffix)
     editor.queue_free()
-    print("DX2Ed v0.57 private hierarchy rename plus v0.56 groups, parent transforms, tree selection, Undo/Redo, duplicate, reset, safe JSON reopen and malicious preflight PASS")
+    print("DX2Ed v0.56 private hierarchy groups, parent transforms, tree selection, Undo/Redo, duplicate, reset, safe JSON reopen and malicious preflight PASS")
+    print("DX2Ed v0.57 private group rename, Undo/Redo and rejected invalid name PASS")
     quit(0)
