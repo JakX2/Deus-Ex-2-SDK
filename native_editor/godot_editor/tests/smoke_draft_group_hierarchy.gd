@@ -212,7 +212,12 @@ func _run() -> void:
 
     # Malicious duplicate membership and singular group matrices must be rejected
     # before the live editor scene or its current group hierarchy is changed.
-    var stable_group_transform := group.global_transform
+    # Undo/Redo intentionally rebuild private parents; never reuse the freed node.
+    group = editor.draft_groups.get("TestGroup", null)
+    if not is_instance_valid(group):
+        _fail("Undo failed to reconstruct valid parent before document validation")
+        return
+    var stable_group_transform: Transform3D = group.global_transform
     var bad_doc: Dictionary = JSON.parse_string(saved_json)
     bad_doc["groups"][0]["members"].append(bad_doc["groups"][0]["members"][0])
     if not _write_document(draft_path, JSON.stringify(bad_doc)):
