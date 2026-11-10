@@ -34,6 +34,7 @@ if /I "%~1"=="--self-test" (
     smoke_draft_group_hierarchy.gd
     smoke_native_static_unplace.gd
     smoke_native_combined_prop_plan.gd
+    smoke_native_mod_recipe.gd
     smoke_t3ed_face_edit_roundtrip.gd
     smoke_draft_brush_viewport_face_pick.gd
     smoke_custom_polygon_geometry.gd
