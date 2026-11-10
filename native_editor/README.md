@@ -1039,3 +1039,32 @@ bytes again. Manual owner PASS outcomes are **not independent engine
 verification**; the tool never declares gameplay_runtime_verified,
 does not launch/install maps, alter original game content or edit saves.
 See docs/research/dx2ed-retail-trial-dossier-v0-64.md.
+
+## DX2Ed v0.65 disposable, reversible retail map A/B testing
+
+The Godot prop toolbar now offers a **Disposable Game Trial...**
+control with **Prepare backup**, **Stage test GMP**, **Restore original**
+and **Inspect test copy** operations. Stage/restore is allowed **only**
+inside an existing, separately copied Invisible War installation named
+exactly `DX2Ed_Disposable_Test` (with System and Content/DX2/Maps).
+The test copy's map must already be **byte-identical** to the original.
+A v0.60 isolated combined map plus manifest is independently replayed
+from the original GMP before a stage is permitted.
+
+Prepare writes an exclusive original-map backup and durable journal
+under the test copy without modifying its GMP. Stage requires explicit
+confirmation and an acknowledgement flag, validates source/backup/
+candidate checksums and atomically swaps exactly ONE test-copy map.
+Restore requires the current test map to match the expected candidate
+(or original), verifies the preserved original backup and restores it.
+Unknown modified maps are **refused, never overwritten**; interrupted
+staging/restoring is recoverable from the journal.
+
+The standalone Python CLI
+`native_editor/package_writer/dx2_disposable_retail_trial.py`
+also supports `--prepare`, `--stage`, `--status` and `--restore`.
+**It does not launch the game, touch the real original installation,
+manage game saves or independently verify any gameplay.** User must
+identify the disposable copied installation and close the game before
+staging or restoring. Full procedures and exact limitations:
+`docs/research/dx2ed-disposable-retail-trial-v0-65.md`.
