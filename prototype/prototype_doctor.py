@@ -107,6 +107,7 @@ REQUIRED = (
     "native_editor/package_writer/dx2_actor_unplace_probe.py",
     "native_editor/package_writer/dx2_native_prop_plan.py",
     "native_editor/package_writer/dx2_mod_recipe.py",
+    "native_editor/package_writer/dx2_incoming_ref_audit.py",
     "map_exporter/dx2_map_exporter.py",
     "actor_explorer/dx2_actor_explorer.py",
     "research/dx2/export_capsule_first_contact_preview.py",
@@ -140,6 +141,7 @@ PREFLIGHT_WORKERS = (
     "native_editor/package_writer/dx2_actor_unplace_probe.py",
     "native_editor/package_writer/dx2_native_prop_plan.py",
     "native_editor/package_writer/dx2_mod_recipe.py",
+    "native_editor/package_writer/dx2_incoming_ref_audit.py",
 )
 
 RETAIL_EXT = {".gmp", ".ibd", ".d2u", ".t3u", ".ibt", ".pak", ".dds",
