@@ -1,6 +1,16 @@
 # T3Ed-to-DX2Ed capability port: source-grounded roadmap
 
 **Direction:** recreate as much of the original Ion Storm T3Ed mission-authoring workflow as can be supported **for Deus Ex: Invisible War**, while retaining the Unity-like interface. The result should be an editor for DX2 missions, not a Thief 3 map opener or an unverified T3 binary transplant.
+**Player-facing success criterion:** A player can import an original DX2 mission,
+make a meaningful change to geometry, objects, properties, scripts or gameplay,
+export a game-compatible mod, and load/play that modification in the original
+Invisible War executable. Private Godot previews and byte-valid GMP candidates
+are intermediate research milestones, not a completed SDK. T3Ed is the
+capability reference; DX2-specific engine data and serialization remain the
+source of truth. Experimental original StaticMeshActor Level-list removal is
+tracked in docs/research/dx2ed-native-static-unplace-v0-59.md, but its
+retail runtime effect is not yet verified.
+
 
 See [t3ed_parity.json](t3ed_parity.json) for the machine-readable 23-area tracker. Status describes **DX2Ed**, not T3Ed.
 

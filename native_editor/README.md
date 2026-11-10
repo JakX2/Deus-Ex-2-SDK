@@ -901,3 +901,23 @@ The Hierarchy tab can now create and remove editor-only parent groups for select
 ## DX2Ed v0.57 private group rename (draft)
 
 Select a single group in the Hierarchy tab, type its replacement name in the existing group-name input and click **Rename**. Names must be unique ASCII letters, digits or underscores (1–48 characters). Rename preserves the original parent and child transforms, is undoable, and persists to private group JSON drafts. It does not rename, rebuild or serialize any native DX2 map entity.
+
+## DX2Ed v0.59: experimental native original prop Unplace Save As
+
+Select exactly one **original, unchanged** StaticMeshActor in Godot, then
+choose **Experimental Unplace Original Prop Save As...** from the prop toolbar.
+After source SHA and original export/name/state eligibility checks, the tool
+writes a **new isolated GMP** with one original Level actor reference
+removed. It preserves every original actor export, does not rebuild BSP,
+collision or IBD, and does not remove the native export itself. It refuses
+draft copies, groups, property edits, moved originals and other preview edits,
+rather than silently dropping these changes from the GMP.
+
+Python independently regenerates the entire candidate from the owner-original
+GMP to verify every byte against the isolated Save As output. Synthetic native
+GMP and Godot 4.3 headless regressions, plus Windows bundled self-tests,
+exercise the new path. **The actual in-game disappearance, collision and
+save/load result of this unplace operation have not been tested.** No
+source game asset, installed map or saved game is modified by the SDK.
+See docs/research/dx2ed-native-static-unplace-v0-59.md for the strict
+runtime acceptance checklist and command-line verification.

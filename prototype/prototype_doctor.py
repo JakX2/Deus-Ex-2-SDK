@@ -55,6 +55,7 @@ REQUIRED = (
     "native_editor/godot_editor/tests/smoke_orthographic_gizmo_constraints.gd",
     "native_editor/godot_editor/tests/smoke_transform_pivot_orientation.gd",
     "native_editor/godot_editor/tests/smoke_draft_group_hierarchy.gd",
+    "native_editor/godot_editor/tests/smoke_native_static_unplace.gd",
     "native_editor/godot_editor/tests/smoke_t3ed_face_edit_roundtrip.gd",
     "native_editor/godot_editor/tests/smoke_draft_brush_viewport_face_pick.gd",
     "native_editor/godot_editor/custom_polygon_geometry.gd",
@@ -101,6 +102,7 @@ REQUIRED = (
     "native_editor/godot_editor/demo/scene.glb",
     "native_editor/godot_editor/demo/actors.json",
     "native_editor/package_writer/dx2_actor_clone_probe.py",
+    "native_editor/package_writer/dx2_actor_unplace_probe.py",
     "map_exporter/dx2_map_exporter.py",
     "actor_explorer/dx2_actor_explorer.py",
     "research/dx2/export_capsule_first_contact_preview.py",
@@ -131,6 +133,7 @@ PREFLIGHT_WORKERS = (
     "native_editor/godot_editor/backend/dx2_collision_selection_cache.py",
     "research/dx2/export_capsule_first_contact_preview.py",
     "native_editor/package_writer/dx2_actor_clone_probe.py",
+    "native_editor/package_writer/dx2_actor_unplace_probe.py",
 )
 
 RETAIL_EXT = {".gmp", ".ibd", ".d2u", ".t3u", ".ibt", ".pak", ".dds",
