@@ -37,6 +37,7 @@ if /I "%~1"=="--self-test" (
     smoke_native_mod_recipe.gd
     smoke_crosssource_reference_review.gd
     smoke_native_retail_trial_dossier.gd
+    smoke_disposable_retail_trial.gd
     smoke_t3ed_face_edit_roundtrip.gd
     smoke_draft_brush_viewport_face_pick.gd
     smoke_custom_polygon_geometry.gd
