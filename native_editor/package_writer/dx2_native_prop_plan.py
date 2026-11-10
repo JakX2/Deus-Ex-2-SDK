@@ -27,6 +27,7 @@ from dx2_actor_clone_probe import (
     MAX_OFFSET,
 )
 from dx2_actor_unplace_probe import _baseline
+from dx2_incoming_ref_audit import require_no_explicit_incoming
 from dx2_package_roundtrip import _parse_both, _validate_input, sha256
 from t3pack import apply_edits, verify_patch
 from upkgwrite import ActorEdit, PackageWriter, f32
@@ -121,6 +122,10 @@ def compile_in_memory(source: Path, *, source_sha256: str, plan: dict):
     if old_refs is None or level is None:
         raise ValueError("Original map Level list is unavailable")
     sources = _source_actors(pkg, native, safe_plan)
+    unplace_audits = [
+        require_no_explicit_incoming(pkg, row["export"])
+        for row in safe_plan["unplaces"]
+    ]
     moved = {}
     copied = []
     unplaced = {row["export"] for row in safe_plan["unplaces"]}
@@ -240,6 +245,9 @@ def compile_in_memory(source: Path, *, source_sha256: str, plan: dict):
         "plan": safe_plan, "original_source_unchanged": True,
         "all_changes_scope_verified": True, "native_actor_exports_deleted": False,
         "incoming_references_verified": False,
+        "explicit_incoming_references_checked": True,
+        "unplaced_opaque_reference_scopes": sum(
+            row["opaque_or_untyped_scopes"] for row in unplace_audits),
         "runtime_game_verified": False, "game_installation_modified": False,
         "output_written": False,
         "notes": ("Only original static prop translations, neutral-state clones and "
