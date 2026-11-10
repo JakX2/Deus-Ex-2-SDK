@@ -102,3 +102,28 @@ a nonstandard manifest path, pass \`--manifest "path\to\manifest.json"\`.
 All three CLI modes (audit, write, verify) operate on user-owned source
 files and synthetic CI fixtures. No copyrighted GMP contents are checked
 into the repository.
+
+## v0.58: exact float32 output verification and per-component byte ledger
+
+The independent **Verify GMP copy...** path now requires the edited
+`Location.X/Y/Z` field payloads to match the **exact four bytes** produced
+by encoding each manifest's intended value as little-endian IEEE-754 float32.
+Previously a 0.01-unit numeric tolerance could mistakenly accept a nearby but
+different GMP float even if the output hash and manifest were updated together.
+Original metadata-to-source matching retains its conservative decoder
+tolerance; **edited payloads have zero binary tolerance**.
+
+The `--verify` JSON report adds `strict_serialized_float32_match: true`,
+`changed_component_count` and `changed_components`. Each changed axis has
+the original actor name and one-based export ID, exact original payload byte
+offset, source/output float32 values and the number of changed bytes in that
+four-byte field. The summed field-byte counts must equal the total binary
+diff. Neither source package nor exported GMP is modified by verification.
+
+Synthetic v95 tests include rehashing a deliberately corrupted GMP with a
+nearby coordinate, altering the manifest's intended coordinate without
+touching the GMP, malformed manifest coordinate lists and a successful
+three-axis diff ledger. This makes **isolated retail A/B tests easier to
+audit**, but does not establish in-game runtime loadability or make native
+brush/actor creation possible. Source-only DX2SDK stays at v0.27; no new
+writer or game asset is introduced.
