@@ -140,6 +140,24 @@ runtime scripts. This tool does not modify native game packages or
 turn absent known links into an actor-deletion safety claim.
 See docs/research/dx2ed-crosssource-script-ref-review-v0-63.md.
 
+## DX2Ed v0.64: controlled original-vs-candidate retail game test plan
+
+The static-prop Godot toolbar can now generate a private retail A/B
+test dossier from a **whole-file replay-verified original-source-pinned
+isolated GMP**. The generated human checklist includes exact
+original/edited actor expectations plus baseline, collision,
+level re-entry, save/reload and source restoration phases. A blank
+observation JSON records manual results separately; a CLI read-only
+assessor rechecks the source/candidate hashes and reconstructs the
+entire candidate GMP before summarizing the owner's observations.
+
+No game launch/install/rollback is performed automatically. Even a
+full set of manually marked passes is owner-reported and does NOT
+certify runtime correctness, safe Level-list deletion or full actor-
+to-script references. This is an engineering validation bridge,
+not a native mission cooker. Source and full workflow details:
+docs/research/dx2ed-retail-trial-dossier-v0-64.md.
+
 ## Immediate workflow
 
 Use the parity tracker in code review and keep its `missing`, `partial`, `verified` labels conservative. Do not equate a working preview with a working mod. Next engineering step is the DX2 IBD **Asset Browser**, followed by typed actor properties. Each cross-over feature requires its own DX2 format tests, then Windows/Godot UI tests and in-game validation.
