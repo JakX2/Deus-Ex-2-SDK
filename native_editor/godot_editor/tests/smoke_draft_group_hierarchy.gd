@@ -168,9 +168,56 @@ func _run() -> void:
             _fail("Private Save/reopen did not restore grouped member transforms: " + name)
             return
 
+    # Rename is private identity only: preserve the actual parent and child
+    # transforms; Undo/Redo must restore names and serialized identity.
+    editor.selected_group_names = ["TestGroup"]
+    editor.group_name_edit.text = "Renamed_Group"
+    var rename_parent: Node3D = editor.draft_groups["TestGroup"]
+    var rename_world: Transform3D = rename_parent.global_transform
+    editor._rename_selected_group()
+    if (editor.draft_groups.has("TestGroup")
+        or not editor.draft_groups.has("Renamed_Group")
+        or editor.draft_groups["Renamed_Group"] != rename_parent
+        or editor.selected_group_names != ["Renamed_Group"]
+        or rename_parent.get_meta("dx2ed_group_name") != "Renamed_Group"
+        or not rename_parent.global_transform.is_equal_approx(rename_world)):
+        _fail("Rename did not preserve the same parent node and transform")
+        return
+    if editor._serialize_draft_groups()[0].get("name", "") != "Renamed_Group":
+        _fail("Renamed identity did not reach private draft serialization")
+        return
+    editor._undo_edit()
+    if not editor.draft_groups.has("TestGroup") or editor.draft_groups.has("Renamed_Group"):
+        _fail("Undo did not restore the original group name")
+        return
+    editor._redo_edit()
+    if not editor.draft_groups.has("Renamed_Group") or editor.draft_groups.has("TestGroup"):
+        _fail("Redo did not restore the renamed group")
+        return
+    editor._undo_edit()
+    if not editor.draft_groups.has("TestGroup"):
+        _fail("Could not restore original group name after rename Undo")
+        return
+    editor.selected_group_names = ["TestGroup"]
+    editor.group_name_edit.text = "Invalid Group"
+    editor._rename_selected_group()
+    if not editor.draft_groups.has("TestGroup") or editor.draft_groups.size() != 1:
+        _fail("Invalid group name was accepted")
+        return
+    editor.group_name_edit.text = "TestGroup"
+    editor._rename_selected_group()
+    if not editor.draft_groups.has("TestGroup") or editor.draft_groups.size() != 1:
+        _fail("No-op rename changed group identity")
+        return
+
     # Malicious duplicate membership and singular group matrices must be rejected
     # before the live editor scene or its current group hierarchy is changed.
-    var stable_group_transform := group.global_transform
+    # Undo/Redo intentionally rebuild private parents; never reuse the freed node.
+    group = editor.draft_groups.get("TestGroup", null)
+    if not is_instance_valid(group):
+        _fail("Undo failed to reconstruct valid parent before document validation")
+        return
+    var stable_group_transform: Transform3D = group.global_transform
     var bad_doc: Dictionary = JSON.parse_string(saved_json)
     bad_doc["groups"][0]["members"].append(bad_doc["groups"][0]["members"][0])
     if not _write_document(draft_path, JSON.stringify(bad_doc)):
@@ -241,4 +288,5 @@ func _run() -> void:
             DirAccess.remove_absolute(draft_path + suffix)
     editor.queue_free()
     print("DX2Ed v0.56 private hierarchy groups, parent transforms, tree selection, Undo/Redo, duplicate, reset, safe JSON reopen and malicious preflight PASS")
+    print("DX2Ed v0.57 private group rename, Undo/Redo and rejected invalid name PASS")
     quit(0)
