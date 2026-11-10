@@ -210,6 +210,11 @@ var native_trial_candidate_dialog: FileDialog
 var native_trial_dossier_dialog: FileDialog
 var native_trial_confirmation: ConfirmationDialog
 var native_trial_pending: Dictionary = {}
+var native_sandbox_action: OptionButton
+var native_sandbox_candidate_dialog: FileDialog
+var native_sandbox_root_dialog: FileDialog
+var native_sandbox_confirmation: ConfirmationDialog
+var native_sandbox_pending: Dictionary = {}
 var native_staged_unplaces: Dictionary = {} # original actor name -> one-based original export
 var gmp_verify_dialog: FileDialog
 var native_export_thread: Thread = null
@@ -843,6 +848,17 @@ func _make_ui() -> void:
         + "Does NOT launch or install the game.")
     trial_button.pressed.connect(_open_native_trial_candidate_dialog)
     prop_bar.add_child(trial_button)
+    native_sandbox_action = OptionButton.new()
+    for mode in ["Prepare backup", "Stage test GMP", "Restore original", "Inspect test copy"]:
+        native_sandbox_action.add_item(mode)
+    native_sandbox_action.tooltip_text = (
+        "Only a separate DX2Ed_Disposable_Test game copy. Stage is explicitly confirmed; "
+        + "rollback backup is preserved. No game is launched.")
+    prop_bar.add_child(native_sandbox_action)
+    var sandbox_button := Button.new()
+    sandbox_button.text = "Disposable Game Trial..."
+    sandbox_button.pressed.connect(_open_native_sandbox_trial)
+    prop_bar.add_child(sandbox_button)
     prop_edit_step = SpinBox.new()
     prop_edit_step.min_value = 0.05
     prop_edit_step.max_value = 64.0
@@ -2058,6 +2074,22 @@ func _make_ui() -> void:
     native_trial_confirmation.title = "Confirm private, no-game-install retail test checklist"
     native_trial_confirmation.confirmed.connect(_execute_native_trial_dossier)
     add_child(native_trial_confirmation)
+    native_sandbox_candidate_dialog = FileDialog.new()
+    native_sandbox_candidate_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_sandbox_candidate_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    native_sandbox_candidate_dialog.filters = PackedStringArray([
+        "*.gmp ; Isolated, already verified experimental GMP"])
+    native_sandbox_candidate_dialog.file_selected.connect(_stage_sandbox_candidate)
+    add_child(native_sandbox_candidate_dialog)
+    native_sandbox_root_dialog = FileDialog.new()
+    native_sandbox_root_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_sandbox_root_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+    native_sandbox_root_dialog.dir_selected.connect(_stage_sandbox_root)
+    add_child(native_sandbox_root_dialog)
+    native_sandbox_confirmation = ConfirmationDialog.new()
+    native_sandbox_confirmation.title = "Confirm disposable DX2 test game copy operation"
+    native_sandbox_confirmation.confirmed.connect(_execute_sandbox_trial)
+    add_child(native_sandbox_confirmation)
     environment_sound_dialog = FileDialog.new()
     environment_sound_dialog.access = FileDialog.ACCESS_FILESYSTEM
     environment_sound_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -3147,6 +3179,7 @@ func _clear_current_scene() -> void:
     native_recipe_pending.clear()
     native_recipe_apply_pending.clear()
     native_trial_pending.clear()
+    native_sandbox_pending.clear()
     native_staged_unplaces.clear()
     next_prop_copy_id = 1
     undo_stack.clear()
@@ -10927,6 +10960,179 @@ func _native_trial_dossier_finished(code: int, response: String,
             + " | No game files changed or gameplay verified.")
         return
     status_label.text = "Trial GMP rejected or report creation refused: " + _native_clone_error_reason(response)
+
+
+## v0.65: explicit disposable GAME COPY A/B test. Never point at an
+## original installation. Python demands exact game-copy folder name,
+## source SHA, candidate full-byte replay, exclusive backup and ACK.
+func _open_native_sandbox_trial() -> void:
+    native_sandbox_pending.clear()
+    if native_export_thread != null or build_thread != null:
+        status_label.text = "Disposable trial refused while another worker is active."
+        return
+    var mode := native_sandbox_action.get_selected_id()
+    if mode < 0 or mode > 3:
+        status_label.text = "Select a disposable trial operation."
+        return
+    native_sandbox_pending["mode"] = mode
+    if mode <= 1:
+        if not _native_clone_source_ready():
+            native_sandbox_pending.clear()
+            status_label.text = "Preparing or staging needs the exact unchanged original GMP."
+            return
+        native_sandbox_pending["source"] = last_gmp_path
+        native_sandbox_pending["sha"] = source_gamesys_sha256
+        native_sandbox_candidate_dialog.current_file = last_gmp_path.get_file()
+        native_sandbox_candidate_dialog.popup_centered_ratio(0.75)
+        return
+    native_sandbox_root_dialog.popup_centered_ratio(0.75)
+
+
+func _stage_sandbox_candidate(candidate: String) -> void:
+    if (native_sandbox_pending.is_empty()
+        or int(native_sandbox_pending.get("mode", -1)) > 1
+        or not _native_clone_source_ready()
+        or not FileAccess.file_exists(candidate) or candidate == last_gmp_path
+        or candidate.get_file().to_lower() != last_gmp_path.get_file().to_lower()):
+        native_sandbox_pending.clear()
+        status_label.text = "Select a separate source-pinned isolated candidate GMP."
+        return
+    native_sandbox_pending["candidate"] = candidate
+    native_sandbox_pending["candidate_sha256"] = FileAccess.get_sha256(candidate)
+    native_sandbox_root_dialog.popup_centered_ratio(0.75)
+
+
+func _stage_sandbox_root(root: String) -> void:
+    if (native_sandbox_pending.is_empty()
+        or native_export_thread != null or build_thread != null
+        or not DirAccess.dir_exists_absolute(root)
+        or root.get_file() != "DX2Ed_Disposable_Test"):
+        native_sandbox_pending.clear()
+        status_label.text = "Only a separate directory named DX2Ed_Disposable_Test is allowed."
+        return
+    var mode := int(native_sandbox_pending.get("mode", -1))
+    if mode <= 1:
+        if (not _native_clone_source_ready()
+            or str(native_sandbox_pending.get("source", "")) != last_gmp_path
+            or str(native_sandbox_pending.get("sha", "")) != source_gamesys_sha256
+            or not FileAccess.file_exists(str(native_sandbox_pending.get("candidate", "")))
+            or FileAccess.get_sha256(str(native_sandbox_pending.get("candidate", "")))
+                != str(native_sandbox_pending.get("candidate_sha256", ""))):
+            native_sandbox_pending.clear()
+            status_label.text = "Disposable trial cancelled: original or isolated candidate changed."
+            return
+    native_sandbox_pending["root"] = root
+    if mode == 3:
+        _execute_sandbox_trial()
+        return
+    var title := ("Create protected rollback backup"
+        if mode == 0 else "STAGE modified GMP in DISPOSABLE game copy"
+        if mode == 1 else "RESTORE ORIGINAL GMP in disposable game copy")
+    native_sandbox_confirmation.dialog_text = (
+        title
+        + "\n\nDisposable test folder: " + root
+        + "\nOriginal GMP and external candidate remain untouched."
+        + "\nNo actual game installation outside this EXPLICIT test copy is allowed."
+        + "\nThe game must be CLOSED before copying/restoring its GMP."
+        + "\n\n" + ("Only a backup/journal is created, map unchanged." if mode == 0
+            else "Overwrite exactly ONE test-copy GMP, after verifying whole-file source replay."
+            if mode == 1 else "Restore the original GMP only if test file still matches expected candidate.")
+        + "\nNo game is automatically launched. Gameplay remains unverified.")
+    native_sandbox_confirmation.popup_centered(Vector2i(770, 420))
+
+
+func _execute_sandbox_trial() -> void:
+    if native_sandbox_pending.is_empty() or native_export_thread != null or build_thread != null:
+        native_sandbox_pending.clear()
+        status_label.text = "Disposable trial cancelled: no valid request or worker busy."
+        return
+    var frozen := native_sandbox_pending.duplicate(true)
+    native_sandbox_pending.clear()
+    var mode := int(frozen.get("mode", -1))
+    if mode < 0 or mode > 3 or not DirAccess.dir_exists_absolute(str(frozen.get("root", ""))):
+        status_label.text = "Disposable trial cancelled: target folder unavailable."
+        return
+    if mode <= 1:
+        if (not _native_clone_source_ready()
+            or str(frozen.get("source", "")) != last_gmp_path
+            or str(frozen.get("sha", "")) != source_gamesys_sha256
+            or not FileAccess.file_exists(str(frozen.get("candidate", "")))
+            or FileAccess.get_sha256(str(frozen.get("candidate", "")))
+                != str(frozen.get("candidate_sha256", ""))):
+            status_label.text = "Disposable trial cancelled: frozen source/candidate changed."
+            return
+    var script := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_disposable_retail_trial.py")
+    if not FileAccess.file_exists(script):
+        status_label.text = "Disposable game trial Python worker unavailable."
+        return
+    native_export_thread = Thread.new()
+    var err := native_export_thread.start(_run_sandbox_trial.bind(script, frozen))
+    if err != OK:
+        native_export_thread = null
+        status_label.text = "Could not start disposable game trial worker."
+        return
+    status_label.text = "Verifying source and disposable test-copy GMP operation..."
+
+
+func _run_sandbox_trial(script: String, frozen: Dictionary) -> void:
+    var mode := int(frozen["mode"])
+    var args := PackedStringArray([script, "--test-root", str(frozen["root"])])
+    if mode == 0:
+        args.append("--prepare")
+    elif mode == 1:
+        args.append("--stage")
+    elif mode == 2:
+        args.append("--restore")
+    else:
+        args.append("--status")
+    if mode <= 1:
+        args.append_array(PackedStringArray([
+            "--source", str(frozen["source"]),
+            "--candidate", str(frozen["candidate"]),
+            "--source-sha256", str(frozen["sha"])
+        ]))
+    if mode == 1:
+        args.append_array(PackedStringArray([
+            "--acknowledge", "YES_DISPOSABLE_TEST_COPY"]))
+    var output: Array = []
+    var code := OS.execute(PythonRuntime.executable(), args, output, true)
+    if code == -1:
+        var launcher := PackedStringArray(["-3"])
+        launcher.append_array(args)
+        output.clear()
+        code = OS.execute("py", launcher, output, true)
+    call_deferred("_sandbox_trial_finished", code, "\n".join(output), mode,
+        str(frozen["root"]), str(frozen.get("candidate_sha256", "")))
+
+
+func _sandbox_trial_finished(code: int, response: String, mode: int,
+        root: String, expected_candidate: String) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    var report: Variant = JSON.parse_string(response.strip_edges())
+    if (code != 0 or typeof(report) != TYPE_DICTIONARY
+        or report.get("schema") != "DX2Ed-disposable-retail-static-prop-trial-v1"
+        or report.get("source_original_modified") != false
+        or report.get("game_runtime_verified") != false):
+        status_label.text = "Disposable test operation refused: " + _native_clone_error_reason(response)
+        return
+    if mode <= 1 and report.get("candidate_sha256") != expected_candidate:
+        status_label.text = "Trial worker returned unexpected candidate identity."
+        return
+    if (mode == 0 and report.get("status") != "prepared-original-map-untouched"
+        or mode == 1 and report.get("status") != "staged-disposable-game-copy-only"
+        or mode == 2 and report.get("status") != "restored-original-gmp-in-disposable-copy"
+        or mode == 3 and str(report.get("status", "")) not in [
+            "prepared", "staging", "staged", "restoring", "restored"]):
+        status_label.text = "Unexpected disposable game trial state: " + str(report.get("status", ""))
+        return
+    status_label.text = ("Disposable test copy: " + root
+        + " | " + str(report.get("status", "unknown"))
+        + " | Actual gameplay NOT verified."
+        + (" Target: " + str(report.get("target_content", "unknown")) if mode == 3 else "")
+        + " | Original game files outside test copy unchanged.")
 
 
 func _open_native_save_as_dialog() -> void:

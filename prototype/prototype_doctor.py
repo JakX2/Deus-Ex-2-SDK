@@ -60,6 +60,7 @@ REQUIRED = (
     "native_editor/godot_editor/tests/smoke_native_mod_recipe.gd",
     "native_editor/godot_editor/tests/smoke_crosssource_reference_review.gd",
     "native_editor/godot_editor/tests/smoke_native_retail_trial_dossier.gd",
+    "native_editor/godot_editor/tests/smoke_disposable_retail_trial.gd",
     "native_editor/godot_editor/tests/smoke_t3ed_face_edit_roundtrip.gd",
     "native_editor/godot_editor/tests/smoke_draft_brush_viewport_face_pick.gd",
     "native_editor/godot_editor/custom_polygon_geometry.gd",
@@ -112,6 +113,7 @@ REQUIRED = (
     "native_editor/package_writer/dx2_incoming_ref_audit.py",
     "native_editor/package_writer/dx2_crosssource_ref_review.py",
     "native_editor/package_writer/dx2_retail_trial_dossier.py",
+    "native_editor/package_writer/dx2_disposable_retail_trial.py",
     "map_exporter/dx2_map_exporter.py",
     "actor_explorer/dx2_actor_explorer.py",
     "research/dx2/export_capsule_first_contact_preview.py",
@@ -148,6 +150,7 @@ PREFLIGHT_WORKERS = (
     "native_editor/package_writer/dx2_incoming_ref_audit.py",
     "native_editor/package_writer/dx2_crosssource_ref_review.py",
     "native_editor/package_writer/dx2_retail_trial_dossier.py",
+    "native_editor/package_writer/dx2_disposable_retail_trial.py",
 )
 
 RETAIL_EXT = {".gmp", ".ibd", ".d2u", ".t3u", ".ibt", ".pak", ".dds",
