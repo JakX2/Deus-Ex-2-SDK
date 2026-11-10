@@ -55,6 +55,7 @@ REQUIRED = (
     "native_editor/godot_editor/tests/smoke_orthographic_gizmo_constraints.gd",
     "native_editor/godot_editor/tests/smoke_transform_pivot_orientation.gd",
     "native_editor/godot_editor/tests/smoke_draft_group_hierarchy.gd",
+    "native_editor/godot_editor/tests/smoke_native_static_unplace.gd",
     "native_editor/godot_editor/tests/smoke_t3ed_face_edit_roundtrip.gd",
     "native_editor/godot_editor/tests/smoke_draft_brush_viewport_face_pick.gd",
     "native_editor/godot_editor/custom_polygon_geometry.gd",
