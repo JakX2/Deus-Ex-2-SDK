@@ -74,6 +74,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 "native_editor/godot_editor/tests/smoke_native_static_unplace.gd",
                 "native_editor/godot_editor/tests/smoke_native_combined_prop_plan.gd",
                 "native_editor/godot_editor/tests/smoke_native_mod_recipe.gd",
+                "native_editor/godot_editor/tests/smoke_crosssource_reference_review.gd",
                 "native_editor/godot_editor/source_surface_matlib_crossref.gd",
                 "native_editor/godot_editor/tests/smoke_source_surface_matlib_crossref.gd",
                 "native_editor/godot_editor/source_section_topology_panel.gd",
