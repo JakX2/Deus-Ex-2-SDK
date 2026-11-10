@@ -104,6 +104,7 @@ REQUIRED = (
     "native_editor/godot_editor/demo/actors.json",
     "native_editor/package_writer/dx2_actor_clone_probe.py",
     "native_editor/package_writer/dx2_actor_unplace_probe.py",
+    "native_editor/package_writer/dx2_native_prop_plan.py",
     "map_exporter/dx2_map_exporter.py",
     "actor_explorer/dx2_actor_explorer.py",
     "research/dx2/export_capsule_first_contact_preview.py",
@@ -135,6 +136,7 @@ PREFLIGHT_WORKERS = (
     "research/dx2/export_capsule_first_contact_preview.py",
     "native_editor/package_writer/dx2_actor_clone_probe.py",
     "native_editor/package_writer/dx2_actor_unplace_probe.py",
+    "native_editor/package_writer/dx2_native_prop_plan.py",
 )
 
 RETAIL_EXT = {".gmp", ".ibd", ".d2u", ".t3u", ".ibt", ".pak", ".dds",
