@@ -9882,6 +9882,9 @@ func _native_unplace_preflight(script: String, plan: Dictionary) -> Dictionary:
         and parsed.get("actor") == plan["actor"]
         and parsed.get("export") == plan["export"]
         and parsed.get("native_actor_deleted") == false
+        and parsed.get("explicit_incoming_references_checked") == true
+        and parsed.get("explicit_incoming_reference_count") == 0
+        and parsed.get("incoming_references_verified") == false
         and parsed.get("output_written") == false):
         return {"eligible": true}
     return {"eligible": false, "reason": _native_clone_error_reason(response)}
@@ -9931,7 +9934,8 @@ func _stage_native_unplace_export(destination: String) -> void:
         + "\nOriginal one-based export: " + str(plan["export"])
         + "\n\nRemoves ONE reference from the original Level actor list."
         + "\nAll actor export payloads remain byte-identical."
-        + "\nIncoming references and actual game behavior are NOT verified."
+        + "\nExplicit inbound object references are checked and block this operation."
+        + "\nOpaque references and actual game behavior are NOT verified."
         + "\n\nNew isolated GMP: " + destination
         + "\n\nNever installs into a game directory or overwrites the source."
         + "\nConfirm to write the experimental candidate."
@@ -10033,11 +10037,12 @@ func _toggle_native_combined_unplace() -> void:
         or not node.global_transform.is_equal_approx(original_mesh_transforms[name])):
         status_label.text = "Stage unplace requires the original prop to be unmoved."
         return
-    var script := ProjectSettings.globalize_path("res://../package_writer/dx2_actor_clone_probe.py")
+    var script := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_actor_unplace_probe.py")
     if not FileAccess.file_exists(script):
-        status_label.text = "Source preflight script unavailable."
+        status_label.text = "Incoming reference-aware unplace preflight missing."
         return
-    var verdict := _native_clone_check_actor(script, {
+    var verdict := _native_unplace_preflight(script, {
         "actor": name, "export": int(actor["export"])})
     if not verdict.get("eligible", false):
         status_label.text = "Stage unplace refused: " + str(verdict.get("reason", "Ineligible actor."))
@@ -10174,9 +10179,15 @@ func _open_native_combined_dialog() -> void:
     if not FileAccess.file_exists(writer) or not FileAccess.file_exists(checker):
         status_label.text = "Combined native writer or source preflight is missing."
         return
+    var unplace_checker := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_actor_unplace_probe.py")
+    if not FileAccess.file_exists(unplace_checker):
+        status_label.text = "Explicit incoming reference preflight is missing."
+        return
     for kind in ["moves", "copies", "unplaces"]:
         for row in plan[kind]:
-            var verdict := _native_clone_check_actor(checker, row)
+            var verdict := (_native_unplace_preflight(unplace_checker, row)
+                if kind == "unplaces" else _native_clone_check_actor(checker, row))
             if not verdict.get("eligible", false):
                 status_label.text = "Combined " + kind + " blocked " + str(row["actor"])
                 status_label.text += ": " + str(verdict.get("reason", "Unknown source eligibility."))
@@ -10205,7 +10216,8 @@ func _stage_native_combined_export(destination: String) -> void:
         + "\nUnplace Level refs: " + str(plan["unplaces"].size())
         + "\n\nNo rotation, scaling, scripts, IBD or BSP modifications."
         + "\nOriginal actors and original game installation remain untouched."
-        + "\nUnplaced exports remain serialized; runtime behavior unverified."
+        + "\nUnplaced exports remain serialized; detected inbound refs cause refusal."
+        + "\nOpaque links and game behavior remain unverified."
         + "\n\nCreate in isolated folder: " + destination)
     native_combined_confirmation.popup_centered(Vector2i(760, 390))
 
@@ -10312,9 +10324,15 @@ func _open_native_recipe_dialog() -> void:
     if not FileAccess.file_exists(script) or not FileAccess.file_exists(checker):
         status_label.text = "Portable recipe writer or source verifier is missing."
         return
+    var unplace_checker := ProjectSettings.globalize_path(
+        "res://../package_writer/dx2_actor_unplace_probe.py")
+    if not FileAccess.file_exists(unplace_checker):
+        status_label.text = "Explicit incoming reference preflight is missing."
+        return
     for kind in ["moves", "copies", "unplaces"]:
         for row in plan[kind]:
-            var verdict := _native_clone_check_actor(checker, row)
+            var verdict := (_native_unplace_preflight(unplace_checker, row)
+                if kind == "unplaces" else _native_clone_check_actor(checker, row))
             if not verdict.get("eligible", false):
                 status_label.text = "Recipe source refused " + str(row["actor"])
                 status_label.text += ": " + str(verdict.get("reason", "Unverified source."))
