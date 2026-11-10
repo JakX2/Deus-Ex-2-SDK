@@ -240,7 +240,8 @@ func _inspect() -> void:
     pending = {
         "kind": "inspect",
         "source_sha": source_sha256,
-        "candidate_sha": FileAccess.get_sha256((paths["candidate"] as LineEdit).text)
+        "candidate_sha": FileAccess.get_sha256((paths["candidate"] as LineEdit).text),
+        "paths": _base_args()
     }
     var args := _base_args()
     args.append("--inspect")
@@ -336,6 +337,13 @@ func _worker_done(code: int, response: String, context: Dictionary) -> void:
         worker.wait_to_finish()
         worker = null
     inspect_button.disabled = false
+    if (context.get("source_sha") != source_sha256
+        or context.get("paths") != _base_args()
+        or context.get("candidate_sha") != FileAccess.get_sha256(
+            (paths["candidate"] as LineEdit).text)):
+        _invalidate()
+        status.text = "Trial files changed during verification. Inspect again."
+        return
     var doc: Variant = JSON.parse_string(response.strip_edges())
     if (code != 0 or typeof(doc) != TYPE_DICTIONARY
         or doc.get("schema") != WORKER_SCHEMA
