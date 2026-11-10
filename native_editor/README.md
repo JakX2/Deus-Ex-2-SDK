@@ -921,3 +921,29 @@ save/load result of this unplace operation have not been tested.** No
 source game asset, installed map or saved game is modified by the SDK.
 See docs/research/dx2ed-native-static-unplace-v0-59.md for the strict
 runtime acceptance checklist and command-line verification.
+
+## DX2Ed v0.60 combined static-prop native Save As (draft)
+
+The prop toolbar now provides **Experimental Combined Save As...**.
+It translates up to eight original eligible StaticMeshActors, appends up to
+eight original-source duplicate props and optionally unplaces up to eight
+staged original props in **one isolated GMP**, subject to a global 16-edit
+cap and at least two distinct operation types.
+
+Select an unchanged original prop and click **Stage/Unstage original prop**
+to record a temporary Level-list unplace intent; it stays visible in Godot.
+**Clear unplace stages** removes those intentions. Ordinary Move and Duplicate
+preview operations supply the other two edit types. Before saving, Godot
+performs exact source actor eligibility checks. Unsupported drafts such as
+rotation, scale, properties, groups, custom brushes and class templates
+cause refusal, rather than being silently ignored.
+
+The Python `dx2_native_prop_plan.py` worker independently reconstructs
+the **whole original-pinned GMP** after Save As to verify exact output
+bytes. All original actor exports stay present; only allowed existing
+Location payloads, newly appended neutral static-mesh clones and Level
+actor references may change. It never modifies retail assets, game
+installations or savegames. **No retail runtime acceptance is claimed
+for a combined edit**, nor for new cross-map/baked collision behavior.
+Detailed workflow and limits:
+docs/research/dx2ed-native-prop-plan-v0-60.md.
