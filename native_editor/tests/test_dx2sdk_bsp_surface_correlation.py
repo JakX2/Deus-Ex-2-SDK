@@ -110,6 +110,34 @@ class BSPModelSurfaceHypothesisTests(unittest.TestCase):
             with self.subTest(node=bad), self.assertRaises(ValueError):
                 correlate_surface_candidates(bad, geom, rows)
 
+    def test_source_sha_pinned_cli_can_report_without_retail_writes(self):
+        import json
+        from contextlib import redirect_stdout, redirect_stderr
+        from io import StringIO
+        import inspect_bsp_surface_provenance_hypotheses as cli
+
+        class FakeWorld:
+            source_sha256 = "a"*64
+            source = Path("/private/Maps/Synthetic.gmp")
+            def inspect_bsp_surface_provenance_hypotheses(self):
+                return {
+                    "status": "read-only-cross-domain-field2-numeric-hypotheses",
+                    "source_sha256": self.source_sha256,
+                    "unique_geometric_node_candidates": 2,
+                    "field2_is_engine_authenticated_surface_index": False,
+                    "retail_runtime_verified": False,
+                }
+        stdout = StringIO()
+        with patch.object(cli.DX2Map, "open", return_value=FakeWorld()), redirect_stdout(stdout):
+            self.assertEqual(cli.main(["Synthetic.gmp", "--source-sha256", "a"*64]), 0)
+        report = json.loads(stdout.getvalue())
+        self.assertEqual(report["unique_geometric_node_candidates"], 2)
+        self.assertFalse(report["field2_is_engine_authenticated_surface_index"])
+        stderr = StringIO()
+        with patch.object(cli.DX2Map, "open", return_value=FakeWorld()), redirect_stderr(stderr):
+            self.assertEqual(cli.main(["Synthetic.gmp", "--source-sha256", "b"*64]), 2)
+        self.assertEqual(json.loads(stderr.getvalue())["status"], "refused")
+
     def test_original_export_offsets_and_compact_field2_source_position(self):
         model, frame = synthetic_world()
         level, blocks, _ = fixture()
