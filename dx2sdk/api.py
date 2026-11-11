@@ -500,6 +500,19 @@ class DX2Map:
             Path(original_trigger_script_zip),
             Path(mission_ibd), Path(kernel_ibd))
 
+    def inspect_bsp_plane_mopp_candidates(
+        self, *, node: int, replacement: Sequence[float],
+    ) -> dict:
+        """Read-only original Model plane → render candidate → Level MOPP IDs.
+
+        Exact flattened triangle/MOPP IDs are source-verified, but a BSP
+        node's geometric triangle candidates are NOT native ownership links.
+        No game file, collision tree, actor Region or BSP node is written.
+        """
+        from .bsp_mopp_plane_impact import compare_original_plane_mopp_impact
+        return compare_original_plane_mopp_impact(
+            self, node=node, replacement=replacement)
+
     def static_prop_clone_candidates(self, limit: int = 200) -> dict:
         """Read-only, conservative original T3SDK clone eligibility list."""
         from .clones import source_clone_candidates

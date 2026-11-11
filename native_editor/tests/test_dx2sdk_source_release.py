@@ -50,6 +50,8 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
             self.assertIn(f"{ARCHIVE}/dx2sdk/clones.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/multi_clones.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/bsp_trace.py", names)
+            self.assertIn(f"{ARCHIVE}/dx2sdk/bsp_mopp_plane_impact.py", names)
+            self.assertIn(f"{ARCHIVE}/research/dx2/inspect_bsp_mopp_plane_impact.py", names)
             self.assertIn(f"{ARCHIVE}/native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py", names)
             self.assertIn(f"{ARCHIVE}/native_editor/godot_editor/backend/dx2_sdk_multi_lightcolor_worker.py", names)
             self.assertIn(f"{ARCHIVE}/native_editor/godot_editor/backend/dx2_sdk_scalar_worker.py", names)
