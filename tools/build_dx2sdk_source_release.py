@@ -36,6 +36,7 @@ REQUIRED = (
     "dx2sdk/bsp_mopp_plane_impact.py",
     "dx2sdk/mopp_leaf_bytes.py",
     "dx2sdk/bsp_surface_correlation.py",
+    "dx2sdk/bsp_surface_plane_coherence.py",
     "research/dx2/inspect_bsp_surface_provenance_hypotheses.py",
     "dx2sdk/bsp_render_plane_impact.py",
     "research/dx2/inspect_level_mopp_triangle_provenance.py",

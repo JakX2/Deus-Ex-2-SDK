@@ -545,6 +545,15 @@ class DX2Map:
         from .bsp_surface_correlation import inspect_original_bsp_surface_correlation
         return inspect_original_bsp_surface_correlation(self)
 
+    def inspect_bsp_surface_plane_coherence(self) -> dict:
+        """Audit original BSP field2 repeated IDs versus native node planes.
+
+        This is source-backed correlation only: raw field2 is not an
+        engine-authenticated iSurf, and no native source bytes are written.
+        """
+        from .bsp_surface_plane_coherence import inspect_original_surface_plane_coherence
+        return inspect_original_surface_plane_coherence(self)
+
     def static_prop_clone_candidates(self, limit: int = 200) -> dict:
         """Read-only, conservative original T3SDK clone eligibility list."""
         from .clones import source_clone_candidates
