@@ -135,6 +135,12 @@ def compare_original_plane_mopp_impact(world, *, node: int, replacement) -> dict
     world._check_original_unchanged()
     render = compare_original_plane_render_impact(
         world, node=node, replacement=replacement)
+    if (render.get("source_sha256") != world.source_sha256
+            or render.get("node") != node
+            or render.get("native_bsp_writer_enabled") is not False
+            or render.get("collision_rebuilt") is not False
+            or render.get("retail_runtime_verified") is not False):
+        raise ValueError("Original BSP render impact source or safety flags disagree")
     pkg = world._package
     model_export = render["world_model_export"]
     model_payload = pkg.payload(pkg.exports[model_export - 1])
