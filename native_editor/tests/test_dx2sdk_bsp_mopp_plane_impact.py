@@ -60,6 +60,18 @@ class OriginalMoppCrosswalkTests(unittest.TestCase):
         self.assertEqual(result, compare_render_collision_candidates(
             [(PLANE, SPHERE)], render, level, blocks, node=0, replacement=REPLACEMENT))
 
+    def test_plane_gain_resolves_original_collision_leaf_ids_and_sample_cap(self):
+        level, blocks, _ = fixture()
+        result = compare_render_collision_candidates(
+            [((0., 0., 1., 2.), SPHERE)], triangles(blocks), level, blocks,
+            node=0, replacement=PLANE, max_examples=1)
+        self.assertEqual(result["lost_candidate_render_triangles"], 0)
+        self.assertEqual(result["gained_candidate_render_triangles"], 2)
+        self.assertEqual(result["gained_candidate_original_mopp_leaf_count"], 2)
+        self.assertEqual(len(result["gained_candidate_mopp_id_examples"]), 1)
+        self.assertEqual(result["gained_candidate_mopp_id_examples"][0][
+            "flattened_triangle_id"], 0)
+
     def test_source_skipped_block_ids_are_preserved_not_renumbered(self):
         level, blocks, _ = fixture(separate_blocks=True)
         result = compare_render_collision_candidates(
