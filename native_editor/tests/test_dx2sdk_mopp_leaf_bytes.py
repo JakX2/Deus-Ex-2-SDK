@@ -85,6 +85,37 @@ class MoppTerminalByteProvenanceTests(unittest.TestCase):
             with self.subTest(code=code.hex()), self.assertRaises(ValueError):
                 index_mopp_terminal_instructions(code, count)
 
+    def test_cli_original_opcode_flag_routes_to_read_only_source_method(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        import json
+        import inspect_bsp_mopp_plane_impact as cli
+
+        class FakeWorld:
+            source_sha256 = "a"*64
+            def inspect_bsp_plane_mopp_terminal_bytes(self, *, node, replacement):
+                self.checked = (node, tuple(replacement))
+                return {
+                    "status": "read-only-BSP-candidate-to-native-MOPP-terminal-opcode-provenance",
+                    "lost_candidate_original_mopp_leaf_count": 1,
+                    "gained_candidate_original_mopp_leaf_count": 0,
+                    "native_BSP_or_MOPP_writer_enabled": False,
+                    "retail_runtime_verified": False,
+                }
+            def inspect_bsp_plane_mopp_candidates(self, *, node, replacement):
+                raise AssertionError("CLI must select explicit opcode-aware path")
+        world = FakeWorld()
+        stdout = StringIO()
+        with patch.object(cli.DX2Map, "open", return_value=world), redirect_stdout(stdout):
+            status = cli.main([
+                "Synthetic.gmp", "--source-sha256", "a"*64,
+                "--node", "7", "--plane", "0", "0", "1", "2",
+                "--with-original-mopp-opcodes",
+            ])
+        self.assertEqual(status, 0)
+        self.assertEqual(world.checked, (7, (0., 0., 1., 2.)))
+        self.assertFalse(json.loads(stdout.getvalue())["native_BSP_or_MOPP_writer_enabled"])
+
     def test_refuse_duplicate_out_of_range_boolean_and_bad_export_offset(self):
         level, blocks, _ = fixture()
         for ids in ([0, 0], [2], [True], [], range(2), [-1], [0]*33):
