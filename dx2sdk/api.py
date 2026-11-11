@@ -536,6 +536,15 @@ class DX2Map:
         return inspect_original_plane_affected_terminal_bytes(
             self, node=node, replacement=replacement)
 
+    def inspect_bsp_surface_provenance_hypotheses(self) -> dict:
+        """Compare original world BSP compact field2 against Level/MOPP identity.
+
+        Numeric equalities are hypotheses, not engine-authenticated surface
+        pointers. This analysis never edits the original GMP or game assets.
+        """
+        from .bsp_surface_correlation import inspect_original_bsp_surface_correlation
+        return inspect_original_bsp_surface_correlation(self)
+
     def static_prop_clone_candidates(self, limit: int = 200) -> dict:
         """Read-only, conservative original T3SDK clone eligibility list."""
         from .clones import source_clone_candidates
