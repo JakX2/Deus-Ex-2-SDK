@@ -9,6 +9,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import struct
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -68,7 +69,7 @@ def main(argv=None) -> int:
         else:
             print(json.dumps(result, indent=2, sort_keys=True, allow_nan=False))
         return 0
-    except (ValueError, OSError, KeyError, IndexError, OverflowError) as exc:
+    except (ValueError, OSError, KeyError, IndexError, OverflowError, struct.error, TypeError) as exc:
         print(json.dumps({"status": "refused", "reason": str(exc),
                           "original_gmp_modified": False,
                           "retail_runtime_verified": False}), file=sys.stderr)
