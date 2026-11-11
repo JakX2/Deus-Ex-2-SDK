@@ -513,6 +513,29 @@ class DX2Map:
         return compare_original_plane_mopp_impact(
             self, node=node, replacement=replacement)
 
+    def inspect_original_mopp_terminal_bytes(
+        self, triangle_ids: Sequence[int],
+    ) -> dict:
+        """Read-only original Level MOPP opcode positions for selected triangle IDs.
+
+        Original source geometry, code bytes, package and editor state are
+        never patched. Reachable MOPP output IDs are not a Havok writer API.
+        """
+        from .mopp_leaf_bytes import inspect_original_mopp_terminal_bytes
+        return inspect_original_mopp_terminal_bytes(self, triangle_ids)
+
+    def inspect_bsp_plane_mopp_terminal_bytes(
+        self, *, node: int, replacement: Sequence[float],
+    ) -> dict:
+        """Read-only candidate Model plane impact → original MOPP leaf opcodes.
+
+        The candidate BSP node-to-triangle relationship is geometric
+        inference, not source-authenticated native surface ownership.
+        """
+        from .mopp_leaf_bytes import inspect_original_plane_affected_terminal_bytes
+        return inspect_original_plane_affected_terminal_bytes(
+            self, node=node, replacement=replacement)
+
     def static_prop_clone_candidates(self, limit: int = 200) -> dict:
         """Read-only, conservative original T3SDK clone eligibility list."""
         from .clones import source_clone_candidates
