@@ -23,6 +23,8 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("original_gmp", type=Path)
     p.add_argument("--source-sha256", required=True, help="Exact original source GMP SHA-256")
+    p.add_argument("--field2-plane-coherence", action="store_true",
+                   help="Audit same raw BSP field2 IDs against source Model planes without Level triangle guessing")
     p.add_argument("--report", type=Path, help="Fresh private JSON outside the retail Maps folder")
     args = p.parse_args(argv)
     try:
@@ -31,21 +33,33 @@ def main(argv=None) -> int:
         world = DX2Map.open(args.original_gmp)
         if world.source_sha256 != args.source_sha256.lower():
             raise ValueError("Original GMP SHA-256 does not match requested source")
-        result = world.inspect_bsp_surface_provenance_hypotheses()
+        method = (world.inspect_bsp_surface_plane_coherence
+                  if args.field2_plane_coherence
+                  else world.inspect_bsp_surface_provenance_hypotheses)
+        result = method()
         if args.report is not None:
             dest = _private_output(world.source, args.report)
             dest.parent.mkdir(parents=True, exist_ok=True)
             with dest.open("x", encoding="utf8") as stream:
                 json.dump(result, stream, sort_keys=True, indent=2, allow_nan=False)
                 stream.write("\n")
-            print(json.dumps({
+            summary = {
                 "status": result["status"], "report": str(dest),
                 "source_sha256": result["source_sha256"],
-                "unique_geometric_node_candidates":
-                    result["unique_geometric_node_candidates"],
-                "field2_is_engine_authenticated_surface_index": False,
                 "retail_runtime_verified": False,
-            }, sort_keys=True))
+            }
+            if args.field2_plane_coherence:
+                summary.update({
+                    "source_reused_field2_groups": result["source_reused_field2_groups"],
+                    "source_field2_is_authenticated_surface_index": False,
+                })
+            else:
+                summary.update({
+                    "unique_geometric_node_candidates":
+                        result["unique_geometric_node_candidates"],
+                    "field2_is_engine_authenticated_surface_index": False,
+                })
+            print(json.dumps(summary, sort_keys=True))
         else:
             print(json.dumps(result, indent=2, sort_keys=True, allow_nan=False))
         return 0
