@@ -40,6 +40,8 @@ def main(argv=None) -> int:
     parser.add_argument("--node", type=int, required=True)
     parser.add_argument("--plane", type=float, nargs=4, required=True,
                         metavar=("A", "B", "C", "W"))
+    parser.add_argument("--with-original-mopp-opcodes", action="store_true",
+                        help="Include original collision terminal instruction byte positions")
     parser.add_argument("--report", type=Path,
                         help="Fresh private JSON outside original game/source Maps")
     args = parser.parse_args(argv)
@@ -49,8 +51,10 @@ def main(argv=None) -> int:
         world = DX2Map.open(args.original_gmp)
         if world.source_sha256 != args.source_sha256.lower():
             raise ValueError("Original GMP does not match supplied source SHA-256")
-        result = world.inspect_bsp_plane_mopp_candidates(
-            node=args.node, replacement=args.plane)
+        method = (world.inspect_bsp_plane_mopp_terminal_bytes
+                  if args.with_original_mopp_opcodes
+                  else world.inspect_bsp_plane_mopp_candidates)
+        result = method(node=args.node, replacement=args.plane)
         if args.report is not None:
             target = _private_output(world.source, args.report)
             target.parent.mkdir(parents=True, exist_ok=True)

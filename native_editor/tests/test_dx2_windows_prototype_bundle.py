@@ -67,6 +67,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 "prototype_doctor.py", "map_import_preflight.py",
                 "native_editor/godot_editor/project.godot",
                 "dx2sdk/bsp_mopp_plane_impact.py",
+                "dx2sdk/mopp_leaf_bytes.py",
                 "research/dx2/inspect_bsp_mopp_plane_impact.py",
                 "native_editor/godot_editor/main.gd",
                 "native_editor/godot_editor/tests/smoke_multi_view_workspace.gd",
