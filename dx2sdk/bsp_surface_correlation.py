@@ -190,7 +190,14 @@ def inspect_original_bsp_surface_correlation(world) -> dict:
     if len(levels) != 1:
         raise ValueError("Expected one original nonempty Level export")
     level_export, level_record = levels[0]
+    level_offset, level_size = level_record["offset"], level_record["size"]
+    if (type(level_offset) is not int or type(level_size) is not int
+            or level_offset < 0 or level_size <= 0
+            or level_offset + level_size > len(pkg.data)):
+        raise ValueError("Original Level native source byte bounds invalid")
     level = pkg.payload(level_record)
+    if level != pkg.data[level_offset:level_offset+level_size]:
+        raise ValueError("Original Level payload disagrees with GMP byte envelope")
     blocks = find_bsp(pkg)
     if not blocks:
         raise ValueError("No original validated Level render blocks")
