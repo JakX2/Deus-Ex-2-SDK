@@ -400,6 +400,7 @@ var polygon_vertex_x: SpinBox
 var polygon_vertex_z: SpinBox
 var polygon_clip_axis_selector: OptionButton
 var polygon_clip_position: SpinBox
+var polygon_clip_angle: SpinBox
 var polygon_clip_keep_selector: OptionButton
 var polygon_clip_button: Button
 var polygon_surface_selector: OptionButton
@@ -1915,7 +1916,9 @@ func _make_ui() -> void:
     polygon_clip_axis_selector = OptionButton.new()
     polygon_clip_axis_selector.add_item("Local X")
     polygon_clip_axis_selector.add_item("Local Z")
+    polygon_clip_axis_selector.add_item("Angled normal")
     polygon_clip_axis_selector.select(0)
+    polygon_clip_axis_selector.item_selected.connect(_polygon_clip_mode_selected)
     clip_row.add_child(polygon_clip_axis_selector)
     polygon_clip_position = SpinBox.new()
     polygon_clip_position.min_value = -1.0
@@ -1925,6 +1928,19 @@ func _make_ui() -> void:
     polygon_clip_position.custom_minimum_size.x = 85
     polygon_clip_position.tooltip_text = "Cut plane in normalized local footprint coordinates, -1..+1."
     clip_row.add_child(polygon_clip_position)
+    polygon_clip_angle = SpinBox.new()
+    polygon_clip_angle.min_value = 0.0
+    polygon_clip_angle.max_value = 359.9
+    polygon_clip_angle.step = 1.0
+    polygon_clip_angle.value = 45.0
+    polygon_clip_angle.prefix = "Angle "
+    polygon_clip_angle.suffix = " deg"
+    polygon_clip_angle.custom_minimum_size.x = 122
+    polygon_clip_angle.editable = false
+    polygon_clip_angle.tooltip_text = (
+        "Cut normal in local X/Z, measured from +X toward +Z. "
+        + "Used only in Angled normal mode; this remains a 2D footprint cut.")
+    clip_row.add_child(polygon_clip_angle)
     polygon_clip_keep_selector = OptionButton.new()
     polygon_clip_keep_selector.add_item("Keep <= plane")
     polygon_clip_keep_selector.add_item("Keep >= plane")
@@ -9211,6 +9227,11 @@ func _delete_polygon_corner() -> void:
 
 ## Only user-authored Brush::Polygon drafts are eligible. Imported original
 ## map geometry, other draft kinds and multi-selection never enter this path.
+func _polygon_clip_mode_selected(_index: int) -> void:
+    if polygon_clip_angle != null and polygon_clip_axis_selector != null:
+        polygon_clip_angle.editable = polygon_clip_axis_selector.selected == 2
+
+
 func _clip_selected_polygon_footprint() -> void:
     var name := _selected_custom_polygon_name()
     if (name.is_empty() or polygon_clip_axis_selector == null
@@ -9222,8 +9243,16 @@ func _clip_selected_polygon_footprint() -> void:
     var axis := polygon_clip_axis_selector.selected
     var position := polygon_clip_position.value
     var keep_positive := polygon_clip_keep_selector.selected == 1
-    var updated: Array = CustomPolygon.clip_outline_axis(
-        spec["outline"], axis, position, keep_positive)
+    var updated: Array = []
+    if axis == 2:
+        if polygon_clip_angle == null:
+            status_label.text = "Angled private clip control is unavailable."
+            return
+        updated = CustomPolygon.clip_outline_angle(
+            spec["outline"], polygon_clip_angle.value, position, keep_positive)
+    else:
+        updated = CustomPolygon.clip_outline_axis(
+            spec["outline"], axis, position, keep_positive)
     if updated.is_empty():
         status_label.text = (
             "Polygon clip refused: no valid single connected footprint remains, "
@@ -9236,9 +9265,10 @@ func _clip_selected_polygon_footprint() -> void:
         return
     _refresh_prop_inspection()
     _record_edit("Clip private polygon draft", before)
+    var clip_label := "X" if axis == 0 else ("Z" if axis == 1 else "angled")
     status_label.text = (
         "Clipped private Polygon footprint on local "
-        + ("X" if axis == 0 else "Z") + " plane. Undo available. "
+        + clip_label + " plane. Undo available. "
         + "Original GMP, BSP and collision unchanged.")
 
 
