@@ -197,7 +197,7 @@ func _run() -> void:
         return
     invalid_multi = cube.duplicate(true)
     invalid_multi["clip_planes"] = [planes[0],
-        {"normal":[-1.0,0.0,0.0], "distance":0.9, "keep_positive":false}]
+        {"normal":[-1.0,0.0,0.0], "distance":0.01, "keep_positive":false}]
     if Brush.build_mesh(invalid_multi) != null:
         _fail("Near-empty overlapping private 3D cut stack did not fail closed")
         return
