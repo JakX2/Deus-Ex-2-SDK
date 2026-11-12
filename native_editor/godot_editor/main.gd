@@ -408,6 +408,8 @@ var box_clip_plane_count_label: Label
 var box_clip_plane_selector: OptionButton
 var box_clip_update_selected_button: Button
 var box_clip_remove_selected_button: Button
+var box_clip_move_up_button: Button
+var box_clip_move_down_button: Button
 var box_clip_active_brush_name := ""
 var polygon_inspector_panel: VBoxContainer
 var polygon_vertex_selector: OptionButton
@@ -1972,6 +1974,24 @@ func _make_ui() -> void:
         + "a valid closed convex preview. One Undo step.")
     box_clip_remove_selected_button.pressed.connect(_remove_selected_private_box_plane)
     box_clip_edit_row.add_child(box_clip_remove_selected_button)
+    var box_clip_reorder_row := HBoxContainer.new()
+    private_box_clip_panel.add_child(box_clip_reorder_row)
+    box_clip_move_up_button = Button.new()
+    box_clip_move_up_button.text = "Move plane up"
+    box_clip_move_up_button.tooltip_text = (
+        "Swap the selected plane with the previous cut only if the complete "
+        + "convex preview stays closed, nondegenerate and valid. Undoable.")
+    box_clip_move_up_button.pressed.connect(
+        func(): _move_selected_private_box_plane(-1))
+    box_clip_reorder_row.add_child(box_clip_move_up_button)
+    box_clip_move_down_button = Button.new()
+    box_clip_move_down_button.text = "Move plane down"
+    box_clip_move_down_button.tooltip_text = (
+        "Swap the selected plane with the next cut after complete topology "
+        + "and volume checks. One Undo step; private project only.")
+    box_clip_move_down_button.pressed.connect(
+        func(): _move_selected_private_box_plane(1))
+    box_clip_reorder_row.add_child(box_clip_move_down_button)
     box_clip_reset_button = Button.new()
     box_clip_reset_button.text = "Reset to Box"
     box_clip_reset_button.tooltip_text = "Remove the private plane cut in one Undo step."
@@ -8938,9 +8958,13 @@ func _refresh_brush_inspector() -> void:
                     else active_planes.size() - 1)
                 box_clip_plane_selector.select(selected_index)
                 _load_private_box_plane_controls(active_planes[selected_index])
+                _refresh_private_box_reorder_buttons(active_planes.size(), selected_index)
+            else:
+                _refresh_private_box_reorder_buttons(0, -1)
         else:
             box_clip_active_brush_name = ""
             box_clip_plane_selector.clear()
+            _refresh_private_box_reorder_buttons(0, -1)
     brush_inspector_syncing = false
     _refresh_polygon_inspector()
     _refresh_polygon_vertex_handles()
@@ -9621,6 +9645,16 @@ func _selected_private_box_plane_changed(index: int) -> void:
     if index < 0 or index >= planes.size():
         return
     _load_private_box_plane_controls(planes[index])
+    _refresh_private_box_reorder_buttons(planes.size(), index)
+
+
+func _refresh_private_box_reorder_buttons(count: int, selected_index: int) -> void:
+    if box_clip_move_up_button != null:
+        box_clip_move_up_button.disabled = (
+            selected_index <= 0 or selected_index >= count)
+    if box_clip_move_down_button != null:
+        box_clip_move_down_button.disabled = (
+            selected_index < 0 or selected_index >= count - 1)
 
 
 func _same_private_box_plane(a: Dictionary, b: Dictionary) -> bool:
@@ -9754,6 +9788,50 @@ func _update_selected_private_box_plane() -> void:
     status_label.text = (
         "Updated private Box plane " + str(index + 1)
         + " of " + str(planes.size()) + ". Undo available; no native BSP write.")
+
+
+## Reorder validated private clip halfspaces only. Convex intersection is
+## mathematically order-independent, but our conservative per-step clearance,
+## manifold and shrinking-volume checks can reject an intermediate stack.
+## On rejection: no preview mutation, no selection change, no history entry.
+func _move_selected_private_box_plane(direction: int) -> void:
+    var name := _selected_private_box_name()
+    if name.is_empty() or box_clip_plane_selector == null:
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    var planes: Array = _private_box_plane_list(spec)
+    var source_index := box_clip_plane_selector.selected
+    var target_index := source_index + direction
+    if (direction not in [-1, 1]
+        or source_index < 0 or source_index >= planes.size()
+        or target_index < 0 or target_index >= planes.size()):
+        status_label.text = "Move plane refused: no adjacent private plane."
+        return
+    var moved: Variant = planes[source_index]
+    planes[source_index] = planes[target_index]
+    planes[target_index] = moved
+    spec.erase("clip_plane")
+    spec.erase("clip_planes")
+    spec["clip_planes"] = planes
+    var verified: Dictionary = BrushGeometry.validate(spec)
+    if verified.is_empty() or BrushGeometry.build_mesh(verified) == null:
+        status_label.text = (
+            "Move plane refused: reordered cuts fail closed convex topology, "
+            + "clearance or shrinking-volume validation. Original order retained.")
+        return
+    var before := _capture_edit_state()
+    if not _set_brush_spec(name, verified):
+        status_label.text = "Move plane refused: original private draft retained."
+        return
+    _refresh_prop_inspection()
+    # Keep following the moved plane, rather than its previous list slot.
+    box_clip_plane_selector.select(target_index)
+    _selected_private_box_plane_changed(target_index)
+    _record_edit("Reorder private 3D Box cutting planes", before)
+    status_label.text = (
+        "Moved private Box plane " + str(source_index + 1) + " to "
+        + str(target_index + 1) + " of " + str(planes.size())
+        + ". One Undo step; original DX2 BSP and collision unchanged.")
 
 
 func _remove_selected_private_box_plane() -> void:
