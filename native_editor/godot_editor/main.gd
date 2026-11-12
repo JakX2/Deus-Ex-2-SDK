@@ -394,6 +394,13 @@ var brush_face_inward_button: Button
 var brush_face_outward_button: Button
 var brush_face_hint: Label
 var brush_face_outline: MeshInstance3D
+var private_box_clip_panel: VBoxContainer
+var box_clip_yaw: SpinBox
+var box_clip_elevation: SpinBox
+var box_clip_distance: SpinBox
+var box_clip_keep_side: OptionButton
+var box_clip_button: Button
+var box_clip_reset_button: Button
 var polygon_inspector_panel: VBoxContainer
 var polygon_vertex_selector: OptionButton
 var polygon_vertex_x: SpinBox
@@ -1858,6 +1865,67 @@ func _make_ui() -> void:
         + "Then use In/Out; does not alter source actor or DX2 BSP.")
     brush_face_hint.visible = false
     brush_inspector_panel.add_child(brush_face_hint)
+    # One arbitrary local 3D plane on one private Box preview. This does NOT
+    # create an engine CSG cut, original DX2 surface or cooked collision.
+    private_box_clip_panel = VBoxContainer.new()
+    private_box_clip_panel.visible = false
+    brush_inspector_panel.add_child(private_box_clip_panel)
+    var box_clip_heading := Label.new()
+    box_clip_heading.text = "3D Box plane clip (private preview only)"
+    private_box_clip_panel.add_child(box_clip_heading)
+    var box_clip_note := Label.new()
+    box_clip_note.text = (
+        "One capped convex 3D cut. Local yaw/elevation set the plane normal. "
+        + "Original BSP and Havok remain untouched. New cuts replace, not stack.")
+    box_clip_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    private_box_clip_panel.add_child(box_clip_note)
+    var box_clip_angles := HBoxContainer.new()
+    private_box_clip_panel.add_child(box_clip_angles)
+    box_clip_yaw = SpinBox.new()
+    box_clip_yaw.min_value = 0.0
+    box_clip_yaw.max_value = 359.9
+    box_clip_yaw.step = 0.1
+    box_clip_yaw.value = 45.0
+    box_clip_yaw.prefix = "Yaw "
+    box_clip_yaw.suffix = " deg"
+    box_clip_yaw.custom_minimum_size.x = 110
+    box_clip_angles.add_child(box_clip_yaw)
+    box_clip_elevation = SpinBox.new()
+    box_clip_elevation.min_value = -90.0
+    box_clip_elevation.max_value = 90.0
+    box_clip_elevation.step = 0.1
+    box_clip_elevation.value = 25.0
+    box_clip_elevation.prefix = "Elev "
+    box_clip_elevation.suffix = " deg"
+    box_clip_elevation.custom_minimum_size.x = 115
+    box_clip_angles.add_child(box_clip_elevation)
+    var box_clip_offset_row := HBoxContainer.new()
+    private_box_clip_panel.add_child(box_clip_offset_row)
+    box_clip_distance = SpinBox.new()
+    box_clip_distance.min_value = -256.0
+    box_clip_distance.max_value = 256.0
+    box_clip_distance.step = 0.05
+    box_clip_distance.prefix = "Offset m "
+    box_clip_distance.custom_minimum_size.x = 135
+    box_clip_offset_row.add_child(box_clip_distance)
+    box_clip_keep_side = OptionButton.new()
+    box_clip_keep_side.add_item("Keep <= plane")
+    box_clip_keep_side.add_item("Keep >= plane")
+    box_clip_offset_row.add_child(box_clip_keep_side)
+    var box_clip_actions := HBoxContainer.new()
+    private_box_clip_panel.add_child(box_clip_actions)
+    box_clip_button = Button.new()
+    box_clip_button.text = "Clip 3D Box"
+    box_clip_button.tooltip_text = (
+        "Close the cut with a cap, check mesh topology and volume, then commit "
+        + "one private Undo step. Source game assets are never written.")
+    box_clip_button.pressed.connect(_apply_private_box_clip)
+    box_clip_actions.add_child(box_clip_button)
+    box_clip_reset_button = Button.new()
+    box_clip_reset_button.text = "Reset to Box"
+    box_clip_reset_button.tooltip_text = "Remove the private plane cut in one Undo step."
+    box_clip_reset_button.pressed.connect(_reset_private_box_clip)
+    box_clip_actions.add_child(box_clip_reset_button)
     # User-authored, bounded XZ outline editing. The polygon is extruded in
     # local Y. All controls edit only an authored private Brush::Polygon.
     polygon_inspector_panel = VBoxContainer.new()
@@ -8765,6 +8833,8 @@ func _refresh_brush_inspector() -> void:
     var show := nodes.size() == 1 and draft_brush_specs.has(str(nodes[0].name)) if nodes.size() == 1 else false
     brush_inspector_panel.visible = show
     if not show:
+        if private_box_clip_panel != null:
+            private_box_clip_panel.visible = false
         if polygon_inspector_panel != null:
             polygon_inspector_panel.visible = false
         polygon_selected_name = ""
@@ -8778,10 +8848,32 @@ func _refresh_brush_inspector() -> void:
     brush_inspector_steps.set_value_no_signal(float(spec["steps"]))
     brush_inspector_steps.editable = spec["kind"] == "Stairs"
     if brush_face_controls != null:
-        var can_face_edit := BrushGeometry.FACE_EDIT_KINDS.has(str(spec["kind"]))
+        var can_face_edit := (
+            BrushGeometry.FACE_EDIT_KINDS.has(str(spec["kind"]))
+            and not spec.has("clip_plane"))
         brush_face_controls.visible = can_face_edit
         if brush_face_hint != null:
             brush_face_hint.visible = can_face_edit
+    if private_box_clip_panel != null:
+        var selected_name := str(nodes[0].name)
+        var can_clip_box: bool = (
+            spec["kind"] == "Box"
+            and str(draft_prop_sources.get(selected_name, "")) == "Brush::Box"
+            and draft_prop_copies.has(selected_name))
+        private_box_clip_panel.visible = can_clip_box
+        if can_clip_box:
+            var existing: Dictionary = spec.get("clip_plane", {})
+            box_clip_reset_button.disabled = existing.is_empty()
+            if not existing.is_empty():
+                var direction := Vector3(
+                    existing["normal"][0], existing["normal"][1],
+                    existing["normal"][2])
+                box_clip_yaw.set_value_no_signal(
+                    fposmod(rad_to_deg(atan2(direction.z, direction.x)), 360.0))
+                box_clip_elevation.set_value_no_signal(
+                    rad_to_deg(asin(clampf(direction.y, -1.0, 1.0))))
+                box_clip_distance.set_value_no_signal(float(existing["distance"]))
+                box_clip_keep_side.select(1 if existing["keep_positive"] else 0)
     brush_inspector_syncing = false
     _refresh_polygon_inspector()
     _refresh_polygon_vertex_handles()
@@ -9341,6 +9433,7 @@ func _can_pick_selected_draft_face() -> bool:
         return false
     var spec: Dictionary = draft_brush_specs[name]
     return (BrushGeometry.FACE_EDIT_KINDS.has(str(spec.get("kind", "")))
+        and not spec.has("clip_plane")
         and str(draft_prop_sources.get(name, "")) == "Brush::" + str(spec["kind"])
         and is_instance_valid(nodes[0]) and nodes[0].mesh != null
         and nodes[0].is_visible_in_tree())
@@ -9414,6 +9507,77 @@ func _change_brush_face(side: float) -> void:
         "Resized draft face " + str(result["face"]) + " by "
         + str(side * step) + " m. Opposite face fixed; Undo available. "
         + "Original DX2 GMP/BSP unchanged.")
+
+
+## Private authoring only: a single plane on one selected Box draft.
+func _selected_private_box_name() -> String:
+    var nodes := _selection_nodes()
+    if nodes.size() != 1:
+        return ""
+    var name := str(nodes[0].name)
+    if (not draft_prop_copies.has(name) or not draft_brush_specs.has(name)
+        or str(draft_prop_sources.get(name, "")) != "Brush::Box"
+        or str(draft_brush_specs[name].get("kind", "")) != "Box"):
+        return ""
+    return name
+
+
+func _apply_private_box_clip() -> void:
+    var name := _selected_private_box_name()
+    if (name.is_empty() or box_clip_yaw == null or box_clip_elevation == null
+        or box_clip_distance == null or box_clip_keep_side == null):
+        if status_label != null:
+            status_label.text = "Select one editor-created Box draft for a private 3D plane clip."
+        return
+    var yaw := deg_to_rad(box_clip_yaw.value)
+    var elevation := deg_to_rad(box_clip_elevation.value)
+    var normal := Vector3(
+        cos(yaw)*cos(elevation), sin(elevation), sin(yaw)*cos(elevation))
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    spec["clip_plane"] = {
+        "normal": [normal.x, normal.y, normal.z],
+        "distance": box_clip_distance.value,
+        "keep_positive": box_clip_keep_side.selected == 1,
+    }
+    var verified: Dictionary = BrushGeometry.validate(spec)
+    if verified.is_empty() or BrushGeometry.build_mesh(verified) == null:
+        status_label.text = (
+            "3D Box clip refused: invalid/no-op/tangent plane or "
+            + "non-watertight/near-empty preview mesh.")
+        return
+    var previous: Dictionary = draft_brush_specs[name].get("clip_plane", {})
+    if not previous.is_empty():
+        var prev_normal := Vector3(
+            previous["normal"][0], previous["normal"][1], previous["normal"][2])
+        if (prev_normal.distance_to(normal) < 0.00001
+            and absf(float(previous["distance"]) - box_clip_distance.value) < 0.00001
+            and bool(previous["keep_positive"]) == bool(spec["clip_plane"]["keep_positive"])):
+            status_label.text = "3D Box clip unchanged: existing private preview retained."
+            return
+    var before := _capture_edit_state()
+    if not _set_brush_spec(name, verified):
+        status_label.text = "3D Box clip mesh failed validation; private draft unchanged."
+        return
+    _refresh_prop_inspection()
+    _record_edit("Clip private 3D Box plane", before)
+    status_label.text = (
+        "Created closed private 3D Box plane cut with one Undo step. "
+        + "Original DX2 geometry, BSP and collision unchanged.")
+
+
+func _reset_private_box_clip() -> void:
+    var name := _selected_private_box_name()
+    if name.is_empty() or not draft_brush_specs[name].has("clip_plane"):
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    spec.erase("clip_plane")
+    var before := _capture_edit_state()
+    if not _set_brush_spec(name, spec):
+        status_label.text = "Private Box reset refused; current draft preserved."
+        return
+    _refresh_prop_inspection()
+    _record_edit("Reset private 3D Box clip", before)
+    status_label.text = "Restored private Box preview; Undo available. Original GMP unchanged."
 
 
 func _change_brush_dimension(value: float, axis: int) -> void:
