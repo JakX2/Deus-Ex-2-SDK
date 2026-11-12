@@ -4,6 +4,7 @@ extends SceneTree
 ## brushes, portal/BSP, collision or gameplay package writes.
 const Editor = preload("res://main.gd")
 const Brush = preload("res://brush_geometry.gd")
+const PrivateBoxClip = preload("res://private_box_clip.gd")
 const Guides = preload("res://orthographic_authoring_guides.gd")
 
 
@@ -43,6 +44,81 @@ func _run() -> void:
         if not invalid.is_empty():
             _fail("Invalid native or unbounded draft face operation accepted")
             return
+
+    # v0.80: genuine 3D half-space caps on source-isolated draft boxes,
+    # with a geometric manifold and signed-volume check. No DX2 CSG.
+    var cube := Brush.default_spec("Box")
+    var axis_cut: Dictionary = cube.duplicate(true)
+    axis_cut["clip_plane"] = {
+        "normal": [1.0, 0.0, 0.0], "distance": 0.0,
+        "keep_positive": false}
+    var half_mesh: ArrayMesh = Brush.build_mesh(axis_cut)
+    if (Brush.validate(axis_cut).is_empty() or half_mesh == null
+        or half_mesh.get_surface_count() != 1):
+        _fail("Private 3D Box half-plane did not build capped convex mesh")
+        return
+    var half_points: PackedVector3Array = half_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+    if not PrivateBoxClip._valid_closed_soup(half_points, 8.0):
+        _fail("Private Box 3D half-mesh is not closed and outward oriented")
+        return
+    var half_volume := 0.0
+    for i in range(0, half_points.size(), 3):
+        half_volume += half_points[i].dot(
+            half_points[i+1].cross(half_points[i+2])) / 6.0
+    if not is_equal_approx(half_volume, 4.0):
+        _fail("Source-only 3D half-box has the wrong enclosed volume")
+        return
+    var opposite: Dictionary = axis_cut.duplicate(true)
+    opposite["clip_plane"]["keep_positive"] = true
+    var other_mesh: ArrayMesh = Brush.build_mesh(opposite)
+    if other_mesh == null:
+        _fail("Opposite 3D Box clip side refused valid half cube")
+        return
+    var diagonal: Dictionary = axis_cut.duplicate(true)
+    var inv_root3 := 1.0/sqrt(3.0)
+    diagonal["clip_plane"]["normal"] = [inv_root3, inv_root3, inv_root3]
+    var diagonal_mesh: ArrayMesh = Brush.build_mesh(diagonal)
+    if diagonal_mesh == null:
+        _fail("3D diagonal plane could not cap a convex hexagonal cut")
+        return
+    var diagonal_points: PackedVector3Array = (
+        diagonal_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX])
+    if not PrivateBoxClip._valid_closed_soup(diagonal_points, 8.0):
+        _fail("Oblique 3D Box cap is not closed and consistently oriented")
+        return
+    var diag_volume := 0.0
+    for i in range(0, diagonal_points.size(), 3):
+        diag_volume += diagonal_points[i].dot(
+            diagonal_points[i+1].cross(diagonal_points[i+2])) / 6.0
+    if absf(diag_volume-4.0) > 0.0005:
+        _fail("Oblique center plane does not split symmetric cube volume")
+        return
+    for invalid_clip in [
+        {"normal":[2,0,0], "distance":0.0, "keep_positive":false},
+        {"normal":[1,0,0], "distance":1.0, "keep_positive":false},
+        {"normal":[1,0,0], "distance":0.99, "keep_positive":false},
+        {"normal":[1,0,0], "distance":0.0, "keep_positive":1},
+        {"normal":[INF,0,0], "distance":0.0, "keep_positive":false},
+        {"normal":[1,0,0], "distance":NAN, "keep_positive":false},
+        {"normal":[1,0,0], "distance":257.0, "keep_positive":false},
+        {"normal":[1,0], "distance":0.0, "keep_positive":false},
+    ]:
+        var bad: Dictionary = cube.duplicate(true)
+        bad["clip_plane"] = invalid_clip
+        if not Brush.validate(bad).is_empty() or Brush.build_mesh(bad) != null:
+            _fail("Invalid, tangent, nonunit or nonfinite 3D plane accepted")
+            return
+    var other_kind := Brush.default_spec("Floor")
+    other_kind["clip_plane"] = axis_cut["clip_plane"]
+    if not Brush.validate(other_kind).is_empty():
+        _fail("Untrusted private clip attached to non-Box brush kind")
+        return
+    if (not Brush.face_resize(axis_cut, 0, 0.5).is_empty()
+        or not Brush.pick_draft_face(
+            axis_cut, Transform3D.IDENTITY,
+            Vector3(-5,0,0), Vector3.RIGHT).is_empty()):
+        _fail("Clipped 3D Box still allowed misleading original cuboid face edit")
+        return
 
     var editor := Editor.new()
     get_root().add_child(editor)
@@ -188,6 +264,82 @@ func _run() -> void:
             ).is_equal_approx(opposite_before):
         _fail("Reopened resized brush shifted its original opposite face")
         return
+    # Use the actual Inspector, private draft state, history and project
+    # reload. Original scene preview actor and retail-style source file stay
+    # separate from the editor-only capped mesh.
+    editor._select_mesh_only(editor.draft_prop_copies["DraftProp_1"])
+    if (editor.private_box_clip_panel == null
+        or not editor.private_box_clip_panel.visible
+        or editor.box_clip_yaw == null or editor.box_clip_elevation == null
+        or editor.box_clip_keep_side == null or editor.box_clip_distance == null
+        or editor.box_clip_reset_button == null):
+        _fail("Real Godot Box Inspector has no v0.80 private 3D clip controls")
+        return
+    var prior_box: Dictionary = editor.draft_brush_specs["DraftProp_1"].duplicate(true)
+    var prior_history := editor.undo_stack.size()
+    editor.box_clip_yaw.value = 45.0
+    editor.box_clip_elevation.value = 30.0
+    editor.box_clip_distance.value = 0.0
+    editor.box_clip_keep_side.select(0)
+    editor._apply_private_box_clip()
+    var clipped_spec: Dictionary = editor.draft_brush_specs["DraftProp_1"].duplicate(true)
+    var clipped_node: MeshInstance3D = editor.draft_prop_copies["DraftProp_1"]
+    if (not clipped_spec.has("clip_plane")
+        or editor.undo_stack.size() != prior_history + 1
+        or clipped_node.mesh == null or clipped_node.mesh.get_surface_count() != 1
+        or not editor.private_box_clip_panel.visible
+        or editor.brush_face_controls.visible
+        or not editor.box_clip_reset_button.disabled == false):
+        _fail("Real Inspector Box clip did not create one capped preview and Undo step")
+        return
+    var clipped_points: PackedVector3Array = (
+        clipped_node.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX])
+    if not PrivateBoxClip._valid_closed_soup(clipped_points, 2.5*2.0*2.0):
+        _fail("Actual editor-generated 3D box lacks closed manifold")
+        return
+    var no_op_history := editor.undo_stack.size()
+    editor._apply_private_box_clip()
+    if (editor.undo_stack.size() != no_op_history
+        or editor.draft_brush_specs["DraftProp_1"] != clipped_spec):
+        _fail("Repeating identical private 3D clipping polluted history")
+        return
+    editor._undo_edit()
+    if editor.draft_brush_specs["DraftProp_1"] != prior_box:
+        _fail("3D Box Clip undo did not reconstruct uncut private box")
+        return
+    editor._redo_edit()
+    if not editor.draft_brush_specs["DraftProp_1"].has("clip_plane"):
+        _fail("3D Box Clip redo did not regenerate capped private mesh")
+        return
+    editor._save_prop_draft()
+    var clip_doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(draft_path))
+    if (typeof(clip_doc) != TYPE_DICTIONARY
+        or clip_doc["copies"].size() != 1
+        or not clip_doc["copies"][0]["brush"].has("clip_plane")
+        or clip_doc["copies"][0]["from_actor"] != "Brush::Box"):
+        _fail("3D Box Clip plane was dropped from private project document")
+        return
+    editor._set_brush_spec("DraftProp_1", Brush.default_spec("Box"))
+    editor._load_prop_draft()
+    if (not editor.draft_brush_specs.has("DraftProp_1")
+        or not editor.draft_brush_specs["DraftProp_1"].has("clip_plane")
+        or editor.draft_prop_copies["DraftProp_1"].mesh == null):
+        _fail("Real 3D Box Clip private project reopen lost clipping plane or cap")
+        return
+    editor._select_mesh_only(editor.draft_prop_copies["DraftProp_1"])
+    editor._reset_private_box_clip()
+    if (editor.draft_brush_specs["DraftProp_1"].has("clip_plane")
+        or not editor.brush_face_controls.visible):
+        _fail("Reset-to-Box did not restore original six-face preview")
+        return
+    editor._undo_edit()
+    if not editor.draft_brush_specs["DraftProp_1"].has("clip_plane"):
+        _fail("Reset-to-Box Undo lost the original clipped Box")
+        return
+    editor._redo_edit()
+    if editor.draft_brush_specs["DraftProp_1"].has("clip_plane"):
+        _fail("Reset-to-Box Redo did not restore the uncut draft")
+        return
     if FileAccess.get_sha256(original_file) != source_sha:
         _fail("Original invented source bytes changed during preview authoring")
         return
@@ -197,5 +349,5 @@ func _run() -> void:
             DirAccess.remove_absolute(draft_path + suffix)
     DirAccess.remove_absolute(original_file)
     editor.queue_free()
-    print("DX2Ed v0.35 T3Ed-style face resize + full private scene save/reopen PASS")
+    print("DX2Ed v0.80 closed 3D Box Clip, capped manifold, Undo/Redo, Reset and private Save/reopen PASS")
     quit(0)
