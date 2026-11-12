@@ -9720,15 +9720,12 @@ func _update_selected_private_box_plane() -> void:
     if requested.is_empty():
         status_label.text = "Update plane refused: invalid private normal."
         return
-    var size := Vector3(spec["size"][0], spec["size"][1], spec["size"][2])
-    var checked := PrivateBoxClip.validate_clip(requested, size)
-    if checked.is_empty():
-        status_label.text = "Update plane refused: invalid or tangent halfspace."
-        return
-    if _same_private_box_plane(planes[index], checked):
+    # The complete modified brush is revalidated below, including its
+    # individual plane and the entire successive convex mesh.
+    if _same_private_box_plane(planes[index], requested):
         status_label.text = "Selected private plane unchanged; no Undo step."
         return
-    planes[index] = checked
+    planes[index] = requested
     spec.erase("clip_plane")
     spec.erase("clip_planes")
     if planes.size() == 1:
