@@ -554,6 +554,15 @@ class DX2Map:
         from .bsp_surface_plane_coherence import inspect_original_surface_plane_coherence
         return inspect_original_surface_plane_coherence(self)
 
+    def inspect_original_world_model_noop(self) -> dict:
+        """Reassemble original World BSP Model payload byte-identically in memory.
+
+        Read-only structural serialization preflight. Native geometry,
+        collision, zone or GMP modification is never enabled.
+        """
+        from .bsp_model_noop import inspect_original_world_model_noop
+        return inspect_original_world_model_noop(self)
+
     def static_prop_clone_candidates(self, limit: int = 200) -> dict:
         """Read-only, conservative original T3SDK clone eligibility list."""
         from .clones import source_clone_candidates
