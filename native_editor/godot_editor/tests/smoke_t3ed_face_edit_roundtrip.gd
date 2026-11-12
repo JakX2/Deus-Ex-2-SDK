@@ -547,9 +547,9 @@ func _run() -> void:
     if (not final_stack.has("clip_planes")
         or final_stack["clip_planes"].size() != 4
         or editor.undo_stack.size() != history_before_stack+4
-        or editor.box_clip_plane_count_label.text != "Planes: 4 / 4"
-        or not editor.box_clip_add_plane_button.disabled):
-        _fail("v0.81 fourth capped plane or Inspector limit failed")
+        or editor.box_clip_plane_count_label.text != "Planes: 4 / 8"
+        or editor.box_clip_add_plane_button.disabled):
+        _fail("v0.83 fourth capped plane was not accepted below eight-plane limit")
         return
     var final_mesh: Mesh = editor.draft_prop_copies["DraftProp_1"].mesh
     if final_mesh == null or final_mesh.get_surface_count() != 1:
