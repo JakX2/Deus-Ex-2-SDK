@@ -783,6 +783,103 @@ func _run() -> void:
             - expected_eight_volume) > 0.02):
         _fail("v0.83 private JSON reopen changed closed geometry")
         return
+    # v0.84: adjacent selected-plane reordering in the actual editor,
+    # including UI edge gates, no-op history, Undo/Redo and private JSON.
+    if (editor.box_clip_move_up_button == null
+        or editor.box_clip_move_down_button == null):
+        _fail("v0.84 selected-plane reorder controls missing")
+        return
+    editor.box_clip_plane_selector.select(0)
+    editor._selected_private_box_plane_changed(0)
+    if (not editor.box_clip_move_up_button.disabled
+        or editor.box_clip_move_down_button.disabled):
+        _fail("v0.84 first-plane reorder boundary button states wrong")
+        return
+    var reorder_before := editor.undo_stack.size()
+    editor._move_selected_private_box_plane(-1)
+    editor._move_selected_private_box_plane(0)
+    if (editor.undo_stack.size() != reorder_before
+        or editor.draft_brush_specs["DraftProp_1"] != reopened_eight):
+        _fail("v0.84 invalid/no-op reorder mutated original stack or Undo")
+        return
+    editor.box_clip_plane_selector.select(7)
+    editor._selected_private_box_plane_changed(7)
+    if (editor.box_clip_move_up_button.disabled
+        or not editor.box_clip_move_down_button.disabled):
+        _fail("v0.84 final-plane reorder boundary button states wrong")
+        return
+    editor.box_clip_plane_selector.select(3)
+    editor._selected_private_box_plane_changed(3)
+    editor._move_selected_private_box_plane(1)
+    var swapped_eight: Dictionary = editor.draft_brush_specs["DraftProp_1"].duplicate(true)
+    if (editor.undo_stack.size() != reorder_before + 1
+        or editor.box_clip_plane_selector.selected != 4
+        or editor.box_clip_move_down_button.disabled
+        or swapped_eight["clip_planes"].size() != 8):
+        _fail("v0.84 selecting a nonterminal cut and moving down failed")
+        return
+    var original_moved: Dictionary = reopened_eight["clip_planes"][3]
+    var moved_plane: Dictionary = swapped_eight["clip_planes"][4]
+    var original_normal := Vector3(
+        original_moved["normal"][0], original_moved["normal"][1],
+        original_moved["normal"][2])
+    var moved_normal := Vector3(
+        moved_plane["normal"][0], moved_plane["normal"][1],
+        moved_plane["normal"][2])
+    if (original_normal.distance_to(moved_normal) > 0.00001
+        or absf(float(original_moved["distance"])
+            - float(moved_plane["distance"])) > 0.00001):
+        _fail("v0.84 selected halfspace changed during reorder")
+        return
+    var swapped_points: PackedVector3Array = (
+        editor.draft_prop_copies["DraftProp_1"].mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX])
+    if (not PrivateBoxClip._valid_closed_soup(swapped_points, 8.0)
+        or swapped_points.size() / 3 != 44
+        or absf(MultiClip._signed_volume(swapped_points)
+            - expected_eight_volume) > 0.02):
+        _fail("v0.84 reordered plane changed the closed convex solid")
+        return
+    editor._undo_edit()
+    if editor.draft_brush_specs["DraftProp_1"] != reopened_eight:
+        _fail("v0.84 reordered plane Undo did not recover prior order")
+        return
+    editor._redo_edit()
+    if editor.draft_brush_specs["DraftProp_1"] != swapped_eight:
+        _fail("v0.84 reordered plane Redo lost exchanged plane order")
+        return
+    editor._save_prop_draft()
+    var reordered_json: Variant = JSON.parse_string(
+        FileAccess.get_file_as_string(draft_path))
+    if (typeof(reordered_json) != TYPE_DICTIONARY
+        or reordered_json["copies"][0]["brush"]["clip_planes"].size() != 8):
+        _fail("v0.84 private Save lost reordered eight-cut stack")
+        return
+    editor._set_brush_spec("DraftProp_1", Brush.default_spec("Box"))
+    editor._load_prop_draft()
+    editor._select_mesh_only(editor.draft_prop_copies["DraftProp_1"])
+    if (not editor.draft_brush_specs["DraftProp_1"].has("clip_planes")
+        or editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 8
+        or editor.draft_prop_copies["DraftProp_1"].mesh == null):
+        _fail("v0.84 private project reopen lost reordered clipping stack")
+        return
+    var saved_moved: Dictionary = (
+        editor.draft_brush_specs["DraftProp_1"]["clip_planes"][4])
+    var saved_normal := Vector3(
+        saved_moved["normal"][0], saved_moved["normal"][1],
+        saved_moved["normal"][2])
+    if saved_normal.distance_to(moved_normal) > 0.00001:
+        _fail("v0.84 private JSON changed selected plane order")
+        return
+    editor.box_clip_plane_selector.select(4)
+    editor._selected_private_box_plane_changed(4)
+    editor._move_selected_private_box_plane(-1)
+    var restored_eight: Dictionary = editor.draft_brush_specs["DraftProp_1"].duplicate(true)
+    if (editor.box_clip_plane_selector.selected != 3
+        or restored_eight["clip_planes"].size() != 8):
+        _fail("v0.84 upward reorder after private reopen failed")
+        return
+    # Preserve precision-normalized data from the real reloaded project.
+    reopened_eight = restored_eight
     editor.box_clip_plane_selector.select(3)
     editor._selected_private_box_plane_changed(3)
     var remove_eight_before := editor.undo_stack.size()
@@ -813,5 +910,5 @@ func _run() -> void:
             DirAccess.remove_absolute(draft_path + suffix)
     DirAccess.remove_absolute(original_file)
     editor.queue_free()
-    print("DX2Ed v0.83 eight-plane closed convex Box, selected-plane editing, Undo and private Save/reopen PASS")
+    print("DX2Ed v0.84 reordered eight-plane convex Box, Undo and private Save/reopen PASS")
     quit(0)
