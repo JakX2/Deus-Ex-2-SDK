@@ -1,6 +1,7 @@
 extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
 const PrivateBoxCapPicker = preload("res://private_box_cap_picker.gd")
+const PrivateBoxCapDrag = preload("res://private_box_cap_drag.gd")
 const PrivateBoxMultiClip = preload("res://private_box_multiclip.gd")
 const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const MatLibBrowser = preload("res://matlib_browser.gd")
@@ -412,6 +413,14 @@ var box_clip_remove_selected_button: Button
 var box_clip_move_up_button: Button
 var box_clip_move_down_button: Button
 var box_clip_active_brush_name := ""
+# Source-private Alt+Ctrl cap normal drag, one history operation on release.
+var box_cap_drag_active := false
+var box_cap_drag_owner := ""
+var box_cap_drag_index := -1
+var box_cap_drag_before: Dictionary = {}
+var box_cap_drag_original: Dictionary = {}
+var box_cap_drag_plane := Plane(Vector3.UP, 0.0)
+var box_cap_drag_anchor := Vector3.ZERO
 var polygon_inspector_panel: VBoxContainer
 var polygon_vertex_selector: OptionButton
 var polygon_vertex_x: SpinBox
@@ -1975,6 +1984,13 @@ func _make_ui() -> void:
         + "a valid closed convex preview. One Undo step.")
     box_clip_remove_selected_button.pressed.connect(_remove_selected_private_box_plane)
     box_clip_edit_row.add_child(box_clip_remove_selected_button)
+    var box_clip_drag_hint := Label.new()
+    box_clip_drag_hint.text = "Alt+Ctrl+drag a visible cap: grid-snap its plane normal"
+    box_clip_drag_hint.tooltip_text = (
+        "Drag only a selected editor-authored convex Box cap along its own normal. "
+        + "Release to add one private Undo step; invalid geometry is refused. "
+        + "This never modifies original BSP or game collision.")
+    private_box_clip_panel.add_child(box_clip_drag_hint)
     var box_clip_reorder_row := HBoxContainer.new()
     private_box_clip_panel.add_child(box_clip_reorder_row)
     box_clip_move_up_button = Button.new()
@@ -9587,6 +9603,125 @@ func _pick_selected_draft_face_from_viewport() -> void:
             + "Box/Wall/Floor and Alt+Shift+click its face or clipped Box cap.")
 
 
+## Alt+Ctrl+left-drag begins only on a visible private cap selected by
+## the real nearest-triangle ray picker. The camera-facing drag plane contains
+## the cap-normal axis and becomes invalid when viewed exactly edge-on.
+func _begin_private_box_cap_drag_ray(
+        ray_origin: Vector3, ray_direction: Vector3,
+        view_direction: Vector3) -> bool:
+    var name := _selected_private_box_name()
+    if (name.is_empty() or box_cap_drag_active
+        or not view_direction.is_finite()
+        or view_direction.length_squared() < 0.00000001):
+        return false
+    var node: MeshInstance3D = draft_prop_copies.get(name, null)
+    if not is_instance_valid(node) or not node.is_visible_in_tree():
+        return false
+    var spec: Dictionary = draft_brush_specs[name]
+    var cap: Dictionary = PrivateBoxCapPicker.pick_cap(
+        spec, node.global_transform, ray_origin, ray_direction)
+    if cap.is_empty():
+        status_label.text = (
+            "Cap drag refused: point to a visible authored cut face, not original geometry.")
+        return false
+    var index := int(cap["plane_index"])
+    var planes: Array = _private_box_plane_list(spec)
+    if index < 0 or index >= planes.size():
+        return false
+    var plane_spec: Dictionary = planes[index]
+    var local_normal := Vector3(
+        plane_spec["normal"][0], plane_spec["normal"][1],
+        plane_spec["normal"][2])
+    var world_axis := node.global_transform.basis * local_normal
+    if (not world_axis.is_finite()
+        or world_axis.length_squared() < 0.00000001):
+        return false
+    world_axis = world_axis.normalized()
+    var sight := view_direction.normalized()
+    var normal := sight - world_axis * sight.dot(world_axis)
+    if normal.length_squared() < 0.0001:
+        status_label.text = (
+            "Cap drag refused: rotate viewport to see the cap normal from the side.")
+        return false
+    normal = normal.normalized()
+    var cap_point: Vector3 = cap["world_point"]
+    var plane := Plane(normal, normal.dot(cap_point))
+    var anchor: Variant = plane.intersects_ray(ray_origin, ray_direction)
+    if typeof(anchor) != TYPE_VECTOR3:
+        return false
+    box_cap_drag_before = _capture_edit_state()
+    box_cap_drag_original = spec.duplicate(true)
+    box_cap_drag_owner = name
+    box_cap_drag_index = index
+    box_cap_drag_plane = plane
+    box_cap_drag_anchor = anchor
+    box_cap_drag_active = true
+    box_clip_plane_selector.select(index)
+    _selected_private_box_plane_changed(index)
+    status_label.text = (
+        "Dragging private Box cap " + str(index + 1)
+        + " along its normal (Grid m). Release for one Undo step.")
+    return true
+
+
+func _apply_private_box_cap_drag_ray(
+        ray_origin: Vector3, ray_direction: Vector3) -> void:
+    if not box_cap_drag_active:
+        return
+    var name := box_cap_drag_owner
+    if name != _selected_private_box_name():
+        return
+    if (not ray_origin.is_finite() or not ray_direction.is_finite()
+        or ray_direction.length_squared() < 0.00000001):
+        return
+    var point: Variant = box_cap_drag_plane.intersects_ray(
+        ray_origin, ray_direction)
+    if typeof(point) != TYPE_VECTOR3:
+        return
+    var delta: Vector3 = point - box_cap_drag_anchor
+    var node: MeshInstance3D = draft_prop_copies.get(name, null)
+    if not is_instance_valid(node):
+        return
+    var verified := PrivateBoxCapDrag.with_world_displacement(
+        box_cap_drag_original, box_cap_drag_index,
+        node.global_transform, delta, float(ortho_grid_step))
+    if verified.is_empty():
+        status_label.text = (
+            "Cap drag rejected: invalid, redundant, near-empty or nonmanifold "
+            + "preview. Last valid mesh retained.")
+        return
+    if verified == draft_brush_specs[name]:
+        return
+    if not _set_brush_spec(name, verified):
+        return
+    _refresh_prop_inspection()
+    status_label.text = (
+        "Previewing private cap " + str(box_cap_drag_index + 1)
+        + " offset " + str(_private_box_plane_list(verified)[box_cap_drag_index]["distance"])
+        + " m. Release to commit one Undo step.")
+
+
+func _finish_private_box_cap_drag() -> void:
+    if not box_cap_drag_active:
+        return
+    var before := box_cap_drag_before
+    var owner := box_cap_drag_owner
+    var index := box_cap_drag_index
+    box_cap_drag_active = false
+    box_cap_drag_owner = ""
+    box_cap_drag_index = -1
+    box_cap_drag_before = {}
+    box_cap_drag_original = {}
+    var after := _capture_edit_state()
+    if before.get("copies", {}) != after.get("copies", {}):
+        _record_edit("Drag private Box clipping cap " + str(index + 1), before)
+        status_label.text = (
+            "Committed snapped cap " + str(index + 1) + " on " + owner
+            + ". One Undo step; no native BSP or collision write.")
+    else:
+        status_label.text = "Cap drag made no valid change; no Undo step."
+
+
 func _change_brush_face(side: float) -> void:
     # Only a single editor-created box/wall/floor brush. Never pick a native
     # BSP triangle or move an imported original StaticMeshActor through here.
@@ -12743,6 +12878,7 @@ func _set_editor_tool(tool: String) -> void:
         return
     if polygon_vertex_drag_active:
         _finish_polygon_vertex_drag()
+    _finish_private_box_cap_drag()
     _finish_gizmo_drag()
     editor_tool = tool
     _refresh_gizmo_shape()
@@ -12774,6 +12910,7 @@ func _input(event: InputEvent) -> void:
         var shortcut := event as InputEventKey
         if shortcut.pressed and not shortcut.echo and (shortcut.ctrl_pressed or shortcut.meta_pressed) and not shortcut.alt_pressed and not _text_input_focused():
             if shortcut.keycode == KEY_Z:
+                _finish_private_box_cap_drag()
                 if shortcut.shift_pressed:
                     _redo_edit()
                 else:
@@ -12781,6 +12918,7 @@ func _input(event: InputEvent) -> void:
                 get_viewport().set_input_as_handled()
                 return
             elif shortcut.keycode == KEY_Y:
+                _finish_private_box_cap_drag()
                 _redo_edit()
                 get_viewport().set_input_as_handled()
                 return
@@ -12837,6 +12975,18 @@ func _input(event: InputEvent) -> void:
                     and not button.ctrl_pressed and _begin_polygon_vertex_drag()):
                     dragging = true
                     drag_mode = "polygon_vertex"
+                elif (button.alt_pressed and button.ctrl_pressed
+                    and not button.shift_pressed
+                    and not _selected_private_box_name().is_empty()):
+                    # A missed private cap must NOT fall back to orbiting or
+                    # selecting native source meshes via this gesture.
+                    var cap_ray := _mouse_ray(view_container.get_local_mouse_position())
+                    if (not cap_ray.is_empty()
+                        and _begin_private_box_cap_drag_ray(
+                            cap_ray["origin"], cap_ray["direction"],
+                            -camera.global_basis.z)):
+                        dragging = true
+                        drag_mode = "private_cap_drag"
                 elif button.alt_pressed and button.shift_pressed and _can_pick_selected_draft_face():
                     dragging = true
                     drag_mode = "draft_face_pick"
@@ -12878,6 +13028,8 @@ func _input(event: InputEvent) -> void:
                     _pick_selected_draft_face_from_viewport()
                 if drag_mode == "polygon_vertex":
                     _finish_polygon_vertex_drag()
+                if drag_mode == "private_cap_drag":
+                    _finish_private_box_cap_drag()
                 if drag_mode == "gizmo":
                     _finish_gizmo_drag()
                 dragging = false
@@ -12907,6 +13059,11 @@ func _input(event: InputEvent) -> void:
                 _apply_gizmo_drag()
             elif drag_mode == "polygon_vertex":
                 _apply_polygon_vertex_drag()
+            elif drag_mode == "private_cap_drag":
+                var cap_ray := _mouse_ray(view_container.get_local_mouse_position())
+                if not cap_ray.is_empty():
+                    _apply_private_box_cap_drag_ray(
+                        cap_ray["origin"], cap_ray["direction"])
             get_viewport().set_input_as_handled()
         elif mouse_inside and source_collision_mode and (
             is_instance_valid(source_collision_section_vertex_marker)
