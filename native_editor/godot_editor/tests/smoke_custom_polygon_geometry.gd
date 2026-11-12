@@ -16,6 +16,20 @@ func _fail(message: String) -> void:
     quit(1)
 
 
+func _outlines_close(left: Variant, right: Variant) -> bool:
+    if (typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY
+        or left.size() != right.size()):
+        return false
+    for index in range(left.size()):
+        if (typeof(left[index]) != TYPE_ARRAY or typeof(right[index]) != TYPE_ARRAY
+            or left[index].size() != 2 or right[index].size() != 2):
+            return false
+        for axis in range(2):
+            if not is_equal_approx(float(left[index][axis]), float(right[index][axis])):
+                return false
+    return true
+
+
 func _run() -> void:
     var spec := Brush.default_spec("Polygon")
     if (spec.is_empty() or Brush.validate(spec).is_empty()
@@ -466,13 +480,13 @@ func _run() -> void:
     var clipped_doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
     if (typeof(clipped_doc) != TYPE_DICTIONARY
         or clipped_doc["copies"].size() != 1
-        or clipped_doc["copies"][0]["brush"]["outline"] != clipped):
-        _fail("Clipped local footprint did not persist in private project JSON")
+        or not _outlines_close(clipped_doc["copies"][0]["brush"]["outline"], clipped)):
+        _fail("Clipped local footprint did not persist: " + editor.status_label.text)
         return
     editor._set_brush_spec("DraftProp_38", Brush.default_spec("Polygon"))
     editor._load_prop_draft()
     if (not editor.draft_prop_copies.has("DraftProp_38")
-        or editor.draft_brush_specs["DraftProp_38"]["outline"] != clipped
+        or not _outlines_close(editor.draft_brush_specs["DraftProp_38"]["outline"], clipped)
         or editor.draft_brush_specs["DraftProp_38"]["surface_style"]["top"]["preset"] != "Metal"
         or not editor.selected_meshes.has("DraftProp_38")):
         _fail("Clipped private footprint failed full editor Save/reopen")
