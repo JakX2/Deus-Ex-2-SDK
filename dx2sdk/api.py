@@ -563,6 +563,17 @@ class DX2Map:
         from .bsp_model_noop import inspect_original_world_model_noop
         return inspect_original_world_model_noop(self)
 
+    def inspect_original_model_byte_spans(
+        self, node_indices: Sequence[int] | None = None,
+    ) -> dict:
+        """Read-only full original World Model byte ledger and selected node spans.
+
+        This is evidence about native source framing, not a BSP surface index,
+        modified Model serializer or verified retail-game edit capability.
+        """
+        from .bsp_model_spans import inspect_original_model_span_ledger
+        return inspect_original_model_span_ledger(self, node_indices)
+
     def static_prop_clone_candidates(self, limit: int = 200) -> dict:
         """Read-only, conservative original T3SDK clone eligibility list."""
         from .clones import source_clone_candidates
