@@ -9683,7 +9683,7 @@ func _append_private_box_plane() -> void:
     _refresh_prop_inspection()
     _record_edit("Add private 3D Box cutting plane", before)
     status_label.text = (
-        ""Added plane " + str(planes.size()) + "/"
+        "Added plane " + str(planes.size()) + "/"
         + str(PrivateBoxMultiClip.MAX_PLANES) + " to closed private convex Box. "
         + "Undo available; native DX2 BSP/collision unchanged.")
 
