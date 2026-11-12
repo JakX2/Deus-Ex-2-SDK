@@ -268,12 +268,34 @@ static func validate_outline(raw: Variant) -> Array:
     return rows
 
 
-## Private T3Ed-inspired footprint Brush Clip: axis-aligned local X/Z
-## half-plane intersection, not native DX2 CSG. Concave/disconnected and
-## sub-minimum-area outputs fail closed. An empty result never destroys a draft.
+## T3Ed-inspired private 2D Brush Clip. It is NOT a native DX2 BSP
+## plane/CSG operation. The same conservative geometry guard serves the
+## earlier axis modes and the new angle mode.
 static func clip_outline_axis(raw: Variant, axis: int,
                               boundary: float, keep_positive: bool) -> Array:
     if axis not in [0, 1] or not is_finite(boundary) or absf(boundary) > 1.0:
+        return []
+    var normal := Vector2(1.0, 0.0) if axis == 0 else Vector2(0.0, 1.0)
+    return _clip_outline_halfplane(raw, normal, boundary, keep_positive)
+
+
+## Angle is the cut-line NORMAL in local normalized X/Z, counterclockwise
+## from +X toward +Z. A unit normal makes offset a source-space distance.
+static func clip_outline_angle(raw: Variant, angle_degrees: float,
+                               boundary: float, keep_positive: bool) -> Array:
+    if (not is_finite(angle_degrees) or angle_degrees < 0.0
+        or angle_degrees >= 360.0 or not is_finite(boundary)
+        or absf(boundary) > 1.5):
+        return []
+    var angle := deg_to_rad(angle_degrees)
+    var normal := Vector2(cos(angle), sin(angle))
+    return _clip_outline_halfplane(raw, normal, boundary, keep_positive)
+
+
+static func _clip_outline_halfplane(raw: Variant, normal: Vector2,
+                                   boundary: float, keep_positive: bool) -> Array:
+    if (not normal.is_finite() or not is_finite(boundary)
+        or absf(normal.length_squared() - 1.0) > 0.0001):
         return []
     var outline := validate_outline(raw)
     if outline.is_empty():
@@ -284,44 +306,47 @@ static func clip_outline_axis(raw: Variant, axis: int,
     for corner in outline:
         var point := Vector2(float(corner[0]), float(corner[1]))
         points.append(point)
-        var inside: bool = (
-            point[axis] >= boundary - epsilon if keep_positive
-            else point[axis] <= boundary + epsilon)
+        var signed_distance := normal.dot(point) - boundary
+        var inside := (
+            signed_distance >= -epsilon if keep_positive
+            else signed_distance <= epsilon)
         if not inside:
             outside_count += 1
-    # A no-op clip and an entirely excluded footprint are both refusals:
-    # do not rotate source corner order or create a misleading Undo entry.
+    # No-op and empty cuts are refused. Neither may change source winding,
+    # saved draft data or Undo history.
     if outside_count == 0 or outside_count == points.size():
         return []
     var output: Array[Vector2] = []
     var crossings := 0
     var previous: Vector2 = points.back()
-    var previous_inside: bool = (
-        previous[axis] >= boundary - epsilon if keep_positive
-        else previous[axis] <= boundary + epsilon)
+    var previous_distance := normal.dot(previous) - boundary
+    var previous_inside := (
+        previous_distance >= -epsilon if keep_positive
+        else previous_distance <= epsilon)
     for current in points:
-        var current_inside: bool = (
-            current[axis] >= boundary - epsilon if keep_positive
-            else current[axis] <= boundary + epsilon)
+        var current_distance := normal.dot(current) - boundary
+        var current_inside := (
+            current_distance >= -epsilon if keep_positive
+            else current_distance <= epsilon)
         if current_inside != previous_inside:
             crossings += 1
-            # More than two crossings may turn a disconnected concave cut
-            # into one fictitious polygon bridged along the cut plane.
+            # A nonconvex footprint can produce two disjoint islands.
+            # Do not create fictitious connecting walls on the cutting line.
             if crossings > 2:
                 return []
-            var denominator := current[axis] - previous[axis]
+            var denominator := current_distance - previous_distance
             if absf(denominator) <= epsilon:
                 return []
-            var fraction := clampf((boundary - previous[axis]) / denominator, 0.0, 1.0)
+            var fraction := clampf(-previous_distance / denominator, 0.0, 1.0)
             var intersection := previous.lerp(current, fraction)
-            if axis == 0:
-                intersection.x = boundary
-            else:
-                intersection.y = boundary
+            # Remove numerical drift from the cut-line equation while
+            # retaining the exact source corner order and winding.
+            intersection -= normal * (normal.dot(intersection) - boundary)
             output.append(intersection)
         if current_inside:
             output.append(current)
         previous = current
+        previous_distance = current_distance
         previous_inside = current_inside
     if crossings != 2:
         return []
@@ -331,8 +356,8 @@ static func clip_outline_axis(raw: Variant, axis: int,
             cleaned.append(point)
     if cleaned.size() > 1 and cleaned.front().distance_to(cleaned.back()) <= epsilon:
         cleaned.pop_back()
-    # Clipped source corners on the cut plane may create a redundant
-    # straight segment. Remove only exactly-near-collinear forward corners.
+    # Delete near-collinear forward corners before running the original
+    # strict, simple-polygon triangulation and area preflight.
     for _pass in range(MAX_VERTICES):
         if cleaned.size() < MIN_VERTICES:
             return []
