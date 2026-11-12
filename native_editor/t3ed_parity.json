@@ -1,6 +1,6 @@
 {
   "schema": "DX2Ed-T3Ed-parity-v1",
-  "updated": "2026-11-09",
+  "updated": "2026-11-12",
   "reference_archives": [
     "thief3editorrelease_jan2005(1).zip",
     "T3SDK-Launcher_0.3.1_portable(1).zip"
@@ -71,10 +71,10 @@
     {
       "id": "brush_boolean",
       "title": "Intersect/deintersect, brush clip, terrain",
-      "status": "missing",
+      "status": "partial",
       "phase": 2,
-      "evidence": "T3Ed ModeIntersect/ModeDeintersect/BrushClip/ModeTerrainEdit icons",
-      "next_step": "Rebuild geometry and collision, guarded native output"
+      "evidence": "T3Ed ModeIntersect/ModeDeintersect/BrushClip/ModeTerrainEdit icon references. DX2Ed v0.78 implements an Inspector-driven, undoable local X/Z half-plane Brush Clip on one selected private Godot Polygon draft, with bounded coordinates, conservative refusal of disconnected/degenerate/unchanged cuts, original editor-only preview mesh regeneration and private JSON Save/reopen. This is NOT a native source BSP/CSG brush clip, terrain editor, engine Intersect/Deintersect, or retail DX2 mission update.",
+      "next_step": "Implement full 3D custom/polyhedral brush clipping, CSG intersect/deintersect and terrain, then independently authenticate native DX2 BSP surface/vertex structures, compile collision and runtime-verify safe isolated map output."
     },
     {
       "id": "vertex_face",
