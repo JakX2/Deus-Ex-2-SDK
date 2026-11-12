@@ -9228,8 +9228,19 @@ func _delete_polygon_corner() -> void:
 ## Only user-authored Brush::Polygon drafts are eligible. Imported original
 ## map geometry, other draft kinds and multi-selection never enter this path.
 func _polygon_clip_mode_selected(_index: int) -> void:
-    if polygon_clip_angle != null and polygon_clip_axis_selector != null:
-        polygon_clip_angle.editable = polygon_clip_axis_selector.selected == 2
+    if polygon_clip_axis_selector == null:
+        return
+    var angled := polygon_clip_axis_selector.selected == 2
+    if polygon_clip_angle != null:
+        polygon_clip_angle.editable = angled
+    if polygon_clip_position != null:
+        # The normalized square extends sqrt(2) along a 45-degree unit
+        # normal. Axis modes remain strictly bounded to [-1,+1].
+        polygon_clip_position.min_value = -1.5 if angled else -1.0
+        polygon_clip_position.max_value = 1.5 if angled else 1.0
+        polygon_clip_position.tooltip_text = (
+            "Signed distance along local angled unit normal (max +/-1.5)."
+            if angled else "Local axis coordinate in [-1,+1].")
 
 
 func _clip_selected_polygon_footprint() -> void:
