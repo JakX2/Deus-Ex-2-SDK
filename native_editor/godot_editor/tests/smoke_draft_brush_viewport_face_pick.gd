@@ -4,6 +4,7 @@ extends SceneTree
 const Editor = preload("res://main.gd")
 const Brush = preload("res://brush_geometry.gd")
 const CapPicker = preload("res://private_box_cap_picker.gd")
+const CapDrag = preload("res://private_box_cap_drag.gd")
 
 
 func _initialize() -> void:
@@ -232,6 +233,101 @@ func _run() -> void:
         or editor.undo_stack.size() != history_at_cap_pick):
         _fail("v0.86 visible original Box face changed selected cap or history")
         return
+    # v0.87: drag a *visible* authored cap in a rotated private draft.
+    # The cursor movement is projected onto the cap normal, snapped to
+    # 0.25 local metres and validated against the complete two-plane hull.
+    var original_drag_spec: Dictionary = (
+        editor.draft_brush_specs["DraftProp_17"].duplicate(true))
+    var drag_grid := CapDrag.with_world_displacement(
+        two_caps, 0, pose, pose.basis * Vector3(0.31, 0.0, 0.0), 0.25)
+    if (drag_grid.is_empty()
+        or not is_equal_approx(
+            float(drag_grid["clip_planes"][0]["distance"]), 0.25)
+        or not is_equal_approx(
+            float(drag_grid["clip_planes"][1]["distance"]), 0.0)):
+        _fail("v0.87 rotated world displacement did not snap local plane")
+        return
+    var scaled_pose := Transform3D(
+        pose.basis.scaled(Vector3(2.0,1.0,1.0)), pose.origin)
+    var scaled_grid := CapDrag.with_world_displacement(
+        two_caps, 0, scaled_pose,
+        scaled_pose.basis * Vector3(0.3, 0.0, 0.0), 0.25)
+    if (scaled_grid.is_empty() or not is_equal_approx(
+            float(scaled_grid["clip_planes"][0]["distance"]), 0.25)):
+        _fail("v0.87 nonuniform-scale drag did not preserve local metre snap")
+        return
+    var bad_drags := [
+        CapDrag.with_world_displacement(two_caps, 8, pose, Vector3.ZERO, 0.25),
+        CapDrag.with_world_displacement(two_caps, 0, singular, Vector3.ZERO, 0.25),
+        CapDrag.with_world_displacement(two_caps, 0, pose, Vector3(INF,0,0), 0.25),
+        CapDrag.with_world_displacement(two_caps, 0, pose, Vector3.ZERO, 0.01),
+        CapDrag.with_world_displacement(box, 0, pose, Vector3.ZERO, 0.25),
+        CapDrag.with_world_displacement(
+            two_caps, 0, pose, pose.basis * Vector3(2.0,0.0,0.0), 0.25),
+    ]
+    for bad in bad_drags:
+        if not bad.is_empty():
+            _fail("v0.87 invalid, redundant, or untrusted cap drag accepted")
+            return
+    var drag_start := pose * Vector3(5.0, 1.5, 0.3)
+    var cap_anchor := pose * Vector3(0.0, -0.3, 0.3)
+    var start_direction: Vector3 = (cap_anchor - drag_start).normalized()
+    var history_drag_before := editor.undo_stack.size()
+    if (not editor._begin_private_box_cap_drag_ray(
+            drag_start, start_direction, start_direction)
+        or not editor.box_cap_drag_active
+        or editor.box_cap_drag_index != 0
+        or editor.box_clip_plane_selector.selected != 0
+        or editor.undo_stack.size() != history_drag_before):
+        _fail("v0.87 editor refused visible rotated cap normal drag gesture")
+        return
+    var dragged_target := pose * Vector3(0.31,-0.3,0.3)
+    editor._apply_private_box_cap_drag_ray(
+        drag_start, (dragged_target-drag_start).normalized())
+    var preview_spec: Dictionary = (
+        editor.draft_brush_specs["DraftProp_17"].duplicate(true))
+    if (not editor.box_cap_drag_active
+        or not is_equal_approx(
+            float(preview_spec["clip_planes"][0]["distance"]), 0.25)
+        or editor.undo_stack.size() != history_drag_before):
+        _fail("v0.87 drag preview did not snap without polluting Undo")
+        return
+    # A move that would remove the entire corner cut must fail closed:
+    # leave the last valid preview in place.
+    var invalid_target := pose * Vector3(1.5,-0.3,0.3)
+    editor._apply_private_box_cap_drag_ray(
+        drag_start, (invalid_target-drag_start).normalized())
+    if editor.draft_brush_specs["DraftProp_17"] != preview_spec:
+        _fail("v0.87 invalid cap displacement overwrote last good mesh")
+        return
+    editor._finish_private_box_cap_drag()
+    if (editor.box_cap_drag_active
+        or editor.undo_stack.size() != history_drag_before + 1
+        or editor.draft_brush_specs["DraftProp_17"] != preview_spec):
+        _fail("v0.87 release did not commit exactly one private Undo step")
+        return
+    editor._undo_edit()
+    if editor.draft_brush_specs["DraftProp_17"] != original_drag_spec:
+        _fail("v0.87 cap drag Undo failed to restore both original halfspaces")
+        return
+    editor._redo_edit()
+    if editor.draft_brush_specs["DraftProp_17"] != preview_spec:
+        _fail("v0.87 cap drag Redo failed to restore snapped offset")
+        return
+    # A click/release at the original position never creates an Undo step.
+    draft = editor.draft_prop_copies["DraftProp_17"]
+    editor._select_mesh_only(draft)
+    var no_op_history := editor.undo_stack.size()
+    var new_hit := pose * Vector3(0.25,-0.3,0.3)
+    var new_ray: Vector3 = (new_hit-drag_start).normalized()
+    if not editor._begin_private_box_cap_drag_ray(
+            drag_start,new_ray,new_ray):
+        _fail("v0.87 cap drag could not restart on a valid preview")
+        return
+    editor._finish_private_box_cap_drag()
+    if editor.undo_stack.size() != no_op_history:
+        _fail("v0.87 zero-motion cap gesture added a false Undo operation")
+        return
     # Never permit this gesture on original imported actors, even when the
     # corresponding display mesh is a cuboid.
     var imported := MeshInstance3D.new()
@@ -251,5 +347,5 @@ func _run() -> void:
         _fail("Imported original mesh wrongly acquired draft face editor")
         return
     editor.queue_free()
-    print("DX2Ed v0.86 Godot cuboid and closed private cap viewport picking PASS")
+    print("DX2Ed v0.87 Godot private clipped-cap pick and one-step normal drag PASS")
     quit(0)
