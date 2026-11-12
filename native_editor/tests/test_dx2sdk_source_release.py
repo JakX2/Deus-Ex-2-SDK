@@ -54,6 +54,8 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
             self.assertIn(f"{ARCHIVE}/dx2sdk/mopp_leaf_bytes.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/bsp_surface_correlation.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/bsp_surface_plane_coherence.py", names)
+            self.assertIn(f"{ARCHIVE}/dx2sdk/bsp_model_noop.py", names)
+            self.assertIn(f"{ARCHIVE}/research/dx2/inspect_world_model_noop.py", names)
             self.assertIn(f"{ARCHIVE}/research/dx2/inspect_bsp_surface_provenance_hypotheses.py", names)
             self.assertIn(f"{ARCHIVE}/research/dx2/inspect_bsp_mopp_plane_impact.py", names)
             self.assertIn(f"{ARCHIVE}/native_editor/godot_editor/backend/dx2_sdk_lightcolor_worker.py", names)
