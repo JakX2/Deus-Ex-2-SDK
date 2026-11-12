@@ -528,6 +528,79 @@ func _run() -> void:
         or editor.draft_prop_copies["DraftProp_1"].mesh == null):
         _fail("v0.81 private draft reopen did not reconstruct four-plane convex Box")
         return
+    # v0.82: navigate, update and delete a chosen non-terminal plane
+    # without resetting the other source-private cuts or touching GMP.
+    if (editor.box_clip_plane_selector == null
+        or editor.box_clip_update_selected_button == null
+        or editor.box_clip_remove_selected_button == null
+        or editor.box_clip_plane_selector.item_count != 4):
+        _fail("v0.82 selected-plane Inspector actions are missing")
+        return
+    var saved_four: Dictionary = editor.draft_brush_specs["DraftProp_1"].duplicate(true)
+    editor.box_clip_plane_selector.select(3)
+    editor._selected_private_box_plane_changed(3)
+    if absf(editor.box_clip_distance.value - (-0.8)) > 0.0001:
+        _fail("v0.82 selecting fourth plane did not load its original offset")
+        return
+    var before_plane_update := editor.undo_stack.size()
+    editor.box_clip_distance.value = -0.7
+    editor._update_selected_private_box_plane()
+    if (editor.undo_stack.size() != before_plane_update + 1
+        or editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 4
+        or not is_equal_approx(
+            float(editor.draft_brush_specs["DraftProp_1"]["clip_planes"][3]["distance"]), -0.7)):
+        _fail("v0.82 updating selected plane lost stack or failed Undo")
+        return
+    var updated_four: Dictionary = editor.draft_brush_specs["DraftProp_1"].duplicate(true)
+    var before_noop := editor.undo_stack.size()
+    editor._update_selected_private_box_plane()
+    if (editor.undo_stack.size() != before_noop
+        or editor.draft_brush_specs["DraftProp_1"] != updated_four):
+        _fail("v0.82 repeat selected-plane update incorrectly added Undo")
+        return
+    editor._undo_edit()
+    if editor.draft_brush_specs["DraftProp_1"] != saved_four:
+        _fail("v0.82 selected-plane update Undo did not restore all originals")
+        return
+    editor._redo_edit()
+    if editor.draft_brush_specs["DraftProp_1"] != updated_four:
+        _fail("v0.82 selected-plane update Redo did not restore new plane")
+        return
+    editor.box_clip_plane_selector.select(1)
+    editor._selected_private_box_plane_changed(1)
+    var before_plane_remove := editor.undo_stack.size()
+    editor._remove_selected_private_box_plane()
+    if (editor.undo_stack.size() != before_plane_remove + 1
+        or editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 3
+        or editor.draft_brush_specs["DraftProp_1"]["clip_planes"][1]
+            != updated_four["clip_planes"][2]):
+        _fail("v0.82 removing selected middle plane did not preserve order")
+        return
+    editor._undo_edit()
+    if editor.draft_brush_specs["DraftProp_1"] != updated_four:
+        _fail("v0.82 selected middle-plane removal Undo lost four planes")
+        return
+    editor._redo_edit()
+    if editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 3:
+        _fail("v0.82 selected middle-plane removal Redo failed")
+        return
+    editor._save_prop_draft()
+    var edited_doc: Variant = JSON.parse_string(
+        FileAccess.get_file_as_string(draft_path))
+    if (typeof(edited_doc) != TYPE_DICTIONARY
+        or edited_doc["copies"][0]["brush"]["clip_planes"].size() != 3):
+        _fail("v0.82 edited plane stack was not saved to private project")
+        return
+    editor._set_brush_spec("DraftProp_1", Brush.default_spec("Box"))
+    editor._load_prop_draft()
+    editor._select_mesh_only(editor.draft_prop_copies["DraftProp_1"])
+    if (editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 3
+        or editor.draft_prop_copies["DraftProp_1"].mesh == null):
+        _fail("v0.82 edited private plane stack was not restored")
+        return
+    # Restore four planes before the existing Replace/Add/Remove tests.
+    editor._set_brush_spec("DraftProp_1", updated_four)
+    editor._refresh_prop_inspection()
     # Replace remains different from Add: collapse all four planes to
     # one while preserving the ability to Undo back to the entire stack.
     var before_replace := editor.undo_stack.size()
