@@ -269,6 +269,9 @@ func _run() -> void:
         if not bad.is_empty():
             _fail("v0.87 invalid, redundant, or untrusted cap drag accepted")
             return
+    # Earlier cuboid face-resize fixture used Grid m = 0.5.
+    # This drag explicitly verifies quarter-metre snapping.
+    editor._grid_spacing_changed(0.25)
     var drag_start := pose * Vector3(5.0, 1.5, 0.3)
     var cap_anchor := pose * Vector3(0.0, -0.3, 0.3)
     var start_direction: Vector3 = (cap_anchor - drag_start).normalized()
