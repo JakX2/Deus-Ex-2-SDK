@@ -55,6 +55,8 @@ class T3EdParityAndCatalogTests(unittest.TestCase):
         brush_clip = next(c for c in capabilities if c["id"] == "brush_boolean")
         self.assertEqual(brush_clip["status"], "partial")
         self.assertIn("v0.78", brush_clip["evidence"])
+        self.assertIn("v0.79", brush_clip["evidence"])
+        self.assertIn("angled 2D half-plane Brush Clip", brush_clip["evidence"])
         self.assertIn("private Godot Polygon draft", brush_clip["evidence"])
         self.assertIn("NOT a native source BSP", brush_clip["evidence"])
         self.assertIn("runtime-verify", brush_clip["next_step"])
