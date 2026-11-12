@@ -118,7 +118,7 @@ func _run() -> void:
         or editor.draft_prop_copies["DraftProp_88"].mesh == null):
         _fail("Clicked Inspector Y+5 pivot did not preserve the other cut")
         return
-    var mesh := editor.draft_prop_copies["DraftProp_88"].mesh
+    var mesh: Mesh = editor.draft_prop_copies["DraftProp_88"].mesh
     var vertices: PackedVector3Array = (
         mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX])
     if vertices.size() == 0 or not Picker._checked_spec(rotated).has("clip_planes"):
