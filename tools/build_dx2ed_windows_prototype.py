@@ -111,6 +111,7 @@ REQUIRED = (
     "native_editor/godot_editor/tests/smoke_draft_brush_viewport_face_pick.gd",
     "native_editor/godot_editor/custom_polygon_geometry.gd",
     "native_editor/godot_editor/private_box_clip.gd",
+    "native_editor/godot_editor/private_box_multiclip.gd",
     "native_editor/godot_editor/tests/smoke_custom_polygon_geometry.gd",
     "native_editor/godot_editor/matlib_browser.gd",
     "native_editor/godot_editor/backend/dx2_matlib_catalog.py",
