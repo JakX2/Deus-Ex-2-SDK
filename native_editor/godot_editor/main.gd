@@ -2,6 +2,7 @@ extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
 const PrivateBoxCapPicker = preload("res://private_box_cap_picker.gd")
 const PrivateBoxCapDrag = preload("res://private_box_cap_drag.gd")
+const PrivateBoxCapRotate = preload("res://private_box_cap_rotate.gd")
 const PrivateBoxMultiClip = preload("res://private_box_multiclip.gd")
 const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const MatLibBrowser = preload("res://matlib_browser.gd")
@@ -412,6 +413,10 @@ var box_clip_update_selected_button: Button
 var box_clip_remove_selected_button: Button
 var box_clip_move_up_button: Button
 var box_clip_move_down_button: Button
+var box_clip_rotate_y_neg_button: Button
+var box_clip_rotate_y_pos_button: Button
+var box_clip_rotate_x_neg_button: Button
+var box_clip_rotate_x_pos_button: Button
 var box_clip_active_brush_name := ""
 # Source-private Alt+Ctrl cap normal drag, one history operation on release.
 var box_cap_drag_active := false
@@ -2009,6 +2014,40 @@ func _make_ui() -> void:
     box_clip_move_down_button.pressed.connect(
         func(): _move_selected_private_box_plane(1))
     box_clip_reorder_row.add_child(box_clip_move_down_button)
+    var box_clip_rotate_row := HBoxContainer.new()
+    private_box_clip_panel.add_child(box_clip_rotate_row)
+    var box_clip_rotate_heading := Label.new()
+    box_clip_rotate_heading.text = "Pivot cap:"
+    box_clip_rotate_row.add_child(box_clip_rotate_heading)
+    box_clip_rotate_y_neg_button = Button.new()
+    box_clip_rotate_y_neg_button.text = "Y -5°"
+    box_clip_rotate_y_neg_button.tooltip_text = (
+        "Rotate selected private cut 5 degrees about local Y through "
+        + "its visible capped face centroid; one Undo step.")
+    box_clip_rotate_y_neg_button.pressed.connect(
+        _rotate_selected_private_box_cap.bind(Vector3.UP, -5.0))
+    box_clip_rotate_row.add_child(box_clip_rotate_y_neg_button)
+    box_clip_rotate_y_pos_button = Button.new()
+    box_clip_rotate_y_pos_button.text = "Y +5°"
+    box_clip_rotate_y_pos_button.tooltip_text = (
+        "Rotate selected cap about local Y, anchored at its area centroid.")
+    box_clip_rotate_y_pos_button.pressed.connect(
+        _rotate_selected_private_box_cap.bind(Vector3.UP, 5.0))
+    box_clip_rotate_row.add_child(box_clip_rotate_y_pos_button)
+    box_clip_rotate_x_neg_button = Button.new()
+    box_clip_rotate_x_neg_button.text = "X -5°"
+    box_clip_rotate_x_neg_button.tooltip_text = (
+        "Rotate selected cap around local X through its area centroid.")
+    box_clip_rotate_x_neg_button.pressed.connect(
+        _rotate_selected_private_box_cap.bind(Vector3.RIGHT, -5.0))
+    box_clip_rotate_row.add_child(box_clip_rotate_x_neg_button)
+    box_clip_rotate_x_pos_button = Button.new()
+    box_clip_rotate_x_pos_button.text = "X +5°"
+    box_clip_rotate_x_pos_button.tooltip_text = (
+        "Rotate selected cap around local X, preserving its pivot.")
+    box_clip_rotate_x_pos_button.pressed.connect(
+        _rotate_selected_private_box_cap.bind(Vector3.RIGHT, 5.0))
+    box_clip_rotate_row.add_child(box_clip_rotate_x_pos_button)
     box_clip_reset_button = Button.new()
     box_clip_reset_button.text = "Reset to Box"
     box_clip_reset_button.tooltip_text = "Remove the private plane cut in one Undo step."
@@ -8963,6 +9002,10 @@ func _refresh_brush_inspector() -> void:
             box_clip_add_plane_button.disabled = active_planes.size() >= PrivateBoxMultiClip.MAX_PLANES
             box_clip_update_selected_button.disabled = active_planes.is_empty()
             box_clip_remove_selected_button.disabled = active_planes.is_empty()
+            for rotate_button in [
+                box_clip_rotate_y_neg_button, box_clip_rotate_y_pos_button,
+                box_clip_rotate_x_neg_button, box_clip_rotate_x_pos_button]:
+                rotate_button.disabled = active_planes.is_empty()
             box_clip_plane_selector.clear()
             box_clip_plane_count_label.text = ("Planes: " + str(active_planes.size())
                 + " / " + str(PrivateBoxMultiClip.MAX_PLANES))
@@ -9997,6 +10040,37 @@ func _move_selected_private_box_plane(direction: int) -> void:
         "Moved private Box plane " + str(source_index + 1) + " to "
         + str(target_index + 1) + " of " + str(planes.size())
         + ". One Undo step; original DX2 BSP and collision unchanged.")
+
+
+## A fixed 5-degree local-axis turn about the selected visible cap's
+## area centroid. No source BSP or imported actor is ever transformed.
+func _rotate_selected_private_box_cap(
+        axis: Vector3, degrees: float) -> void:
+    var name := _selected_private_box_name()
+    if name.is_empty() or box_clip_plane_selector == null:
+        return
+    var current: Dictionary = draft_brush_specs[name].duplicate(true)
+    var index := box_clip_plane_selector.selected
+    var verified := PrivateBoxCapRotate.rotated_about_cap(
+        current, index, axis, degrees)
+    if verified.is_empty():
+        status_label.text = (
+            "Cap pivot rotation refused: invisible, unchanged or invalid "
+            + "closed convex geometry. Previous private draft retained.")
+        return
+    var before := _capture_edit_state()
+    if not _set_brush_spec(name, verified):
+        status_label.text = "Cap rotation refused; prior private mesh retained."
+        return
+    _refresh_prop_inspection()
+    box_clip_plane_selector.select(index)
+    _selected_private_box_plane_changed(index)
+    _record_edit("Rotate private Box clipping cap around centroid", before)
+    status_label.text = (
+        "Rotated private Box cap " + str(index + 1) + " by "
+        + str(degrees) + "° about local " + (
+            "Y" if axis == Vector3.UP else "X")
+        + " at its centroid. One Undo step; native BSP unchanged.")
 
 
 func _remove_selected_private_box_plane() -> void:
