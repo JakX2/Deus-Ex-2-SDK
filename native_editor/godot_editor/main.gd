@@ -1,5 +1,6 @@
 extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
+const PrivateBoxCapPicker = preload("res://private_box_cap_picker.gd")
 const PrivateBoxMultiClip = preload("res://private_box_multiclip.gd")
 const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const MatLibBrowser = preload("res://matlib_browser.gd")
@@ -1956,8 +1957,8 @@ func _make_ui() -> void:
     box_clip_plane_selector = OptionButton.new()
     box_clip_plane_selector.custom_minimum_size.x = 110
     box_clip_plane_selector.tooltip_text = (
-        "Choose an existing private clipping plane to inspect or edit. "
-        + "This selection is UI-only and does not change project data.")
+        "Choose an existing private clipping plane or Alt+Shift+click one "
+        + "visible authored cap in the 3D viewport. Never original BSP.")
     box_clip_plane_selector.item_selected.connect(_selected_private_box_plane_changed)
     box_clip_edit_row.add_child(box_clip_plane_selector)
     box_clip_update_selected_button = Button.new()
@@ -9470,32 +9471,41 @@ func _brush_face_selected(_index: int) -> void:
     _refresh_brush_face_outline()
 
 
-## Highlight is a temporary 8-vertex line overlay parented only to the
-## selected authored draft mesh. It is NOT added to imported geometry,
-## actor lists, source preview caches or private draft Save/Load records.
+## Highlight is a temporary local outline of one authored draft face or
+## clipped cap. It is parented only to the selected private brush preview.
+## This overlay is never a source asset or a saved brush/actor record.
 func _refresh_brush_face_outline() -> void:
     var nodes := _selection_nodes()
     var target: MeshInstance3D = null
-    if nodes.size() == 1 and brush_face_selector != null:
+    var wire: Mesh = null
+    if nodes.size() == 1:
         var candidate: MeshInstance3D = nodes[0]
-        if (is_instance_valid(candidate) and draft_brush_specs.has(str(candidate.name))
+        if (is_instance_valid(candidate)
+            and draft_brush_specs.has(str(candidate.name))
             and draft_prop_copies.has(str(candidate.name))):
             var spec: Dictionary = draft_brush_specs[str(candidate.name)]
-            if (BrushGeometry.FACE_EDIT_KINDS.has(str(spec.get("kind", "")))
-                and str(draft_prop_sources.get(str(candidate.name), "")) ==
-                    "Brush::" + str(spec["kind"])):
-                target = candidate
+            var source := str(draft_prop_sources.get(str(candidate.name), ""))
+            if source == "Brush::" + str(spec.get("kind", "")):
+                if (spec.has("clip_plane") or spec.has("clip_planes")):
+                    if (spec.get("kind", "") == "Box"
+                        and box_clip_plane_selector != null
+                        and box_clip_plane_selector.selected >= 0):
+                        target = candidate
+                        wire = PrivateBoxCapPicker.cap_outline_mesh(
+                            spec, box_clip_plane_selector.selected)
+                elif (BrushGeometry.FACE_EDIT_KINDS.has(str(spec["kind"]))
+                    and brush_face_selector != null):
+                    target = candidate
+                    wire = BrushGeometry.face_outline_mesh(
+                        spec, brush_face_selector.selected)
     if is_instance_valid(brush_face_outline) and (
             not is_instance_valid(target)
-            or brush_face_outline.get_parent() != target):
+            or brush_face_outline.get_parent() != target
+            or wire == null or wire.get_surface_count() != 1):
         brush_face_outline.free()
         brush_face_outline = null
-    if not is_instance_valid(target):
-        return
-    var face := brush_face_selector.selected
-    var wire := BrushGeometry.face_outline_mesh(
-        draft_brush_specs[str(target.name)], face)
-    if wire.get_surface_count() != 1:
+    if (not is_instance_valid(target) or wire == null
+        or wire.get_surface_count() != 1):
         return
     if not is_instance_valid(brush_face_outline):
         brush_face_outline = MeshInstance3D.new()
@@ -9523,21 +9533,40 @@ func _can_pick_selected_draft_face() -> bool:
     if not draft_prop_copies.has(name) or not draft_brush_specs.has(name):
         return false
     var spec: Dictionary = draft_brush_specs[name]
+    if (str(draft_prop_sources.get(name, "")) !=
+            "Brush::" + str(spec.get("kind", ""))
+        or not is_instance_valid(nodes[0]) or nodes[0].mesh == null
+        or not nodes[0].is_visible_in_tree()):
+        return false
+    if spec.has("clip_plane") or spec.has("clip_planes"):
+        return (spec.get("kind", "") == "Box"
+            and box_clip_plane_selector != null)
     return (BrushGeometry.FACE_EDIT_KINDS.has(str(spec.get("kind", "")))
-        and not spec.has("clip_plane")
-        and not spec.has("clip_planes")
-        and str(draft_prop_sources.get(name, "")) == "Brush::" + str(spec["kind"])
-        and is_instance_valid(nodes[0]) and nodes[0].mesh != null
-        and nodes[0].is_visible_in_tree())
+        and brush_face_selector != null)
 
 
 func _pick_selected_draft_face_ray(origin: Vector3, direction: Vector3) -> bool:
     if not _can_pick_selected_draft_face():
         return false
     var node: MeshInstance3D = _selection_nodes()[0]
+    var spec: Dictionary = draft_brush_specs[str(node.name)]
+    if spec.has("clip_plane") or spec.has("clip_planes"):
+        var cap: Dictionary = PrivateBoxCapPicker.pick_cap(
+            spec, node.global_transform, origin, direction)
+        if cap.is_empty():
+            return false
+        var plane_index := int(cap["plane_index"])
+        box_clip_plane_selector.select(plane_index)
+        _selected_private_box_plane_changed(plane_index)
+        _refresh_brush_face_outline()
+        status_label.text = (
+            "Picked private Box cap " + str(plane_index + 1)
+            + " at " + str(cap["world_point"])
+            + ". Edit/Remove selected plane in Inspector. "
+            + "Original DX2 BSP and collision unchanged.")
+        return true
     var hit: Dictionary = BrushGeometry.pick_draft_face(
-        draft_brush_specs[str(node.name)], node.global_transform,
-        origin, direction)
+        spec, node.global_transform, origin, direction)
     if hit.is_empty():
         return false
     brush_face_selector.select(int(hit["face_index"]))
@@ -9554,8 +9583,8 @@ func _pick_selected_draft_face_from_viewport() -> void:
     if ray.is_empty() or not _pick_selected_draft_face_ray(
             ray["origin"], ray["direction"]):
         status_label.text = (
-            "No face on selected Box/Wall/Floor under cursor. "
-            + "Select one draft brush, then Alt+Shift+click its face.")
+            "No visible authored face/cap at cursor. Select one private "
+            + "Box/Wall/Floor and Alt+Shift+click its face or clipped Box cap.")
 
 
 func _change_brush_face(side: float) -> void:
@@ -9646,6 +9675,7 @@ func _selected_private_box_plane_changed(index: int) -> void:
         return
     _load_private_box_plane_controls(planes[index])
     _refresh_private_box_reorder_buttons(planes.size(), index)
+    _refresh_brush_face_outline()
 
 
 func _refresh_private_box_reorder_buttons(count: int, selected_index: int) -> void:

@@ -83,6 +83,10 @@ jobs:
         run: timeout 20s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://private_box_clip.gd
       - name: Compile source-only convex 3D multi-plane Box clip helper
         run: timeout 20s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://private_box_multiclip.gd
+      - name: Compile visible authored Box cap viewport picker
+        run: timeout 20s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://private_box_cap_picker.gd
+      - name: Exercise actual Godot cuboid and capped Box viewport face picking
+        run: timeout 35s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_draft_brush_viewport_face_pick.gd
       - name: Exercise v0.80 actual Box clip, manifold, Undo/Redo and private Save/reopen
         run: timeout 35s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_t3ed_face_edit_roundtrip.gd
       - name: Verify source-backed MatLib browser UI and preview integrity
