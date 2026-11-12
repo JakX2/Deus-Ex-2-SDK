@@ -42,7 +42,7 @@ def main(argv=None) -> int:
         report = world.inspect_original_model_byte_spans(node_indices=args.node)
         if (report["original_gmp_sha256"] != world.source_sha256
                 or not report["original_model_noop_reassembled_byte_identical"]
-                or not report.get("model_byte_ledger_fully_contiguous_nonoverlapping", True)):
+                or report["model_byte_ledger_fully_contiguous_nonoverlapping"] is not True):
             raise ValueError("Original World Model byte ledger could not be source-verified")
         if args.report is not None:
             dest = _private_output(world.source, args.report)
