@@ -25,6 +25,8 @@ REQUIRED = (
     "dx2sdk/bsp_surface_correlation.py",
     "dx2sdk/bsp_surface_plane_coherence.py",
     "dx2sdk/bsp_model_noop.py",
+    "dx2sdk/bsp_model_spans.py",
+    "research/dx2/inspect_world_model_spans.py",
     "research/dx2/inspect_world_model_noop.py",
     "research/dx2/inspect_bsp_surface_provenance_hypotheses.py",
     "dx2sdk/bsp_render_plane_impact.py",
