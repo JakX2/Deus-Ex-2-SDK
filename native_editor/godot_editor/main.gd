@@ -8856,7 +8856,7 @@ func _refresh_brush_inspector() -> void:
             brush_face_hint.visible = can_face_edit
     if private_box_clip_panel != null:
         var selected_name := str(nodes[0].name)
-        var can_clip_box := (
+        var can_clip_box: bool = (
             spec["kind"] == "Box"
             and str(draft_prop_sources.get(selected_name, "")) == "Brush::Box"
             and draft_prop_copies.has(selected_name))
