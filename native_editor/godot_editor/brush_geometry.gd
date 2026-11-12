@@ -4,6 +4,7 @@ extends RefCounted
 
 const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const PrivateBoxClip = preload("res://private_box_clip.gd")
+const PrivateBoxMultiClip = preload("res://private_box_multiclip.gd")
 const TYPES := ["Box", "Wall", "Floor", "Stairs", "Cylinder", "Cone", "Sphere", "Ramp", "Polygon"]
 const MIN_SIZE := 0.05
 const MAX_SIZE := 256.0
@@ -62,6 +63,15 @@ static func validate(raw: Variant) -> Dictionary:
             return {}
         return {"kind": kind, "size": verified, "steps": count,
                 "outline": outline, "surface_style": surface_style}
+    if raw.has("clip_planes"):
+        if kind != "Box" or raw.has("clip_plane"):
+            return {}
+        var planes := PrivateBoxMultiClip.validate_planes(
+            raw["clip_planes"], Vector3(verified[0], verified[1], verified[2]))
+        if planes.is_empty():
+            return {}
+        return {"kind": kind, "size": verified, "steps": count,
+                "clip_planes": planes}
     if raw.has("clip_plane"):
         if kind != "Box":
             return {}
@@ -86,7 +96,7 @@ const FACE_EDIT_KINDS := ["Box", "Wall", "Floor"]
 
 static func face_resize(raw: Variant, face: int, delta: float) -> Dictionary:
     var spec := validate(raw)
-    if (spec.is_empty() or spec.has("clip_plane")
+    if (spec.is_empty() or (spec.has("clip_plane") or spec.has("clip_planes"))
         or not FACE_EDIT_KINDS.has(str(spec["kind"]))
         or face < 0 or face >= FACE_LABELS.size()
         or not is_finite(delta) or is_zero_approx(delta)
@@ -116,7 +126,7 @@ static func pick_draft_face(
         raw: Variant, world_transform: Transform3D,
         ray_origin: Vector3, ray_direction: Vector3) -> Dictionary:
     var spec := validate(raw)
-    if (spec.is_empty() or spec.has("clip_plane")
+    if (spec.is_empty() or (spec.has("clip_plane") or spec.has("clip_planes"))
         or not FACE_EDIT_KINDS.has(str(spec["kind"]))
         or not world_transform.origin.is_finite()
         or not world_transform.basis.x.is_finite()
@@ -182,7 +192,7 @@ static func pick_draft_face(
 static func face_outline_edges(raw: Variant, face: int) -> PackedVector3Array:
     var spec := validate(raw)
     var edges := PackedVector3Array()
-    if (spec.is_empty() or spec.has("clip_plane")
+    if (spec.is_empty() or (spec.has("clip_plane") or spec.has("clip_planes"))
         or not FACE_EDIT_KINDS.has(str(spec["kind"]))
         or face < 0 or face >= FACE_LABELS.size()):
         return edges
@@ -345,6 +355,8 @@ static func build_mesh(raw: Variant) -> Mesh:
     var size := Vector3(spec["size"][0], spec["size"][1], spec["size"][2])
     if spec["kind"] == "Polygon":
         return CustomPolygon.build_mesh(size, spec["outline"])
+    if spec["kind"] == "Box" and spec.has("clip_planes"):
+        return PrivateBoxMultiClip.build_mesh(size, spec["clip_planes"])
     if spec["kind"] == "Box" and spec.has("clip_plane"):
         return PrivateBoxClip.build_mesh(size, spec["clip_plane"])
     var st := SurfaceTool.new()

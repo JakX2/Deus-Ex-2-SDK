@@ -5,6 +5,7 @@ extends SceneTree
 const Editor = preload("res://main.gd")
 const Brush = preload("res://brush_geometry.gd")
 const PrivateBoxClip = preload("res://private_box_clip.gd")
+const MultiClip = preload("res://private_box_multiclip.gd")
 const Guides = preload("res://orthographic_authoring_guides.gd")
 
 
@@ -118,6 +119,113 @@ func _run() -> void:
             axis_cut, Transform3D.IDENTITY,
             Vector3(-5,0,0), Vector3.RIGHT).is_empty()):
         _fail("Clipped 3D Box still allowed misleading original cuboid face edit")
+        return
+
+    # v0.81: source-independent sequential convex Box clipping, not game
+    # CSG. Three orthogonal cuts yield exactly one original octant.
+    var planes := [
+        {"normal":[1.0,0.0,0.0], "distance":0.0, "keep_positive":false},
+        {"normal":[0.0,1.0,0.0], "distance":0.0, "keep_positive":false},
+        {"normal":[0.0,0.0,1.0], "distance":0.0, "keep_positive":false},
+    ]
+    var source_size := Vector3(2,2,2)
+    var expected_volumes := [4.0,2.0,1.0]
+    for count in range(1,4):
+        var current := planes.slice(0,count)
+        var checked: Array = MultiClip.validate_planes(current,source_size)
+        var multi_spec: Dictionary = cube.duplicate(true)
+        multi_spec["clip_planes"] = current
+        var generated: ArrayMesh = Brush.build_mesh(multi_spec)
+        if (checked.size() != count or Brush.validate(multi_spec).is_empty()
+            or generated == null or generated.get_surface_count() != 1):
+            _fail("v0.81 sequential convex Box clip refused a valid orthogonal cut")
+            return
+        var vertices: PackedVector3Array = generated.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+        if not PrivateBoxClip._valid_closed_soup(vertices,8.0):
+            _fail("v0.81 sequential Box cut generated an open triangle soup")
+            return
+        var volume := MultiClip._signed_volume(vertices)
+        if absf(volume-float(expected_volumes[count-1])) > 0.0005:
+            _fail("v0.81 sequential orthogonal cuts lost enclosed-volume conservation")
+            return
+        for point in vertices:
+            if (count >= 1 and point.x > 0.0001
+                or count >= 2 and point.y > 0.0001
+                or count >= 3 and point.z > 0.0001):
+                _fail("v0.81 convex clipping retained source point beyond halfspace")
+                return
+    var fourth: Dictionary = {
+        "normal":[sqrt(0.5),0.0,sqrt(0.5)],
+        "distance":-0.8, "keep_positive":false}
+    var four_planes: Array = planes.duplicate(true)
+    four_planes.append(fourth)
+    var four_spec: Dictionary = cube.duplicate(true)
+    four_spec["clip_planes"] = four_planes
+    var four_mesh: ArrayMesh = Brush.build_mesh(four_spec)
+    if four_mesh == null or four_mesh.get_surface_count() != 1:
+        _fail("v0.81 fourth angled clipping plane refused valid convex Box")
+        return
+    var four_vertices: PackedVector3Array = four_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+    var four_volume := MultiClip._signed_volume(four_vertices)
+    if (not PrivateBoxClip._valid_closed_soup(four_vertices,8.0)
+        or four_volume <= 0.0 or four_volume >= 1.0):
+        _fail("v0.81 fourth oblique plane did not generate a closed reduced volume")
+        return
+    var mixed_sides: Dictionary = cube.duplicate(true)
+    mixed_sides["clip_planes"] = [
+        {"normal":[1.0,0.0,0.0], "distance":0.0, "keep_positive":true},
+        {"normal":[0.0,1.0,0.0], "distance":0.0, "keep_positive":false},
+    ]
+    var mixed_mesh: ArrayMesh = Brush.build_mesh(mixed_sides)
+    if mixed_mesh == null:
+        _fail("v0.81 mixed kept-positive/kept-negative planes were not respected")
+        return
+    var mixed_vertices: PackedVector3Array = (
+        mixed_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX])
+    if (absf(MultiClip._signed_volume(mixed_vertices)-2.0) > 0.0005
+        or not PrivateBoxClip._valid_closed_soup(mixed_vertices, 8.0)):
+        _fail("v0.81 mixed kept sides did not form a capped quarter cube")
+        return
+    for point in mixed_vertices:
+        if point.x < -0.0001 or point.y > 0.0001:
+            _fail("v0.81 mixed kept sides retained a point outside the halfspaces")
+            return
+    var invalid_multi := cube.duplicate(true)
+    invalid_multi["clip_planes"] = []
+    if not Brush.validate(invalid_multi).is_empty():
+        _fail("Empty private 3D clip stack passed source-only validation")
+        return
+    invalid_multi["clip_planes"] = four_planes + [fourth]
+    if not Brush.validate(invalid_multi).is_empty():
+        _fail("Unbounded fifth private 3D plane passed source-only validation")
+        return
+    invalid_multi["clip_planes"] = four_planes
+    invalid_multi["clip_plane"] = planes[0]
+    if not Brush.validate(invalid_multi).is_empty():
+        _fail("Ambiguous single and multi 3D plane keys passed validation")
+        return
+    invalid_multi = Brush.default_spec("Floor")
+    invalid_multi["clip_planes"] = planes
+    if not Brush.validate(invalid_multi).is_empty():
+        _fail("Private 3D multi-plane metadata accepted on non-Box kind")
+        return
+    invalid_multi = cube.duplicate(true)
+    invalid_multi["clip_planes"] = [planes[0],planes[0]]
+    if Brush.build_mesh(invalid_multi) != null:
+        _fail("Geometrically redundant second plane did not fail closed")
+        return
+    invalid_multi = cube.duplicate(true)
+    invalid_multi["clip_planes"] = [planes[0],
+        {"normal":[-1.0,0.0,0.0], "distance":0.01, "keep_positive":false}]
+    if Brush.build_mesh(invalid_multi) != null:
+        _fail("Near-empty overlapping private 3D cut stack did not fail closed")
+        return
+
+    invalid_multi = cube.duplicate(true)
+    invalid_multi["clip_planes"] = [planes[0],
+        {"normal":[1.0,0.0,0.0], "distance":0.25, "keep_positive":true}]
+    if Brush.build_mesh(invalid_multi) != null:
+        _fail("Contradictory fully excluded 3D halfspaces did not fail closed")
         return
 
     var editor := Editor.new()
@@ -340,6 +448,134 @@ func _run() -> void:
     if editor.draft_brush_specs["DraftProp_1"].has("clip_plane"):
         _fail("Reset-to-Box Redo did not restore the uncut draft")
         return
+    # v0.81 actual editor buttons: cumulative cuts preserve all earlier
+    # planes, each append/removal is a single history transaction.
+    editor._set_brush_spec("DraftProp_1", Brush.default_spec("Box"))
+    editor._select_mesh_only(editor.draft_prop_copies["DraftProp_1"])
+    var history_before_stack := editor.undo_stack.size()
+    if (editor.box_clip_add_plane_button == null
+        or editor.box_clip_remove_last_button == null
+        or editor.box_clip_plane_count_label == null
+        or not editor.private_box_clip_panel.visible):
+        _fail("v0.81 real Box Inspector missing Add / Remove / plane count controls")
+        return
+    editor.box_clip_yaw.value = 0.0
+    editor.box_clip_elevation.value = 0.0
+    editor.box_clip_distance.value = 0.0
+    editor.box_clip_keep_side.select(0)
+    editor._apply_private_box_clip()
+    if (editor.undo_stack.size() != history_before_stack+1
+        or not editor.draft_brush_specs["DraftProp_1"].has("clip_plane")):
+        _fail("v0.81 real Box Inspector failed initial single plane")
+        return
+    var single_before_redundant: Dictionary = editor.draft_brush_specs["DraftProp_1"].duplicate(true)
+    var redundant_history := editor.undo_stack.size()
+    editor._append_private_box_plane()
+    if (editor.undo_stack.size() != redundant_history
+        or editor.draft_brush_specs["DraftProp_1"] != single_before_redundant):
+        _fail("v0.81 redundant added plane mutated history or draft")
+        return
+    editor.box_clip_yaw.value = 0.0
+    editor.box_clip_elevation.value = 90.0
+    editor.box_clip_distance.value = 0.0
+    editor._append_private_box_plane()
+    if (editor.undo_stack.size() != history_before_stack+2
+        or not editor.draft_brush_specs["DraftProp_1"].has("clip_planes")
+        or editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 2):
+        _fail("v0.81 first cumulative plane was not preserved")
+        return
+    editor.box_clip_yaw.value = 90.0
+    editor.box_clip_elevation.value = 0.0
+    editor._append_private_box_plane()
+    if (editor.undo_stack.size() != history_before_stack+3
+        or editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 3):
+        _fail("v0.81 third private cutting plane did not commit")
+        return
+    editor.box_clip_yaw.value = 45.0
+    editor.box_clip_elevation.value = 0.0
+    editor.box_clip_distance.value = -0.8
+    editor._append_private_box_plane()
+    var final_stack: Dictionary = editor.draft_brush_specs["DraftProp_1"].duplicate(true)
+    if (not final_stack.has("clip_planes")
+        or final_stack["clip_planes"].size() != 4
+        or editor.undo_stack.size() != history_before_stack+4
+        or editor.box_clip_plane_count_label.text != "Planes: 4 / 4"
+        or not editor.box_clip_add_plane_button.disabled):
+        _fail("v0.81 fourth capped plane or Inspector limit failed")
+        return
+    var final_mesh: Mesh = editor.draft_prop_copies["DraftProp_1"].mesh
+    if final_mesh == null or final_mesh.get_surface_count() != 1:
+        _fail("v0.81 four-plane clipped preview mesh is absent")
+        return
+    var final_vertices: PackedVector3Array = final_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+    if (not PrivateBoxClip._valid_closed_soup(final_vertices, 8.0)
+        or MultiClip._signed_volume(final_vertices) >= 1.0):
+        _fail("v0.81 real Godot four-plane clip did not create closed reduced convex solid")
+        return
+    editor._save_prop_draft()
+    var stacked_doc: Variant = JSON.parse_string(
+        FileAccess.get_file_as_string(draft_path))
+    if (typeof(stacked_doc) != TYPE_DICTIONARY
+        or not stacked_doc["copies"][0]["brush"].has("clip_planes")
+        or stacked_doc["copies"][0]["brush"]["clip_planes"].size() != 4):
+        _fail("v0.81 private JSON save lost four original local clipping planes")
+        return
+    editor._set_brush_spec("DraftProp_1", Brush.default_spec("Box"))
+    editor._load_prop_draft()
+    editor._select_mesh_only(editor.draft_prop_copies["DraftProp_1"])
+    if (not editor.draft_brush_specs["DraftProp_1"].has("clip_planes")
+        or editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 4
+        or editor.draft_prop_copies["DraftProp_1"].mesh == null):
+        _fail("v0.81 private draft reopen did not reconstruct four-plane convex Box")
+        return
+    # Replace remains different from Add: collapse all four planes to
+    # one while preserving the ability to Undo back to the entire stack.
+    var before_replace := editor.undo_stack.size()
+    editor._apply_private_box_clip()
+    if (not editor.draft_brush_specs["DraftProp_1"].has("clip_plane")
+        or editor.draft_brush_specs["DraftProp_1"].has("clip_planes")
+        or editor.undo_stack.size() != before_replace+1):
+        _fail("v0.81 Replace 3D Clip did not explicitly replace whole stack")
+        return
+    editor._undo_edit()
+    if (not editor.draft_brush_specs["DraftProp_1"].has("clip_planes")
+        or editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 4):
+        _fail("v0.81 Replace 3D Clip undo did not restore entire stack")
+        return
+    editor._redo_edit()
+    if not editor.draft_brush_specs["DraftProp_1"].has("clip_plane"):
+        _fail("v0.81 Replace 3D Clip redo did not restore one-plane clip")
+        return
+    editor._undo_edit()
+    if editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 4:
+        _fail("v0.81 second Undo failed to restore four source-private cuts")
+        return
+    editor._remove_last_private_box_plane()
+    if (editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 3
+        or editor.box_clip_add_plane_button.disabled):
+        _fail("v0.81 Remove last did not retain earlier planes")
+        return
+    editor._undo_edit()
+    if (not editor.draft_brush_specs["DraftProp_1"].has("clip_planes")
+        or editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 4):
+        _fail("v0.81 Remove last Undo lost original four-plane clip")
+        return
+    editor._redo_edit()
+    if editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 3:
+        _fail("v0.81 Remove last Redo lost the original three planes")
+        return
+    editor._remove_last_private_box_plane()
+    editor._remove_last_private_box_plane()
+    if (not editor.draft_brush_specs["DraftProp_1"].has("clip_plane")
+        or editor.draft_brush_specs["DraftProp_1"].has("clip_planes")):
+        _fail("v0.81 removing planes did not restore legacy single-plane draft")
+        return
+    editor._reset_private_box_clip()
+    if (editor.draft_brush_specs["DraftProp_1"].has("clip_plane")
+        or editor.draft_brush_specs["DraftProp_1"].has("clip_planes")
+        or not editor.brush_face_controls.visible):
+        _fail("v0.81 Reset to Box did not clear cumulative clipping metadata")
+        return
     if FileAccess.get_sha256(original_file) != source_sha:
         _fail("Original invented source bytes changed during preview authoring")
         return
@@ -349,5 +585,5 @@ func _run() -> void:
             DirAccess.remove_absolute(draft_path + suffix)
     DirAccess.remove_absolute(original_file)
     editor.queue_free()
-    print("DX2Ed v0.80 closed 3D Box Clip, capped manifold, Undo/Redo, Reset and private Save/reopen PASS")
+    print("DX2Ed v0.81 4-plane closed convex Box, independent Undo, Reset and private Save/reopen PASS")
     quit(0)
