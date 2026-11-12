@@ -200,6 +200,7 @@ class WorldBSPByteSpanLedgerTests(unittest.TestCase):
                     "status": "read-only-original-World-Model-complete-byte-ledger",
                     "original_gmp_sha256": self.source_sha256,
                     "original_model_noop_reassembled_byte_identical": True,
+                    "model_byte_ledger_fully_contiguous_nonoverlapping": True,
                     "selected_original_node_ordinals": node_indices or [],
                     "source_surface_array_indexed_from_model_authenticated": False,
                     "native_edited_BSP_or_MOPP_writer_enabled": False,
