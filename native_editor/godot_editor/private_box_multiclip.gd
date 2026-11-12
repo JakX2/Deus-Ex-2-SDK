@@ -1,11 +1,13 @@
 extends RefCounted
-## DX2Ed v0.81: up to FOUR successive 3D planes on one private Box.
+## DX2Ed v0.83: up to EIGHT successive 3D planes on one private Box.
 ## This creates a capped convex Godot preview, NEVER native DX2 BSP,
 ## CSG, Havok/MOPP collision, or an original GMP/IBD modification.
 
 const SingleClip = preload("res://private_box_clip.gd")
-const MAX_PLANES := 4
-const MAX_FACES := 10
+const MAX_PLANES := 8
+# A convex clipping pass can introduce at most one new planar face.
+# Eight corner cuts yield the 14-face truncated cube in the regression.
+const MAX_FACES := 6 + MAX_PLANES
 const MAX_CAP_VERTICES := 16
 const EPSILON := 0.00001
 const ON_PLANE_EPSILON := 0.00008

@@ -6,7 +6,9 @@ extends RefCounted
 const MIN_CLEARANCE := 0.05
 const EPSILON := 0.00001
 const MAX_ABS_DISTANCE := 256.0
-const MAX_TRIANGLES := 36
+# Strict upper bound for a triangulated convex polyhedron with 6 original
+# Box faces plus 8 clip caps: E <= 3F-6, triangles = 2E-2F <= 4F-12 = 44.
+const MAX_TRIANGLES := 44
 
 
 static func validate_clip(raw: Variant, size: Vector3) -> Dictionary:

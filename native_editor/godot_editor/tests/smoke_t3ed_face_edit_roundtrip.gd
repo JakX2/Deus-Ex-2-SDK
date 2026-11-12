@@ -171,6 +171,54 @@ func _run() -> void:
         or four_volume <= 0.0 or four_volume >= 1.0):
         _fail("v0.81 fourth oblique plane did not generate a closed reduced volume")
         return
+    # v0.83: all eight corners of an invented 2m Box are cut by
+    # independent planes. The result has 14 faces and 44 triangles,
+    # exceeding the old 4-plane / 36-triangle authoring bounds.
+    var eight_planes: Array = []
+    var normal_unit := 1.0 / sqrt(3.0)
+    for sx in [-1.0, 1.0]:
+        for sy in [-1.0, 1.0]:
+            for sz in [-1.0, 1.0]:
+                eight_planes.append({
+                    "normal": [sx*normal_unit, sy*normal_unit, sz*normal_unit],
+                    "distance": 1.4, "keep_positive": false})
+    var running_planes: Array = []
+    var last_eight_volume := 8.0
+    var final_eight_vertices := PackedVector3Array()
+    for eighth_plane in eight_planes:
+        running_planes.append(eighth_plane)
+        var corner_spec: Dictionary = cube.duplicate(true)
+        corner_spec["clip_planes"] = running_planes.duplicate(true)
+        var corner_mesh: ArrayMesh = Brush.build_mesh(corner_spec)
+        if (MultiClip.validate_planes(running_planes, source_size).size()
+                != running_planes.size()
+            or Brush.validate(corner_spec).is_empty()
+            or corner_mesh == null):
+            _fail("v0.83 cumulative corner clipping refused a valid closed convex Box")
+            return
+        var corner_vertices: PackedVector3Array = (
+            corner_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX])
+        var corner_volume := MultiClip._signed_volume(corner_vertices)
+        if (not PrivateBoxClip._valid_closed_soup(corner_vertices, 8.0)
+            or corner_volume >= last_eight_volume - 0.0001):
+            _fail("v0.83 cumulative cut failed topology or shrinking volume")
+            return
+        last_eight_volume = corner_volume
+        final_eight_vertices = corner_vertices
+    var removed_corner_edge := 3.0 - sqrt(3.0) * 1.4
+    var expected_eight_volume := (
+        8.0 - 8.0 * pow(removed_corner_edge, 3.0) / 6.0)
+    if (final_eight_vertices.size() / 3 != 44
+        or absf(last_eight_volume - expected_eight_volume) > 0.002):
+        _fail("v0.83 14-face, 44-triangle cube did not conserve capped volume")
+        return
+    var ninth_spec: Dictionary = cube.duplicate(true)
+    ninth_spec["clip_planes"] = eight_planes + [eight_planes[0]]
+    if (not Brush.validate(ninth_spec).is_empty()
+        or Brush.build_mesh(ninth_spec) != null):
+        _fail("v0.83 ninth private clipping plane evaded bounded validation")
+        return
+
     var mixed_sides: Dictionary = cube.duplicate(true)
     mixed_sides["clip_planes"] = [
         {"normal":[1.0,0.0,0.0], "distance":0.0, "keep_positive":true},
@@ -195,9 +243,9 @@ func _run() -> void:
     if not Brush.validate(invalid_multi).is_empty():
         _fail("Empty private 3D clip stack passed source-only validation")
         return
-    invalid_multi["clip_planes"] = four_planes + [fourth]
+    invalid_multi["clip_planes"] = eight_planes + [eight_planes[0]]
     if not Brush.validate(invalid_multi).is_empty():
-        _fail("Unbounded fifth private 3D plane passed source-only validation")
+        _fail("Unbounded ninth private 3D plane passed source-only validation")
         return
     invalid_multi["clip_planes"] = four_planes
     invalid_multi["clip_plane"] = planes[0]
@@ -499,9 +547,9 @@ func _run() -> void:
     if (not final_stack.has("clip_planes")
         or final_stack["clip_planes"].size() != 4
         or editor.undo_stack.size() != history_before_stack+4
-        or editor.box_clip_plane_count_label.text != "Planes: 4 / 4"
-        or not editor.box_clip_add_plane_button.disabled):
-        _fail("v0.81 fourth capped plane or Inspector limit failed")
+        or editor.box_clip_plane_count_label.text != "Planes: 4 / 8"
+        or editor.box_clip_add_plane_button.disabled):
+        _fail("v0.83 fourth capped plane was not accepted below eight-plane limit")
         return
     var final_mesh: Mesh = editor.draft_prop_copies["DraftProp_1"].mesh
     if final_mesh == null or final_mesh.get_surface_count() != 1:
@@ -649,6 +697,113 @@ func _run() -> void:
         or not editor.brush_face_controls.visible):
         _fail("v0.81 Reset to Box did not clear cumulative clipping metadata")
         return
+    # v0.83: actual Inspector eight-corner clipping, ninth-plane refusal,
+    # private project reload, arbitrary selected-plane delete and Undo/Redo.
+    editor._set_brush_spec("DraftProp_1", Brush.default_spec("Box"))
+    editor._select_mesh_only(editor.draft_prop_copies["DraftProp_1"])
+    var eight_history := editor.undo_stack.size()
+    for corner_index in range(eight_planes.size()):
+        var plane: Dictionary = eight_planes[corner_index]
+        var n := Vector3(
+            plane["normal"][0], plane["normal"][1], plane["normal"][2])
+        editor.box_clip_yaw.value = fposmod(
+            rad_to_deg(atan2(n.z, n.x)), 360.0)
+        editor.box_clip_elevation.value = rad_to_deg(asin(n.y))
+        editor.box_clip_distance.value = 1.4
+        editor.box_clip_keep_side.select(0)
+        editor._append_private_box_plane()
+        var built_spec: Dictionary = editor.draft_brush_specs["DraftProp_1"]
+        if (editor.undo_stack.size() != eight_history + corner_index + 1
+            or not built_spec.has("clip_planes") and corner_index > 0
+            or editor.box_clip_plane_count_label.text != (
+                "Planes: " + str(corner_index + 1) + " / 8")):
+            _fail("v0.83 actual Inspector did not accumulate eight validated cuts")
+            return
+    var eight_ui_spec: Dictionary = editor.draft_brush_specs["DraftProp_1"].duplicate(true)
+    if (not eight_ui_spec.has("clip_planes")
+        or eight_ui_spec["clip_planes"].size() != 8
+        or editor.box_clip_plane_selector.item_count != 8
+        or not editor.box_clip_add_plane_button.disabled):
+        _fail("v0.83 eight-plane Inspector count and disabled Add failed")
+        return
+    var eight_ui_mesh: Mesh = editor.draft_prop_copies["DraftProp_1"].mesh
+    if eight_ui_mesh == null:
+        _fail("v0.83 actual Inspector failed capped eight-plane preview")
+        return
+    var eight_ui_vertices: PackedVector3Array = (
+        eight_ui_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX])
+    if (not PrivateBoxClip._valid_closed_soup(eight_ui_vertices, 8.0)
+        or eight_ui_vertices.size() / 3 != 44
+        or absf(MultiClip._signed_volume(eight_ui_vertices)
+            - expected_eight_volume) > 0.02):
+        _fail("v0.83 actual Inspector eight-plane mesh was not closed or volume safe")
+        return
+    editor._append_private_box_plane()
+    if (editor.undo_stack.size() != eight_history + 8
+        or editor.draft_brush_specs["DraftProp_1"] != eight_ui_spec):
+        _fail("v0.83 ninth plane changed private draft or polluted Undo history")
+        return
+    editor._save_prop_draft()
+    var eight_json: Variant = JSON.parse_string(
+        FileAccess.get_file_as_string(draft_path))
+    if (typeof(eight_json) != TYPE_DICTIONARY
+        or eight_json["copies"][0]["brush"]["clip_planes"].size() != 8):
+        _fail("v0.83 private draft Save lost eight planes")
+        return
+    editor._set_brush_spec("DraftProp_1", Brush.default_spec("Box"))
+    editor._load_prop_draft()
+    editor._select_mesh_only(editor.draft_prop_copies["DraftProp_1"])
+    var reopened_eight: Dictionary = editor.draft_brush_specs.get(
+        "DraftProp_1", {}).duplicate(true)
+    if (not reopened_eight.has("clip_planes")
+        or reopened_eight["clip_planes"].size() != 8
+        or editor.draft_prop_copies["DraftProp_1"].mesh == null):
+        _fail("v0.83 private draft reopen lost eight-plane geometry: "
+            + editor.status_label.text)
+        return
+    # JSON text can round-trip normals at slightly different floating precision.
+    # Compare the actual authored half-spaces, not raw Dictionary equality.
+    for cut_index in range(8):
+        var orig: Dictionary = eight_ui_spec["clip_planes"][cut_index]
+        var loaded: Dictionary = reopened_eight["clip_planes"][cut_index]
+        var orig_normal := Vector3(
+            orig["normal"][0], orig["normal"][1], orig["normal"][2])
+        var loaded_normal := Vector3(
+            loaded["normal"][0], loaded["normal"][1], loaded["normal"][2])
+        if (orig_normal.distance_to(loaded_normal) > 0.00001
+            or absf(float(orig["distance"]) - float(loaded["distance"])) > 0.00001
+            or bool(orig["keep_positive"]) != bool(loaded["keep_positive"])):
+            _fail("v0.83 private JSON changed a stored cut plane")
+            return
+    var reopened_vertices: PackedVector3Array = (
+        editor.draft_prop_copies["DraftProp_1"].mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX])
+    if (reopened_vertices.size() / 3 != 44
+        or not PrivateBoxClip._valid_closed_soup(reopened_vertices, 8.0)
+        or absf(MultiClip._signed_volume(reopened_vertices)
+            - expected_eight_volume) > 0.02):
+        _fail("v0.83 private JSON reopen changed closed geometry")
+        return
+    editor.box_clip_plane_selector.select(3)
+    editor._selected_private_box_plane_changed(3)
+    var remove_eight_before := editor.undo_stack.size()
+    editor._remove_selected_private_box_plane()
+    if (editor.undo_stack.size() != remove_eight_before + 1
+        or editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 7):
+        _fail("v0.83 arbitrary plane removal from eight-stack failed")
+        return
+    editor._undo_edit()
+    if editor.draft_brush_specs["DraftProp_1"] != reopened_eight:
+        _fail("v0.83 selected eight-stack plane removal Undo failed")
+        return
+    editor._redo_edit()
+    if editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 7:
+        _fail("v0.83 selected eight-stack plane removal Redo failed")
+        return
+    editor._reset_private_box_clip()
+    if (editor.draft_brush_specs["DraftProp_1"].has("clip_planes")
+        or not editor.brush_face_controls.visible):
+        _fail("v0.83 reset of eight-cut draft did not recover original Box")
+        return
     if FileAccess.get_sha256(original_file) != source_sha:
         _fail("Original invented source bytes changed during preview authoring")
         return
@@ -658,5 +813,5 @@ func _run() -> void:
             DirAccess.remove_absolute(draft_path + suffix)
     DirAccess.remove_absolute(original_file)
     editor.queue_free()
-    print("DX2Ed v0.81 4-plane closed convex Box, independent Undo, Reset and private Save/reopen PASS")
+    print("DX2Ed v0.83 eight-plane closed convex Box, selected-plane editing, Undo and private Save/reopen PASS")
     quit(0)
