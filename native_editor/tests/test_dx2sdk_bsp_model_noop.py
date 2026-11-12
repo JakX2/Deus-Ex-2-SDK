@@ -155,6 +155,36 @@ class OriginalWorldModelNoopTests(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, "pinned source"):
             inspect_original_world_model_noop(world)
 
+    def test_sha_pinned_source_only_cli_dispatch_and_refusal(self):
+        import json
+        from contextlib import redirect_stdout, redirect_stderr
+        from io import StringIO
+        import inspect_world_model_noop as cli
+
+        class FakeWorld:
+            source_sha256 = "a"*64
+            source = Path("Synthetic.gmp")
+            def inspect_original_world_model_noop(self):
+                return {
+                    "status": "original-World-Model-byte-identical-structural-noop",
+                    "source_gmp_sha256": self.source_sha256,
+                    "source_node_count": 3,
+                    "source_zone_count": 3,
+                    "model_reassembled_byte_identical": True,
+                    "native_modified_model_writer_enabled": False,
+                    "original_game_package_modified": False,
+                }
+        stdout = StringIO()
+        with patch.object(cli.DX2Map, "open", return_value=FakeWorld()), redirect_stdout(stdout):
+            self.assertEqual(cli.main(["Synthetic.gmp", "--source-sha256", "a"*64]), 0)
+        parsed = json.loads(stdout.getvalue())
+        self.assertEqual(parsed["source_node_count"], 3)
+        self.assertFalse(parsed["native_modified_model_writer_enabled"])
+        stderr = StringIO()
+        with patch.object(cli.DX2Map, "open", return_value=FakeWorld()), redirect_stderr(stderr):
+            self.assertEqual(cli.main(["Synthetic.gmp", "--source-sha256", "b"*64]), 2)
+        self.assertEqual(json.loads(stderr.getvalue())["status"], "refused")
+
     def test_refuse_forged_export_payload_or_bounds(self):
         model, frame = synthetic_world()
         raw = b"X"*64 + model
