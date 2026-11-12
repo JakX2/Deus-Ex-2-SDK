@@ -1,5 +1,6 @@
 extends Control
 const BrushGeometry = preload("res://brush_geometry.gd")
+const PrivateBoxMultiClip = preload("res://private_box_multiclip.gd")
 const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const MatLibBrowser = preload("res://matlib_browser.gd")
 const OrthoGuides = preload("res://orthographic_authoring_guides.gd")
@@ -1884,7 +1885,8 @@ func _make_ui() -> void:
     box_clip_note.text = (
         "One capped convex 3D cut. Local yaw/elevation set the plane normal. "
         + "Original BSP and Havok remain untouched. Use Add plane for up "
-        + "to four cumulative convex cuts; Clip 3D Box replaces all cuts.")
+        + "to " + str(PrivateBoxMultiClip.MAX_PLANES)
+        + " cumulative convex cuts; Replace 3D Clip clears all prior cuts.")
     box_clip_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     private_box_clip_panel.add_child(box_clip_note)
     var box_clip_angles := HBoxContainer.new()
@@ -1933,7 +1935,8 @@ func _make_ui() -> void:
     box_clip_add_plane_button.text = "Add plane"
     box_clip_add_plane_button.tooltip_text = (
         "Append one validated local 3D half-plane to the current convex Box; "
-        + "up to four cumulative planes, one Undo step each.")
+        + "up to " + str(PrivateBoxMultiClip.MAX_PLANES)
+        + " cumulative planes, one Undo step each.")
     box_clip_add_plane_button.pressed.connect(_append_private_box_plane)
     box_clip_actions.add_child(box_clip_add_plane_button)
     box_clip_remove_last_button = Button.new()
@@ -1943,7 +1946,8 @@ func _make_ui() -> void:
     box_clip_remove_last_button.pressed.connect(_remove_last_private_box_plane)
     box_clip_actions.add_child(box_clip_remove_last_button)
     box_clip_plane_count_label = Label.new()
-    box_clip_plane_count_label.text = "Planes: 0 / 4"
+    box_clip_plane_count_label.text = ("Planes: 0 / "
+        + str(PrivateBoxMultiClip.MAX_PLANES))
     private_box_clip_panel.add_child(box_clip_plane_count_label)
     var box_clip_edit_row := HBoxContainer.new()
     private_box_clip_panel.add_child(box_clip_edit_row)
@@ -8919,11 +8923,12 @@ func _refresh_brush_inspector() -> void:
             box_clip_active_brush_name = selected_name
             box_clip_reset_button.disabled = active_planes.is_empty()
             box_clip_remove_last_button.disabled = active_planes.is_empty()
-            box_clip_add_plane_button.disabled = active_planes.size() >= 4
+            box_clip_add_plane_button.disabled = active_planes.size() >= PrivateBoxMultiClip.MAX_PLANES
             box_clip_update_selected_button.disabled = active_planes.is_empty()
             box_clip_remove_selected_button.disabled = active_planes.is_empty()
             box_clip_plane_selector.clear()
-            box_clip_plane_count_label.text = "Planes: " + str(active_planes.size()) + " / 4"
+            box_clip_plane_count_label.text = ("Planes: " + str(active_planes.size())
+                + " / " + str(PrivateBoxMultiClip.MAX_PLANES))
             for index in range(active_planes.size()):
                 box_clip_plane_selector.add_item("Plane " + str(index + 1))
             if not active_planes.is_empty():
@@ -9651,8 +9656,9 @@ func _append_private_box_plane() -> void:
         return
     var spec: Dictionary = draft_brush_specs[name].duplicate(true)
     var planes: Array = _private_box_plane_list(spec)
-    if planes.size() >= 4:
-        status_label.text = "Private convex Box limited to four sequential clipping planes."
+    if planes.size() >= PrivateBoxMultiClip.MAX_PLANES:
+        status_label.text = ("Private convex Box limited to "
+            + str(PrivateBoxMultiClip.MAX_PLANES) + " sequential clipping planes.")
         return
     var next_plane := _private_requested_box_plane()
     if next_plane.is_empty():
@@ -9677,7 +9683,8 @@ func _append_private_box_plane() -> void:
     _refresh_prop_inspection()
     _record_edit("Add private 3D Box cutting plane", before)
     status_label.text = (
-        "Added plane " + str(planes.size()) + "/4 to closed private convex Box. "
+        ""Added plane " + str(planes.size()) + "/"
+        + str(PrivateBoxMultiClip.MAX_PLANES) + " to closed private convex Box. "
         + "Undo available; native DX2 BSP/collision unchanged.")
 
 
