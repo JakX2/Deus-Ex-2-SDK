@@ -187,8 +187,13 @@ func _run() -> void:
     if editor.brush_face_selector.selected != selected_after:
         _fail("Missed click changed selected Inspector face")
         return
-    # v0.86 actual selection gesture: choose authored clipped cap, not its
-    # former cuboid face, without recording an edit or touching original GMP.
+    # v0.86 actual selection gesture: Undo/Redo reconstructs draft nodes;
+    # always reacquire the live editor-owned instance before selecting it.
+    draft = editor.draft_prop_copies["DraftProp_17"]
+    if not is_instance_valid(draft):
+        _fail("v0.86 draft node missing after cuboid Undo/Redo")
+        return
+    # Pick authored clipped caps, not former cuboid faces, without history edits.
     if not editor._set_brush_spec("DraftProp_17", half_box):
         _fail("v0.86 editor refused valid private half-cube")
         return
