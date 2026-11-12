@@ -576,6 +576,14 @@ func _run() -> void:
             != updated_four["clip_planes"][2]):
         _fail("v0.82 removing selected middle plane did not preserve order")
         return
+    editor._undo_edit()
+    if editor.draft_brush_specs["DraftProp_1"] != updated_four:
+        _fail("v0.82 selected middle-plane removal Undo lost four planes")
+        return
+    editor._redo_edit()
+    if editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 3:
+        _fail("v0.82 selected middle-plane removal Redo failed")
+        return
     editor._save_prop_draft()
     var edited_doc: Variant = JSON.parse_string(
         FileAccess.get_file_as_string(draft_path))
@@ -590,15 +598,9 @@ func _run() -> void:
         or editor.draft_prop_copies["DraftProp_1"].mesh == null):
         _fail("v0.82 edited private plane stack was not restored")
         return
-    editor._undo_edit()
-    if editor.draft_brush_specs["DraftProp_1"] != updated_four:
-        _fail("v0.82 selected middle-plane removal Undo lost four planes")
-        return
-    editor._redo_edit()
-    if editor.draft_brush_specs["DraftProp_1"]["clip_planes"].size() != 3:
-        _fail("v0.82 selected middle-plane removal Redo failed")
-        return
-    editor._undo_edit()
+    # Restore four planes before the existing Replace/Add/Remove tests.
+    editor._set_brush_spec("DraftProp_1", updated_four)
+    editor._refresh_prop_inspection()
     # Replace remains different from Add: collapse all four planes to
     # one while preserving the ability to Undo back to the entire stack.
     var before_replace := editor.undo_stack.size()
