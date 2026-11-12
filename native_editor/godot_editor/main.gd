@@ -9540,9 +9540,7 @@ func _can_pick_selected_draft_face() -> bool:
         return false
     if spec.has("clip_plane") or spec.has("clip_planes"):
         return (spec.get("kind", "") == "Box"
-            and box_clip_plane_selector != null
-            and not PrivateBoxCapPicker.cap_outline_edges(
-                spec, 0).is_empty())
+            and box_clip_plane_selector != null)
     return (BrushGeometry.FACE_EDIT_KINDS.has(str(spec.get("kind", "")))
         and brush_face_selector != null)
 
