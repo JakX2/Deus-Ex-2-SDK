@@ -398,6 +398,10 @@ var polygon_inspector_panel: VBoxContainer
 var polygon_vertex_selector: OptionButton
 var polygon_vertex_x: SpinBox
 var polygon_vertex_z: SpinBox
+var polygon_clip_axis_selector: OptionButton
+var polygon_clip_position: SpinBox
+var polygon_clip_keep_selector: OptionButton
+var polygon_clip_button: Button
 var polygon_surface_selector: OptionButton
 var polygon_surface_preset_selector: OptionButton
 var polygon_surface_uv_controls: Array[SpinBox] = []
@@ -1901,6 +1905,39 @@ func _make_ui() -> void:
         "Remove selected polygon corner (minimum 3); invalid outlines refused.")
     polygon_remove_button.pressed.connect(_delete_polygon_corner)
     polygon_actions.add_child(polygon_remove_button)
+    # T3Ed Brush Clip-inspired private draft: intersect current local X/Z
+    # footprint with one axis-aligned half-plane. Never native DX2 BSP/CSG.
+    var clip_heading := Label.new()
+    clip_heading.text = "Clip draft footprint (private preview only)"
+    polygon_inspector_panel.add_child(clip_heading)
+    var clip_row := HBoxContainer.new()
+    polygon_inspector_panel.add_child(clip_row)
+    polygon_clip_axis_selector = OptionButton.new()
+    polygon_clip_axis_selector.add_item("Local X")
+    polygon_clip_axis_selector.add_item("Local Z")
+    polygon_clip_axis_selector.select(0)
+    clip_row.add_child(polygon_clip_axis_selector)
+    polygon_clip_position = SpinBox.new()
+    polygon_clip_position.min_value = -1.0
+    polygon_clip_position.max_value = 1.0
+    polygon_clip_position.step = 0.025
+    polygon_clip_position.value = 0.0
+    polygon_clip_position.custom_minimum_size.x = 85
+    polygon_clip_position.tooltip_text = "Cut plane in normalized local footprint coordinates, -1..+1."
+    clip_row.add_child(polygon_clip_position)
+    polygon_clip_keep_selector = OptionButton.new()
+    polygon_clip_keep_selector.add_item("Keep <= plane")
+    polygon_clip_keep_selector.add_item("Keep >= plane")
+    polygon_clip_keep_selector.select(0)
+    polygon_clip_keep_selector.tooltip_text = "Choose which side of the local cut plane remains as an editable draft."
+    clip_row.add_child(polygon_clip_keep_selector)
+    polygon_clip_button = Button.new()
+    polygon_clip_button.text = "Clip polygon draft"
+    polygon_clip_button.tooltip_text = (
+        "One Undo step. Refuses no-op, empty, split/disconnected, degenerate or "
+        + "unsupported outlines. Native BSP, collision and source actors are untouched.")
+    polygon_clip_button.pressed.connect(_clip_selected_polygon_footprint)
+    polygon_inspector_panel.add_child(polygon_clip_button)
     var surface_heading := Label.new()
     surface_heading.text = "Per-surface preview material and UV"
     polygon_inspector_panel.add_child(surface_heading)
@@ -9170,6 +9207,39 @@ func _delete_polygon_corner() -> void:
         _refresh_prop_inspection()
         _record_edit("Delete custom polygon corner",before)
         status_label.text = "Deleted custom polygon corner; Undo available."
+
+
+## Only user-authored Brush::Polygon drafts are eligible. Imported original
+## map geometry, other draft kinds and multi-selection never enter this path.
+func _clip_selected_polygon_footprint() -> void:
+    var name := _selected_custom_polygon_name()
+    if (name.is_empty() or polygon_clip_axis_selector == null
+        or polygon_clip_position == null or polygon_clip_keep_selector == null):
+        if status_label != null:
+            status_label.text = "Select one private Polygon draft to clip. Native DX2 geometry is read-only."
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    var axis := polygon_clip_axis_selector.selected
+    var position := polygon_clip_position.value
+    var keep_positive := polygon_clip_keep_selector.selected == 1
+    var updated: Array = CustomPolygon.clip_outline_axis(
+        spec["outline"], axis, position, keep_positive)
+    if updated.is_empty():
+        status_label.text = (
+            "Polygon clip refused: no valid single connected footprint remains, "
+            + "the cut is unchanged, or the outline would be degenerate.")
+        return
+    var before := _capture_edit_state()
+    spec["outline"] = updated
+    if not _set_brush_spec(name, spec):
+        status_label.text = "Polygon clip refused by private draft mesh validation."
+        return
+    _refresh_prop_inspection()
+    _record_edit("Clip private polygon draft", before)
+    status_label.text = (
+        "Clipped private Polygon footprint on local "
+        + ("X" if axis == 0 else "Z") + " plane. Undo available. "
+        + "Original GMP, BSP and collision unchanged.")
 
 
 func _brush_face_selected(_index: int) -> void:

@@ -16,6 +16,20 @@ func _fail(message: String) -> void:
     quit(1)
 
 
+func _outlines_close(left: Variant, right: Variant) -> bool:
+    if (typeof(left) != TYPE_ARRAY or typeof(right) != TYPE_ARRAY
+        or left.size() != right.size()):
+        return false
+    for index in range(left.size()):
+        if (typeof(left[index]) != TYPE_ARRAY or typeof(right[index]) != TYPE_ARRAY
+            or left[index].size() != 2 or right[index].size() != 2):
+            return false
+        for axis in range(2):
+            if not is_equal_approx(float(left[index][axis]), float(right[index][axis])):
+                return false
+    return true
+
+
 func _run() -> void:
     var spec := Brush.default_spec("Polygon")
     if (spec.is_empty() or Brush.validate(spec).is_empty()
@@ -92,6 +106,52 @@ func _run() -> void:
         or not Polygon.with_deleted_vertex(spec["outline"],10).is_empty()):
         _fail("Custom polygon dimension/index safeguards failed")
         return
+
+    # v0.78: bounded planar Brush Clip works on private editable footprints.
+    var rectangle := [[-1.0,-1.0],[1.0,-1.0],[1.0,1.0],[-1.0,1.0]]
+    var clip_left: Array = Polygon.clip_outline_axis(rectangle, 0, 0.0, false)
+    var clip_right: Array = Polygon.clip_outline_axis(rectangle, 0, 0.0, true)
+    var clip_top: Array = Polygon.clip_outline_axis(rectangle, 1, 0.25, true)
+    if (clip_left.size() != 4 or clip_right.size() != 4
+        or clip_top.size() != 4
+        or Polygon.validate_outline(clip_left).is_empty()
+        or Polygon.validate_outline(clip_right).is_empty()
+        or Polygon.validate_outline(clip_top).is_empty()):
+        _fail("Bounded local X/Z half-plane polygon clip did not retain valid rectangles")
+        return
+    for point in clip_left:
+        if float(point[0]) > 0.00001:
+            _fail("Left clip retained a source point outside its half-plane")
+            return
+    for point in clip_right:
+        if float(point[0]) < -0.00001:
+            _fail("Right clip retained a source point outside its half-plane")
+            return
+    for point in clip_top:
+        if float(point[1]) < 0.24999:
+            _fail("Top clip retained a source point outside its half-plane")
+            return
+    var clockwise: Array = rectangle.duplicate(true)
+    clockwise.reverse()
+    if Polygon.clip_outline_axis(clockwise, 0, 0.0, false).size() != 4:
+        _fail("Clockwise source winding did not survive private brush clip")
+        return
+    var disconnected_u := [
+        [-1.0,-1.0],[1.0,-1.0],[1.0,1.0],[0.6,1.0],
+        [0.6,-0.6],[-0.6,-0.6],[-0.6,1.0],[-1.0,1.0]]
+    for rejected in [
+        Polygon.clip_outline_axis(rectangle, -1, 0.0, false),
+        Polygon.clip_outline_axis(rectangle, 2, 0.0, false),
+        Polygon.clip_outline_axis(rectangle, 0, INF, false),
+        Polygon.clip_outline_axis(rectangle, 0, 1.1, false),
+        Polygon.clip_outline_axis(rectangle, 0, 1.0, false),
+        Polygon.clip_outline_axis(rectangle, 0, -1.0, false),
+        Polygon.clip_outline_axis(disconnected_u, 1, 0.0, true),
+        Polygon.clip_outline_axis([[-1,-1],[1,1],[-1,1],[1,-1]],0,0.0,false)
+    ]:
+        if not rejected.is_empty():
+            _fail("Unsafe, disconnected, degenerate or unchanged Polygon clip was accepted")
+            return
 
     var editor := Editor.new()
     get_root().add_child(editor)
@@ -374,6 +434,63 @@ func _run() -> void:
             editor.draft_brush_specs["DraftProp_38"]["surface_style"]["top"]["uv_scale"][0]), 2.0)):
         _fail("Invalid private surface UV metadata destroyed the current valid preview")
         return
+    # Exercise the real Inspector controls and actual private save/reopen.
+    if (editor.polygon_clip_axis_selector == null
+        or editor.polygon_clip_position == null
+        or editor.polygon_clip_keep_selector == null
+        or editor.polygon_clip_button == null
+        or not editor.polygon_inspector_panel.visible):
+        _fail("Actual T3Ed-inspired Polygon Clip Inspector controls are absent")
+        return
+    var before_clip: Array = editor.draft_brush_specs["DraftProp_38"]["outline"].duplicate(true)
+    var history_before_clip := editor.undo_stack.size()
+    editor.polygon_clip_axis_selector.select(0)
+    editor.polygon_clip_position.value = 0.0
+    editor.polygon_clip_keep_selector.select(0)
+    editor._clip_selected_polygon_footprint()
+    var clipped: Array = editor.draft_brush_specs["DraftProp_38"]["outline"].duplicate(true)
+    var clipped_mesh: Mesh = editor.draft_prop_copies["DraftProp_38"].mesh
+    if (clipped == before_clip or clipped.is_empty()
+        or editor.undo_stack.size() != history_before_clip + 1
+        or clipped_mesh == null or clipped_mesh.get_surface_count() != 3
+        or Polygon.validate_outline(clipped).is_empty()
+        or editor.draft_brush_specs["DraftProp_38"]["surface_style"]["top"]["preset"] != "Metal"):
+        _fail("Real private Polygon Clip did not create one undoable three-surface draft")
+        return
+    for point in clipped:
+        if float(point[0]) > 0.00001:
+            _fail("Edited draft footprint escaped the selected local half-plane")
+            return
+    editor._undo_edit()
+    if editor.draft_brush_specs["DraftProp_38"]["outline"] != before_clip:
+        _fail("Undo did not restore the exact preclip private Polygon outline")
+        return
+    editor._redo_edit()
+    if editor.draft_brush_specs["DraftProp_38"]["outline"] != clipped:
+        _fail("Redo did not reinstate the clipped private Polygon outline")
+        return
+    var refused_history := editor.undo_stack.size()
+    editor.polygon_clip_position.value = 1.0
+    editor._clip_selected_polygon_footprint()
+    if (editor.undo_stack.size() != refused_history
+        or editor.draft_brush_specs["DraftProp_38"]["outline"] != clipped):
+        _fail("A no-op clip corrupted current draft or added Undo history")
+        return
+    editor._save_prop_draft()
+    var clipped_doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+    if (typeof(clipped_doc) != TYPE_DICTIONARY
+        or clipped_doc["copies"].size() != 1
+        or not _outlines_close(clipped_doc["copies"][0]["brush"]["outline"], clipped)):
+        _fail("Clipped local footprint did not persist: " + editor.status_label.text)
+        return
+    editor._set_brush_spec("DraftProp_38", Brush.default_spec("Polygon"))
+    editor._load_prop_draft()
+    if (not editor.draft_prop_copies.has("DraftProp_38")
+        or not _outlines_close(editor.draft_brush_specs["DraftProp_38"]["outline"], clipped)
+        or editor.draft_brush_specs["DraftProp_38"]["surface_style"]["top"]["preset"] != "Metal"
+        or not editor.selected_meshes.has("DraftProp_38")):
+        _fail("Clipped private footprint failed full editor Save/reopen")
+        return
     if FileAccess.get_sha256(source) != source_hash:
         _fail("Invented original source bytes were modified")
         return
@@ -382,5 +499,5 @@ func _run() -> void:
             DirAccess.remove_absolute(path+suffix)
     DirAccess.remove_absolute(source)
     editor.queue_free()
-    print("DX2Ed v0.40 polygon surface materials/UVs and private round-trip PASS")
+    print("DX2Ed v0.78 private Polygon Clip, Undo/Redo, material, Godot mesh and Save/reopen PASS")
     quit(0)

@@ -268,6 +268,102 @@ static func validate_outline(raw: Variant) -> Array:
     return rows
 
 
+## Private T3Ed-inspired footprint Brush Clip: axis-aligned local X/Z
+## half-plane intersection, not native DX2 CSG. Concave/disconnected and
+## sub-minimum-area outputs fail closed. An empty result never destroys a draft.
+static func clip_outline_axis(raw: Variant, axis: int,
+                              boundary: float, keep_positive: bool) -> Array:
+    if axis not in [0, 1] or not is_finite(boundary) or absf(boundary) > 1.0:
+        return []
+    var outline := validate_outline(raw)
+    if outline.is_empty():
+        return []
+    var epsilon := 0.000001
+    var points: Array[Vector2] = []
+    var outside_count := 0
+    for corner in outline:
+        var point := Vector2(float(corner[0]), float(corner[1]))
+        points.append(point)
+        var inside: bool = (
+            point[axis] >= boundary - epsilon if keep_positive
+            else point[axis] <= boundary + epsilon)
+        if not inside:
+            outside_count += 1
+    # A no-op clip and an entirely excluded footprint are both refusals:
+    # do not rotate source corner order or create a misleading Undo entry.
+    if outside_count == 0 or outside_count == points.size():
+        return []
+    var output: Array[Vector2] = []
+    var crossings := 0
+    var previous: Vector2 = points.back()
+    var previous_inside: bool = (
+        previous[axis] >= boundary - epsilon if keep_positive
+        else previous[axis] <= boundary + epsilon)
+    for current in points:
+        var current_inside: bool = (
+            current[axis] >= boundary - epsilon if keep_positive
+            else current[axis] <= boundary + epsilon)
+        if current_inside != previous_inside:
+            crossings += 1
+            # More than two crossings may turn a disconnected concave cut
+            # into one fictitious polygon bridged along the cut plane.
+            if crossings > 2:
+                return []
+            var denominator := current[axis] - previous[axis]
+            if absf(denominator) <= epsilon:
+                return []
+            var fraction := clampf((boundary - previous[axis]) / denominator, 0.0, 1.0)
+            var intersection := previous.lerp(current, fraction)
+            if axis == 0:
+                intersection.x = boundary
+            else:
+                intersection.y = boundary
+            output.append(intersection)
+        if current_inside:
+            output.append(current)
+        previous = current
+        previous_inside = current_inside
+    if crossings != 2:
+        return []
+    var cleaned: Array[Vector2] = []
+    for point in output:
+        if cleaned.is_empty() or cleaned.back().distance_to(point) > epsilon:
+            cleaned.append(point)
+    if cleaned.size() > 1 and cleaned.front().distance_to(cleaned.back()) <= epsilon:
+        cleaned.pop_back()
+    # Clipped source corners on the cut plane may create a redundant
+    # straight segment. Remove only exactly-near-collinear forward corners.
+    for _pass in range(MAX_VERTICES):
+        if cleaned.size() < MIN_VERTICES:
+            return []
+        var removed := false
+        for index in range(cleaned.size()):
+            var a: Vector2 = cleaned[(index - 1 + cleaned.size()) % cleaned.size()]
+            var b: Vector2 = cleaned[index]
+            var c: Vector2 = cleaned[(index + 1) % cleaned.size()]
+            if (absf(_cross(b - a, c - b)) <= epsilon
+                and (b - a).dot(c - b) >= 0.0):
+                cleaned.remove_at(index)
+                removed = true
+                break
+        if not removed:
+            break
+    if cleaned.size() < MIN_VERTICES or cleaned.size() > MAX_VERTICES:
+        return []
+    var candidates: Array = []
+    for point in cleaned:
+        candidates.append([point.x, point.y])
+    var result := validate_outline(candidates)
+    if result.is_empty():
+        return []
+    var original_area := PackedVector2Array(points)
+    var clipped_area := PackedVector2Array(cleaned)
+    if (absf(signed_area(clipped_area)) >=
+        absf(signed_area(original_area)) - MIN_AREA * 0.001):
+        return []
+    return result
+
+
 static func with_moved_vertex(raw: Variant, index: int,
                               axis: int, value: float) -> Array:
     var rows := validate_outline(raw)
