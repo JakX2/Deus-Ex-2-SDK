@@ -52,6 +52,12 @@ class T3EdParityAndCatalogTests(unittest.TestCase):
         self.assertIn("MOPP terminal-leaf subset", vertex["evidence"])
         self.assertIn("native BSP vertex IDs", vertex["evidence"])
         self.assertIn("complete original Flesh/BSP vertex provenance", vertex["next_step"])
+        brush_clip = next(c for c in capabilities if c["id"] == "brush_boolean")
+        self.assertEqual(brush_clip["status"], "partial")
+        self.assertIn("v0.78", brush_clip["evidence"])
+        self.assertIn("private Godot Polygon draft", brush_clip["evidence"])
+        self.assertIn("NOT a native source BSP", brush_clip["evidence"])
+        self.assertIn("runtime-verify", brush_clip["next_step"])
 
     def test_catalog_lists_all_types_including_unplaced_resources(self):
         result = catalog_from_bundles([fixture_bundle("mission.ibd",
