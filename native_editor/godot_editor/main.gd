@@ -404,6 +404,10 @@ var box_clip_reset_button: Button
 var box_clip_add_plane_button: Button
 var box_clip_remove_last_button: Button
 var box_clip_plane_count_label: Label
+var box_clip_plane_selector: OptionButton
+var box_clip_update_selected_button: Button
+var box_clip_remove_selected_button: Button
+var box_clip_active_brush_name := ""
 var polygon_inspector_panel: VBoxContainer
 var polygon_vertex_selector: OptionButton
 var polygon_vertex_x: SpinBox
@@ -1941,6 +1945,29 @@ func _make_ui() -> void:
     box_clip_plane_count_label = Label.new()
     box_clip_plane_count_label.text = "Planes: 0 / 4"
     private_box_clip_panel.add_child(box_clip_plane_count_label)
+    var box_clip_edit_row := HBoxContainer.new()
+    private_box_clip_panel.add_child(box_clip_edit_row)
+    box_clip_plane_selector = OptionButton.new()
+    box_clip_plane_selector.custom_minimum_size.x = 110
+    box_clip_plane_selector.tooltip_text = (
+        "Choose an existing private clipping plane to inspect or edit. "
+        + "This selection is UI-only and does not change project data.")
+    box_clip_plane_selector.item_selected.connect(_selected_private_box_plane_changed)
+    box_clip_edit_row.add_child(box_clip_plane_selector)
+    box_clip_update_selected_button = Button.new()
+    box_clip_update_selected_button.text = "Update selected"
+    box_clip_update_selected_button.tooltip_text = (
+        "Replace just the selected plane after revalidating every surviving "
+        + "capped cut. One private Undo step; no original game writes.")
+    box_clip_update_selected_button.pressed.connect(_update_selected_private_box_plane)
+    box_clip_edit_row.add_child(box_clip_update_selected_button)
+    box_clip_remove_selected_button = Button.new()
+    box_clip_remove_selected_button.text = "Remove selected"
+    box_clip_remove_selected_button.tooltip_text = (
+        "Delete only the selected plane if all remaining cuts still form "
+        + "a valid closed convex preview. One Undo step.")
+    box_clip_remove_selected_button.pressed.connect(_remove_selected_private_box_plane)
+    box_clip_edit_row.add_child(box_clip_remove_selected_button)
     box_clip_reset_button = Button.new()
     box_clip_reset_button.text = "Reset to Box"
     box_clip_reset_button.tooltip_text = "Remove the private plane cut in one Undo step."
@@ -8853,6 +8880,9 @@ func _refresh_brush_inspector() -> void:
     var show := nodes.size() == 1 and draft_brush_specs.has(str(nodes[0].name)) if nodes.size() == 1 else false
     brush_inspector_panel.visible = show
     if not show:
+        box_clip_active_brush_name = ""
+        if box_clip_plane_selector != null:
+            box_clip_plane_selector.clear()
         if private_box_clip_panel != null:
             private_box_clip_panel.visible = false
         if polygon_inspector_panel != null:
@@ -8883,24 +8913,29 @@ func _refresh_brush_inspector() -> void:
             and draft_prop_copies.has(selected_name))
         private_box_clip_panel.visible = can_clip_box
         if can_clip_box:
-            var existing: Dictionary = spec.get("clip_plane", {})
             var active_planes: Array = _private_box_plane_list(spec)
+            var same_box := box_clip_active_brush_name == selected_name
+            var previous_index := box_clip_plane_selector.selected if same_box else -1
+            box_clip_active_brush_name = selected_name
             box_clip_reset_button.disabled = active_planes.is_empty()
             box_clip_remove_last_button.disabled = active_planes.is_empty()
             box_clip_add_plane_button.disabled = active_planes.size() >= 4
+            box_clip_update_selected_button.disabled = active_planes.is_empty()
+            box_clip_remove_selected_button.disabled = active_planes.is_empty()
+            box_clip_plane_selector.clear()
             box_clip_plane_count_label.text = "Planes: " + str(active_planes.size()) + " / 4"
+            for index in range(active_planes.size()):
+                box_clip_plane_selector.add_item("Plane " + str(index + 1))
             if not active_planes.is_empty():
-                existing = active_planes.back()
-            if not existing.is_empty():
-                var direction := Vector3(
-                    existing["normal"][0], existing["normal"][1],
-                    existing["normal"][2])
-                box_clip_yaw.set_value_no_signal(
-                    fposmod(rad_to_deg(atan2(direction.z, direction.x)), 360.0))
-                box_clip_elevation.set_value_no_signal(
-                    rad_to_deg(asin(clampf(direction.y, -1.0, 1.0))))
-                box_clip_distance.set_value_no_signal(float(existing["distance"]))
-                box_clip_keep_side.select(1 if existing["keep_positive"] else 0)
+                var selected_index := (
+                    previous_index if previous_index >= 0
+                    and previous_index < active_planes.size()
+                    else active_planes.size() - 1)
+                box_clip_plane_selector.select(selected_index)
+                _load_private_box_plane_controls(active_planes[selected_index])
+        else:
+            box_clip_active_brush_name = ""
+            box_clip_plane_selector.clear()
     brush_inspector_syncing = false
     _refresh_polygon_inspector()
     _refresh_polygon_vertex_handles()
@@ -9558,6 +9593,41 @@ func _private_box_plane_list(spec: Dictionary) -> Array:
     return []
 
 
+func _load_private_box_plane_controls(plane: Dictionary) -> void:
+    if (plane.is_empty() or box_clip_yaw == null
+        or box_clip_elevation == null or box_clip_distance == null
+        or box_clip_keep_side == null):
+        return
+    var normal := Vector3(
+        plane["normal"][0], plane["normal"][1], plane["normal"][2])
+    box_clip_yaw.set_value_no_signal(
+        fposmod(rad_to_deg(atan2(normal.z, normal.x)), 360.0))
+    box_clip_elevation.set_value_no_signal(
+        rad_to_deg(asin(clampf(normal.y, -1.0, 1.0))))
+    box_clip_distance.set_value_no_signal(float(plane["distance"]))
+    box_clip_keep_side.select(1 if bool(plane["keep_positive"]) else 0)
+
+
+func _selected_private_box_plane_changed(index: int) -> void:
+    var name := _selected_private_box_name()
+    if name.is_empty():
+        return
+    var planes: Array = _private_box_plane_list(draft_brush_specs[name])
+    if index < 0 or index >= planes.size():
+        return
+    _load_private_box_plane_controls(planes[index])
+
+
+func _same_private_box_plane(a: Dictionary, b: Dictionary) -> bool:
+    if a.is_empty() or b.is_empty():
+        return false
+    var na := Vector3(a["normal"][0], a["normal"][1], a["normal"][2])
+    var nb := Vector3(b["normal"][0], b["normal"][1], b["normal"][2])
+    return (na.distance_to(nb) < 0.00001
+        and absf(float(a["distance"]) - float(b["distance"])) < 0.00001
+        and bool(a["keep_positive"]) == bool(b["keep_positive"]))
+
+
 func _private_requested_box_plane() -> Dictionary:
     if (box_clip_yaw == null or box_clip_elevation == null
         or box_clip_distance == null or box_clip_keep_side == null):
@@ -9635,6 +9705,84 @@ func _remove_last_private_box_plane() -> void:
     status_label.text = (
         "Removed final private 3D plane; " + str(planes.size())
         + " cut(s) remain. Undo available.")
+
+
+func _update_selected_private_box_plane() -> void:
+    var name := _selected_private_box_name()
+    if name.is_empty():
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    var planes: Array = _private_box_plane_list(spec)
+    var index := box_clip_plane_selector.selected
+    if index < 0 or index >= planes.size():
+        return
+    var requested := _private_requested_box_plane()
+    if requested.is_empty():
+        status_label.text = "Update plane refused: invalid private normal."
+        return
+    var size := Vector3(spec["size"][0], spec["size"][1], spec["size"][2])
+    var checked := PrivateBoxClip.validate_clip(requested, size)
+    if checked.is_empty():
+        status_label.text = "Update plane refused: invalid or tangent halfspace."
+        return
+    if _same_private_box_plane(planes[index], checked):
+        status_label.text = "Selected private plane unchanged; no Undo step."
+        return
+    planes[index] = checked
+    spec.erase("clip_plane")
+    spec.erase("clip_planes")
+    if planes.size() == 1:
+        spec["clip_plane"] = planes[0]
+    else:
+        spec["clip_planes"] = planes
+    var verified: Dictionary = BrushGeometry.validate(spec)
+    if verified.is_empty() or BrushGeometry.build_mesh(verified) == null:
+        status_label.text = (
+            "Update plane refused: remaining stack would be empty, unchanged, "
+            + "nonmanifold or near-degenerate. Original draft retained.")
+        return
+    var before := _capture_edit_state()
+    if not _set_brush_spec(name, verified):
+        status_label.text = "Update plane refused; private draft retained."
+        return
+    _refresh_prop_inspection()
+    _record_edit("Update selected private Box cutting plane", before)
+    status_label.text = (
+        "Updated private Box plane " + str(index + 1)
+        + " of " + str(planes.size()) + ". Undo available; no native BSP write.")
+
+
+func _remove_selected_private_box_plane() -> void:
+    var name := _selected_private_box_name()
+    if name.is_empty():
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    var planes: Array = _private_box_plane_list(spec)
+    var index := box_clip_plane_selector.selected
+    if index < 0 or index >= planes.size():
+        return
+    planes.remove_at(index)
+    spec.erase("clip_plane")
+    spec.erase("clip_planes")
+    if planes.size() == 1:
+        spec["clip_plane"] = planes[0]
+    elif planes.size() > 1:
+        spec["clip_planes"] = planes
+    var verified: Dictionary = BrushGeometry.validate(spec)
+    if verified.is_empty() or BrushGeometry.build_mesh(verified) == null:
+        status_label.text = (
+            "Remove plane refused: surviving cuts would not form a valid "
+            + "closed convex preview. Original plane stack retained.")
+        return
+    var before := _capture_edit_state()
+    if not _set_brush_spec(name, verified):
+        status_label.text = "Remove plane refused; private draft retained."
+        return
+    _refresh_prop_inspection()
+    _record_edit("Remove selected private Box cutting plane", before)
+    status_label.text = (
+        "Removed private Box plane " + str(index + 1) + "; "
+        + str(planes.size()) + " cut(s) remain. Undo available.")
 
 
 func _apply_private_box_clip() -> void:
