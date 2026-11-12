@@ -294,6 +294,7 @@ static func clip_outline_axis(raw: Variant, axis: int,
     if outside_count == 0 or outside_count == points.size():
         return []
     var output: Array[Vector2] = []
+    var crossings := 0
     var previous: Vector2 = points.back()
     var previous_inside: bool = (
         previous[axis] >= boundary - epsilon if keep_positive
@@ -303,6 +304,11 @@ static func clip_outline_axis(raw: Variant, axis: int,
             current[axis] >= boundary - epsilon if keep_positive
             else current[axis] <= boundary + epsilon)
         if current_inside != previous_inside:
+            crossings += 1
+            # More than two crossings may turn a disconnected concave cut
+            # into one fictitious polygon bridged along the cut plane.
+            if crossings > 2:
+                return []
             var denominator := current[axis] - previous[axis]
             if absf(denominator) <= epsilon:
                 return []
@@ -317,6 +323,8 @@ static func clip_outline_axis(raw: Variant, axis: int,
             output.append(current)
         previous = current
         previous_inside = current_inside
+    if crossings != 2:
+        return []
     var cleaned: Array[Vector2] = []
     for point in output:
         if cleaned.is_empty() or cleaned.back().distance_to(point) > epsilon:
