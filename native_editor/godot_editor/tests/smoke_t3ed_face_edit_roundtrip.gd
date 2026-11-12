@@ -753,9 +753,35 @@ func _run() -> void:
     editor._set_brush_spec("DraftProp_1", Brush.default_spec("Box"))
     editor._load_prop_draft()
     editor._select_mesh_only(editor.draft_prop_copies["DraftProp_1"])
-    if (editor.draft_brush_specs["DraftProp_1"] != eight_ui_spec
+    var reopened_eight: Dictionary = editor.draft_brush_specs.get(
+        "DraftProp_1", {}).duplicate(true)
+    if (not reopened_eight.has("clip_planes")
+        or reopened_eight["clip_planes"].size() != 8
         or editor.draft_prop_copies["DraftProp_1"].mesh == null):
-        _fail("v0.83 private draft reopen lost eight-plane geometry")
+        _fail("v0.83 private draft reopen lost eight-plane geometry: "
+            + editor.status_label.text)
+        return
+    # JSON text can round-trip normals at slightly different floating precision.
+    # Compare the actual authored half-spaces, not raw Dictionary equality.
+    for cut_index in range(8):
+        var orig: Dictionary = eight_ui_spec["clip_planes"][cut_index]
+        var loaded: Dictionary = reopened_eight["clip_planes"][cut_index]
+        var orig_normal := Vector3(
+            orig["normal"][0], orig["normal"][1], orig["normal"][2])
+        var loaded_normal := Vector3(
+            loaded["normal"][0], loaded["normal"][1], loaded["normal"][2])
+        if (orig_normal.distance_to(loaded_normal) > 0.00001
+            or absf(float(orig["distance"]) - float(loaded["distance"])) > 0.00001
+            or bool(orig["keep_positive"]) != bool(loaded["keep_positive"])):
+            _fail("v0.83 private JSON changed a stored cut plane")
+            return
+    var reopened_vertices: PackedVector3Array = (
+        editor.draft_prop_copies["DraftProp_1"].mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX])
+    if (reopened_vertices.size() / 3 != 44
+        or not PrivateBoxClip._valid_closed_soup(reopened_vertices, 8.0)
+        or absf(MultiClip._signed_volume(reopened_vertices)
+            - expected_eight_volume) > 0.02):
+        _fail("v0.83 private JSON reopen changed closed geometry")
         return
     editor.box_clip_plane_selector.select(3)
     editor._selected_private_box_plane_changed(3)
@@ -766,7 +792,7 @@ func _run() -> void:
         _fail("v0.83 arbitrary plane removal from eight-stack failed")
         return
     editor._undo_edit()
-    if editor.draft_brush_specs["DraftProp_1"] != eight_ui_spec:
+    if editor.draft_brush_specs["DraftProp_1"] != reopened_eight:
         _fail("v0.83 selected eight-stack plane removal Undo failed")
         return
     editor._redo_edit()
