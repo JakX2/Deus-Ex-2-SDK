@@ -153,6 +153,54 @@ func _run() -> void:
             _fail("Unsafe, disconnected, degenerate or unchanged Polygon clip was accepted")
             return
 
+    # v0.79: a non-axis-aligned local 2D cut uses an explicit unit
+    # normal, not a native BSP surface plane or a reoriented source map.
+    var diagonal_left: Array = Polygon.clip_outline_angle(rectangle, 30.0, 0.0, false)
+    var diagonal_right: Array = Polygon.clip_outline_angle(rectangle, 30.0, 0.0, true)
+    var diagonal_corner: Array = Polygon.clip_outline_angle(rectangle, 45.0, 0.0, false)
+    var rotated_clockwise: Array = Polygon.clip_outline_angle(clockwise, 30.0, 0.0, false)
+    if (diagonal_left.size() != 4 or diagonal_right.size() != 4
+        or diagonal_corner.size() != 3 or rotated_clockwise.size() != 4
+        or Polygon.validate_outline(diagonal_left).is_empty()
+        or Polygon.validate_outline(diagonal_right).is_empty()
+        or Polygon.validate_outline(diagonal_corner).is_empty()
+        or Polygon.validate_outline(rotated_clockwise).is_empty()):
+        _fail("Angled 2D clip failed winding, triangle or quadrilateral topology")
+        return
+    var cut_normal := Vector2(cos(deg_to_rad(30.0)), sin(deg_to_rad(30.0)))
+    for corner in diagonal_left:
+        if cut_normal.dot(Vector2(float(corner[0]), float(corner[1]))) > 0.00001:
+            _fail("Angled <= half-plane kept a point outside the cut")
+            return
+    for corner in diagonal_right:
+        if cut_normal.dot(Vector2(float(corner[0]), float(corner[1]))) < -0.00001:
+            _fail("Angled >= half-plane kept a point outside the cut")
+            return
+    var left_area_points := PackedVector2Array()
+    var right_area_points := PackedVector2Array()
+    for corner in diagonal_left:
+        left_area_points.append(Vector2(float(corner[0]), float(corner[1])))
+    for corner in diagonal_right:
+        right_area_points.append(Vector2(float(corner[0]), float(corner[1])))
+    if absf(absf(Polygon.signed_area(left_area_points))
+        + absf(Polygon.signed_area(right_area_points)) - 4.0) > 0.0001:
+        _fail("Complementary angled cuts lost or duplicated square footprint area")
+        return
+    for invalid_angle_cut in [
+        Polygon.clip_outline_angle(rectangle, -1.0, 0.0, false),
+        Polygon.clip_outline_angle(rectangle, 360.0, 0.0, false),
+        Polygon.clip_outline_angle(rectangle, INF, 0.0, false),
+        Polygon.clip_outline_angle(rectangle, NAN, 0.0, false),
+        Polygon.clip_outline_angle(rectangle, 45.0, INF, false),
+        Polygon.clip_outline_angle(rectangle, 45.0, -1.51, false),
+        Polygon.clip_outline_angle(rectangle, 30.0, 1.5, false),
+        Polygon.clip_outline_angle(rectangle, 30.0, -1.5, false),
+        Polygon.clip_outline_angle(disconnected_u, 90.0, 0.0, true)
+    ]:
+        if not invalid_angle_cut.is_empty():
+            _fail("Invalid, no-op, out-of-bound or disconnected angled clip accepted")
+            return
+
     var editor := Editor.new()
     get_root().add_child(editor)
     var source := ProjectSettings.globalize_path("user://v040_owner_invented_source.gmp")
@@ -491,6 +539,72 @@ func _run() -> void:
         or not editor.selected_meshes.has("DraftProp_38")):
         _fail("Clipped private footprint failed full editor Save/reopen")
         return
+    # Real Godot Inspector angle mode on a private rectangular brush.
+    # Reusing the existing draft exercises material preservation and
+    # complete private JSON project Save/reopen rather than an isolated helper.
+    var angled_spec: Dictionary = editor.draft_brush_specs["DraftProp_38"].duplicate(true)
+    angled_spec["outline"] = rectangle.duplicate(true)
+    if not editor._set_brush_spec("DraftProp_38", angled_spec):
+        _fail("Failed to stage a private rectangular polygon for angled clip")
+        return
+    editor._refresh_prop_inspection()
+    var angle_before: Array = editor.draft_brush_specs["DraftProp_38"]["outline"].duplicate(true)
+    var angle_history := editor.undo_stack.size()
+    if (editor.polygon_clip_axis_selector.item_count != 3
+        or editor.polygon_clip_angle == null):
+        _fail("Actual Polygon Inspector missing v0.79 angled clip mode")
+        return
+    editor.polygon_clip_axis_selector.select(2)
+    editor._polygon_clip_mode_selected(2)
+    if not editor.polygon_clip_angle.editable:
+        _fail("Angled Polygon Clip SpinBox stayed locked in angled mode")
+        return
+    editor.polygon_clip_angle.value = 30.0
+    editor.polygon_clip_position.value = 0.0
+    editor.polygon_clip_keep_selector.select(0)
+    editor._clip_selected_polygon_footprint()
+    var angled_result: Array = editor.draft_brush_specs["DraftProp_38"]["outline"].duplicate(true)
+    var angled_mesh: Mesh = editor.draft_prop_copies["DraftProp_38"].mesh
+    if (not _outlines_close(angled_result, diagonal_left)
+        or editor.undo_stack.size() != angle_history + 1
+        or angled_mesh == null or angled_mesh.get_surface_count() != 3
+        or editor.draft_brush_specs["DraftProp_38"]["surface_style"]["top"]["preset"] != "Metal"):
+        _fail("Actual Inspector angled clip did not generate one undoable styled mesh")
+        return
+    editor._undo_edit()
+    if not _outlines_close(editor.draft_brush_specs["DraftProp_38"]["outline"], angle_before):
+        _fail("Angled clip Undo did not recover the private preclip rectangle")
+        return
+    editor._redo_edit()
+    if not _outlines_close(editor.draft_brush_specs["DraftProp_38"]["outline"], angled_result):
+        _fail("Angled clip Redo did not restore the cut polygon")
+        return
+    var unchanged_history := editor.undo_stack.size()
+    editor.polygon_clip_position.value = 1.5
+    editor._clip_selected_polygon_footprint()
+    if (editor.undo_stack.size() != unchanged_history
+        or not _outlines_close(editor.draft_brush_specs["DraftProp_38"]["outline"], angled_result)):
+        _fail("Refused no-op angled cut polluted Undo or modified a valid draft")
+        return
+    editor.polygon_clip_axis_selector.select(0)
+    editor._polygon_clip_mode_selected(0)
+    if editor.polygon_clip_angle.editable:
+        _fail("Angle control stayed editable after switching to axis-aligned mode")
+        return
+    editor._save_prop_draft()
+    var angled_doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+    if (typeof(angled_doc) != TYPE_DICTIONARY
+        or angled_doc["copies"].size() != 1
+        or not _outlines_close(angled_doc["copies"][0]["brush"]["outline"], angled_result)):
+        _fail("Angled polygon footprint not serialized into private source-isolated draft")
+        return
+    editor._set_brush_spec("DraftProp_38", Brush.default_spec("Polygon"))
+    editor._load_prop_draft()
+    if (not editor.draft_prop_copies.has("DraftProp_38")
+        or not _outlines_close(editor.draft_brush_specs["DraftProp_38"]["outline"], angled_result)
+        or editor.draft_brush_specs["DraftProp_38"]["surface_style"]["top"]["preset"] != "Metal"):
+        _fail("Angled polygon footprint or material did not survive full project reopen")
+        return
     if FileAccess.get_sha256(source) != source_hash:
         _fail("Invented original source bytes were modified")
         return
@@ -499,5 +613,5 @@ func _run() -> void:
             DirAccess.remove_absolute(path+suffix)
     DirAccess.remove_absolute(source)
     editor.queue_free()
-    print("DX2Ed v0.78 private Polygon Clip, Undo/Redo, material, Godot mesh and Save/reopen PASS")
+    print("DX2Ed v0.79 angled Polygon Clip, half-plane proofs, Undo/Redo, styled mesh and Save/reopen PASS")
     quit(0)
