@@ -79,6 +79,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 "native_editor/godot_editor/main.gd",
                 "native_editor/godot_editor/private_box_clip.gd",
                 "native_editor/godot_editor/private_box_multiclip.gd",
+                "native_editor/godot_editor/private_box_cap_picker.gd",
                 "native_editor/godot_editor/tests/smoke_t3ed_face_edit_roundtrip.gd",
                 "native_editor/godot_editor/tests/smoke_multi_view_workspace.gd",
                 "native_editor/godot_editor/tests/smoke_orthographic_gizmo_constraints.gd",
