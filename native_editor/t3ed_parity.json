@@ -74,7 +74,7 @@
       "status": "partial",
       "phase": 2,
       "evidence": "T3Ed ModeIntersect/ModeDeintersect/BrushClip/ModeTerrainEdit icon references. DX2Ed v0.78-v0.79 implements Inspector-driven local X/Z and angled 2D half-plane Brush Clip on one selected private Godot Polygon draft, with a signed normalized local cut-plane distance, conservative refusal of disconnected/degenerate/unchanged cuts, editor-only preview mesh regeneration, one-step Undo/Redo and private JSON Save/reopen. This is NOT a native source BSP/CSG brush clip, terrain editor, engine Intersect/Deintersect, or retail DX2 mission update. DX2Ed v0.80 adds an editor-only single arbitrary 3D plane clipping one private Box preview, generating an oriented capped convex mesh, refusing invalid/no-op/non-manifold/near-empty cuts, and supporting one-step Undo/Redo, Reset and private JSON Save/reopen. Original DX2 source BSP and collision are untouched.",
-      "next_step": "Extend the private authoring system to multi-plane 3D polyhedra, CSG intersection/difference and terrain; separately authenticate native DX2 BSP surface/vertex structures, regenerate Havok collision, and validate game-compatible output in the retail engine."
+      "next_step": "Extend the private authoring system to multi-plane 3D polyhedra, CSG intersection/difference and terrain; separately authenticate native DX2 BSP surface/vertex structures, regenerate Havok collision, and runtime-verify game-compatible output in the retail engine."
     },
     {
       "id": "vertex_face",
