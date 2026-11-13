@@ -32,6 +32,7 @@ REQUIRED = (
     "dx2sdk/private_brush_boundary.py",
     "dx2sdk/private_brush_pair_sat.py",
     "dx2sdk/private_brush_intersection.py",
+    "dx2sdk/private_brush_subtraction.py",
     "research/dx2/inspect_world_model_spans.py",
     "research/dx2/inspect_world_model_noop.py",
     "research/dx2/inspect_bsp_surface_provenance_hypotheses.py",
