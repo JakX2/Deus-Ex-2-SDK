@@ -55,6 +55,39 @@ func _run() -> void:
             + str(tested["report"].get("remaining_volume_m3", "?")))
         return
     (visual["root"] as Node3D).free()
+    # The difficult P101 case must render SIX different convex shell meshes,
+    # not flatten a non-convex cavity into one fake solid.
+    var large := Brush.default_spec("Box")
+    large["size"] = [4.0, 4.0, 4.0]
+    large["clip_plane"] = {
+        "normal": [1.0, 0.0, 0.0],
+        "distance": 1.0, "keep_positive": false,
+    }
+    var cavity_pose := Transform3D.IDENTITY
+    cavity_pose.origin = Vector3(-0.5, 0.0, 0.0)
+    var cavity: Dictionary = Bridge.preview_pair(
+        large, spec, Transform3D.IDENTITY, cavity_pose, "subtraction")
+    if not bool(cavity.get("ok", false)):
+        _fail("Private non-convex cavity worker refused: "
+            + str(cavity.get("message", "")))
+        return
+    var cavity_visual: Dictionary = Viewer.build_preview(
+        cavity["report"], "subtraction")
+    if (not bool(cavity_visual.get("ok", false))
+        or int(cavity_visual.get("pieces", -1)) != 6
+        or not is_equal_approx(float(cavity_visual.get("volume_m3", 0)), 44.0)
+        or (cavity_visual["root"] as Node3D).get_child_count() != 6):
+        _fail("Six-piece 44 m3 cavity viewport preview failed: "
+            + str(cavity_visual))
+        return
+    (cavity_visual["root"] as Node3D).free()
+    # The visual report boundary is untrusted: fractional JSON vertex
+    # indices must be rejected, not silently truncated to integers.
+    var corrupted: Dictionary = tested["report"].duplicate(true)
+    corrupted["pieces"][0]["faces"][0]["vertex_ids"][0] = 0.5
+    if bool(Viewer.build_preview(corrupted, "subtraction").get("ok", true)):
+        _fail("Fractional JSON CSG face vertex index was accepted")
+        return
     for denied in [
         [Brush.default_spec("Box"), spec],
         [spec, {"kind": "StaticMeshActor"}],
