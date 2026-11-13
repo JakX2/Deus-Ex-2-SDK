@@ -108,6 +108,62 @@ not that every original game visual has been faithfully reconstructed.
 For reproducible user-owned game-data measurements, see
 [`BENCHMARKING.md`](BENCHMARKING.md).
 
+## DXT3 explicit-alpha fast path (November 2026)
+
+A second real-asset analysis targeted **DXT3**, the only other compressed
+texture format observed in the available Seattle mission IBDs. All 19
+inspected mission bundles contained DXT1 and DXT3, but **none contained
+DXT5**. DXT5 remains on its original tested path until representative
+game assets are available.
+
+A new **standard-library-only** DXT3 path:
+- Caches a bounded 32,768 RGB565 endpoint-pair palette of four **opaque**
+  interpolated RGB colors (unlike DXT1's three-color transparent mode).
+- Expands the 4-bit explicit alpha channel into the high byte of packed
+  little-endian RGBA32 integers and writes four pixels with one
+  `struct.pack_into("<4I", ...)` call per full block scanline.
+- Handles partial blocks along the right/bottom edges without padding
+  into neighboring image rows.
+- Keeps DXT1, DXT5, DDS source mip bytes, cubemap faces and original
+  resource bytes unchanged.
+
+### Local data and A/B evidence
+
+On **m1_corp_campus_interior.ibd** (33 DXT3 resources,
+92,048 compressed 16-byte blocks), a three-run RGBA decoding test found:
+
+| Decode | Median wall time |
+| --- | ---: |
+| P175 generic DXT3 rows | **0.820 s** |
+| New packed DXT3 rows | **0.279 s** |
+
+The resulting **RGBA bytes matched exactly** across all 33 textures. The
+new speedup is roughly **2.94× for the DXT3-only decode workload**, not
+for the entire game map exporter.
+
+An **ABBA four-run** read-only A/B test of
+`M1_Seattle_Corp_Campus_Interior.gmp` (same original locally extracted
+GMP/mission IBD inputs, Linux CPython 3.13) measured:
+
+| Export implementation | Median full-map wall time |
+| --- | ---: |
+| P175 optimized exporter | **3.950 s** |
+| P176 DXT3 candidate | **3.770 s** |
+
+This corresponds to approximately **4.6% less elapsed export time** on
+that map. All four runs yielded **identical full GLB and JSON report
+SHA-256** across both candidates, and all original input hashes were
+unchanged. Missing shared `Kernel_GFXALL.ibd` still limits model and
+material completeness; these are not playable retail map exports.
+Small sample sizes, filesystem caches and machine load limit precision.
+The synthetic regression also tests both RGB565 endpoint orders,
+explicit alpha extremes, odd-sized images, and bounded palette reuse.
+
+The previously documented DXT1 results remain separate. It is not
+valid to add individual optimization percentages, since the bottlenecks
+and sampled conditions differ. No native BSP, CSG or collision writing
+is implemented by either pass.
+
 ## Limitations and follow-up
 
 - The DXT optimizations remain Python-based. Large-scale asset processing

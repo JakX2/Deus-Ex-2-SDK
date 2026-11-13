@@ -16,7 +16,7 @@ sys.path.insert(0,str(ROOT/'map_exporter'))
 sys.path.insert(0,str(ROOT/'tests'))
 
 import reference_legacy_exporter as legacy
-from dx2textures import Texture, rgba_pixels, png_bytes, to_png, to_dds, _dxt1_rgba_palette
+from dx2textures import Texture, rgba_pixels, png_bytes, to_png, to_dds, _dxt1_rgba_palette, _dxt3_rgb_palette
 from dx2level import Builder
 
 
@@ -88,6 +88,41 @@ class ExporterHotpathTests(unittest.TestCase):
         hits = _dxt1_rgba_palette.cache_info().hits
         self.assertEqual(rgba_pixels(t),before)
         self.assertGreater(_dxt1_rgba_palette.cache_info().hits,hits)
+
+    def test_dxt3_packed_alpha_cache_matches_legacy_in_both_endpoint_orders(self):
+        # DXT3 always has four opaque interpolated RGB colors, including
+        # c0<=c1, unlike DXT1's transparent three-color mode.
+        _dxt3_rgb_palette.cache_clear()
+        self.assertEqual(_dxt3_rgb_palette.cache_info().maxsize, 32768)
+        rng = random.Random(20261114)
+        for c0, c1 in (
+            (0xf800, 0x07e0), (0x001f, 0xffff), (0x7bef, 0x7bef)
+        ):
+            for w, h in ((1, 1), (3, 5), (7, 9), (16, 16), (31, 17), (129, 63)):
+                raw = b"".join(
+                    struct.pack("<QHHI", rng.getrandbits(64), c0, c1,
+                                rng.getrandbits(32))
+                    for _ in range(((w+3)//4)*((h+3)//4)))
+                tex = synthetic_texture("DXT3", w, h, raw)
+                with self.subTest(endpoints=(c0,c1), dimensions=(w,h)):
+                    self.assertEqual(rgba_pixels(tex), legacy.rgba_pixels(tex))
+                    self.assertEqual(to_png(tex),
+                                     png_bytes(w,h,legacy.rgba_pixels(tex)[2]))
+                    self.assertEqual(to_dds(tex)[-len(raw):],raw)
+        self.assertGreater(_dxt3_rgb_palette.cache_info().hits, 0)
+        self.assertLessEqual(_dxt3_rgb_palette.cache_info().currsize, 32768)
+
+    def test_dxt3_explicit_alpha_extremes_exact_bytes(self):
+        # Explicit alpha nibbles are [0..15]; alpha output must be nibble*17,
+        # independent of DXT color-index interpolation and cache state.
+        colors = struct.pack("<HHI", 0x001f, 0xffff, 0xE4E4E4E4)
+        nibbles = int("FEDCBA9876543210", 16)
+        tex = synthetic_texture("DXT3", 4, 4,
+                                struct.pack("<Q", nibbles)+colors)
+        w, h, rgba = rgba_pixels(tex)
+        self.assertEqual((w,h),(4,4))
+        self.assertEqual(rgba[3::4], bytes(range(0,256,17)))
+        self.assertEqual(rgba, legacy.rgba_pixels(tex)[2])
 
     def test_cubemap_six_faces_and_png_contact_sheet_equivalence(self):
         rng=random.Random(83)

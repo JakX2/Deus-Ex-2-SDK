@@ -167,6 +167,53 @@ def _dxt1_rgba_rows(w, h, raw, blocks_across):
     return bytes(out)
 
 
+
+@lru_cache(maxsize=32768)
+def _dxt3_rgb_palette(c0, c1):
+    """RGBA output's RGB low 24 bits for the four opaque DXT3 colors.
+
+    DXT3 always uses four-color interpolation regardless of endpoint order.
+    The 32-bit packed value leaves the top alpha byte free for a 4-bit
+    explicit-alpha expansion. Only 32768 endpoint pairs are cached.
+    """
+    p0 = _rgb565(c0)
+    p1 = _rgb565(c1)
+    p2 = tuple((2*a+b)//3 for a,b in zip(p0,p1))
+    p3 = tuple((a+2*b)//3 for a,b in zip(p0,p1))
+    return tuple(p[0] | (p[1]<<8) | (p[2]<<16) for p in (p0,p1,p2,p3))
+
+
+def _dxt3_rgba_rows(w, h, raw, blocks_across):
+    """Decode DXT3 scanlines using packed uint32 RGBA pixels.
+
+    This preserves the old explicit alpha/interpolated RGB rules exactly,
+    including clamping of cropped 4x4 blocks on non-multiple-of-4 images.
+    """
+    out = bytearray(w*h*4)
+    for by in range((h+3)//4):
+        for bx in range(blocks_across):
+            offset=(by*blocks_across+bx)*16
+            alpha_bits=struct.unpack_from('<Q',raw,offset)[0]
+            c0,c1,color_bits=struct.unpack_from('<HHI',raw,offset+8)
+            colors=_dxt3_rgb_palette(c0,c1)
+            width=min(4,w-bx*4)
+            height=min(4,h-by*4)
+            for yy in range(height):
+                alpha=(alpha_bits>>(16*yy))&65535
+                mask=(color_bits>>(8*yy))&255
+                p0=colors[mask&3] | (((alpha&15)*17)<<24)
+                p1=colors[(mask>>2)&3] | (((alpha>>4&15)*17)<<24)
+                p2=colors[(mask>>4)&3] | (((alpha>>8&15)*17)<<24)
+                p3=colors[(mask>>6)&3] | (((alpha>>12&15)*17)<<24)
+                target=((by*4+yy)*w+bx*4)*4
+                if width == 4:
+                    struct.pack_into('<4I',out,target,p0,p1,p2,p3)
+                else:
+                    for xx, packed in enumerate((p0,p1,p2,p3)[:width]):
+                        struct.pack_into('<I',out,target+xx*4,packed)
+    return bytes(out)
+
+
 def rgba_pixels(tex,face=0):
     """Decode the first mip into RGBA8, without optional third-party packages.
 
@@ -197,6 +244,8 @@ def rgba_pixels(tex,face=0):
         raise ValueError('Incorrect DXT mip length')
     if tex.fmt=='DXT1':
         return w,h,_dxt1_rgba_rows(w,h,raw,blocks_across)
+    if tex.fmt=='DXT3':
+        return w,h,_dxt3_rgba_rows(w,h,raw,blocks_across)
     out=bytearray(w*h*4)
     for by in range((h+3)//4):
         for bx in range(blocks_across):
