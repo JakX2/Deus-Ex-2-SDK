@@ -77,6 +77,7 @@ jobs:
               "original_retail_assets_included": False,
           }
           Path("comparison_manifest.json").write_text(json.dumps(manifest, indent=2)+"\n", encoding="utf-8")
+          assert json.loads(Path("comparison_manifest.json").read_text(encoding="utf-8")) == manifest
           print(json.dumps(manifest, indent=2))
           PY
       - name: Upload source-only A/B comparison files (NO game data)
