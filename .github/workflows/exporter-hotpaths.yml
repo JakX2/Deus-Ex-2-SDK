@@ -29,5 +29,7 @@ jobs:
         run: python -m py_compile map_exporter/dx2textures.py map_exporter/dx2level.py tests/reference_legacy_exporter.py tests/test_exporter_hotpaths.py tools/benchmark_exporter_hotpaths.py
       - name: Synthetic byte-equivalence tests (no retail assets)
         run: python -m unittest discover -s tests -p "test_exporter_hotpaths.py" -v
+      - name: HTML template runtime and injection tests (no retail assets)
+        run: python -m unittest discover -s tests -p "test_exporter_html_templates.py" -v
       - name: Benchmark smoke without perf assertions
         run: python tools/benchmark_exporter_hotpaths.py --size 64 --vectors 1000 --repeats 2

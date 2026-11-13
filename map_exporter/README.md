@@ -25,3 +25,23 @@ python .\map_exporter\dx2_map_exporter.py export --game-root "$root" --map M3_Ge
 ```
 
 The example file is only valid for the exact Trier map. The source game data is never modified. Inspect `Trier_Findings.md` and `TRANSFORM_CORRECTIONS.md` before relying on results.
+
+## HTML inspection/gallery templates
+
+The inspector and texture gallery HTML pages are now maintained as separate
+source files under `map_exporter/templates/`:
+
+- `dx2inspect_viewer.html`: actor position plot shown by `dx2inspect.py viewer`
+- `texture_gallery.html`: gallery page rendered by `dx2textures.py gallery`
+
+**Keep the entire `map_exporter/` directory together** when copying or
+packaging the scripts. Both CLI tools load these templates relative to their
+own module location, not the current working directory, and fail if a required
+template is missing. The generated HTML remains self-contained and usable
+offline. The source game files remain read-only.
+
+Run source-free template tests with:
+
+```powershell
+python -m unittest discover -s tests -p "test_exporter_html_templates.py" -v
+```
