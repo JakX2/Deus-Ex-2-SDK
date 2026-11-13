@@ -290,3 +290,68 @@ def inspect_private_box_convex(raw: Any) -> dict:
         "runtime_verified": False,
         "original_gmp_or_ibd_modified": False,
     }
+
+
+def inspect_private_draft_copy(document: Any, copy_name: str) -> dict:
+    """Preflight one authored Box from an existing private Godot draft JSON.
+
+    This does not open the map cache, the originating source map, or any
+    retail resource. Only the self-contained private brush record is read.
+    """
+    if (type(document) is not dict
+            or document.get("schema") != "DX2Ed-prop-draft-v1"
+            or document.get("read_only_source") is not True
+            or type(copy_name) is not str
+            or not copy_name.startswith("DraftProp_")
+            or not copy_name.removeprefix("DraftProp_").isdigit()
+            or len(copy_name) > 80):
+        raise ValueError("Expected source-isolated DX2Ed private draft and copy name")
+    rows = document.get("copies")
+    if type(rows) is not list or len(rows) > 2048:
+        raise ValueError("Private project copy list is malformed or oversized")
+    matches = [row for row in rows
+               if type(row) is dict and row.get("name") == copy_name]
+    if len(matches) != 1 or matches[0].get("from_actor") != "Brush::Box":
+        raise ValueError("Named private copy missing, duplicate or not authored Box")
+    report = inspect_private_box_convex(matches[0].get("brush"))
+    return {**report, "private_draft_copy": copy_name,
+            "read_only_original_source": True}
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Read one small JSON source-private brush or draft; print report only."""
+    import argparse
+    from pathlib import Path
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="Read-only independent private Box convex topology preflight")
+    parser.add_argument("private_json", type=Path,
+                        help="Private Box specification or DX2Ed-prop-draft-v1 JSON")
+    parser.add_argument("--copy", dest="copy_name",
+                        help="Required DraftProp_N name for full private draft JSON")
+    args = parser.parse_args(argv)
+    try:
+        path = args.private_json
+        # Never accept original GMP/IBD, game package paths or symlinks.
+        if (path.suffix.lower() != ".json" or path.is_symlink()
+                or not path.is_file() or not 0 < path.stat().st_size <= 128*1024):
+            raise ValueError("Only regular private JSON files up to 128 KiB are accepted")
+        data = json.loads(path.read_text(encoding="utf-8"),
+                          parse_constant=lambda _: (_ for _ in ()).throw(
+                              ValueError("Nonfinite JSON constants refused")))
+        if args.copy_name is None:
+            if type(data) is dict and data.get("schema") == "DX2Ed-prop-draft-v1":
+                raise ValueError("Select exactly one private --copy DraftProp_N")
+            report = inspect_private_box_convex(data)
+        else:
+            report = inspect_private_draft_copy(data, args.copy_name)
+        print(json.dumps(report, sort_keys=True, allow_nan=False))
+        return 0
+    except (OSError, UnicodeError, ValueError, TypeError) as exc:
+        print(f"Private Box preflight REFUSED: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
