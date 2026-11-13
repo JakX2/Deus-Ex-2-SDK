@@ -140,7 +140,7 @@ def rgba_pixels(tex,face=0):
         out[1::4]=raw[1::4]
         out[2::4]=raw[0::4]
         out[3::4]=(raw[3::4] if tex.fmt=='BGRA8'
-                    else b'\\xff'*(w*h))
+                    else bytes((255,))*(w*h))
         return w,h,bytes(out)
     if tex.fmt not in ('DXT1','DXT3','DXT5'):
         raise ValueError('Unsupported compressed texture format')
