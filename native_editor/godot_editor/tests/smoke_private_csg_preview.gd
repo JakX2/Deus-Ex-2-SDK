@@ -48,7 +48,11 @@ func _run() -> void:
         or int(visual.get("pieces", -1)) != 1
         or int(visual.get("triangles", -1)) != 12
         or not is_equal_approx(float(visual.get("volume_m3", 0)), 2.0)):
-        _fail("Python-to-Godot CSG shell generation failed")
+        _fail("Python-to-Godot CSG shell generation failed: "
+            + str(visual) + " | report piece count="
+            + str(tested["report"].get("piece_count", "?"))
+            + " report remaining m3="
+            + str(tested["report"].get("remaining_volume_m3", "?")))
         return
     (visual["root"] as Node3D).free()
     for denied in [
