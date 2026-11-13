@@ -426,6 +426,14 @@ var box_cap_drag_before: Dictionary = {}
 var box_cap_drag_original: Dictionary = {}
 var box_cap_drag_plane := Plane(Vector3.UP, 0.0)
 var box_cap_drag_anchor := Vector3.ZERO
+# v0.89 viewport-only private face tilt; source-independent draft metadata.
+var box_cap_turn_active := false
+var box_cap_turn_owner := ""
+var box_cap_turn_index := -1
+var box_cap_turn_before: Dictionary = {}
+var box_cap_turn_original: Dictionary = {}
+var box_cap_turn_screen_delta := Vector2.ZERO
+var box_cap_turn_axis := Vector3.ZERO
 var polygon_inspector_panel: VBoxContainer
 var polygon_vertex_selector: OptionButton
 var polygon_vertex_x: SpinBox
@@ -1990,11 +1998,14 @@ func _make_ui() -> void:
     box_clip_remove_selected_button.pressed.connect(_remove_selected_private_box_plane)
     box_clip_edit_row.add_child(box_clip_remove_selected_button)
     var box_clip_drag_hint := Label.new()
-    box_clip_drag_hint.text = "Alt+Ctrl+drag a visible cap: grid-snap its plane normal"
+    box_clip_drag_hint.text = (
+        "Alt+Ctrl+drag: move cap  |  Alt+Ctrl+Shift+drag: tilt cap ±5° grid")
     box_clip_drag_hint.tooltip_text = (
-        "Drag only a selected editor-authored convex Box cap along its own normal. "
-        + "Release to add one private Undo step; invalid geometry is refused. "
-        + "This never modifies original BSP or game collision.")
+        "Alt+Ctrl+left-drag moves a visible authored cap along its normal. "
+        + "Alt+Ctrl+Shift+left-drag tilts the cap around its area centroid: "
+        + "horizontal motion turns about local Y, vertical about local X. "
+        + "24 screen pixels = 5 degrees (max ±30); one Undo on release. "
+        + "No native BSP or game collision modifications.")
     private_box_clip_panel.add_child(box_clip_drag_hint)
     var box_clip_reorder_row := HBoxContainer.new()
     private_box_clip_panel.add_child(box_clip_reorder_row)
@@ -9765,6 +9776,124 @@ func _finish_private_box_cap_drag() -> void:
         status_label.text = "Cap drag made no valid change; no Undo step."
 
 
+## Direct viewport cap pivot tilt: the first >= 12px screen movement
+## locks the local rotation axis (horizontal=Y, vertical=X). Every preview
+## is rebuilt independently from mouse-down metadata to avoid cumulative
+## drift. Only nearest visible editor-authored cap triangles may start.
+func _begin_private_box_cap_turn_ray(
+        ray_origin: Vector3, ray_direction: Vector3) -> bool:
+    var name := _selected_private_box_name()
+    if (name.is_empty() or box_cap_turn_active or box_cap_drag_active):
+        return false
+    var node: MeshInstance3D = draft_prop_copies.get(name, null)
+    if (not is_instance_valid(node) or not node.is_visible_in_tree()
+        or node.mesh == null):
+        return false
+    var spec: Dictionary = draft_brush_specs[name]
+    var hit: Dictionary = PrivateBoxCapPicker.pick_cap(
+        spec, node.global_transform, ray_origin, ray_direction)
+    if hit.is_empty():
+        status_label.text = (
+            "Cap tilt refused: click a visible private clipped face.")
+        return false
+    var index := int(hit["plane_index"])
+    if index < 0 or index >= _private_box_plane_list(spec).size():
+        return false
+    # A cap without a uniquely identifiable, nonzero polygon cannot be
+    # used as a geometric pivot.
+    if PrivateBoxCapRotate.cap_area_centroid(spec, index).is_empty():
+        status_label.text = "Cap tilt refused: no valid visible centroid."
+        return false
+    box_cap_turn_before = _capture_edit_state()
+    box_cap_turn_original = spec.duplicate(true)
+    box_cap_turn_owner = name
+    box_cap_turn_index = index
+    box_cap_turn_screen_delta = Vector2.ZERO
+    box_cap_turn_axis = Vector3.ZERO
+    box_cap_turn_active = true
+    box_clip_plane_selector.select(index)
+    _selected_private_box_plane_changed(index)
+    status_label.text = (
+        "Private cap tilt: move horizontally for local Y or vertically "
+        + "for local X. 24px = 5°, max ±30°; release for one Undo.")
+    return true
+
+
+func _apply_private_box_cap_turn_motion(screen_delta: Vector2) -> void:
+    if not box_cap_turn_active or not screen_delta.is_finite():
+        return
+    var name := box_cap_turn_owner
+    if (name.is_empty() or name != _selected_private_box_name()
+        or not draft_brush_specs.has(name)):
+        return
+    box_cap_turn_screen_delta += screen_delta
+    if not box_cap_turn_screen_delta.is_finite():
+        box_cap_turn_screen_delta = Vector2.ZERO
+        return
+    if box_cap_turn_axis == Vector3.ZERO:
+        if box_cap_turn_screen_delta.length() < 12.0:
+            return
+        box_cap_turn_axis = (
+            Vector3.UP if absf(box_cap_turn_screen_delta.x)
+            >= absf(box_cap_turn_screen_delta.y)
+            else Vector3.RIGHT)
+    var pixels := (
+        box_cap_turn_screen_delta.x if box_cap_turn_axis == Vector3.UP
+        else box_cap_turn_screen_delta.y)
+    var degrees := clampf(
+        roundf(pixels / 24.0) * 5.0,
+        -PrivateBoxCapRotate.MAX_ANGLE_DEG,
+        PrivateBoxCapRotate.MAX_ANGLE_DEG)
+    var verified: Dictionary = {}
+    if absf(degrees) < 0.0001:
+        verified = box_cap_turn_original.duplicate(true)
+    else:
+        verified = PrivateBoxCapRotate.rotated_about_cap(
+            box_cap_turn_original, box_cap_turn_index,
+            box_cap_turn_axis, degrees)
+    if verified.is_empty():
+        status_label.text = (
+            "Cap tilt refused: proposed rotation would collapse or invalidate "
+            + "the closed private convex mesh. Previous preview retained.")
+        return
+    if verified == draft_brush_specs[name]:
+        return
+    if not _set_brush_spec(name, verified):
+        status_label.text = "Cap tilt refused: previous valid geometry retained."
+        return
+    _refresh_prop_inspection()
+    box_clip_plane_selector.select(box_cap_turn_index)
+    _selected_private_box_plane_changed(box_cap_turn_index)
+    status_label.text = (
+        "Private cap " + str(box_cap_turn_index + 1)
+        + " tilt " + str(degrees) + "° about local "
+        + ("Y" if box_cap_turn_axis == Vector3.UP else "X")
+        + ". Release to commit one Undo.")
+
+
+func _finish_private_box_cap_turn() -> void:
+    if not box_cap_turn_active:
+        return
+    var before := box_cap_turn_before
+    var owner := box_cap_turn_owner
+    var index := box_cap_turn_index
+    box_cap_turn_active = false
+    box_cap_turn_owner = ""
+    box_cap_turn_index = -1
+    box_cap_turn_before = {}
+    box_cap_turn_original = {}
+    box_cap_turn_screen_delta = Vector2.ZERO
+    box_cap_turn_axis = Vector3.ZERO
+    var after := _capture_edit_state()
+    if before.get("copies", {}) != after.get("copies", {}):
+        _record_edit("Viewport tilt private Box cap " + str(index + 1), before)
+        status_label.text = (
+            "Committed centroid-pivot cap tilt on " + owner
+            + ". One Undo step; original DX2 BSP unchanged.")
+    else:
+        status_label.text = "Private cap tilt made no valid change; no Undo step."
+
+
 func _change_brush_face(side: float) -> void:
     # Only a single editor-created box/wall/floor brush. Never pick a native
     # BSP triangle or move an imported original StaticMeshActor through here.
@@ -12953,6 +13082,7 @@ func _set_editor_tool(tool: String) -> void:
     if polygon_vertex_drag_active:
         _finish_polygon_vertex_drag()
     _finish_private_box_cap_drag()
+    _finish_private_box_cap_turn()
     _finish_gizmo_drag()
     editor_tool = tool
     _refresh_gizmo_shape()
@@ -12985,6 +13115,7 @@ func _input(event: InputEvent) -> void:
         if shortcut.pressed and not shortcut.echo and (shortcut.ctrl_pressed or shortcut.meta_pressed) and not shortcut.alt_pressed and not _text_input_focused():
             if shortcut.keycode == KEY_Z:
                 _finish_private_box_cap_drag()
+                _finish_private_box_cap_turn()
                 if shortcut.shift_pressed:
                     _redo_edit()
                 else:
@@ -12993,6 +13124,7 @@ func _input(event: InputEvent) -> void:
                 return
             elif shortcut.keycode == KEY_Y:
                 _finish_private_box_cap_drag()
+                _finish_private_box_cap_turn()
                 _redo_edit()
                 get_viewport().set_input_as_handled()
                 return
@@ -13050,6 +13182,17 @@ func _input(event: InputEvent) -> void:
                     dragging = true
                     drag_mode = "polygon_vertex"
                 elif (button.alt_pressed and button.ctrl_pressed
+                    and button.shift_pressed):
+                    # Never fall through to the ordinary orbit/actor tools
+                    # when no source-private visible capped face was hit.
+                    var cap_turn_ray := _mouse_ray(
+                        view_container.get_local_mouse_position())
+                    if (not cap_turn_ray.is_empty()
+                        and _begin_private_box_cap_turn_ray(
+                            cap_turn_ray["origin"], cap_turn_ray["direction"])):
+                        dragging = true
+                        drag_mode = "private_cap_turn"
+                elif (button.alt_pressed and button.ctrl_pressed
                     and not button.shift_pressed
                     and not _selected_private_box_name().is_empty()):
                     # A missed private cap must NOT fall back to orbiting or
@@ -13104,6 +13247,8 @@ func _input(event: InputEvent) -> void:
                     _finish_polygon_vertex_drag()
                 if drag_mode == "private_cap_drag":
                     _finish_private_box_cap_drag()
+                if drag_mode == "private_cap_turn":
+                    _finish_private_box_cap_turn()
                 if drag_mode == "gizmo":
                     _finish_gizmo_drag()
                 dragging = false
@@ -13138,6 +13283,8 @@ func _input(event: InputEvent) -> void:
                 if not cap_ray.is_empty():
                     _apply_private_box_cap_drag_ray(
                         cap_ray["origin"], cap_ray["direction"])
+            elif drag_mode == "private_cap_turn":
+                _apply_private_box_cap_turn_motion(motion.relative)
             get_viewport().set_input_as_handled()
         elif mouse_inside and source_collision_mode and (
             is_instance_valid(source_collision_section_vertex_marker)
