@@ -57,7 +57,7 @@ class PrivateOBJAuditTests(unittest.TestCase):
         spec = box(cut((1., 0., 0.)))
         data, _ = render_private_box_obj(spec)
         invalid = (
-            data.replace(b"v 0 ", b"v 0.01 ", 1),
+            data.replace(b"v ", b"v 0.01 ", 1),
             data.replace(b"f 1//", b"f 1/", 1),
             data.replace(b"s off", b"s 1", 1),
             data.replace(b"o DX2Ed_Private_Box", b"o OriginalDX2Mesh", 1),
