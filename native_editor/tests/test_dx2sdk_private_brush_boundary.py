@@ -82,9 +82,11 @@ class PrivateBoundaryTests(unittest.TestCase):
         expected_volume = 8 - 8*(3-math.sqrt(3)*1.4)**3/6
         self.assertAlmostEqual(report["enclosed_volume_m3"], expected_volume,
                                places=6)
-        self.assertEqual(
-            query_private_box_segment(shape, (0,0,0), (0,0,0))["contact_kind"],
-            "stationary-inside")
+        stationary = query_private_box_segment(
+            shape, (0,0,0), (0,0,0))
+        self.assertEqual(stationary["contact_kind"], "stationary-inside")
+        self.assertFalse(stationary["crosses_strict_interior"])
+        self.assertTrue(stationary["occupies_strict_interior"])
         reordered = build_private_box_boundary(box(*reversed(corners)))
         self.assertEqual(report["private_geometry_sha256"],
                          reordered["private_geometry_sha256"])
@@ -140,6 +142,23 @@ class PrivateBoundaryTests(unittest.TestCase):
         self.assertFalse(stationary["crosses_strict_interior"])
         self.assertFalse(
             query_private_box_segment(spec, (2,2,2), (2,2,2))["intersects"])
+
+    def test_keep_positive_plane_is_outward_and_segment_can_enter(self):
+        spec = box(cut((1,0,0), 0.0, keep_positive=True))
+        boundary = build_private_box_boundary(spec)
+        self.assertEqual((boundary["face_count"], boundary["edge_count"]),
+                         (6, 12))
+        cut_faces = [f for f in boundary["faces"]
+                     if f["kind"] == "private_cut_cap"]
+        self.assertEqual(len(cut_faces), 1)
+        self.assertEqual(cut_faces[0]["outward_normal"], [-1.0, -0.0, -0.0])
+        trace = query_private_box_segment(spec, (-2,0,0), (2,0,0))
+        self.assertTrue(trace["intersects"])
+        self.assertEqual(trace["contact_kind"], "interior-interval")
+        self.assertAlmostEqual(trace["entry_t"], 0.5)
+        self.assertAlmostEqual(trace["exit_t"], 0.75)
+        self.assertEqual(trace["entry_face_indices"],
+                         [cut_faces[0]["face_index"]])
 
     def test_refuse_nonfinite_broken_private_and_overbounded_geometry(self):
         spec = box(cut((1,0,0)))
