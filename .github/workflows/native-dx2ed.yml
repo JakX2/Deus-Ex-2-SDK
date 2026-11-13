@@ -114,8 +114,11 @@ jobs:
           timeout 20s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://private_csg_preview_mesh.gd
           python -m py_compile native_editor/godot_editor/backend/dx2_private_csg_recipe_worker.py
           timeout 20s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://private_csg_recipe_bridge.gd
+          timeout 20s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://private_csg_recipe_catalog.gd
       - name: Exercise actual Godot toolbar CSG intersection and subtract overlays
         run: timeout 100s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_private_csg_preview.gd
+      - name: Exercise P104 private project CSG recipe manager and tamper refusal
+        run: timeout 105s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_private_csg_catalog.gd
       - name: Exercise actual Godot cuboid and capped Box viewport face picking
         run: timeout 35s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_draft_brush_viewport_face_pick.gd
       - name: Exercise v0.80 actual Box clip, manifold, Undo/Redo and private Save/reopen
