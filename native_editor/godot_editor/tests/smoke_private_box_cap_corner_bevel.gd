@@ -149,7 +149,12 @@ func _run() -> void:
         or after != cut
         or editor.box_clip_plane_selector.selected != 1
         or editor.draft_prop_copies["DraftProp_91"].mesh == null):
-        _fail("Inspector corner bevel did not append the validated plane in one Undo")
+        _fail("Inspector corner bevel mismatch: history=" +
+            str(editor.undo_stack.size()) + " expected=" + str(history + 1)
+            + " index=" + str(editor.box_clip_plane_selector.selected)
+            + " after=" + JSON.stringify(after)
+            + " expected cut=" + JSON.stringify(cut)
+            + " status=" + editor.status_label.text)
         return
     editor._undo_edit()
     if editor.draft_brush_specs["DraftProp_91"] != before:
