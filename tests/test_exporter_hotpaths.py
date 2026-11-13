@@ -50,10 +50,10 @@ class ExporterHotpathTests(unittest.TestCase):
         dxt1=(struct.pack("<HHI",0xf800,0x07e0,0xffffffff),
               struct.pack("<HHI",0x001f,0xffff,0xffffffff))
         # DXT3: hand-picked 4-bit alpha values; DXT5 covers 8- and 6-alpha.
-        dxt3=(b"\\x10\\x32\\x54\\x76\\x98\\xba\\xdc\\xfe"+dxt1[0],)
+        dxt3=(bytes.fromhex("10 32 54 76 98 ba dc fe")+dxt1[0],)
         dxt5=(
-            bytes((250,8))+b"\\x13\\x57\\x9b\\xdf\\x13\\x57"+dxt1[0],
-            bytes((8,250))+b"\\x13\\x57\\x9b\\xdf\\x13\\x57"+dxt1[1],
+            bytes((250,8))+bytes.fromhex("13 57 9b df 13 57")+dxt1[0],
+            bytes((8,250))+bytes.fromhex("13 57 9b df 13 57")+dxt1[1],
         )
         for fmt,blocks in (("DXT1",dxt1),("DXT3",dxt3),("DXT5",dxt5)):
             for raw in blocks:
