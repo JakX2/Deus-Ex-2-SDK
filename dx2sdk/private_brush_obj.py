@@ -165,7 +165,7 @@ def export_private_box_obj(
     Caller explicitly chooses the output. Refuses symlinks, existing output
     and non-OBJ paths; original maps are not inputs to this interface.
     """
-    if type(destination) is not Path or destination.suffix.lower() != ".obj":
+    if not isinstance(destination, Path) or destination.suffix.lower() != ".obj":
         raise ValueError("Export destination must be a new .obj file")
     if destination.is_symlink() or destination.exists():
         raise ValueError("Output exists or is symlinked; refusing overwrite")
