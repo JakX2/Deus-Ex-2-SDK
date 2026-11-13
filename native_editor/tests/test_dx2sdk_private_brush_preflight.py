@@ -5,11 +5,16 @@ No retail Deus Ex files are read or emitted.
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 import math
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 
 from dx2sdk.private_brush_preflight import (
-    SCHEMA, inspect_private_box_convex,
+    SCHEMA, inspect_private_box_convex, inspect_private_draft_copy,
 )
 
 
@@ -167,6 +172,80 @@ class PrivateConvexBrushPreflightTests(unittest.TestCase):
                         {"kind": "Box"}, {"source_gmp": "retail.gmp"}):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 inspect_private_box_convex(invalid)
+
+
+    def test_select_exact_private_draft_box_without_touching_source(self):
+        draft = {
+            "schema": "DX2Ed-prop-draft-v1",
+            "map_cache": "C:/private/original-glb-cache",
+            "read_only_source": True,
+            "copies": [
+                {"name": "DraftProp_12", "from_actor": "Brush::Box",
+                 "brush": box(clip((1., 0., 0.))),
+                 "transform": [1,0,0,0,1,0,0,0,1,0,0,0]},
+                {"name": "DraftProp_13", "from_actor": "StaticMeshActor_13",
+                 "brush": box(clip((1., 0., 0.)))},
+            ],
+        }
+        unchanged = deepcopy(draft)
+        report = inspect_private_draft_copy(draft, "DraftProp_12")
+        self.assertEqual(draft, unchanged)
+        self.assertEqual(report["private_draft_copy"], "DraftProp_12")
+        self.assertTrue(report["read_only_original_source"])
+        self.assertEqual(report["enclosed_private_volume_m3"], 4.)
+        for name in ("DraftProp_0", "DraftProp_13", "DraftProp_19",
+                     "StaticMeshActor_12"):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                inspect_private_draft_copy(draft, name)
+        duplicate = deepcopy(draft)
+        duplicate["copies"].append(deepcopy(duplicate["copies"][0]))
+        with self.assertRaises(ValueError):
+            inspect_private_draft_copy(duplicate, "DraftProp_12")
+        duplicate["copies"].pop()
+        duplicate["read_only_source"] = False
+        with self.assertRaises(ValueError):
+            inspect_private_draft_copy(duplicate, "DraftProp_12")
+
+    def test_cli_accepts_only_small_private_json_and_never_writes_game_files(self):
+        valid = box(clip((1., 0., 0.)))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            spec = root / "private_brush.json"
+            spec.write_text(json.dumps(valid), encoding="utf-8")
+            source = root / "Original.gmp"
+            source.write_bytes(b"RETAIL_SENTINEL_DO_NOT_TOUCH")
+            source_before = source.read_bytes()
+            call = [
+                sys.executable, "-m", "dx2sdk.private_brush_preflight"
+            ]
+            ok = subprocess.run(call + [str(spec)],
+                                capture_output=True, text=True, check=False)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            report = json.loads(ok.stdout)
+            self.assertEqual(report["face_count"], 6)
+            self.assertFalse(report["original_gmp_or_ibd_modified"])
+            refuse = subprocess.run(call + [str(source)],
+                                    capture_output=True, text=True, check=False)
+            self.assertEqual(refuse.returncode, 2)
+            self.assertIn("REFUSED", refuse.stderr)
+            draft = root / "draft.json"
+            draft.write_text(json.dumps({
+                "schema": "DX2Ed-prop-draft-v1", "read_only_source": True,
+                "copies": [{"name": "DraftProp_2", "from_actor": "Brush::Box",
+                            "brush": valid}],
+            }), encoding="utf-8")
+            no_selection = subprocess.run(call + [str(draft)],
+                                         capture_output=True, text=True)
+            self.assertEqual(no_selection.returncode, 2)
+            selected = subprocess.run(call + [str(draft), "--copy", "DraftProp_2"],
+                                      capture_output=True, text=True)
+            self.assertEqual(selected.returncode, 0, selected.stderr)
+            self.assertEqual(json.loads(selected.stdout)["private_draft_copy"],
+                             "DraftProp_2")
+            self.assertEqual(source.read_bytes(), source_before)
+            self.assertEqual(sorted(p.name for p in root.iterdir()),
+                             ["Original.gmp", "draft.json", "private_brush.json"])
+
 
 
 if __name__ == "__main__":
