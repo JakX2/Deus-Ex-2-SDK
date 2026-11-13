@@ -62,11 +62,19 @@ static func _one_piece(raw: Variant, index: int, material: Material) -> Dictiona
             or face.get("face_index", -1) != faces.find(face)):
             return {"ok": false, "reason": "face-index-or-normal"}
         var checked: Array[int] = []
+        # Godot's JSON parser materializes numeric indices as floats.
+        # Accept only exact bounded integral values, never fractional IDs.
         for vertex_id in ids:
-            if (typeof(vertex_id) != TYPE_INT or vertex_id < 0
-                or vertex_id >= vertices.size() or checked.has(vertex_id)):
-                return {"ok": false, "reason": "face-vertex-id"}
-            checked.append(vertex_id)
+            if not _valid_number(vertex_id):
+                return {"ok": false, "reason": "face-vertex-id-nonnumeric"}
+            var number := float(vertex_id)
+            if (floorf(number) != number or number < 0
+                or number >= float(vertices.size())):
+                return {"ok": false, "reason": "face-vertex-id-out-of-range"}
+            var slot := int(number)
+            if checked.has(slot):
+                return {"ok": false, "reason": "face-vertex-id-duplicate"}
+            checked.append(slot)
         for j in range(1, checked.size()-1):
             var a := vertices[checked[0]]
             var b := vertices[checked[j]]
