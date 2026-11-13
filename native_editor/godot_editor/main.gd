@@ -5,6 +5,7 @@ const PrivateBoxCapDrag = preload("res://private_box_cap_drag.gd")
 const PrivateBoxCapRotate = preload("res://private_box_cap_rotate.gd")
 const PrivateBoxCapEdgeBevel = preload("res://private_box_cap_edge_bevel.gd")
 const PrivateBoxCapCornerBevel = preload("res://private_box_cap_corner_bevel.gd")
+const PrivateBoxOBJBridge = preload("res://private_box_obj_bridge.gd")
 const PrivateBoxMultiClip = preload("res://private_box_multiclip.gd")
 const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const MatLibBrowser = preload("res://matlib_browser.gd")
@@ -429,6 +430,10 @@ var box_cap_corner_depth: SpinBox
 var box_cap_corner_bevel_button: Button
 var box_cap_corner_highlight: MeshInstance3D
 var box_cap_corner_selection_token := ""
+var box_clip_export_obj_button: Button
+var box_clip_obj_dialog: FileDialog
+var box_clip_obj_export_owner := ""
+var box_clip_obj_last_result: Dictionary = {}
 var box_clip_active_brush_name := ""
 # Source-private Alt+Ctrl cap normal drag, one history operation on release.
 var box_cap_drag_active := false
@@ -2134,6 +2139,16 @@ func _make_ui() -> void:
     box_cap_corner_bevel_button.pressed.connect(
         _bevel_selected_private_box_corner)
     box_cap_corner_row.add_child(box_cap_corner_bevel_button)
+    box_clip_export_obj_button = Button.new()
+    box_clip_export_obj_button.text = "Export private Box OBJ..."
+    box_clip_export_obj_button.tooltip_text = (
+        "Export only the selected authored clipped Box, after independent "
+        + "Python convex validation. Local Godot metres, no textures, "
+        + "original DX2 BSP, GMP/IBD or Havok/MOPP collision. "
+        + "Creates a NEW OBJ and never overwrites files.")
+    box_clip_export_obj_button.pressed.connect(
+        _show_private_box_obj_export_dialog)
+    private_box_clip_panel.add_child(box_clip_export_obj_button)
     box_clip_reset_button = Button.new()
     box_clip_reset_button.text = "Reset to Box"
     box_clip_reset_button.tooltip_text = "Remove the private plane cut in one Undo step."
@@ -2318,6 +2333,15 @@ func _make_ui() -> void:
     gmp_dialog.filters = PackedStringArray(["*.gmp ; Deus Ex Invisible War map"])
     gmp_dialog.file_selected.connect(_open_gmp_file)
     add_child(gmp_dialog)
+    box_clip_obj_dialog = FileDialog.new()
+    box_clip_obj_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    box_clip_obj_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    box_clip_obj_dialog.filters = PackedStringArray([
+        "*.obj ; Source-private Godot Box OBJ preview (not DX2 BSP)"])
+    box_clip_obj_dialog.title = "Export private Box preview OBJ (NEW file only)"
+    box_clip_obj_dialog.file_selected.connect(
+        _export_selected_private_box_obj)
+    add_child(box_clip_obj_dialog)
     capsule_preview_dialog = FileDialog.new()
     capsule_preview_dialog.access = FileDialog.ACCESS_FILESYSTEM
     capsule_preview_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -9092,6 +9116,7 @@ func _refresh_brush_inspector() -> void:
             var previous_index := box_clip_plane_selector.selected if same_box else -1
             box_clip_active_brush_name = selected_name
             box_clip_reset_button.disabled = active_planes.is_empty()
+            box_clip_export_obj_button.disabled = active_planes.is_empty()
             box_clip_remove_last_button.disabled = active_planes.is_empty()
             box_clip_add_plane_button.disabled = active_planes.size() >= PrivateBoxMultiClip.MAX_PLANES
             box_clip_update_selected_button.disabled = active_planes.is_empty()
@@ -10025,6 +10050,46 @@ func _change_brush_face(side: float) -> void:
 
 
 ## Private authoring only: a single plane on one selected Box draft.
+## Explicit user-selected private mesh interchange. The dialog never
+## targets native GMP, original BSP actors or existing output files.
+func _show_private_box_obj_export_dialog() -> void:
+    var name := _selected_private_box_name()
+    if (name.is_empty() or box_clip_obj_dialog == null
+        or _private_box_plane_list(draft_brush_specs[name]).is_empty()):
+        status_label.text = (
+            "Select an editor-created Box with a validated 3D cut first.")
+        return
+    box_clip_obj_export_owner = name
+    box_clip_obj_dialog.current_file = name + ".obj"
+    box_clip_obj_dialog.popup_centered_ratio(0.78)
+
+
+func _export_selected_private_box_obj(path: String) -> void:
+    var name := _selected_private_box_name()
+    if (name.is_empty() or name != box_clip_obj_export_owner
+        or not draft_prop_copies.has(name)
+        or not is_instance_valid(draft_prop_copies[name])
+        or _private_box_plane_list(draft_brush_specs[name]).is_empty()):
+        box_clip_obj_last_result = {
+            "ok": false,
+            "message": "Selected private clipped Box changed. Export refused."}
+        status_label.text = str(box_clip_obj_last_result["message"])
+        return
+    box_clip_obj_export_owner = ""
+    box_clip_obj_last_result = PrivateBoxOBJBridge.export_clipped_box(
+        draft_brush_specs[name].duplicate(true), path)
+    if not bool(box_clip_obj_last_result.get("ok", false)):
+        status_label.text = str(box_clip_obj_last_result.get(
+            "message", "Private Box export refused."))
+        return
+    status_label.text = (
+        "Exported " + name + " as source-private OBJ: "
+        + str(box_clip_obj_last_result["triangle_count"])
+        + " triangles, SHA-256 "
+        + str(box_clip_obj_last_result["obj_sha256"]).substr(0, 12)
+        + ". Not a DX2 native BSP/collision file.")
+
+
 func _selected_private_box_name() -> String:
     var nodes := _selection_nodes()
     if nodes.size() != 1:
