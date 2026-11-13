@@ -3,6 +3,7 @@ const BrushGeometry = preload("res://brush_geometry.gd")
 const PrivateBoxCapPicker = preload("res://private_box_cap_picker.gd")
 const PrivateBoxCapDrag = preload("res://private_box_cap_drag.gd")
 const PrivateBoxCapRotate = preload("res://private_box_cap_rotate.gd")
+const PrivateBoxCapEdgeBevel = preload("res://private_box_cap_edge_bevel.gd")
 const PrivateBoxMultiClip = preload("res://private_box_multiclip.gd")
 const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const MatLibBrowser = preload("res://matlib_browser.gd")
@@ -417,6 +418,11 @@ var box_clip_rotate_y_neg_button: Button
 var box_clip_rotate_y_pos_button: Button
 var box_clip_rotate_x_neg_button: Button
 var box_clip_rotate_x_pos_button: Button
+var box_cap_edge_selector: OptionButton
+var box_cap_edge_depth: SpinBox
+var box_cap_edge_bevel_button: Button
+var box_cap_edge_highlight: MeshInstance3D
+var box_cap_edge_selection_token := ""
 var box_clip_active_brush_name := ""
 # Source-private Alt+Ctrl cap normal drag, one history operation on release.
 var box_cap_drag_active := false
@@ -2059,6 +2065,37 @@ func _make_ui() -> void:
     box_clip_rotate_x_pos_button.pressed.connect(
         _rotate_selected_private_box_cap.bind(Vector3.RIGHT, 5.0))
     box_clip_rotate_row.add_child(box_clip_rotate_x_pos_button)
+    var box_cap_edge_row := HBoxContainer.new()
+    private_box_clip_panel.add_child(box_cap_edge_row)
+    var box_cap_edge_title := Label.new()
+    box_cap_edge_title.text = "Cap edge:"
+    box_cap_edge_row.add_child(box_cap_edge_title)
+    box_cap_edge_selector = OptionButton.new()
+    box_cap_edge_selector.custom_minimum_size.x = 110
+    box_cap_edge_selector.tooltip_text = (
+        "Pick one perimeter edge of the selected visible private cap; "
+        + "the cyan edge highlight never changes original DX2 geometry.")
+    box_cap_edge_selector.item_selected.connect(
+        func(_index): _refresh_private_box_edge_highlight())
+    box_cap_edge_row.add_child(box_cap_edge_selector)
+    box_cap_edge_depth = SpinBox.new()
+    box_cap_edge_depth.min_value = 0.05
+    box_cap_edge_depth.max_value = 0.5
+    box_cap_edge_depth.step = 0.05
+    box_cap_edge_depth.value = 0.1
+    box_cap_edge_depth.custom_minimum_size.x = 85
+    box_cap_edge_depth.suffix = "m"
+    box_cap_edge_depth.tooltip_text = (
+        "Trim the selected edge inward by this local bisector distance. "
+        + "Range 0.05..0.5 m; closed convex validation required.")
+    box_cap_edge_row.add_child(box_cap_edge_depth)
+    box_cap_edge_bevel_button = Button.new()
+    box_cap_edge_bevel_button.text = "Bevel edge"
+    box_cap_edge_bevel_button.tooltip_text = (
+        "Append one validated chamfer cut at the selected cap perimeter edge. "
+        + "One Undo step; requires fewer than eight original cut planes.")
+    box_cap_edge_bevel_button.pressed.connect(_bevel_selected_private_box_edge)
+    box_cap_edge_row.add_child(box_cap_edge_bevel_button)
     box_clip_reset_button = Button.new()
     box_clip_reset_button.text = "Reset to Box"
     box_clip_reset_button.tooltip_text = "Remove the private plane cut in one Undo step."
@@ -8972,6 +9009,10 @@ func _refresh_brush_inspector() -> void:
     brush_inspector_panel.visible = show
     if not show:
         box_clip_active_brush_name = ""
+        box_cap_edge_selection_token = ""
+        _clear_private_box_edge_highlight()
+        if box_cap_edge_selector != null:
+            box_cap_edge_selector.clear()
         if box_clip_plane_selector != null:
             box_clip_plane_selector.clear()
         if private_box_clip_panel != null:
@@ -9032,10 +9073,12 @@ func _refresh_brush_inspector() -> void:
                 _refresh_private_box_reorder_buttons(active_planes.size(), selected_index)
             else:
                 _refresh_private_box_reorder_buttons(0, -1)
+            _refresh_private_box_edge_controls()
         else:
             box_clip_active_brush_name = ""
             box_clip_plane_selector.clear()
             _refresh_private_box_reorder_buttons(0, -1)
+            _refresh_private_box_edge_controls()
     brush_inspector_syncing = false
     _refresh_polygon_inspector()
     _refresh_polygon_vertex_handles()
@@ -9982,6 +10025,7 @@ func _selected_private_box_plane_changed(index: int) -> void:
         return
     _load_private_box_plane_controls(planes[index])
     _refresh_private_box_reorder_buttons(planes.size(), index)
+    _refresh_private_box_edge_controls()
     _refresh_brush_face_outline()
 
 
@@ -9992,6 +10036,120 @@ func _refresh_private_box_reorder_buttons(count: int, selected_index: int) -> vo
     if box_clip_move_down_button != null:
         box_clip_move_down_button.disabled = (
             selected_index < 0 or selected_index >= count - 1)
+
+
+## Only local private cap boundary edges are exposed. A cyan line lives
+## under the authored draft preview, never in original actor lists or JSON.
+func _clear_private_box_edge_highlight() -> void:
+    if is_instance_valid(box_cap_edge_highlight):
+        box_cap_edge_highlight.free()
+    box_cap_edge_highlight = null
+
+
+func _refresh_private_box_edge_controls() -> void:
+    if box_cap_edge_selector == null or box_cap_edge_bevel_button == null:
+        return
+    var name := _selected_private_box_name()
+    var cap_index := (
+        box_clip_plane_selector.selected if box_clip_plane_selector != null
+        else -1)
+    var token := name + ":" + str(cap_index)
+    var current_index := (
+        box_cap_edge_selector.selected
+        if token == box_cap_edge_selection_token else 0)
+    box_cap_edge_selection_token = token
+    var edges: Array = []
+    var planes: Array = []
+    if not name.is_empty() and cap_index >= 0:
+        var spec: Dictionary = draft_brush_specs[name]
+        planes = _private_box_plane_list(spec)
+        edges = PrivateBoxCapEdgeBevel.cap_boundary_edges(spec, cap_index)
+    box_cap_edge_selector.clear()
+    for i in range(edges.size()):
+        var edge: Dictionary = edges[i]
+        box_cap_edge_selector.add_item(
+            "Edge " + str(i + 1) + " (" +
+            str(snappedf(float(edge["length"]), 0.01)) + "m)")
+    if not edges.is_empty():
+        box_cap_edge_selector.select(
+            clampi(current_index, 0, edges.size() - 1))
+    box_cap_edge_selector.disabled = edges.is_empty()
+    box_cap_edge_bevel_button.disabled = (
+        edges.is_empty() or planes.size() >= PrivateBoxMultiClip.MAX_PLANES)
+    _refresh_private_box_edge_highlight()
+
+
+func _refresh_private_box_edge_highlight() -> void:
+    var name := _selected_private_box_name()
+    if name.is_empty() or box_cap_edge_selector == null:
+        _clear_private_box_edge_highlight()
+        return
+    var node: MeshInstance3D = draft_prop_copies.get(name, null)
+    var cap_index := box_clip_plane_selector.selected
+    var edges := PrivateBoxCapEdgeBevel.cap_boundary_edges(
+        draft_brush_specs[name], cap_index)
+    var edge_index := box_cap_edge_selector.selected
+    if (not is_instance_valid(node) or edge_index < 0
+        or edge_index >= edges.size()):
+        _clear_private_box_edge_highlight()
+        return
+    var edge: Dictionary = edges[edge_index]
+    if (is_instance_valid(box_cap_edge_highlight)
+        and box_cap_edge_highlight.get_parent() != node):
+        _clear_private_box_edge_highlight()
+    if not is_instance_valid(box_cap_edge_highlight):
+        box_cap_edge_highlight = MeshInstance3D.new()
+        box_cap_edge_highlight.name = "DX2Ed_DraftCapEdge_EDITOR_ONLY"
+        box_cap_edge_highlight.cast_shadow = (
+            GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+        box_cap_edge_highlight.set_meta("editor_only", true)
+        var ink := StandardMaterial3D.new()
+        ink.albedo_color = Color(0.12, 0.86, 1.0, 1.0)
+        ink.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+        ink.no_depth_test = true
+        ink.cull_mode = BaseMaterial3D.CULL_DISABLED
+        box_cap_edge_highlight.material_override = ink
+        node.add_child(box_cap_edge_highlight)
+    var wire := ImmediateMesh.new()
+    wire.surface_begin(Mesh.PRIMITIVE_LINES)
+    var lift: Vector3 = edge["outward"]
+    var a: Vector3 = edge["a"]
+    var b: Vector3 = edge["b"]
+    wire.surface_add_vertex(a + lift * 0.016)
+    wire.surface_add_vertex(b + lift * 0.016)
+    wire.surface_end()
+    box_cap_edge_highlight.mesh = wire
+
+
+func _bevel_selected_private_box_edge() -> void:
+    var name := _selected_private_box_name()
+    if (name.is_empty() or box_clip_plane_selector == null
+        or box_cap_edge_selector == null or box_cap_edge_depth == null):
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    var cap_index := box_clip_plane_selector.selected
+    var edge_index := box_cap_edge_selector.selected
+    var verified := PrivateBoxCapEdgeBevel.bevel_cap_edge(
+        spec, cap_index, edge_index, float(box_cap_edge_depth.value))
+    if verified.is_empty():
+        status_label.text = (
+            "Private edge bevel refused: edge missing, cap limit reached, "
+            + "or proposed geometry is degenerate/nonmanifold. Draft retained.")
+        return
+    var before := _capture_edit_state()
+    if not _set_brush_spec(name, verified):
+        status_label.text = "Private edge bevel refused; original draft retained."
+        return
+    _refresh_prop_inspection()
+    var added_index := _private_box_plane_list(verified).size() - 1
+    box_clip_plane_selector.select(added_index)
+    _selected_private_box_plane_changed(added_index)
+    _record_edit("Bevel selected private Box cap edge", before)
+    status_label.text = (
+        "Beveled private Box cap edge " + str(edge_index + 1)
+        + " at " + str(box_cap_edge_depth.value)
+        + " local metres. Added cut " + str(added_index + 1)
+        + "; one Undo step. Native DX2 BSP unchanged.")
 
 
 func _same_private_box_plane(a: Dictionary, b: Dictionary) -> bool:
