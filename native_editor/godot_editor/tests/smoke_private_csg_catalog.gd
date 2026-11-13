@@ -165,9 +165,10 @@ func _run() -> void:
     # A separate private cache has no registered recipes even if it shares
     # the same installed editor and original game-looking sentinel.
     var other := Catalog.load_catalog(scratch.path_join("other_project"))
+    var other_refresh := Catalog.refresh_recipe(
+        scratch.path_join("other_project"), 0)
     if (not bool(other.get("ok", false)) or not other["entries"].is_empty()
-        or bool(Catalog.refresh_recipe(scratch.path_join("other_project"), 0)
-            .get("ok", true))):
+        or bool(other_refresh.get("ok", true))):
         _fail("CSG catalog leaked recipes between distinct private caches")
         return
     # Unlink NEVER deletes the actual recipe and cleans only the selected
