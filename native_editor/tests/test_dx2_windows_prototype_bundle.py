@@ -83,6 +83,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 "native_editor/godot_editor/private_box_cap_drag.gd",
                 "native_editor/godot_editor/private_box_cap_rotate.gd",
                 "native_editor/godot_editor/private_box_cap_edge_bevel.gd",
+                "native_editor/godot_editor/private_box_cap_corner_bevel.gd",
                 "native_editor/godot_editor/tests/smoke_t3ed_face_edit_roundtrip.gd",
                 "native_editor/godot_editor/tests/smoke_multi_view_workspace.gd",
                 "native_editor/godot_editor/tests/smoke_orthographic_gizmo_constraints.gd",
