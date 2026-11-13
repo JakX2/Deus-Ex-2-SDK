@@ -57,6 +57,7 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
             self.assertIn(f"{ARCHIVE}/dx2sdk/bsp_model_noop.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/bsp_model_spans.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/private_brush_preflight.py", names)
+            self.assertIn(f"{ARCHIVE}/dx2sdk/private_brush_obj.py", names)
             self.assertIn(f"{ARCHIVE}/research/dx2/inspect_world_model_spans.py", names)
             self.assertIn(f"{ARCHIVE}/research/dx2/inspect_world_model_noop.py", names)
             self.assertIn(f"{ARCHIVE}/research/dx2/inspect_bsp_surface_provenance_hypotheses.py", names)
