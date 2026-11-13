@@ -85,6 +85,7 @@ REQUIRED = (
     "native_editor/godot_editor/private_box_cap_picker.gd",
     "native_editor/godot_editor/private_box_cap_drag.gd",
     "native_editor/godot_editor/private_box_cap_rotate.gd",
+    "native_editor/godot_editor/private_box_cap_edge_bevel.gd",
     "native_editor/godot_editor/tests/smoke_custom_polygon_geometry.gd",
     "native_editor/godot_editor/matlib_browser.gd",
     "native_editor/godot_editor/backend/dx2_matlib_catalog.py",
