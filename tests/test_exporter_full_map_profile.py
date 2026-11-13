@@ -33,7 +33,7 @@ class FullMapProfilerTests(unittest.TestCase):
     @staticmethod
     def _fake_export(level, output, *, manual, transform_overrides=None):
         assert output.parent != level.path.parent
-        assert manual
+        assert manual is not None  # Autodetected mission bundles use [] here.
         assert transform_overrides is None
         output.write_bytes(b"glTF"+bytes(range(20)))
         output.with_suffix(".report.json").write_text(
