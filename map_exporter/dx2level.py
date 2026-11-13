@@ -84,14 +84,29 @@ class Builder:
         self.doc['accessors'].append(rec)
         return len(self.doc['accessors'])-1
     def vectors(self,vectors,width,typ='VEC3'):
+        """Pack interleaved float32s and calculate POSITION bounds in one pass.
+
+        Keep the original numeric types for glTF JSON min/max and use the
+        same float conversion as the original exporter for binary packing.
+        No NumPy dependency, multiple axis scans or duplicate vertex walk.
+        """
         if not vectors:raise ValueError('Empty vertices')
-        if any(len(vec)!=width or any(not math.isfinite(float(x)) for x in vec) for vec in vectors):
-            raise ValueError('Invalid vertex data')
-        b=struct.pack('<'+str(len(vectors)*width)+'f',*(float(x) for vec in vectors for x in vec))
-        kwargs={}
-        if typ=='VEC3':
-            kwargs={'lo':[min(x[i] for x in vectors) for i in range(3)],
-                    'hi':[max(x[i] for x in vectors) for i in range(3)]}
+        if typ=='VEC3' and width<3:raise ValueError('Invalid VEC3 width')
+        flat=[]
+        lo=[math.inf]*3 if typ=='VEC3' else None
+        hi=[-math.inf]*3 if typ=='VEC3' else None
+        for vec in vectors:
+            if len(vec)!=width:raise ValueError('Invalid vertex data')
+            for axis,x in enumerate(vec):
+                number=float(x)
+                if not math.isfinite(number):
+                    raise ValueError('Invalid vertex data')
+                flat.append(number)
+                if lo is not None and axis<3:
+                    if number<lo[axis]:lo[axis]=x
+                    if number>hi[axis]:hi[axis]=x
+        b=struct.pack('<'+str(len(flat))+'f',*flat)
+        kwargs={'lo':lo,'hi':hi} if lo is not None else {}
         return self.acc(self.buf(b,34962),5126,len(vectors),typ,**kwargs)
     def material(self,name,source=None,alternate=None):
         key=(name.casefold(),source or '',alternate or '')
