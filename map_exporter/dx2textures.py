@@ -121,42 +121,62 @@ def _palette(colorblock,transparent):
 
 
 def rgba_pixels(tex,face=0):
+    """Decode the first mip into RGBA8, without optional third-party packages.
+
+    Bulk strided copies handle uncompressed BGRA; compressed DXT blocks are
+    assembled one scanline at a time. Neither path changes source textures.
+    """
     w,h,raw=tex.mipmaps[0]
     if tex.faces is not None:
         if not 0<=face<6:raise ValueError('Invalid cubemap face index')
         raw=tex.faces[0][face]
     if w*h>8192*8192:raise ValueError('Image too large')
     if tex.fmt in ('BGRA8','BGRX8'):
+        if len(raw)!=w*h*4:raise ValueError('Incorrect BGRA mip length')
         out=bytearray(w*h*4)
-        for i in range(w*h):
-            b,g,r,a=raw[i*4:i*4+4]
-            out[i*4:i*4+4]=bytes((r,g,b,a if tex.fmt=='BGRA8' else 255))
+        # Strided slice assignment runs the channel shuffle in C, avoiding
+        # w*h allocations/slice writes from the legacy per-pixel loop.
+        out[0::4]=raw[2::4]
+        out[1::4]=raw[1::4]
+        out[2::4]=raw[0::4]
+        out[3::4]=(raw[3::4] if tex.fmt=='BGRA8'
+                    else b'\\xff'*(w*h))
         return w,h,bytes(out)
+    if tex.fmt not in ('DXT1','DXT3','DXT5'):
+        raise ValueError('Unsupported compressed texture format')
     block_bytes=8 if tex.fmt=='DXT1' else 16
+    blocks_across=(w+3)//4
+    if len(raw)!=blocks_across*((h+3)//4)*block_bytes:
+        raise ValueError('Incorrect DXT mip length')
     out=bytearray(w*h*4)
     for by in range((h+3)//4):
-        for bx in range((w+3)//4):
-            at=(by*((w+3)//4)+bx)*block_bytes
+        for bx in range(blocks_across):
+            at=(by*blocks_across+bx)*block_bytes
             block=raw[at:at+block_bytes]
             colors=_palette(block[-8:],tex.fmt=='DXT1')
             if tex.fmt=='DXT3':
-                a=struct.unpack_from('<Q',block)[0]
-                alphas=[((a>>(4*i))&15)*17 for i in range(16)]
+                alpha_bits=struct.unpack_from('<Q',block)[0]
+                alphas=[((alpha_bits>>(4*i))&15)*17 for i in range(16)]
             elif tex.fmt=='DXT5':
                 a0,a1=block[:2];bits=int.from_bytes(block[2:8],'little')
                 if a0>a1: table=[a0,a1]+[((7-j)*a0+j*a1)//7 for j in range(1,7)]
                 else:table=[a0,a1]+[((5-j)*a0+j*a1)//5 for j in range(1,5)]+[0,255]
                 alphas=[table[(bits>>(3*i))&7] for i in range(16)]
             else:alphas=None
-            for yy in range(4):
-                for xx in range(4):
-                    x=bx*4+xx;y=by*4+yy
-                    if x>=w or y>=h:continue
-                    i=yy*4+xx
-                    r,g,b,aa=colors[i]
-                    out[4*(y*w+x):4*(y*w+x)+4]=bytes((r,g,b,alphas[i] if alphas is not None else aa))
+            width=min(4,w-4*bx)
+            height=min(4,h-4*by)
+            for yy in range(height):
+                row=yy*4
+                # Concatenate up to four pixels in C, then make ONE output
+                # slice assignment per block-row (instead of one per pixel).
+                if alphas is None:
+                    pixels=b''.join(bytes(colors[row+xx]) for xx in range(width))
+                else:
+                    pixels=b''.join(bytes((*colors[row+xx][:3],alphas[row+xx]))
+                                    for xx in range(width))
+                offset=((by*4+yy)*w+bx*4)*4
+                out[offset:offset+width*4]=pixels
     return w,h,bytes(out)
-
 
 def png_bytes(w,h,rgba):
     if len(rgba)!=w*h*4:raise ValueError('Incorrect RGBA buffer')
