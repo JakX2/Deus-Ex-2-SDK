@@ -16,7 +16,7 @@ sys.path.insert(0,str(ROOT/'map_exporter'))
 sys.path.insert(0,str(ROOT/'tests'))
 
 import reference_legacy_exporter as legacy
-from dx2textures import Texture, rgba_pixels, png_bytes, to_png, to_dds
+from dx2textures import Texture, rgba_pixels, png_bytes, to_png, to_dds, _dxt1_rgba_palette
 from dx2level import Builder
 
 
@@ -60,6 +60,34 @@ class ExporterHotpathTests(unittest.TestCase):
                 with self.subTest(fmt=fmt,raw=raw.hex()):
                     tex=synthetic_texture(fmt,4,4,raw)
                     self.assertEqual(rgba_pixels(tex),legacy.rgba_pixels(tex))
+
+    def test_dxt1_color_mask_reuse_and_bounded_endpoint_cache(self):
+        # Different color-index masks with the SAME RGB565 endpoints must not
+        # share output pixels; the cache stores only immutable palettes.
+        _dxt1_rgba_palette.cache_clear()
+        self.assertEqual(_dxt1_rgba_palette.cache_info().maxsize, 32768)
+        rng = random.Random(10531)
+        for c0,c1 in ((0xf800,0x07e0),(0x001f,0xffff),(0x7bef,0x7bef)):
+            for dimensions in ((4,4),(7,9),(1,5),(33,17)):
+                w,h = dimensions
+                raw = b"".join(struct.pack("<HHI",c0,c1,rng.getrandbits(32))
+                               for _ in range(((w+3)//4)*((h+3)//4)))
+                texture = synthetic_texture("DXT1",w,h,raw)
+                with self.subTest(colors=(c0,c1),dimensions=dimensions):
+                    self.assertEqual(rgba_pixels(texture),legacy.rgba_pixels(texture))
+                    # PNG and DDS behavior remains an exact source-only
+                    # transformation, never an altered game-owned input.
+                    self.assertEqual(to_dds(texture)[-len(raw):],raw)
+        current = _dxt1_rgba_palette.cache_info()
+        self.assertLessEqual(current.currsize, current.maxsize)
+        self.assertGreater(current.hits, 0)
+        # First and second decoding of the same block always agree.
+        block = struct.pack("<HHI",0xf800,0x07e0,0xE4E4E4E4)
+        t = synthetic_texture("DXT1",4,4,block)
+        before = rgba_pixels(t)
+        hits = _dxt1_rgba_palette.cache_info().hits
+        self.assertEqual(rgba_pixels(t),before)
+        self.assertGreater(_dxt1_rgba_palette.cache_info().hits,hits)
 
     def test_cubemap_six_faces_and_png_contact_sheet_equivalence(self):
         rng=random.Random(83)
