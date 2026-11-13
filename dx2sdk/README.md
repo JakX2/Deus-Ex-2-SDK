@@ -13,6 +13,31 @@ No original Deus Ex: Invisible War game files are included. Bring your own
 legally obtained retail `.gmp`, `.ibd`, `TriggerScript.zip` and, where
 needed, DX2Ed-generated private `actors.json` for that exact GMP.
 
+## v0.92: independent Python preflight for private convex Box brushes
+
+A second, **asset-free Python geometry implementation** now checks source-private
+Godot Box brush clipping records by enumerating halfspace triple intersections,
+reconstructing outward polygon faces, verifying reciprocal mesh edges,
+Euler characteristic, and a strictly decreasing enclosed volume at every cut.
+
+For a single private authored Box spec:
+
+~~~powershell
+python -m dx2sdk.private_brush_preflight C:\PrivateBrush\box.json
+~~~
+
+For a saved DX2Ed-prop-draft-v1 sidecar (select exactly one Brush::Box copy):
+
+~~~powershell
+python -m dx2sdk.private_brush_preflight C:\PrivateDrafts\draft.json --copy DraftProp_12
+~~~
+
+The read-only CLI accepts only small regular JSON files and prints a geometric
+report to stdout. It rejects GMP/IBD input. The resulting local face list is
+**not native DX2 World BSP**, and native BSP compilation, collision/MOPP
+regeneration, and retail playability are still absent. See
+docs/research/dx2ed-private-convex-python-preflight-v0-92.md.
+
 ## Standalone DX2SDK portable ZIP (no Godot needed)
 
 The SDK is also distributed as a separate **`DX2SDK_Python_v0_27_Portable`**
