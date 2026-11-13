@@ -10133,7 +10133,7 @@ func _show_private_box_obj_audit_dialog() -> void:
 
 func _audit_selected_private_box_obj(path: String) -> void:
     var name := _selected_private_box_name()
-    var unchanged := (
+    var unchanged: bool = (
         not name.is_empty()
         and name == box_clip_obj_audit_owner
         and draft_prop_copies.has(name)
