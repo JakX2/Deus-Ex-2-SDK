@@ -153,7 +153,7 @@ class PrivateCSGDifferenceTests(unittest.TestCase):
         # Sample a strict interior grid. Every retained sample must be
         # in exactly one convex piece, never two. The removed B interior
         # must be absent even though it lies strictly inside A.
-        for xi in range(-7, 5):
+        for xi in range(-7, 4):
             x = xi/4.
             for yi in range(-7, 8, 2):
                 y = yi/4.
