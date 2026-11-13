@@ -40,7 +40,7 @@ class ExporterTemplateTests(unittest.TestCase):
             contents=out.read_text(encoding='utf-8')
             self.assertTrue(contents.startswith('<!DOCTYPE html>'))
             self.assertIn('DX2 level object inspector',contents)
-            self.assertIn('Synthetic&lt;>',contents)
+            self.assertIn('Synthetic&lt;&amp;>',contents)
             self.assertIn('1 positioned objects',contents)
             self.assertIn('const objects=[',contents)
             self.assertIn('<\\/script>',contents)  # embedded data cannot close script
