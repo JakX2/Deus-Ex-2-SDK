@@ -9,6 +9,7 @@ const PrivateBoxOBJBridge = preload("res://private_box_obj_bridge.gd")
 const PrivateBoxOBJAuditBridge = preload("res://private_box_obj_audit_bridge.gd")
 const PrivateCSGPreviewBridge = preload("res://private_csg_preview_bridge.gd")
 const PrivateCSGPreviewMesh = preload("res://private_csg_preview_mesh.gd")
+const PrivateCSGRecipeBridge = preload("res://private_csg_recipe_bridge.gd")
 const PrivateBoxMultiClip = preload("res://private_box_multiclip.gd")
 const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const MatLibBrowser = preload("res://matlib_browser.gd")
@@ -447,6 +448,12 @@ var private_csg_subtraction_button: Button
 var private_csg_clear_button: Button
 var private_csg_preview_root: Node3D
 var private_csg_preview_last_result: Dictionary = {}
+var private_csg_recipe_save_button: Button
+var private_csg_recipe_load_button: Button
+var private_csg_recipe_save_dialog: FileDialog
+var private_csg_recipe_load_dialog: FileDialog
+var private_csg_recipe_pending: Dictionary = {}
+var private_csg_recipe_last_result: Dictionary = {}
 var box_clip_active_brush_name := ""
 # Source-private Alt+Ctrl cap normal drag, one history operation on release.
 var box_cap_drag_active := false
@@ -672,6 +679,23 @@ func _make_ui() -> void:
         "Discard only the disposable CSG overlay. No Undo or game file changes.")
     private_csg_clear_button.pressed.connect(_on_private_csg_clear_pressed)
     toolbar.add_child(private_csg_clear_button)
+    private_csg_recipe_save_button = Button.new()
+    private_csg_recipe_save_button.text = "Save CSG recipe..."
+    private_csg_recipe_save_button.tooltip_text = (
+        "Save only the current selected source-private A/B Box specs, "
+        + "proper-rigid poses and operation to a NEW .dx2csg.json file. "
+        + "No original game data or mesh is stored.")
+    private_csg_recipe_save_button.pressed.connect(
+        _show_private_csg_recipe_save_dialog)
+    toolbar.add_child(private_csg_recipe_save_button)
+    private_csg_recipe_load_button = Button.new()
+    private_csg_recipe_load_button.text = "Open CSG recipe..."
+    private_csg_recipe_load_button.tooltip_text = (
+        "Recompute and verify a saved .dx2csg.json private CSG recipe, "
+        + "then display a disposable overlay. No native map edits.")
+    private_csg_recipe_load_button.pressed.connect(
+        _show_private_csg_recipe_load_dialog)
+    toolbar.add_child(private_csg_recipe_load_button)
     var audit_gmp_btn := Button.new()
     audit_gmp_btn.text = "Audit native GMP"
     audit_gmp_btn.tooltip_text = "Check original map actors for writable Location fields, without changing game files"
@@ -2397,6 +2421,24 @@ func _make_ui() -> void:
     box_clip_obj_audit_dialog.file_selected.connect(
         _audit_selected_private_box_obj)
     add_child(box_clip_obj_audit_dialog)
+    private_csg_recipe_save_dialog = FileDialog.new()
+    private_csg_recipe_save_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    private_csg_recipe_save_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    private_csg_recipe_save_dialog.filters = PackedStringArray([
+        "*.dx2csg.json ; NEW private replayable CSG recipe"])
+    private_csg_recipe_save_dialog.title = "Save NEW source-private CSG recipe"
+    private_csg_recipe_save_dialog.file_selected.connect(
+        _save_private_csg_recipe_selected)
+    add_child(private_csg_recipe_save_dialog)
+    private_csg_recipe_load_dialog = FileDialog.new()
+    private_csg_recipe_load_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    private_csg_recipe_load_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    private_csg_recipe_load_dialog.filters = PackedStringArray([
+        "*.dx2csg.json ; Source-private CSG recipe (verify and recompute)"])
+    private_csg_recipe_load_dialog.title = "Open and verify private CSG recipe"
+    private_csg_recipe_load_dialog.file_selected.connect(
+        _load_private_csg_recipe_selected)
+    add_child(private_csg_recipe_load_dialog)
     capsule_preview_dialog = FileDialog.new()
     capsule_preview_dialog.access = FileDialog.ACCESS_FILESYSTEM
     capsule_preview_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -10232,6 +10274,7 @@ func _clear_private_csg_preview() -> void:
         private_csg_preview_root.free()
     private_csg_preview_root = null
     private_csg_preview_last_result = {}
+    private_csg_recipe_pending = {}
 
 
 func _on_private_csg_clear_pressed() -> void:
@@ -10283,6 +10326,124 @@ func _request_private_csg_preview(operation: String) -> void:
         + str(rendered["pieces"]) + " overlay piece(s), "
         + str(snappedf(float(rendered["volume_m3"]), 0.001))
         + " m³. Snapshot only; no DX2 BSP/physics or source writes.")
+
+
+## P103: Save only a validated, unchanged private pair and operation as a
+## new recipe. A recipe is NOT a serialized derived mesh and cannot modify
+## DX2 GMP/IBD. The Python loader verifies its full recomputation digest.
+func _show_private_csg_recipe_save_dialog() -> void:
+    var pair := _private_csg_selected_pair()
+    if (pair.is_empty() or not is_instance_valid(private_csg_preview_root)
+        or not bool(private_csg_preview_last_result.get("ok", false))
+        or private_csg_recipe_save_dialog == null):
+        status_label.text = (
+            "First preview exactly two selected source-private clipped Boxes.")
+        return
+    var a: Dictionary = pair["a"]
+    var b: Dictionary = pair["b"]
+    if (str(private_csg_preview_last_result.get("source_a", "")) !=
+            str(a["name"])
+        or str(private_csg_preview_last_result.get("source_b", "")) !=
+            str(b["name"])):
+        status_label.text = "Current CSG preview source pair changed. Rebuild it."
+        return
+    private_csg_recipe_pending = {
+        "a": str(a["name"]), "b": str(b["name"]),
+        "spec_a": a["spec"].duplicate(true),
+        "spec_b": b["spec"].duplicate(true),
+        "pose_a": (a["mesh"] as MeshInstance3D).global_transform,
+        "pose_b": (b["mesh"] as MeshInstance3D).global_transform,
+        "operation": str(private_csg_preview_last_result["operation"]),
+    }
+    private_csg_recipe_save_dialog.current_file = (
+        "private_" + str(private_csg_recipe_pending["operation"])
+        + ".dx2csg.json")
+    private_csg_recipe_save_dialog.popup_centered_ratio(0.75)
+
+
+func _save_private_csg_recipe_selected(path: String) -> void:
+    var pending := private_csg_recipe_pending.duplicate(true)
+    private_csg_recipe_pending = {}
+    var pair := _private_csg_selected_pair()
+    var unchanged: bool = (
+        not pending.is_empty()
+        and not pair.is_empty()
+        and is_instance_valid(private_csg_preview_root)
+        and bool(private_csg_preview_last_result.get("ok", false))
+        and str(private_csg_preview_last_result.get("operation", "")) ==
+            str(pending.get("operation", ""))
+        and str(pair["a"]["name"]) == str(pending.get("a", ""))
+        and str(pair["b"]["name"]) == str(pending.get("b", ""))
+        and pair["a"]["spec"] == pending.get("spec_a", {})
+        and pair["b"]["spec"] == pending.get("spec_b", {})
+        and (pair["a"]["mesh"] as MeshInstance3D).global_transform ==
+            pending.get("pose_a", Transform3D.IDENTITY)
+        and (pair["b"]["mesh"] as MeshInstance3D).global_transform ==
+            pending.get("pose_b", Transform3D.IDENTITY))
+    if not unchanged:
+        private_csg_recipe_last_result = {
+            "ok": false, "message": "Private CSG source selection, "
+                + "geometry, pose or preview changed. Save refused."}
+    else:
+        private_csg_recipe_last_result = PrivateCSGRecipeBridge.save_recipe(
+            path, str(pending["operation"]),
+            str(pending["a"]), str(pending["b"]),
+            pending["spec_a"], pending["spec_b"],
+            pending["pose_a"], pending["pose_b"])
+    if not bool(private_csg_recipe_last_result.get("ok", false)):
+        status_label.text = str(private_csg_recipe_last_result.get(
+            "message", "Private CSG recipe save refused."))
+        return
+    status_label.text = (
+        "Saved NEW private CSG recipe: "
+        + path.get_file() + ". Recomputed on reopen, not native DX2 BSP.")
+
+
+func _show_private_csg_recipe_load_dialog() -> void:
+    if private_csg_recipe_load_dialog != null:
+        private_csg_recipe_load_dialog.popup_centered_ratio(0.75)
+
+
+func _load_private_csg_recipe_selected(path: String) -> void:
+    var replay: Dictionary = PrivateCSGRecipeBridge.load_recipe(path)
+    if not bool(replay.get("ok", false)):
+        private_csg_recipe_last_result = replay
+        status_label.text = str(replay.get("message", "Private CSG recipe refused."))
+        return
+    if not is_instance_valid(world_root):
+        private_csg_recipe_last_result = {
+            "ok": false, "message": "Godot preview world unavailable."}
+        status_label.text = str(private_csg_recipe_last_result["message"])
+        return
+    var rendered: Dictionary = PrivateCSGPreviewMesh.build_preview(
+        replay["report"], str(replay["operation"]))
+    if not bool(rendered.get("ok", false)):
+        private_csg_recipe_last_result = rendered
+        status_label.text = str(rendered.get(
+            "message", "Private CSG recipe mesh preview refused."))
+        return
+    _clear_private_csg_preview()
+    private_csg_preview_root = rendered["root"]
+    world_root.add_child(private_csg_preview_root)
+    private_csg_preview_last_result = {
+        "ok": true, "from_private_recipe": true,
+        "operation": str(replay["operation"]),
+        "source_a": str(replay["source_private_a"]),
+        "source_b": str(replay["source_private_b"]),
+        "piece_count": int(rendered["pieces"]),
+        "triangle_count": int(rendered["triangles"]),
+        "volume_m3": float(rendered["volume_m3"]),
+    }
+    private_csg_recipe_last_result = {
+        "ok": true, "operation": str(replay["operation"]),
+        "path": path, "piece_count": int(rendered["pieces"]),
+        "computed_result_sha256": str(replay["computed_result_sha256"]),
+    }
+    status_label.text = (
+        "Replayed VERIFIED private CSG " + str(replay["operation"])
+        + ": " + str(rendered["pieces"]) + " pieces, "
+        + str(snappedf(float(rendered["volume_m3"]), 0.001))
+        + " m³. Private overlay only, not native DX2 BSP/collision.")
 
 
 func _selected_private_box_name() -> String:
