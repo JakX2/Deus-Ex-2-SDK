@@ -39,3 +39,55 @@ jobs:
         run: python tools/profile_dx2_map_export.py --help
       - name: Benchmark smoke without perf assertions
         run: python tools/benchmark_exporter_hotpaths.py --size 64 --vectors 1000 --repeats 2
+
+  source-only-comparison-bundle:
+    name: Prepare comparable main vs optimized exporter sources
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact candidate PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: candidate
+          persist-credentials: false
+      - name: Checkout original main baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: baseline
+          persist-credentials: false
+      - name: Record source revisions and check baseline/candidate tree shape
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import subprocess
+          a = lambda path: subprocess.check_output(["git", "-C", path, "rev-parse", "HEAD"], text=True).strip()
+          for folder in ("candidate", "baseline"):
+              for required in ("map_exporter/dx2level.py", "map_exporter/dx2textures.py", "map_exporter/dx2_map_exporter.py"):
+                  assert (Path(folder) / required).is_file(), (folder, required)
+          manifest = {
+              "schema": "DX2SDK-main-vs-optimized-source-bundle-v1",
+              "baseline_branch": "main", "baseline_sha": a("baseline"),
+              "candidate_sha": a("candidate"),
+              "source_only": True,
+              "original_retail_assets_included": False,
+          }
+          Path("comparison_manifest.json").write_text(json.dumps(manifest, indent=2)+"\\n", encoding="utf-8")
+          print(json.dumps(manifest, indent=2))
+          PY
+      - name: Upload source-only A/B comparison files (NO game data)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DX2_exporter_main_vs_optimized_source
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            comparison_manifest.json
+            baseline/map_exporter/
+            candidate/map_exporter/
+            candidate/tools/profile_dx2_map_export.py
+            candidate/map_exporter/BENCHMARKING.md
