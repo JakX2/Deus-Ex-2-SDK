@@ -19,7 +19,7 @@
 
 ## Synthetic evidence
 
-The headless Godot 4.3 fixture `tests/smoke_private_csg_preview.gd` exercises the actual toolbar events, Python worker and mesh builder using two authored clipped half-Boxes. It checks a translated subtraction and intersection that each yield a 2 m³ closed solid, selection/name ordering, material mesh generation, no Undo changes, invalid source original actor refusal, brush-edit invalidation, no private temporary JSON leaks and an untouched synthetic original-GMP sentinel. Windows source prototype package manifests and the offline package doctor now require the bridge, worker and fixture.
+The headless Godot 4.3 fixture `tests/smoke_private_csg_preview.gd` exercises the actual toolbar events, Python worker and mesh builder using two authored clipped half-Boxes. It checks a translated subtraction and intersection that each yield a 2 m³ closed solid; a **48 m³ A minus 4 m³ internal B** case generating **six separate Godot mesh nodes** enclosing 44 m³ total; rejection of fractional JSON vertex indices; selection/name ordering, material mesh generation, no Undo changes, invalid source original actor refusal, brush-edit invalidation, no private temporary JSON leaks and an untouched synthetic original-GMP sentinel. Windows source prototype package manifests and the offline package doctor now require the bridge, worker and fixture.
 
 ## Important limitations
 
