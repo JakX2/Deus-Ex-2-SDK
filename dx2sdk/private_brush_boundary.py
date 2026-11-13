@@ -278,7 +278,8 @@ def query_private_box_segment(
         **base,
         "intersects": True,
         "contact_kind": kind,
-        "crosses_strict_interior": kind in (
+        "crosses_strict_interior": kind == "interior-interval",
+        "occupies_strict_interior": kind in (
             "interior-interval", "stationary-inside"),
         "entry_t": lo, "exit_t": hi,
         "entry_point": list(p_enter), "exit_point": list(p_exit),
