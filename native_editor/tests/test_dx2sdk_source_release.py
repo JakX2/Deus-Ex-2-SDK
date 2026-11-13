@@ -60,6 +60,7 @@ class SDKStandaloneSourceReleaseTests(unittest.TestCase):
             self.assertIn(f"{ARCHIVE}/dx2sdk/private_brush_obj.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/private_brush_obj_audit.py", names)
             self.assertIn(f"{ARCHIVE}/dx2sdk/private_brush_boundary.py", names)
+            self.assertIn(f"{ARCHIVE}/dx2sdk/private_brush_pair_sat.py", names)
             self.assertIn(f"{ARCHIVE}/research/dx2/inspect_world_model_spans.py", names)
             self.assertIn(f"{ARCHIVE}/research/dx2/inspect_world_model_noop.py", names)
             self.assertIn(f"{ARCHIVE}/research/dx2/inspect_bsp_surface_provenance_hypotheses.py", names)
