@@ -15,6 +15,7 @@ import argparse
 import base64
 from collections import Counter
 from dataclasses import dataclass
+from functools import lru_cache
 import hashlib
 import html
 import io
@@ -120,6 +121,52 @@ def _palette(colorblock,transparent):
     return [colors[(mask>>(2*i))&3] for i in range(16)]
 
 
+
+@lru_cache(maxsize=32768)
+def _dxt1_rgba_palette(c0, c1):
+    """Immutable four-color DXT1 block palette, memoized by RGB565 endpoints.
+
+    Limited to 32768 16-bit endpoint pairs, avoiding unbounded state across
+    long asset processing sessions. DXT1's three-color+transparent mode is
+    preserved exactly; DXT3/DXT5 use their existing separate decoder path.
+    """
+    p0 = _rgb565(c0)
+    p1 = _rgb565(c1)
+    if c0 > c1:
+        p2 = tuple((2*a+b)//3 for a,b in zip(p0,p1))
+        p3 = tuple((a+2*b)//3 for a,b in zip(p0,p1))
+        return (bytes((*p0,255)), bytes((*p1,255)),
+                bytes((*p2,255)), bytes((*p3,255)))
+    p2 = tuple((a+b)//2 for a,b in zip(p0,p1))
+    return (bytes((*p0,255)), bytes((*p1,255)),
+            bytes((*p2,255)), b'\x00\x00\x00\x00')
+
+
+def _dxt1_rgba_rows(w, h, raw, blocks_across):
+    """Decode row-aligned DXT1 pixels with no per-pixel RGBA allocations."""
+    out = bytearray(w*h*4)
+    for by in range((h+3)//4):
+        for bx in range(blocks_across):
+            c0, c1, color_mask = struct.unpack_from(
+                '<HHI', raw, (by*blocks_across+bx)*8)
+            colors = _dxt1_rgba_palette(c0,c1)
+            width = min(4,w-bx*4)
+            height = min(4,h-by*4)
+            for yy in range(height):
+                row_mask = (color_mask>>(yy*8)) & 255
+                if width == 4:
+                    pixels = (colors[row_mask&3]
+                              + colors[(row_mask>>2)&3]
+                              + colors[(row_mask>>4)&3]
+                              + colors[(row_mask>>6)&3])
+                else:
+                    pixels = b''.join(colors[(row_mask>>(2*xx))&3]
+                                      for xx in range(width))
+                offset = ((by*4+yy)*w+bx*4)*4
+                out[offset:offset+width*4] = pixels
+    return bytes(out)
+
+
 def rgba_pixels(tex,face=0):
     """Decode the first mip into RGBA8, without optional third-party packages.
 
@@ -148,6 +195,8 @@ def rgba_pixels(tex,face=0):
     blocks_across=(w+3)//4
     if len(raw)!=blocks_across*((h+3)//4)*block_bytes:
         raise ValueError('Incorrect DXT mip length')
+    if tex.fmt=='DXT1':
+        return w,h,_dxt1_rgba_rows(w,h,raw,blocks_across)
     out=bytearray(w*h*4)
     for by in range((h+3)//4):
         for bx in range(blocks_across):
