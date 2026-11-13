@@ -29,59 +29,59 @@ static func _valid_number(value: Variant) -> bool:
 
 static func _one_piece(raw: Variant, index: int, material: Material) -> Dictionary:
     if typeof(raw) != TYPE_DICTIONARY:
-        return {"ok": false}
+        return {"ok": false, "reason": "non-dictionary-piece"}
     var points: Variant = raw.get("vertices", [])
     var faces: Variant = raw.get("faces", [])
     if (typeof(points) != TYPE_ARRAY or typeof(faces) != TYPE_ARRAY
-        or not 4 <= points.size() or points.size() > MAX_VERTICES
-        or not 4 <= faces.size() or faces.size() > MAX_FACES
+        or points.size() < 4 or points.size() > MAX_VERTICES
+        or faces.size() < 4 or faces.size() > MAX_FACES
         or raw.get("vertex_count", -1) != points.size()
         or raw.get("face_count", -1) != faces.size()
         or raw.get("euler_characteristic", -1) != 2
         or raw.get("all_edges_two_opposite_face_uses", false) != true
         or not _valid_number(raw.get("volume_m3", null))
         or float(raw["volume_m3"]) <= 0.0):
-        return {"ok": false}
+        return {"ok": false, "reason": "piece-count-or-volume"}
     var vertices: Array[Vector3] = []
     for source in points:
         var point := _vector(source)
         if not point.is_finite():
-            return {"ok": false}
+            return {"ok": false, "reason": "nonfinite-vertex"}
         vertices.append(point)
     var positions := PackedVector3Array()
     var normals := PackedVector3Array()
     var triangle_count := 0
     for face in faces:
         if typeof(face) != TYPE_DICTIONARY:
-            return {"ok": false}
+            return {"ok": false, "reason": "non-dictionary-face"}
         var ids: Variant = face.get("vertex_ids", [])
         var normal := _vector(face.get("outward_normal", null))
         if (typeof(ids) != TYPE_ARRAY or ids.size() < 3
             or ids.size() > 32 or not normal.is_finite()
             or absf(normal.length_squared()-1.0) > 0.0002
             or face.get("face_index", -1) != faces.find(face)):
-            return {"ok": false}
+            return {"ok": false, "reason": "face-index-or-normal"}
         var checked: Array[int] = []
         for vertex_id in ids:
             if (typeof(vertex_id) != TYPE_INT or vertex_id < 0
                 or vertex_id >= vertices.size() or checked.has(vertex_id)):
-                return {"ok": false}
+                return {"ok": false, "reason": "face-vertex-id"}
             checked.append(vertex_id)
         for j in range(1, checked.size()-1):
             var a := vertices[checked[0]]
             var b := vertices[checked[j]]
             var c := vertices[checked[j+1]]
             if (b-a).cross(c-a).dot(normal) <= 1e-10:
-                return {"ok": false}
+                return {"ok": false, "reason": "incorrect-winding"}
             for vertex in [a, b, c]:
                 positions.append(vertex)
                 normals.append(normal)
             triangle_count += 1
             if triangle_count > MAX_TRIANGLES:
-                return {"ok": false}
+                return {"ok": false, "reason": "triangle-capacity"}
     if (triangle_count != int(raw.get("triangle_count", -1))
         or positions.size() != triangle_count*3):
-        return {"ok": false}
+        return {"ok": false, "reason": "triangle-count-disagreement"}
     var arrays := []
     arrays.resize(Mesh.ARRAY_MAX)
     arrays[Mesh.ARRAY_VERTEX] = positions
@@ -89,7 +89,7 @@ static func _one_piece(raw: Variant, index: int, material: Material) -> Dictiona
     var geometry := ArrayMesh.new()
     geometry.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
     if geometry.get_surface_count() != 1:
-        return {"ok": false}
+        return {"ok": false, "reason": "empty-godot-surface"}
     var node := MeshInstance3D.new()
     node.name = "Private_CSG_Preview_Piece_" + str(index)
     node.mesh = geometry
@@ -153,7 +153,7 @@ static func build_preview(report: Variant, operation: String) -> Dictionary:
         var part := _one_piece(pieces[i], i, material)
         if not bool(part.get("ok", false)):
             root.free()
-            return {"ok": false, "message": "Invalid CSG preview shell geometry."}
+            return {"ok": false, "message": "Invalid CSG preview shell geometry: " + str(part.get("reason", "unknown")) + " in piece " + str(i)}
         root.add_child(part["node"])
         triangles += int(part["triangle_count"])
         vertices += int(part["vertex_count"])
