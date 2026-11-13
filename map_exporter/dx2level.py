@@ -55,7 +55,10 @@ def actor_matrix(actor, local_scale=(1.0, 1.0, 1.0)):
 
 
 class Builder:
-    def __init__(self,resources,materials,textures,alternate_skin_fallback=True):
+    def __init__(self,resources,materials,textures,alternate_skin_fallback=True,png_compression_level=7):
+        if type(png_compression_level) is not int or not 1<=png_compression_level<=9:
+            raise ValueError('PNG compression level must be an integer from 1 to 9')
+        self.png_compression_level=png_compression_level
         self.resources=resources;self.material_sources=materials;self.texture_sources=textures
         self.binary=bytearray()
         self.doc={'asset':{'version':'2.0','generator':'DX2 SDK Research 0.11',
@@ -196,7 +199,7 @@ class Builder:
             if tex_key not in self.texture_cache:
                 tex=parse_texture(bundle,res)
                 if tex.faces is None:
-                    png=to_png(tex)
+                    png=to_png(tex,self.png_compression_level)
                     imgid=len(self.doc['images'])
                     self.doc['images'].append({'name':f'{tex.name} ({bundle.name})',
                                                'mimeType':'image/png','bufferView':self.buf(png)})
@@ -295,14 +298,16 @@ def load_resource_index(paths):
     return bundles,indexes,collisions
 
 
-def export_level(map_path,bundles,output,report,transform_overrides=None,alternate_skin_fallback=True):
+def export_level(map_path,bundles,output,report,transform_overrides=None,alternate_skin_fallback=True,png_compression_level=7):
+    if type(png_compression_level) is not int or not 1<=png_compression_level<=9:
+        raise ValueError('PNG compression level must be an integer from 1 to 9')
     transform_overrides=transform_overrides or {}
     pkg=Package(map_path)
     if pkg.version!=95:raise ValueError('This exporter is tested only with Ion Storm package version 95')
     blocks=find_bsp(pkg)
     actors,_,scene_stats=scene_data(pkg,blocks,mesh_metadata(pkg),{})
     allbundles,idx,collisions=load_resource_index(bundles)
-    builder=Builder(idx[4],idx[10],idx[8],alternate_skin_fallback=alternate_skin_fallback)
+    builder=Builder(idx[4],idx[10],idx[8],alternate_skin_fallback=alternate_skin_fallback,png_compression_level=png_compression_level)
     builder.doc['asset']['extras'].update({'DX2SourceMapSHA256':hashlib.sha256(pkg.data).hexdigest(),
                                               'DX2SourceMapName':pkg.path.name,
                                               'DX2UnitsToMetres':SCALE})
@@ -380,9 +385,11 @@ def main():
                    help='Can repeat; listed order determines precedence for duplicate names. Put upper before Maps.zip.')
     a.add_argument('-o','--output',type=Path,required=True)
     a.add_argument('--report',type=Path)
+    a.add_argument('--png-compression',type=int,choices=range(1,10),default=7,
+                   help='zlib PNG level 1..9 (default 7; lower is faster but larger)')
     args=a.parse_args()
     report=args.report or args.output.with_suffix('.report.json')
-    result=export_level(args.map,args.bundle,args.output,report)
+    result=export_level(args.map,args.bundle,args.output,report,png_compression_level=args.png_compression)
     print(json.dumps(result,indent=2))
 
 if __name__=='__main__':main()

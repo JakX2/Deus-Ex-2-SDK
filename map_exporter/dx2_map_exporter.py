@@ -127,7 +127,9 @@ def load_transform_overrides(path: Path, map_name: str) -> dict[str, tuple[float
         corrected[name]=tuple(float(v) for v in values)
     return corrected
 
-def run_export(level: LevelChoice, output: Path, manual: list[Path] | None=None, strict: bool=False, transform_overrides: Path | None=None, alternate_skin_fallback: bool=True) -> dict:
+def run_export(level: LevelChoice, output: Path, manual: list[Path] | None=None, strict: bool=False, transform_overrides: Path | None=None, alternate_skin_fallback: bool=True, png_compression_level: int=7) -> dict:
+    if type(png_compression_level) is not int or not 1<=png_compression_level<=9:
+        raise ValueError('PNG compression level must be an integer from 1 to 9')
     output = output.expanduser().resolve()
     if output.suffix.casefold() != '.glb':
         raise ValueError('Output must end in .glb')
@@ -141,7 +143,7 @@ def run_export(level: LevelChoice, output: Path, manual: list[Path] | None=None,
     report_path = output.with_suffix('.report.json')
     # The original exporter runs read-only and embeds PNGs in the GLB.
     overrides=load_transform_overrides(transform_overrides,level.path.name) if transform_overrides else {}
-    report = export_level(level.path,bundles,output,report_path,overrides,alternate_skin_fallback=alternate_skin_fallback)
+    report = export_level(level.path,bundles,output,report_path,overrides,alternate_skin_fallback=alternate_skin_fallback,png_compression_level=png_compression_level)
     if report['missing_mesh_actors']:
         msg=f"WARNING: {len(report['missing_mesh_actors'])} placed static meshes were missing. Inspect {report_path}."
         print(msg,file=sys.stderr)
@@ -167,6 +169,7 @@ def run_gui(initial: Path | None = None) -> None:
     out_var=tk.StringVar(value=str(Path.home()/'Desktop'/'DX2_Exports'))
     overrides_var=tk.StringVar(value='')
     alt_skins_var=tk.BooleanVar(value=True)
+    fast_png_var=tk.BooleanVar(value=False)
     status=tk.StringVar(value='Choose your Deus Ex Invisible War installation to scan for maps.')
     rows=[]
     events=queue.Queue()
@@ -215,7 +218,7 @@ def run_gui(initial: Path | None = None) -> None:
         status.set('Exporting; decoding meshes and textures. This may take a little while.')
         def worker():
             try:
-                result=run_export(lv,output,transform_overrides=Path(overrides_var.get()) if overrides_var.get().strip() else None,alternate_skin_fallback=alt_skins_var.get())
+                result=run_export(lv,output,transform_overrides=Path(overrides_var.get()) if overrides_var.get().strip() else None,alternate_skin_fallback=alt_skins_var.get(),png_compression_level=1 if fast_png_var.get() else 7)
                 events.put(('ok',output,result))
             except Exception as e:events.put(('error',str(e)))
         threading.Thread(target=worker,daemon=True).start()
@@ -250,6 +253,7 @@ def run_gui(initial: Path | None = None) -> None:
     ttk.Entry(dst,textvariable=overrides_var).grid(row=2,column=0,sticky='ew')
     ttk.Button(dst,text='Browse...',command=browse_overrides).grid(row=2,column=1,padx=6)
     ttk.Checkbutton(dst,text='Approximate missing materials using available alternate mesh skins',variable=alt_skins_var).grid(row=3,column=0,sticky='w',pady=(7,0))
+    ttk.Checkbutton(dst,text='Fast PNG compression (larger GLB, same pixels)',variable=fast_png_var).grid(row=4,column=0,sticky='w',pady=(4,0))
     ttk.Label(root,text='Select the map to export (mission resource bundle detected automatically):').grid(row=2,column=0,sticky='w',padx=15,pady=(8,2))
     mid=ttk.Frame(root);mid.grid(row=3,column=0,sticky='nsew',padx=12,pady=5);mid.columnconfigure(0,weight=1);mid.rowconfigure(0,weight=1)
     tree=ttk.Treeview(mid,columns=('map','mission','shared'),show='headings',selectmode='browse')
@@ -282,6 +286,8 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument('--transform-overrides',type=Path,help='Per-map JSON with optional actor scale/mirror corrections')
     e.add_argument('--no-alternate-skins',action='store_true',help='Preserve unresolved original material placeholders rather than preview alternate mesh skins')
     e.add_argument('--strict',action='store_true',help='Fail if placed static meshes are missing (export/report still created)')
+    e.add_argument('--png-compression',type=int,choices=range(1,10),default=7,
+                   help='zlib PNG level 1..9 (default 7; level 1 faster but larger GLB)')
     g=sub.add_parser('gui',help='Open a desktop graphical map chooser')
     g.add_argument('--game-root',type=Path)
     args=parser.parse_args(argv)
@@ -297,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f'Found {len(rows)} maps.')
     elif args.command=='export':
         level=resolve_map(args.game_root,args.map)
-        report=run_export(level,args.output,args.bundle,args.strict,args.transform_overrides,not args.no_alternate_skins)
+        report=run_export(level,args.output,args.bundle,args.strict,args.transform_overrides,not args.no_alternate_skins,args.png_compression)
         print(json.dumps({'status':'ok','glb':str(args.output.resolve()),'report':str(args.output.with_suffix('.report.json').resolve()),
                           'actors':report['placed_real_mesh_actors'],'triangles':report['total_scene_triangles'],
                           'embedded_textures':report['embedded_diffuse_images'],

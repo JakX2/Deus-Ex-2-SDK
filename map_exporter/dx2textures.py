@@ -276,18 +276,21 @@ def rgba_pixels(tex,face=0):
                 out[offset:offset+width*4]=pixels
     return w,h,bytes(out)
 
-def png_bytes(w,h,rgba):
+def png_bytes(w,h,rgba,compression_level=7):
+    # Fast encoding is OPT-IN; the historical level 7 stays byte-exact.
+    if type(compression_level) is not int or not 1<=compression_level<=9:
+        raise ValueError('PNG compression level must be an integer from 1 to 9')
     if len(rgba)!=w*h*4:raise ValueError('Incorrect RGBA buffer')
     raw=b''.join(b'\0'+rgba[y*w*4:(y+1)*w*4] for y in range(h))
     def chunk(tag,payload):return struct.pack('>I',len(payload))+tag+payload+struct.pack('>I',zlib.crc32(tag+payload)&0xffffffff)
     return (b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,6,0,0,0))+
-            chunk(b'IDAT',zlib.compress(raw,7))+chunk(b'IEND',b''))
+            chunk(b'IDAT',zlib.compress(raw,compression_level))+chunk(b'IEND',b''))
 
 
-def to_png(tex):
+def to_png(tex,compression_level=7):
     if tex.faces is None:
         w,h,raw=rgba_pixels(tex)
-        return png_bytes(w,h,raw)
+        return png_bytes(w,h,raw,compression_level)
     # 3 by 2 contact sheet for six cubemap faces; no orientation assumed.
     w,h=tex.width,tex.height
     atlas=bytearray(3*w*2*h*4)
@@ -297,7 +300,7 @@ def to_png(tex):
         for y in range(h):
             target=((oy+y)*3*w+ox)*4
             atlas[target:target+w*4]=rgba[y*w*4:(y+1)*w*4]
-    return png_bytes(3*w,2*h,bytes(atlas))
+    return png_bytes(3*w,2*h,bytes(atlas),compression_level)
 
 
 def to_dds(tex):
