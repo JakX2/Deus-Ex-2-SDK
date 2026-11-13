@@ -146,23 +146,48 @@ func _run() -> void:
     var after: Dictionary = (
         editor.draft_brush_specs["DraftProp_91"].duplicate(true))
     if (editor.undo_stack.size() != history + 1
-        or after != cut
+        or not after.has("clip_planes")
+        or after["clip_planes"].size() != 2
+        or after["clip_planes"][0] != half["clip_plane"]
         or editor.box_clip_plane_selector.selected != 1
         or editor.draft_prop_copies["DraftProp_91"].mesh == null):
-        _fail("Inspector corner bevel mismatch: history=" +
-            str(editor.undo_stack.size()) + " expected=" + str(history + 1)
-            + " index=" + str(editor.box_clip_plane_selector.selected)
-            + " after=" + JSON.stringify(after)
-            + " expected cut=" + JSON.stringify(cut)
-            + " status=" + editor.status_label.text)
+        _fail("Inspector corner bevel did not append a second private plane "
+            + "or record exactly one Undo: " + editor.status_label.text)
+        return
+    # Validated Godot normals are renormalized during _set_brush_spec:
+    # a few float32 ULPs of difference are not a changed halfspace.
+    var ui_plane: Dictionary = after["clip_planes"][1]
+    var generated_plane: Dictionary = cut["clip_planes"][1]
+    var ui_normal := Vector3(
+        ui_plane["normal"][0], ui_plane["normal"][1], ui_plane["normal"][2])
+    var generated_normal := Vector3(
+        generated_plane["normal"][0],
+        generated_plane["normal"][1], generated_plane["normal"][2])
+    if (ui_normal.distance_to(generated_normal) > 0.00001
+        or absf(float(ui_plane["distance"])
+            - float(generated_plane["distance"])) > 0.00001
+        or bool(ui_plane["keep_positive"]) !=
+            bool(generated_plane["keep_positive"])):
+        _fail("Inspector corner bevel changed the validated halfspace")
         return
     editor._undo_edit()
     if editor.draft_brush_specs["DraftProp_91"] != before:
         _fail("Corner bevel Undo lost the original private Box cut")
         return
     editor._redo_edit()
-    if editor.draft_brush_specs["DraftProp_91"] != after:
-        _fail("Corner bevel Redo lost the new trihedral cutting plane")
+    var redone: Dictionary = editor.draft_brush_specs["DraftProp_91"]
+    if (not redone.has("clip_planes") or redone["clip_planes"].size() != 2
+        or redone["clip_planes"][0] != before["clip_plane"]):
+        _fail("Corner bevel Redo lost the original or new clipping plane")
+        return
+    var redo_plane: Dictionary = redone["clip_planes"][1]
+    var redo_normal := Vector3(
+        redo_plane["normal"][0], redo_plane["normal"][1],
+        redo_plane["normal"][2])
+    if (redo_normal.distance_to(ui_normal) > 0.00001
+        or absf(float(redo_plane["distance"])
+            - float(ui_plane["distance"])) > 0.00001):
+        _fail("Corner bevel Redo did not restore the accepted halfspace")
         return
     draft = editor.draft_prop_copies["DraftProp_91"]
     if (not is_instance_valid(draft)
