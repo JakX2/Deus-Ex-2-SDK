@@ -107,6 +107,13 @@ jobs:
         run: timeout 20s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://private_box_obj_audit_bridge.gd
       - name: Exercise Godot Inspector OBJ round-trip, altered OBJ refusal and synthetic GMP safety
         run: timeout 75s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_private_box_obj_audit.gd
+      - name: Compile source-private CSG worker and Godot preview mesh bridges
+        run: |
+          python -m py_compile native_editor/godot_editor/backend/dx2_private_csg_preview_worker.py
+          timeout 20s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://private_csg_preview_bridge.gd
+          timeout 20s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://private_csg_preview_mesh.gd
+      - name: Exercise actual Godot toolbar CSG intersection and subtract overlays
+        run: timeout 100s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_private_csg_preview.gd
       - name: Exercise actual Godot cuboid and capped Box viewport face picking
         run: timeout 35s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_draft_brush_viewport_face_pick.gd
       - name: Exercise v0.80 actual Box clip, manifold, Undo/Redo and private Save/reopen
