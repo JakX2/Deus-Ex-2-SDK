@@ -154,10 +154,79 @@ func _run() -> void:
         or editor.undo_stack.size() != undo_before):
         _fail("Toolbar intersection result or read-only Undo mismatch")
         return
+    # P103: actual UI Save/Open recipe. It stores private operands, not
+    # derived mesh bytes or game data; reopen independently recomputes CSG.
+    var recipe_path := scratch.path_join("private_roundtrip.dx2csg.json")
+    var tampered_path := scratch.path_join("tampered.dx2csg.json")
+    for path in [recipe_path, tampered_path]:
+        if FileAccess.file_exists(path):
+            DirAccess.remove_absolute(path)
+    if (editor.private_csg_recipe_save_button == null
+        or editor.private_csg_recipe_load_button == null
+        or editor.private_csg_recipe_save_dialog == null
+        or editor.private_csg_recipe_load_dialog == null):
+        _fail("P103 private CSG Save/Open toolbar controls missing")
+        return
+    editor.private_csg_recipe_save_button.pressed.emit()
+    editor.private_csg_recipe_save_dialog.hide()
+    editor.private_csg_recipe_save_dialog.file_selected.emit(recipe_path)
+    if (not bool(editor.private_csg_recipe_last_result.get("ok", false))
+        or not FileAccess.file_exists(recipe_path)
+        or editor.undo_stack.size() != undo_before
+        or FileAccess.get_sha256(sentinel) != sentinel_sha):
+        _fail("P103 private CSG recipe Save dialog failed: "
+            + str(editor.private_csg_recipe_last_result))
+        return
+    var recipe_sha := FileAccess.get_sha256(recipe_path)
+    var repeated := editor.private_csg_recipe_last_result.duplicate(true)
+    editor.private_csg_recipe_save_button.pressed.emit()
+    editor.private_csg_recipe_save_dialog.hide()
+    editor.private_csg_recipe_save_dialog.file_selected.emit(recipe_path)
+    if (bool(editor.private_csg_recipe_last_result.get("ok", true))
+        or FileAccess.get_sha256(recipe_path) != recipe_sha):
+        _fail("P103 recipe Save overwrote preexisting recipe")
+        return
     editor.private_csg_clear_button.pressed.emit()
     if is_instance_valid(editor.private_csg_preview_root):
         _fail("Clear preview did not remove only ephemeral geometry")
         return
+    editor._clear_selection()
+    editor.private_csg_recipe_load_button.pressed.emit()
+    editor.private_csg_recipe_load_dialog.hide()
+    editor.private_csg_recipe_load_dialog.file_selected.emit(recipe_path)
+    var replay: Dictionary = editor.private_csg_recipe_last_result
+    if (not bool(replay.get("ok", false))
+        or int(replay.get("piece_count", 0)) != 1
+        or not is_instance_valid(editor.private_csg_preview_root)
+        or editor.private_csg_preview_root.get_child_count() != 1
+        or not bool(editor.private_csg_preview_last_result.get(
+            "from_private_recipe", false))
+        or editor.undo_stack.size() != undo_before
+        or FileAccess.get_sha256(recipe_path) != recipe_sha
+        or FileAccess.get_sha256(sentinel) != sentinel_sha):
+        _fail("P103 reopening source-private recipe failed: " + str(replay))
+        return
+    var content: Variant = JSON.parse_string(
+        FileAccess.get_file_as_string(recipe_path))
+    if typeof(content) != TYPE_DICTIONARY:
+        _fail("P103 saved private recipe JSON invalid")
+        return
+    content["piece_count"] = 42
+    var bad_file := FileAccess.open(tampered_path, FileAccess.WRITE)
+    if bad_file == null:
+        _fail("P103 cannot create tampered private recipe fixture")
+        return
+    bad_file.store_string(JSON.stringify(content))
+    bad_file.close()
+    editor.private_csg_recipe_load_dialog.file_selected.emit(tampered_path)
+    if (bool(editor.private_csg_recipe_last_result.get("ok", true))
+        or not is_instance_valid(editor.private_csg_preview_root)
+        or FileAccess.get_sha256(recipe_path) != recipe_sha
+        or FileAccess.get_sha256(sentinel) != sentinel_sha):
+        _fail("P103 accepted modified CSG recipe or changed existing preview")
+        return
+    editor._select_mesh_only(first)
+    editor._toggle_selection_mesh(second)
     # Rebuild and edit source metadata: stale result must disappear.
     editor.private_csg_subtraction_button.pressed.emit()
     var changed: Dictionary = spec.duplicate(true)
@@ -190,7 +259,8 @@ func _run() -> void:
             _fail("Private CSG staging JSON not cleaned")
             return
     editor.queue_free()
-    DirAccess.remove_absolute(sentinel)
+    for path in [sentinel, recipe_path, tampered_path]:
+        DirAccess.remove_absolute(path)
     DirAccess.remove_absolute(scratch)
-    print("DX2Ed P102 private CSG toolbar/mesh/Undo/GMP-sentinel PASS")
+    print("DX2Ed P103 private CSG recipe Save/Open/tamper/Undo/GMP-sentinel PASS")
     quit(0)
