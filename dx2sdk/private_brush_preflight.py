@@ -27,6 +27,24 @@ VERTEX_TOLERANCE = 0.00002
 MIN_CUT_VOLUME = 0.0001
 
 
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict:
+    """Refuse ambiguous repeated keys at every nesting level of private JSON."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate private JSON object key: {key!r}")
+        result[key] = value
+    return result
+
+
+def load_private_json_text(content: str) -> Any:
+    """Strict shared decoder for private preflight and OBJ CLI inputs."""
+    return json.loads(
+        content, object_pairs_hook=_unique_json_object,
+        parse_constant=lambda value: (_ for _ in ()).throw(
+            ValueError(f"Nonfinite JSON constant refused: {value}")))
+
+
 def _number(value: Any) -> float:
     if type(value) not in (int, float) or not math.isfinite(value):
         raise ValueError("Only finite numeric private brush coordinates accepted")
@@ -337,9 +355,7 @@ def main(argv: list[str] | None = None) -> int:
         if (path.suffix.lower() != ".json" or path.is_symlink()
                 or not path.is_file() or not 0 < path.stat().st_size <= 128*1024):
             raise ValueError("Only regular private JSON files up to 128 KiB are accepted")
-        data = json.loads(path.read_text(encoding="utf-8"),
-                          parse_constant=lambda _: (_ for _ in ()).throw(
-                              ValueError("Nonfinite JSON constants refused")))
+        data = load_private_json_text(path.read_text(encoding="utf-8"))
         if args.copy_name is None:
             if type(data) is dict and data.get("schema") == "DX2Ed-prop-draft-v1":
                 raise ValueError("Select exactly one private --copy DraftProp_N")
