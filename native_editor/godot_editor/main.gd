@@ -7,6 +7,8 @@ const PrivateBoxCapEdgeBevel = preload("res://private_box_cap_edge_bevel.gd")
 const PrivateBoxCapCornerBevel = preload("res://private_box_cap_corner_bevel.gd")
 const PrivateBoxOBJBridge = preload("res://private_box_obj_bridge.gd")
 const PrivateBoxOBJAuditBridge = preload("res://private_box_obj_audit_bridge.gd")
+const PrivateCSGPreviewBridge = preload("res://private_csg_preview_bridge.gd")
+const PrivateCSGPreviewMesh = preload("res://private_csg_preview_mesh.gd")
 const PrivateBoxMultiClip = preload("res://private_box_multiclip.gd")
 const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const MatLibBrowser = preload("res://matlib_browser.gd")
@@ -440,6 +442,11 @@ var box_clip_obj_audit_dialog: FileDialog
 var box_clip_obj_audit_owner := ""
 var box_clip_obj_audit_spec: Dictionary = {}
 var box_clip_obj_audit_last_result: Dictionary = {}
+var private_csg_intersection_button: Button
+var private_csg_subtraction_button: Button
+var private_csg_clear_button: Button
+var private_csg_preview_root: Node3D
+var private_csg_preview_last_result: Dictionary = {}
 var box_clip_active_brush_name := ""
 # Source-private Alt+Ctrl cap normal drag, one history operation on release.
 var box_cap_drag_active := false
@@ -641,6 +648,30 @@ func _make_ui() -> void:
     demo_btn.text = "Load demo cubes"
     demo_btn.pressed.connect(func(): load_glb(ProjectSettings.globalize_path("res://demo/scene.glb")))
     toolbar.add_child(demo_btn)
+    # P102: explicit editor-private two-brush CSG visualization. Operations
+    # create ONLY disposable render shells, never original BSP or Actor data.
+    private_csg_intersection_button = Button.new()
+    private_csg_intersection_button.text = "Preview CSG A ∩ B"
+    private_csg_intersection_button.tooltip_text = (
+        "Ctrl-select TWO private clipped Boxes. Alphabetically first is A; "
+        + "second is B. Read-only coloured preview, not native DX2 BSP.")
+    private_csg_intersection_button.pressed.connect(
+        _request_private_csg_preview.bind("intersection"))
+    toolbar.add_child(private_csg_intersection_button)
+    private_csg_subtraction_button = Button.new()
+    private_csg_subtraction_button.text = "Preview CSG A - B"
+    private_csg_subtraction_button.tooltip_text = (
+        "Ctrl-select exactly TWO private clipped Boxes. Alphabetically first "
+        + "is A (retained), second is B (removed). Private preview only.")
+    private_csg_subtraction_button.pressed.connect(
+        _request_private_csg_preview.bind("subtraction"))
+    toolbar.add_child(private_csg_subtraction_button)
+    private_csg_clear_button = Button.new()
+    private_csg_clear_button.text = "Clear CSG preview"
+    private_csg_clear_button.tooltip_text = (
+        "Discard only the disposable CSG overlay. No Undo or game file changes.")
+    private_csg_clear_button.pressed.connect(_on_private_csg_clear_pressed)
+    toolbar.add_child(private_csg_clear_button)
     var audit_gmp_btn := Button.new()
     audit_gmp_btn.text = "Audit native GMP"
     audit_gmp_btn.tooltip_text = "Check original map actors for writable Location fields, without changing game files"
@@ -3447,6 +3478,7 @@ func load_actors(path: String) -> void:
     status_label.text = "Loaded %d actors, %d meshes. Click a mesh or select an actor." % [actors.size(), mesh_count]
 
 func _clear_current_scene() -> void:
+    _clear_private_csg_preview()
     if light_color_panel != null:
         light_color_panel.reset_context()
     if multi_light_color_panel != null:
@@ -8567,6 +8599,7 @@ func _capture_edit_state() -> Dictionary:
     }
 
 func _apply_edit_state(state: Dictionary) -> void:
+    _clear_private_csg_preview()
     _clear_selection()
     _clear_draft_groups()
     # Restore baseline first. A reverted move must not linger if absent
@@ -8666,6 +8699,8 @@ func _record_edit(label: String, before: Dictionary) -> void:
         and before.get("property_edits", {}) == after.get("property_edits", {})
         and cursor_unchanged):
         return
+    # Every genuine edit invalidates any previously snapshotted CSG preview.
+    _clear_private_csg_preview()
     # History owns immutable snapshots. Callers may clear/reuse their working
     # dictionaries after recording (gizmo drag does this on mouse release).
     undo_stack.append({
@@ -8809,6 +8844,7 @@ func _set_brush_spec(name: String, raw: Variant) -> bool:
         surface_material.cull_mode = BaseMaterial3D.CULL_DISABLED
         node.material_override = surface_material
     draft_brush_specs[name] = spec
+    _clear_private_csg_preview()
     pick_faces_by_mesh.clear()
     return true
 
@@ -10162,6 +10198,91 @@ func _audit_selected_private_box_obj(path: String) -> void:
         + " triangles, SHA-256 "
         + str(box_clip_obj_audit_last_result["obj_sha256"]).substr(0, 12)
         + ". Read-only; not a DX2 BSP/collision compile.")
+
+
+## P102: pure visual CSG output from exactly two named, source-private
+## clipped Boxes. Alphabetic ordering makes A minus B reproducible.
+## Preview geometry never enters draft_prop_copies, actor tables, source
+## exports, Undo history or original collision pick targets.
+func _private_csg_selected_pair() -> Dictionary:
+    if selected_group_names.size() > 0 or selected_meshes.size() != 2:
+        return {}
+    var names: Array = selected_meshes.keys()
+    names.sort()
+    var found: Array = []
+    for key in names:
+        var name := str(key)
+        if (not draft_prop_copies.has(name)
+            or not draft_brush_specs.has(name)
+            or str(draft_prop_sources.get(name, "")) != "Brush::Box"):
+            return {}
+        var mesh: MeshInstance3D = draft_prop_copies[name]
+        var spec: Dictionary = draft_brush_specs[name]
+        if (not is_instance_valid(mesh)
+            or selected_meshes[name] != mesh
+            or str(spec.get("kind", "")) != "Box"
+            or _private_box_plane_list(spec).is_empty()):
+            return {}
+        found.append({"name": name, "mesh": mesh, "spec": spec.duplicate(true)})
+    return {"a": found[0], "b": found[1]}
+
+
+func _clear_private_csg_preview() -> void:
+    if is_instance_valid(private_csg_preview_root):
+        private_csg_preview_root.free()
+    private_csg_preview_root = null
+    private_csg_preview_last_result = {}
+
+
+func _on_private_csg_clear_pressed() -> void:
+    _clear_private_csg_preview()
+    status_label.text = (
+        "Source-private CSG preview cleared. No original DX2 data changed.")
+
+
+func _request_private_csg_preview(operation: String) -> void:
+    # Do not leave an old snapshot displayed after an invalid/new request.
+    _clear_private_csg_preview()
+    var selected := _private_csg_selected_pair()
+    if selected.is_empty() or not is_instance_valid(world_root):
+        private_csg_preview_last_result = {
+            "ok": false, "message": "Ctrl-select exactly two editor-private "
+                + "clipped Boxes (not imported game actors)."}
+        status_label.text = str(private_csg_preview_last_result["message"])
+        return
+    var a: Dictionary = selected["a"]
+    var b: Dictionary = selected["b"]
+    var bridge: Dictionary = PrivateCSGPreviewBridge.preview_pair(
+        a["spec"], b["spec"],
+        (a["mesh"] as MeshInstance3D).global_transform,
+        (b["mesh"] as MeshInstance3D).global_transform, operation)
+    if not bool(bridge.get("ok", false)):
+        private_csg_preview_last_result = bridge
+        status_label.text = str(bridge.get(
+            "message", "Private CSG Python worker refused the preview."))
+        return
+    var rendered: Dictionary = PrivateCSGPreviewMesh.build_preview(
+        bridge["report"], operation)
+    if not bool(rendered.get("ok", false)):
+        private_csg_preview_last_result = rendered
+        status_label.text = str(rendered.get(
+            "message", "Private CSG preview mesh was refused."))
+        return
+    private_csg_preview_root = rendered["root"]
+    world_root.add_child(private_csg_preview_root)
+    private_csg_preview_last_result = {
+        "ok": true, "operation": operation,
+        "source_a": str(a["name"]), "source_b": str(b["name"]),
+        "piece_count": int(rendered["pieces"]),
+        "triangle_count": int(rendered["triangles"]),
+        "volume_m3": float(rendered["volume_m3"]),
+    }
+    status_label.text = (
+        "Private CSG " + operation + " " + str(a["name"])
+        + " / " + str(b["name"]) + ": "
+        + str(rendered["pieces"]) + " overlay piece(s), "
+        + str(snappedf(float(rendered["volume_m3"]), 0.001))
+        + " m³. Snapshot only; no DX2 BSP/physics or source writes.")
 
 
 func _selected_private_box_name() -> String:
