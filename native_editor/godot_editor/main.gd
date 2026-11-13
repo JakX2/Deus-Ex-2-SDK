@@ -10,6 +10,7 @@ const PrivateBoxOBJAuditBridge = preload("res://private_box_obj_audit_bridge.gd"
 const PrivateCSGPreviewBridge = preload("res://private_csg_preview_bridge.gd")
 const PrivateCSGPreviewMesh = preload("res://private_csg_preview_mesh.gd")
 const PrivateCSGRecipeBridge = preload("res://private_csg_recipe_bridge.gd")
+const PrivateCSGRecipeCatalog = preload("res://private_csg_recipe_catalog.gd")
 const PrivateBoxMultiClip = preload("res://private_box_multiclip.gd")
 const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const MatLibBrowser = preload("res://matlib_browser.gd")
@@ -454,6 +455,14 @@ var private_csg_recipe_save_dialog: FileDialog
 var private_csg_recipe_load_dialog: FileDialog
 var private_csg_recipe_pending: Dictionary = {}
 var private_csg_recipe_last_result: Dictionary = {}
+var private_csg_catalog_selector: OptionButton
+var private_csg_catalog_add_button: Button
+var private_csg_catalog_refresh_button: Button
+var private_csg_catalog_remove_button: Button
+var private_csg_catalog_add_dialog: FileDialog
+var private_csg_catalog_pending_map_cache := ""
+var private_csg_catalog_entries: Array = []
+var private_csg_catalog_last_result: Dictionary = {}
 var box_clip_active_brush_name := ""
 # Source-private Alt+Ctrl cap normal drag, one history operation on release.
 var box_cap_drag_active := false
@@ -696,6 +705,41 @@ func _make_ui() -> void:
     private_csg_recipe_load_button.pressed.connect(
         _show_private_csg_recipe_load_dialog)
     toolbar.add_child(private_csg_recipe_load_button)
+    # P104: explicit per-private-project CSG recipe inventory, independent
+    # of the normal prop draft and all original game asset sources.
+    private_csg_catalog_selector = OptionButton.new()
+    private_csg_catalog_selector.custom_minimum_size.x = 214
+    private_csg_catalog_selector.tooltip_text = (
+        "Registered source-private CSG recipes for this loaded map cache. "
+        + "Selecting does not trust, load, or modify original game data.")
+    private_csg_catalog_selector.disabled = true
+    toolbar.add_child(private_csg_catalog_selector)
+    private_csg_catalog_add_button = Button.new()
+    private_csg_catalog_add_button.text = "Register CSG..."
+    private_csg_catalog_add_button.tooltip_text = (
+        "Verify an existing .dx2csg.json before adding a SHA-pinned "
+        + "reference to this map cache's separate user:// catalog.")
+    private_csg_catalog_add_button.pressed.connect(
+        _show_private_csg_catalog_add_dialog)
+    toolbar.add_child(private_csg_catalog_add_button)
+    private_csg_catalog_refresh_button = Button.new()
+    private_csg_catalog_refresh_button.text = "Refresh CSG"
+    private_csg_catalog_refresh_button.tooltip_text = (
+        "Re-verify recipe bytes and recompute source-private CSG, "
+        + "then replace only the visual overlay.")
+    private_csg_catalog_refresh_button.pressed.connect(
+        _refresh_selected_private_csg_catalog_recipe)
+    private_csg_catalog_refresh_button.disabled = true
+    toolbar.add_child(private_csg_catalog_refresh_button)
+    private_csg_catalog_remove_button = Button.new()
+    private_csg_catalog_remove_button.text = "Unlink CSG"
+    private_csg_catalog_remove_button.tooltip_text = (
+        "Remove only the catalog reference, NEVER delete the recipe file "
+        + "or alter the game map.")
+    private_csg_catalog_remove_button.pressed.connect(
+        _unlink_selected_private_csg_catalog_recipe)
+    private_csg_catalog_remove_button.disabled = true
+    toolbar.add_child(private_csg_catalog_remove_button)
     var audit_gmp_btn := Button.new()
     audit_gmp_btn.text = "Audit native GMP"
     audit_gmp_btn.tooltip_text = "Check original map actors for writable Location fields, without changing game files"
@@ -2439,6 +2483,16 @@ func _make_ui() -> void:
     private_csg_recipe_load_dialog.file_selected.connect(
         _load_private_csg_recipe_selected)
     add_child(private_csg_recipe_load_dialog)
+    private_csg_catalog_add_dialog = FileDialog.new()
+    private_csg_catalog_add_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    private_csg_catalog_add_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    private_csg_catalog_add_dialog.filters = PackedStringArray([
+        "*.dx2csg.json ; Existing private CSG recipe"])
+    private_csg_catalog_add_dialog.title = (
+        "Register verified private CSG recipe for this project")
+    private_csg_catalog_add_dialog.file_selected.connect(
+        _add_private_csg_catalog_recipe_selected)
+    add_child(private_csg_catalog_add_dialog)
     capsule_preview_dialog = FileDialog.new()
     capsule_preview_dialog.access = FileDialog.ACCESS_FILESYSTEM
     capsule_preview_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -3436,6 +3490,7 @@ func load_glb(path: String) -> void:
     _index_meshes(scene_root)
     frame_whole_scene()
     current_folder = path.get_base_dir()
+    _reload_private_csg_catalog()
     _load_asset_catalog(current_folder.path_join("assets.json"))
     _load_archetype_catalog(current_folder.path_join("archetypes.json"))
     var actor_path := current_folder.path_join("actors.json")
@@ -3521,6 +3576,9 @@ func load_actors(path: String) -> void:
 
 func _clear_current_scene() -> void:
     _clear_private_csg_preview()
+    private_csg_catalog_entries.clear()
+    private_csg_catalog_pending_map_cache = ""
+    _sync_private_csg_catalog_ui()
     if light_color_panel != null:
         light_color_panel.reset_context()
     if multi_light_color_panel != null:
@@ -10427,6 +10485,7 @@ func _load_private_csg_recipe_selected(path: String) -> void:
     world_root.add_child(private_csg_preview_root)
     private_csg_preview_last_result = {
         "ok": true, "from_private_recipe": true,
+        "recipe_path": path,
         "operation": str(replay["operation"]),
         "source_a": str(replay["source_private_a"]),
         "source_b": str(replay["source_private_b"]),
@@ -10444,6 +10503,152 @@ func _load_private_csg_recipe_selected(path: String) -> void:
         + ": " + str(rendered["pieces"]) + " pieces, "
         + str(snappedf(float(rendered["volume_m3"]), 0.001))
         + " m³. Private overlay only, not native DX2 BSP/collision.")
+
+
+## P104: a source-private per-map-cache recipe inventory. References are
+## SHA-pinned at registration; refresh NEVER trusts cached mesh geometry,
+## and always invokes the independent P103 Python recomputation verifier.
+func _sync_private_csg_catalog_ui(preferred_path: String = "") -> void:
+    if private_csg_catalog_selector == null:
+        return
+    var previously_selected := ""
+    var old_index := private_csg_catalog_selector.selected
+    if (old_index >= 0 and old_index < private_csg_catalog_entries.size()):
+        previously_selected = str(private_csg_catalog_entries[old_index]["path"])
+    private_csg_catalog_selector.clear()
+    var selected_index := -1
+    for i in range(private_csg_catalog_entries.size()):
+        var entry: Dictionary = private_csg_catalog_entries[i]
+        var recipe_path := str(entry["path"])
+        var display := (
+            str(entry["operation"]) + " | " + recipe_path.get_file()
+            + " [" + str(entry["source_private_a"]) + "/"
+            + str(entry["source_private_b"]) + "]")
+        private_csg_catalog_selector.add_item(display)
+        private_csg_catalog_selector.set_item_tooltip(i, recipe_path)
+        if recipe_path == preferred_path and not preferred_path.is_empty():
+            selected_index = i
+        elif recipe_path == previously_selected and selected_index < 0:
+            selected_index = i
+    if selected_index < 0 and not private_csg_catalog_entries.is_empty():
+        selected_index = 0
+    if selected_index >= 0:
+        private_csg_catalog_selector.select(selected_index)
+    var has_entries := not private_csg_catalog_entries.is_empty()
+    private_csg_catalog_selector.disabled = not has_entries
+    if private_csg_catalog_refresh_button != null:
+        private_csg_catalog_refresh_button.disabled = not has_entries
+    if private_csg_catalog_remove_button != null:
+        private_csg_catalog_remove_button.disabled = not has_entries
+
+
+func _reload_private_csg_catalog() -> void:
+    private_csg_catalog_entries.clear()
+    private_csg_catalog_last_result = PrivateCSGRecipeCatalog.load_catalog(
+        current_folder)
+    if bool(private_csg_catalog_last_result.get("ok", false)):
+        private_csg_catalog_entries = (
+            private_csg_catalog_last_result["entries"].duplicate(true))
+    _sync_private_csg_catalog_ui()
+
+
+func _private_csg_catalog_selected_index() -> int:
+    if private_csg_catalog_selector == null:
+        return -1
+    var index := private_csg_catalog_selector.selected
+    if index < 0 or index >= private_csg_catalog_entries.size():
+        return -1
+    return index
+
+
+func _show_private_csg_catalog_add_dialog() -> void:
+    if current_folder.is_empty() or private_csg_catalog_add_dialog == null:
+        status_label.text = "Load a GLB private map cache before registering CSG."
+        return
+    private_csg_catalog_pending_map_cache = current_folder
+    private_csg_catalog_add_dialog.popup_centered_ratio(0.75)
+
+
+func _add_private_csg_catalog_recipe_selected(path: String) -> void:
+    var original_map := private_csg_catalog_pending_map_cache
+    private_csg_catalog_pending_map_cache = ""
+    if (current_folder.is_empty() or original_map != current_folder
+        or not is_instance_valid(world_root)):
+        private_csg_catalog_last_result = {
+            "ok": false, "message": (
+                "Private project changed while recipe dialog was open.")}
+    else:
+        private_csg_catalog_last_result = PrivateCSGRecipeCatalog.add_recipe(
+            current_folder, path)
+    if not bool(private_csg_catalog_last_result.get("ok", false)):
+        status_label.text = str(private_csg_catalog_last_result.get(
+            "message", "Private CSG catalog registration refused."))
+        return
+    private_csg_catalog_entries = (
+        private_csg_catalog_last_result["entries"].duplicate(true))
+    _sync_private_csg_catalog_ui(path)
+    status_label.text = (
+        "Registered verified private CSG recipe " + path.get_file()
+        + " for this map cache. Recipe bytes and original GMP unchanged.")
+
+
+func _refresh_selected_private_csg_catalog_recipe() -> void:
+    var index := _private_csg_catalog_selected_index()
+    private_csg_catalog_last_result = PrivateCSGRecipeCatalog.refresh_recipe(
+        current_folder, index)
+    if not bool(private_csg_catalog_last_result.get("ok", false)):
+        status_label.text = str(private_csg_catalog_last_result.get(
+            "message", "Private CSG catalog refresh refused."))
+        return
+    var replay: Dictionary = private_csg_catalog_last_result["replay"]
+    var rendered: Dictionary = PrivateCSGPreviewMesh.build_preview(
+        replay["report"], str(replay["operation"]))
+    if not bool(rendered.get("ok", false)) or not is_instance_valid(world_root):
+        private_csg_catalog_last_result = {
+            "ok": false, "message": (
+                "Registered private CSG geometry could not be rendered.")}
+        status_label.text = str(private_csg_catalog_last_result["message"])
+        return
+    var path: String = private_csg_catalog_last_result["entry"]["path"]
+    _clear_private_csg_preview()
+    private_csg_preview_root = rendered["root"]
+    world_root.add_child(private_csg_preview_root)
+    private_csg_preview_last_result = {
+        "ok": true, "from_private_recipe": true, "from_private_catalog": true,
+        "recipe_path": path,
+        "operation": str(replay["operation"]),
+        "source_a": str(replay["source_private_a"]),
+        "source_b": str(replay["source_private_b"]),
+        "piece_count": int(rendered["pieces"]),
+        "triangle_count": int(rendered["triangles"]),
+        "volume_m3": float(rendered["volume_m3"]),
+    }
+    status_label.text = (
+        "Refreshed verified CSG " + path.get_file() + ": "
+        + str(rendered["pieces"]) + " pieces, "
+        + str(snappedf(float(rendered["volume_m3"]), 0.001))
+        + " m³. Read-only overlay; no native BSP or collision.")
+
+
+func _unlink_selected_private_csg_catalog_recipe() -> void:
+    var index := _private_csg_catalog_selected_index()
+    private_csg_catalog_last_result = PrivateCSGRecipeCatalog.remove_recipe(
+        current_folder, index)
+    if not bool(private_csg_catalog_last_result.get("ok", false)):
+        status_label.text = str(private_csg_catalog_last_result.get(
+            "message", "Could not unlink private CSG catalog reference."))
+        return
+    var removed: Dictionary = private_csg_catalog_last_result["removed"]
+    if (bool(private_csg_preview_last_result.get("from_private_catalog", false))
+        and str(private_csg_preview_last_result.get("recipe_path", "")) ==
+            str(removed["path"])):
+        _clear_private_csg_preview()
+    private_csg_catalog_entries = (
+        private_csg_catalog_last_result["entries"].duplicate(true))
+    _sync_private_csg_catalog_ui()
+    status_label.text = (
+        "Unlinked " + str(removed["path"]).get_file()
+        + " from private CSG catalog. Recipe file NOT deleted.")
 
 
 func _selected_private_box_name() -> String:
