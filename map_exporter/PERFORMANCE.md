@@ -108,7 +108,7 @@ not that every original game visual has been faithfully reconstructed.
 For reproducible user-owned game-data measurements, see
 [`BENCHMARKING.md`](BENCHMARKING.md).
 
-## DXT3 explicit-alpha fast path (14 November 2026)
+## DXT3 explicit-alpha fast path (November 2026)
 
 A second real-asset analysis targeted **DXT3**, the only other compressed
 texture format observed in the available Seattle mission IBDs. All 19
@@ -121,7 +121,7 @@ A new **standard-library-only** DXT3 path:
   interpolated RGB colors (unlike DXT1's three-color transparent mode).
 - Expands the 4-bit explicit alpha channel into the high byte of packed
   little-endian RGBA32 integers and writes four pixels with one
-  \`struct.pack_into("<4I", ...)\` call per full block scanline.
+  `struct.pack_into("<4I", ...)` call per full block scanline.
 - Handles partial blocks along the right/bottom edges without padding
   into neighboring image rows.
 - Keeps DXT1, DXT5, DDS source mip bytes, cubemap faces and original
@@ -142,7 +142,7 @@ new speedup is roughly **2.94× for the DXT3-only decode workload**, not
 for the entire game map exporter.
 
 An **ABBA four-run** read-only A/B test of
-\`M1_Seattle_Corp_Campus_Interior.gmp\` (same original locally extracted
+`M1_Seattle_Corp_Campus_Interior.gmp` (same original locally extracted
 GMP/mission IBD inputs, Linux CPython 3.13) measured:
 
 | Export implementation | Median full-map wall time |
@@ -153,7 +153,7 @@ GMP/mission IBD inputs, Linux CPython 3.13) measured:
 This corresponds to approximately **4.6% less elapsed export time** on
 that map. All four runs yielded **identical full GLB and JSON report
 SHA-256** across both candidates, and all original input hashes were
-unchanged. Missing shared \`Kernel_GFXALL.ibd\` still limits model and
+unchanged. Missing shared `Kernel_GFXALL.ibd` still limits model and
 material completeness; these are not playable retail map exports.
 Small sample sizes, filesystem caches and machine load limit precision.
 The synthetic regression also tests both RGB565 endpoint orders,
