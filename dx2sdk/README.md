@@ -13,6 +13,26 @@ No original Deus Ex: Invisible War game files are included. Bring your own
 legally obtained retail `.gmp`, `.ibd`, `TriggerScript.zip` and, where
 needed, DX2Ed-generated private `actors.json` for that exact GMP.
 
+## v0.93: source-private Wavefront OBJ interchange
+
+The new independent **private Box OBJ exporter** turns the v0.92
+validated local convex geometry into a triangulated Wavefront OBJ for
+inspection in Blender or another modeling tool, without accessing retail
+GMP/IBD files, original actors or licensed assets. It emits source-private
+per-face group names, outward vertex normals, and deterministic local-metre
+geometry. UVs, original materials, game collision, BSP identifiers, and
+native-world export are deliberately absent.
+
+~~~powershell
+python -m dx2sdk.private_brush_obj C:\PrivateBrush\box.json C:\PrivateExports\box.obj
+python -m dx2sdk.private_brush_obj C:\PrivateDrafts\draft.json C:\PrivateExports\box.obj --copy DraftProp_12
+~~~
+
+The exporter only creates **new .obj files**, refusing overwrites and
+symlinks. A failed preflight writes nothing. The file is for external
+inspection, not a playable DX2 level. See
+docs/research/dx2ed-private-convex-obj-export-v0-93.md.
+
 ## v0.92: independent Python preflight for private convex Box brushes
 
 A second, **asset-free Python geometry implementation** now checks source-private
