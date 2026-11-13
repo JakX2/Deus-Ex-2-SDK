@@ -185,7 +185,7 @@
       "title": "Asset interchange and 3D modeling pipeline",
       "status": "partial",
       "phase": 4,
-      "evidence": "T3Ed Utility/Max/ Plugins and BatchExportStaticMeshTimFiles.ms",
+      "evidence": "T3Ed Utility/Max/ Plugins and BatchExportStaticMeshTimFiles.ms v0.93 includes a deterministic standard-library Wavefront OBJ exporter for independently validated local, authored private Box geometry, with a separate read-only JSON/private-draft input and new-file-only output. It deliberately excludes original actor meshes, native DX2 BSP identifiers/materials and engine-compatible collision/level exports; T3Ed export parity remains partial.",
       "next_step": "DX2 mesh/hull writers and validated Blender/FBX/GLTF import"
     },
     {
