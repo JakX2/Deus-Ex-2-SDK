@@ -4,6 +4,7 @@ const PrivateBoxCapPicker = preload("res://private_box_cap_picker.gd")
 const PrivateBoxCapDrag = preload("res://private_box_cap_drag.gd")
 const PrivateBoxCapRotate = preload("res://private_box_cap_rotate.gd")
 const PrivateBoxCapEdgeBevel = preload("res://private_box_cap_edge_bevel.gd")
+const PrivateBoxCapCornerBevel = preload("res://private_box_cap_corner_bevel.gd")
 const PrivateBoxMultiClip = preload("res://private_box_multiclip.gd")
 const CustomPolygon = preload("res://custom_polygon_geometry.gd")
 const MatLibBrowser = preload("res://matlib_browser.gd")
@@ -423,6 +424,11 @@ var box_cap_edge_depth: SpinBox
 var box_cap_edge_bevel_button: Button
 var box_cap_edge_highlight: MeshInstance3D
 var box_cap_edge_selection_token := ""
+var box_cap_corner_selector: OptionButton
+var box_cap_corner_depth: SpinBox
+var box_cap_corner_bevel_button: Button
+var box_cap_corner_highlight: MeshInstance3D
+var box_cap_corner_selection_token := ""
 var box_clip_active_brush_name := ""
 # Source-private Alt+Ctrl cap normal drag, one history operation on release.
 var box_cap_drag_active := false
@@ -2096,6 +2102,38 @@ func _make_ui() -> void:
         + "One Undo step; requires fewer than eight original cut planes.")
     box_cap_edge_bevel_button.pressed.connect(_bevel_selected_private_box_edge)
     box_cap_edge_row.add_child(box_cap_edge_bevel_button)
+    var box_cap_corner_row := HBoxContainer.new()
+    private_box_clip_panel.add_child(box_cap_corner_row)
+    var box_cap_corner_title := Label.new()
+    box_cap_corner_title.text = "Cap corner:"
+    box_cap_corner_row.add_child(box_cap_corner_title)
+    box_cap_corner_selector = OptionButton.new()
+    box_cap_corner_selector.custom_minimum_size.x = 120
+    box_cap_corner_selector.tooltip_text = (
+        "Select a genuine 3-face junction on the selected private cut cap. "
+        + "Four-face and ambiguous corners are excluded.")
+    box_cap_corner_selector.item_selected.connect(
+        func(_index): _refresh_private_box_corner_highlight())
+    box_cap_corner_row.add_child(box_cap_corner_selector)
+    box_cap_corner_depth = SpinBox.new()
+    box_cap_corner_depth.min_value = 0.05
+    box_cap_corner_depth.max_value = 0.40
+    box_cap_corner_depth.step = 0.05
+    box_cap_corner_depth.value = 0.10
+    box_cap_corner_depth.custom_minimum_size.x = 85
+    box_cap_corner_depth.suffix = "m"
+    box_cap_corner_depth.tooltip_text = (
+        "Inset the corner by this distance along its local trihedral "
+        + "outward bisector. Range 0.05..0.40 m.")
+    box_cap_corner_row.add_child(box_cap_corner_depth)
+    box_cap_corner_bevel_button = Button.new()
+    box_cap_corner_bevel_button.text = "Bevel corner"
+    box_cap_corner_bevel_button.tooltip_text = (
+        "Append a new validated clipping plane to trim a real three-face "
+        + "private corner. One Undo step; at most 8 cumulative cuts.")
+    box_cap_corner_bevel_button.pressed.connect(
+        _bevel_selected_private_box_corner)
+    box_cap_corner_row.add_child(box_cap_corner_bevel_button)
     box_clip_reset_button = Button.new()
     box_clip_reset_button.text = "Reset to Box"
     box_clip_reset_button.tooltip_text = "Remove the private plane cut in one Undo step."
@@ -9010,7 +9048,11 @@ func _refresh_brush_inspector() -> void:
     if not show:
         box_clip_active_brush_name = ""
         box_cap_edge_selection_token = ""
+        box_cap_corner_selection_token = ""
         _clear_private_box_edge_highlight()
+        _clear_private_box_corner_highlight()
+        if box_cap_corner_selector != null:
+            box_cap_corner_selector.clear()
         if box_cap_edge_selector != null:
             box_cap_edge_selector.clear()
         if box_clip_plane_selector != null:
@@ -9074,11 +9116,13 @@ func _refresh_brush_inspector() -> void:
             else:
                 _refresh_private_box_reorder_buttons(0, -1)
             _refresh_private_box_edge_controls()
+            _refresh_private_box_corner_controls()
         else:
             box_clip_active_brush_name = ""
             box_clip_plane_selector.clear()
             _refresh_private_box_reorder_buttons(0, -1)
             _refresh_private_box_edge_controls()
+            _refresh_private_box_corner_controls()
     brush_inspector_syncing = false
     _refresh_polygon_inspector()
     _refresh_polygon_vertex_handles()
@@ -10026,6 +10070,7 @@ func _selected_private_box_plane_changed(index: int) -> void:
     _load_private_box_plane_controls(planes[index])
     _refresh_private_box_reorder_buttons(planes.size(), index)
     _refresh_private_box_edge_controls()
+    _refresh_private_box_corner_controls()
     _refresh_brush_face_outline()
 
 
@@ -10150,6 +10195,122 @@ func _bevel_selected_private_box_edge() -> void:
         + " at " + str(box_cap_edge_depth.value)
         + " local metres. Added cut " + str(added_index + 1)
         + "; one Undo step. Native DX2 BSP unchanged.")
+
+
+## Source-independent private Box vertex chamfer. A temporary magenta
+## sphere marks exactly one selected three-face junction and is never
+## serialized, imported or registered as a retail actor.
+func _clear_private_box_corner_highlight() -> void:
+    if is_instance_valid(box_cap_corner_highlight):
+        box_cap_corner_highlight.free()
+    box_cap_corner_highlight = null
+
+
+func _refresh_private_box_corner_controls() -> void:
+    if box_cap_corner_selector == null or box_cap_corner_bevel_button == null:
+        return
+    var name := _selected_private_box_name()
+    var cap_index := (
+        box_clip_plane_selector.selected if box_clip_plane_selector != null
+        else -1)
+    var token := name + ":" + str(cap_index)
+    var previous := (
+        box_cap_corner_selector.selected
+        if token == box_cap_corner_selection_token else 0)
+    box_cap_corner_selection_token = token
+    var corners: Array = []
+    var planes: Array = []
+    if not name.is_empty() and cap_index >= 0:
+        var spec: Dictionary = draft_brush_specs[name]
+        planes = _private_box_plane_list(spec)
+        corners = PrivateBoxCapCornerBevel.cap_corner_vertices(spec, cap_index)
+    box_cap_corner_selector.clear()
+    for i in range(corners.size()):
+        var point: Vector3 = corners[i]["point"]
+        box_cap_corner_selector.add_item(
+            "Corner " + str(i + 1) + " (" +
+            str(snappedf(point.x, 0.01)) + ", " +
+            str(snappedf(point.y, 0.01)) + ", " +
+            str(snappedf(point.z, 0.01)) + ")")
+    if not corners.is_empty():
+        box_cap_corner_selector.select(
+            clampi(previous, 0, corners.size() - 1))
+    box_cap_corner_selector.disabled = corners.is_empty()
+    box_cap_corner_bevel_button.disabled = (
+        corners.is_empty() or planes.size() >= PrivateBoxMultiClip.MAX_PLANES)
+    _refresh_private_box_corner_highlight()
+
+
+func _refresh_private_box_corner_highlight() -> void:
+    var name := _selected_private_box_name()
+    if name.is_empty() or box_cap_corner_selector == null:
+        _clear_private_box_corner_highlight()
+        return
+    var node: MeshInstance3D = draft_prop_copies.get(name, null)
+    var index := box_clip_plane_selector.selected
+    var corners := PrivateBoxCapCornerBevel.cap_corner_vertices(
+        draft_brush_specs[name], index)
+    var selected := box_cap_corner_selector.selected
+    if (not is_instance_valid(node) or selected < 0
+        or selected >= corners.size()):
+        _clear_private_box_corner_highlight()
+        return
+    var corner: Dictionary = corners[selected]
+    if (is_instance_valid(box_cap_corner_highlight)
+        and box_cap_corner_highlight.get_parent() != node):
+        _clear_private_box_corner_highlight()
+    if not is_instance_valid(box_cap_corner_highlight):
+        box_cap_corner_highlight = MeshInstance3D.new()
+        box_cap_corner_highlight.name = "DX2Ed_DraftCapCorner_EDITOR_ONLY"
+        box_cap_corner_highlight.cast_shadow = (
+            GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+        box_cap_corner_highlight.set_meta("editor_only", true)
+        var ink := StandardMaterial3D.new()
+        ink.albedo_color = Color(1.0, 0.27, 0.82, 1.0)
+        ink.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+        ink.no_depth_test = true
+        ink.cull_mode = BaseMaterial3D.CULL_DISABLED
+        box_cap_corner_highlight.material_override = ink
+        var orb := SphereMesh.new()
+        orb.radius = 0.065
+        orb.height = 0.13
+        box_cap_corner_highlight.mesh = orb
+        node.add_child(box_cap_corner_highlight)
+    var outward: Vector3 = corner["cap_outward"]
+    box_cap_corner_highlight.position = (
+        (corner["point"] as Vector3) + outward * 0.025)
+
+
+func _bevel_selected_private_box_corner() -> void:
+    var name := _selected_private_box_name()
+    if (name.is_empty() or box_clip_plane_selector == null
+        or box_cap_corner_selector == null or box_cap_corner_depth == null):
+        return
+    var spec: Dictionary = draft_brush_specs[name].duplicate(true)
+    var cap_index := box_clip_plane_selector.selected
+    var corner_index := box_cap_corner_selector.selected
+    var verified := PrivateBoxCapCornerBevel.bevel_cap_corner(
+        spec, cap_index, corner_index, float(box_cap_corner_depth.value))
+    if verified.is_empty():
+        status_label.text = (
+            "Private corner bevel refused: not a simple three-face vertex, "
+            + "cut limit reached or closed convex geometry invalid.")
+        return
+    var before := _capture_edit_state()
+    if not _set_brush_spec(name, verified):
+        status_label.text = (
+            "Private corner bevel refused; original draft retained.")
+        return
+    _refresh_prop_inspection()
+    var new_index := _private_box_plane_list(verified).size() - 1
+    box_clip_plane_selector.select(new_index)
+    _selected_private_box_plane_changed(new_index)
+    _record_edit("Bevel selected private Box cap corner", before)
+    status_label.text = (
+        "Beveled private Box corner " + str(corner_index + 1)
+        + " at " + str(box_cap_corner_depth.value)
+        + "m local bisector inset. Added cut " + str(new_index + 1)
+        + "; one Undo step. Native BSP and collision unchanged.")
 
 
 func _same_private_box_plane(a: Dictionary, b: Dictionary) -> bool:
