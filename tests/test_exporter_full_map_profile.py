@@ -101,6 +101,16 @@ class FullMapProfilerTests(unittest.TestCase):
                 self._run(source,bundle,runner=tamper,repeats=1,
                           collect_profile=False)
 
+    def test_source_integrity_checked_even_when_exporter_itself_fails(self):
+        with TemporaryDirectory() as folder:
+            source,bundle=self._fixture(Path(folder))
+            def failed(level, output, *, manual, transform_overrides=None):
+                level.path.write_bytes(b"ACCIDENTAL_ORIGINAL_MUTATION")
+                raise RuntimeError("simulated exporter failure")
+            with self.assertRaisesRegex(ValueError, "Source map"):
+                self._run(source,bundle,runner=failed,repeats=1,
+                          collect_profile=False)
+
     def test_profile_contains_only_exporter_functions_not_source_paths(self):
         counter=cProfile.Profile()
         counter.enable()
