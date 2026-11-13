@@ -73,6 +73,7 @@ class DX2EdPrototypeWindowsBundleTests(unittest.TestCase):
                 "dx2sdk/bsp_model_noop.py",
                 "dx2sdk/bsp_model_spans.py",
                 "dx2sdk/private_brush_preflight.py",
+                "dx2sdk/private_brush_obj.py",
                 "research/dx2/inspect_world_model_spans.py",
                 "research/dx2/inspect_world_model_noop.py",
                 "research/dx2/inspect_bsp_surface_provenance_hypotheses.py",
