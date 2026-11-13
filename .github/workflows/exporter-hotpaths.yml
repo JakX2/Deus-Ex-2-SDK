@@ -9,6 +9,8 @@ on:
       - "tests/test_exporter_hotpaths.py"
       - "tests/reference_legacy_exporter.py"
       - "tools/benchmark_exporter_hotpaths.py"
+      - "tools/profile_dx2_map_export.py"
+      - "tests/test_exporter_full_map_profile.py"
       - ".github/workflows/exporter-hotpaths.yml"
 
 jobs:
@@ -26,10 +28,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Compile source and tests
-        run: python -m py_compile map_exporter/dx2textures.py map_exporter/dx2level.py tests/reference_legacy_exporter.py tests/test_exporter_hotpaths.py tools/benchmark_exporter_hotpaths.py
+        run: python -m py_compile map_exporter/dx2textures.py map_exporter/dx2level.py tests/reference_legacy_exporter.py tests/test_exporter_hotpaths.py tests/test_exporter_full_map_profile.py tools/benchmark_exporter_hotpaths.py tools/profile_dx2_map_export.py
       - name: Synthetic byte-equivalence tests (no retail assets)
         run: python -m unittest discover -s tests -p "test_exporter_hotpaths.py" -v
       - name: HTML template runtime and injection tests (no retail assets)
         run: python -m unittest discover -s tests -p "test_exporter_html_templates.py" -v
+      - name: Asset-free whole-map profiling harness regression
+        run: python -m unittest discover -s tests -p "test_exporter_full_map_profile.py" -v
+      - name: Whole-map CLI help smoke (no retail assets)
+        run: python tools/profile_dx2_map_export.py --help
       - name: Benchmark smoke without perf assertions
         run: python tools/benchmark_exporter_hotpaths.py --size 64 --vectors 1000 --repeats 2
