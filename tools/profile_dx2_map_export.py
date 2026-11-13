@@ -122,49 +122,58 @@ def profile_map_export(
     fingerprints = []
     counts = []
     profiled = None
-    with TemporaryDirectory(prefix="dx2sdk_profile_") as folder:
-        temp = Path(folder).resolve()
-        # Most machines use a separate OS temp area. Reject an installation
-        # whose configured TMP directory would put output in the source Maps.
-        if any(_is_within(temp, source.parent) for source in sources):
-            raise ValueError("OS temporary directory is inside source asset folder")
-        for repeat in range(repeats + int(collect_profile)):
-            output = temp / ("profile.glb" if repeat == repeats else f"sample_{repeat}.glb")
-            profiler = cProfile.Profile() if repeat == repeats else None
-            start = perf_counter()
-            if profiler:
-                profiler.enable()
-            try:
-                result = export(level, output, manual=manual,
-                                transform_overrides=transform_overrides)
-            finally:
+    try:
+        with TemporaryDirectory(prefix="dx2sdk_profile_") as folder:
+            temp = Path(folder).resolve()
+            # Most machines use a separate OS temp area. Reject an installation
+            # whose configured TMP directory would put output in the source Maps.
+            if any(_is_within(temp, source.parent) for source in sources):
+                raise ValueError("OS temporary directory is inside source asset folder")
+            for repeat in range(repeats + int(collect_profile)):
+                output = temp / ("profile.glb" if repeat == repeats else f"sample_{repeat}.glb")
+                profiler = cProfile.Profile() if repeat == repeats else None
+                start = perf_counter()
                 if profiler:
-                    profiler.disable()
-            elapsed = (perf_counter() - start) * 1000
-            sidecar = output.with_suffix(".report.json")
-            if not output.is_file() or not sidecar.is_file():
-                raise ValueError("Exporter did not produce both GLB and report")
-            if output.stat().st_size < 12 or output.read_bytes()[:4] != b"glTF":
-                raise ValueError("Exporter produced an invalid GLB header")
-            fingerprints.append(sha256_file(output))
-            # SHA256 of report bytes verifies serialization determinism too.
-            report_digest = sha256_file(sidecar)
-            counts.append((fingerprints[-1], report_digest))
-            if profiler:
-                profiled = {
-                    "label": "SEPARATE cProfile run (instrumented, not wall-time baseline)",
-                    "wall_ms_including_profiler": round(elapsed, 3),
-                    "hot_functions": _profile_stats(profiler, top),
-                }
-            else:
-                samples.append(round(elapsed, 3))
-            if not isinstance(result, dict):
-                raise ValueError("Exporter returned a non-dictionary report")
-        if len(set(counts)) != 1:
-            raise ValueError(
-                "Repeated full-map GLB or report bytes differ; profile result refused")
-    if {path: sha256_file(path) for path in sources} != original:
-        raise ValueError("Source map, resource bundle or transform overrides changed")
+                    profiler.enable()
+                try:
+                    result = export(level, output, manual=manual,
+                                    transform_overrides=transform_overrides)
+                finally:
+                    if profiler:
+                        profiler.disable()
+                elapsed = (perf_counter() - start) * 1000
+                sidecar = output.with_suffix(".report.json")
+                if not output.is_file() or not sidecar.is_file():
+                    raise ValueError("Exporter did not produce both GLB and report")
+                with output.open("rb") as glb:
+                    magic = glb.read(4)
+                if output.stat().st_size < 12 or magic != b"glTF":
+                    raise ValueError("Exporter produced an invalid GLB header")
+                fingerprints.append(sha256_file(output))
+                # SHA256 of report bytes verifies serialization determinism too.
+                report_digest = sha256_file(sidecar)
+                counts.append((fingerprints[-1], report_digest))
+                if profiler:
+                    profiled = {
+                        "label": "SEPARATE cProfile run (instrumented, not wall-time baseline)",
+                        "wall_ms_including_profiler": round(elapsed, 3),
+                        "hot_functions": _profile_stats(profiler, top),
+                    }
+                else:
+                    samples.append(round(elapsed, 3))
+                if not isinstance(result, dict):
+                    raise ValueError("Exporter returned a non-dictionary report")
+            if len(set(counts)) != 1:
+                raise ValueError(
+                    "Repeated full-map GLB or report bytes differ; profile result refused")
+    finally:
+        # Guard the original data even if export, cProfile or the output
+        # determinism check raises. This is a detection check; the exporter
+        # itself must still use its read-only API.
+        for path, digest in original.items():
+            if not path.is_file() or sha256_file(path) != digest:
+                raise ValueError(
+                    "Source map, resource bundle or transform overrides changed")
     summary = {
         "schema": "DX2SDK-exporter-full-map-profile-v1",
         "status": "real-asset-run-verified" if runner is None else "test-runner-only",
