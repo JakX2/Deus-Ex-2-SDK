@@ -34,6 +34,7 @@ if /I "%~1"=="--self-test" (
     smoke_transform_pivot_orientation.gd
     smoke_draft_group_hierarchy.gd
     smoke_native_static_unplace.gd
+    smoke_native_bulk_save.gd
     smoke_native_combined_prop_plan.gd
     smoke_native_mod_recipe.gd
     smoke_crosssource_reference_review.gd
