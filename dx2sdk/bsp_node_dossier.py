@@ -68,7 +68,7 @@ def inspect_model_node_bytes(payload: bytes, node_index: int) -> dict:
     if len(samples) != 1 or samples[0]["node"] != node_index:
         raise ValueError("Native source byte ledger did not select original node")
     spans = samples[0]["spans"]
-    if (len(spans) != 21
+    if (len(spans) != 19
         or sum(span["byte_count"] for span in spans) != length
         or spans[0]["original_model_relative_offset"] != start
         or spans[-1]["original_model_relative_offset"] + 4 != start + length
