@@ -51,10 +51,37 @@ byte-exact Model framing, original absolute source offsets, false
 BSP/collision write flags, wrong hashes, unsupported licensees, tampered
 direct Model evidence and exact SDK allowlist-only CLI dispatch.
 
-A full owner-original 19-map corpus validation is required before
-claiming complete coverage. Native BSP surfaces, actual vertex XYZ
-pools, materials/UV binding, Havok/MOPP collision, source GMP writes
-and retail runtime behavior remain **unknown or unsupported**.
+## Original Seattle corpus validation (owner-provided assets, local only)
+
+I ran the exact packaged P106 CLI from the GitHub Actions portable
+source-only ZIP against **all 19 original GMPs** supplied in the owner's
+Seattle Maps ZIP, computing the SHA-256 of each source before and after.
+All source GMPs were opened read-only; none were copied into GitHub or CI.
+
+| Source GMP format | Maps | Dossier validation |
+| --- | ---: | --- |
+| Unreal package v95, licensee 68 | 12 | 12/12 passed |
+| Unreal package v95, licensee 69 | 1 | 1/1 passed |
+| Unreal package v95, licensee 67 | 3 | 3/3 passed (new research adapter) |
+| Unreal package v95, licensee 65 | 3 | 3/3 passed (new research adapter) |
+| **Total** | **19** | **19/19 passed** |
+
+Across these maps the original World Model source readers validated
+**17,743 original BSP node records and 688 candidate zone records**.
+Every selected source node's exact Model record/no-op and complete
+byte-span ledger passed; all native writer flags were false. All 19
+original GMP SHA-256 fingerprints remained unchanged. A later test
+with different node ordinals could add coverage of interactive
+selection, though the full-model verifier already checks all native
+node and zone framing for every map.
+
+The six older maps were refused by the unchanged public DX2Map.open,
+then accepted **only** through the standalone research path.
+No general game-map writer allowlist was expanded.
+
+Native BSP surfaces, actual vertex XYZ pools, materials/UV bindings,
+Havok/MOPP collision, source GMP writes, and retail runtime behavior
+remain **unknown or unsupported**.
 
 This is read-only research and prototype milestone P106, not a
 game-native BSP compiler or product 1.0.
