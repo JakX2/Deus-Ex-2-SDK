@@ -28,6 +28,7 @@ if /I "%~1"=="--self-test" (
     smoke_workbench_actor_navigation.gd
     smoke_scene_actor_workbench_bridge.gd
     smoke_orthographic_authoring_views.gd
+    smoke_compact_toolbar.gd
     smoke_multi_view_workspace.gd
     smoke_orthographic_gizmo_constraints.gd
     smoke_transform_pivot_orientation.gd
