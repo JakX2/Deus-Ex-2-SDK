@@ -27,7 +27,7 @@ has been introduced.
 ## New cross-map verification on original Seattle data
 
 The game archives supplied privately by the project owner contain 19 Seattle
-GMP and 19 mission IBD files. Exactly **six representative GMPs** were
+GMP and 19 mission IBD files. All **19 available Seattle GMPs** were
 exported with the original `main` revision
 `7fb22999764dad958e5a8e95aa3b8e01df832fdf` and the final #177
 candidate `1f79a4b0cf442290047f4bf1c73d06888e133ffc` using the same
@@ -36,26 +36,41 @@ input file set and the unchanged **default PNG level 7**.
 One local timed run per map and revision (Python environment fixed, extracted
 source files, output in disposable temporary directories):
 
-| Seattle GMP | Main seconds | Candidate seconds | Missing static mesh actors | GLB & JSON report SHA-256 |
+| Seattle GMP | Original main seconds | Candidate seconds | Missing static mesh actors | GLB and JSON sidecar |
 | --- | ---: | ---: | ---: | --- |
-| `M1_Seattle_Hub_Penthouse_Upper.gmp` | 7.250 | 4.624 | 16 | Both exactly identical |
-| `M1_Seattle_Club.gmp` | 8.059 | 4.798 | 64 | Both exactly identical |
-| `M1_Seattle_Corp_Campus_Interior.gmp` | 7.734 | 4.630 | 45 | Both exactly identical |
-| `M1_Seattle_Hub_WTOterminal.gmp` | 6.880 | 4.587 | 10 | Both exactly identical |
-| `M1_Seattle_MercDistrict_Hangar.gmp` | 4.323 | 2.960 | 30 | Both exactly identical |
-| `M1_Seattle_Acorp_Lab.gmp` | 5.930 | 3.730 | 9 | Both exactly identical |
+| `M1_Seattle_Acorp_Lab.gmp` | 5.930 | 3.730 | 9 | SHA-256 MATCH |
+| `M1_Seattle_Acorp_Lab_Return.gmp` | 6.637 | 4.023 | 23 | SHA-256 MATCH |
+| `M1_Seattle_Acorp_Lab_Upper.gmp` | 6.308 | 4.099 | 22 | SHA-256 MATCH |
+| `M1_Seattle_Acorp_Rec.gmp` | 6.084 | 3.936 | 18 | SHA-256 MATCH |
+| `M1_Seattle_Club.gmp` | 8.059 | 4.798 | 64 | SHA-256 MATCH |
+| `M1_Seattle_Corp_Campus_BioLab.gmp` | 6.277 | 3.942 | 11 | SHA-256 MATCH |
+| `M1_Seattle_Corp_Campus_Entrance.gmp` | 8.772 | 5.250 | 32 | SHA-256 MATCH |
+| `M1_Seattle_Corp_Campus_Interior.gmp` | 7.734 | 4.630 | 45 | SHA-256 MATCH |
+| `M1_Seattle_hub.gmp` | 9.697 | 5.567 | 37 | SHA-256 MATCH |
+| `M1_Seattle_Hub_Inclinator.gmp` | 8.645 | 5.131 | 36 | SHA-256 MATCH |
+| `M1_Seattle_Hub_Penthouse.gmp` | 8.995 | 5.388 | 40 | SHA-256 MATCH |
+| `M1_Seattle_Hub_Penthouse_Upper.gmp` | 7.250 | 4.624 | 16 | SHA-256 MATCH |
+| `M1_Seattle_Hub_WTOterminal.gmp` | 6.880 | 4.587 | 10 | SHA-256 MATCH |
+| `M1_Seattle_Hub_WTOTermLower.gmp` | 8.568 | 4.957 | 16 | SHA-256 MATCH |
+| `M1_Seattle_MercDistrict_Hangar.gmp` | 4.323 | 2.960 | 30 | SHA-256 MATCH |
+| `M1_Seattle_MercDistrict_Sak.gmp` | 8.709 | 5.235 | 41 | SHA-256 MATCH |
+| `M1_Seattle_MercenaryBar.gmp` | 7.490 | 4.663 | 51 | SHA-256 MATCH |
+| `M1_Seattle_MercenaryDistrict.gmp` | 8.439 | 4.915 | 29 | SHA-256 MATCH |
+| `M1_Seattle_MercenaryDistrict_Order.gmp` | 4.747 | 3.169 | 21 | SHA-256 MATCH |
 
-**Six of six defaults were byte-for-byte equivalent**, both GLB and
+**All 19 of 19 defaults were byte-for-byte equivalent**, both GLB and
 sidecar report. All **38 original source assets** were separately hashed
 before and after the comparison: none changed.
 
 These durations are **individual measurements**, not statistically stable
-medians. The available archive does not contain the shared
+medians. Summed across the 19 single-run pairs, main took **139.544 s** and
+the optimized exporter **85.604 s** (38.65% less total wall time on this
+specific machine/run order, not a general speed guarantee). The available archive does not contain the shared
 `Kernel_GFXALL.ibd`, accounting for missing static meshes and incomplete
 materials. No in-game runtime or native BSP/editor fidelity conclusion is
 supported by these tests.
 
-Fast PNG (level 1) was also exported for the first three maps, and its
+Fast PNG (level 1) was also exported for six selected maps, and its
 larger GLB output is expected to differ from level 7. This branch adds
 a standalone decoded-RGBA and glTF-geometry checker to audit that
 difference. The verifier was additionally exercised locally on a
