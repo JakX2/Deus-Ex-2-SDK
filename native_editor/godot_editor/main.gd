@@ -12780,7 +12780,7 @@ func _native_bulk_preview() -> Dictionary:
             omitted.append(name + ": staged source transformed or identity changed")
             continue
         plan["unplaces"].append({"actor": name, "export": int(actor["export"])})
-    var count := plan["moves"].size() + plan["copies"].size() + plan["unplaces"].size()
+    var count: int = int(plan["moves"].size()) + int(plan["copies"].size()) + int(plan["unplaces"].size())
     return {"plan": plan, "omitted": omitted, "native_count": count,
             "within_limit": count <= 256}
 
