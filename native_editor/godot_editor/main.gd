@@ -198,6 +198,13 @@ var rotation_lab_modes: OptionButton
 var rotation_lab_hint: Label
 var inspector: TextEdit
 var status_label: Label
+# P108 compact navigation: original wired actions stay alive in optional legacy rows.
+var compact_toolbar_root: VBoxContainer
+var compact_quickbar: HFlowContainer
+var compact_menus: Dictionary = {}
+var compact_action_buttons: Dictionary = {}
+var compact_legacy_bars: Array[Control] = []
+var compact_advanced_toggle: CheckButton
 var glb_dialog: FileDialog
 var json_dialog: FileDialog
 var gmp_dialog: FileDialog
@@ -642,6 +649,146 @@ func _ready() -> void:
             status_label.text = "Startup arguments refused. Use --gmp <original.gmp>."
         _:
             pass
+
+
+## Collapse the sprawling research toolbar without rebuilding or bypassing its
+## guarded callbacks. The source buttons remain wired and available via menus
+## even when their old rows are hidden.
+func _compact_menu_open(popup: PopupMenu, actions: Dictionary) -> void:
+    for item_id in actions:
+        var button: Button = actions[item_id]
+        var item_index := popup.get_item_index(int(item_id))
+        if item_index < 0 or not is_instance_valid(button):
+            continue
+        popup.set_item_disabled(item_index, button.disabled)
+        if button.toggle_mode:
+            popup.set_item_checked(item_index, button.button_pressed)
+
+
+func _compact_menu_action(item_id: int, actions: Dictionary) -> void:
+    if not actions.has(item_id):
+        return
+    var button: Button = actions[item_id]
+    if not is_instance_valid(button) or button.disabled:
+        return
+    # A few source buttons use toggle_mode. Match ordinary GUI click state.
+    if button.toggle_mode:
+        button.button_pressed = not button.button_pressed
+    button.pressed.emit()
+
+
+func _add_compact_action_menu(parent: HBoxContainer, title: String, labels: Array) -> void:
+    var menu := MenuButton.new()
+    menu.text = title
+    menu.tooltip_text = "Grouped existing DX2Ed actions; native writers retain all safety checks."
+    var popup := menu.get_popup()
+    var actions := {}
+    for label in labels:
+        var key := str(label)
+        if not compact_action_buttons.has(key):
+            push_warning("Compact DX2Ed menu action not found: " + key)
+            continue
+        var source: Button = compact_action_buttons[key]
+        var item_id := popup.get_item_count()
+        if source.toggle_mode:
+            popup.add_check_item(key, item_id)
+        else:
+            popup.add_item(key, item_id)
+        actions[item_id] = source
+    popup.about_to_popup.connect(_compact_menu_open.bind(popup, actions))
+    popup.id_pressed.connect(_compact_menu_action.bind(actions))
+    parent.add_child(menu)
+    compact_menus[title] = menu
+
+
+func _set_legacy_toolbar_visible(show: bool) -> void:
+    for bar in compact_legacy_bars:
+        if is_instance_valid(bar):
+            bar.visible = show
+
+
+func _install_compact_toolbar(base: VBoxContainer, toolbar: HFlowContainer,
+        zip_bar: HFlowContainer, prop_bar: HFlowContainer) -> void:
+    compact_legacy_bars = [toolbar, zip_bar, prop_bar]
+    compact_action_buttons.clear()
+    for bar in compact_legacy_bars:
+        for child in bar.get_children():
+            if child is Button and not compact_action_buttons.has(child.text):
+                compact_action_buttons[child.text] = child
+
+    compact_toolbar_root = VBoxContainer.new()
+    compact_toolbar_root.name = "CompactToolbar"
+    compact_toolbar_root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    base.add_child(compact_toolbar_root)
+    base.move_child(compact_toolbar_root, 0)
+
+    var menu_row := HBoxContainer.new()
+    menu_row.name = "Menus"
+    compact_toolbar_root.add_child(menu_row)
+    var title_label := Label.new()
+    title_label.text = "DX2Ed"
+    title_label.tooltip_text = "Preview geometry is editor-only. Native Save As is experimental."
+    menu_row.add_child(title_label)
+    _add_compact_action_menu(menu_row, "File", [
+        "Open DX2 map (.gmp)", "IBD override...", "DX2 System folder...",
+        "Shared ZIP...", "System ZIP... (optional)", "Open DX2 map ZIP...",
+        "Open exported GLB", "Load actors.json", "Load demo cubes",
+        "Save draft", "Load draft"])
+    _add_compact_action_menu(menu_row, "Edit", [
+        "Undo", "Redo", "Duplicate", "Reset / Delete copy",
+        "Restore All", "Snap selected", "Set 3D cursor"])
+    _add_compact_action_menu(menu_row, "View", [
+        "Frame scene", "Focus actor", "Copy mesh info",
+        "Inspect source collision", "Load capsule research preview...",
+        "Lighting..."])
+    _add_compact_action_menu(menu_row, "Geometry", [
+        "Preview CSG A ∩ B", "Preview CSG A - B", "Clear CSG preview",
+        "Save CSG recipe...", "Open CSG recipe...", "Register CSG...",
+        "Refresh CSG", "Unlink CSG"])
+    _add_compact_action_menu(menu_row, "Native GMP (test)", [
+        "Audit native GMP", "Verify GMP copy...", "Experimental GMP Save As...",
+        "Experimental native Duplicate Save As...",
+        "Experimental Multi Duplicate Save As...",
+        "Experimental Unplace Original Prop Save As...",
+        "Stage/Unstage original prop", "Clear unplace stages",
+        "Experimental Combined Save As...", "Export Mod Recipe...",
+        "Apply Mod Recipe to Isolated GMP..."])
+    _add_compact_action_menu(menu_row, "Playtest", [
+        "Prepare Retail Test Dossier...", "Disposable Game Trial...",
+        "Record Retail Test..."])
+    var flexible := Control.new()
+    flexible.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    menu_row.add_child(flexible)
+    compact_advanced_toggle = CheckButton.new()
+    compact_advanced_toggle.text = "Advanced controls"
+    compact_advanced_toggle.tooltip_text = (
+        "Show all original research button rows, source ZIP options, "
+        + "CSG recipe selector, lighting toggles and disposable test settings.")
+    compact_advanced_toggle.button_pressed = false
+    compact_advanced_toggle.toggled.connect(_set_legacy_toolbar_visible)
+    menu_row.add_child(compact_advanced_toggle)
+
+    compact_quickbar = HFlowContainer.new()
+    compact_quickbar.name = "QuickActions"
+    compact_quickbar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    compact_toolbar_root.add_child(compact_quickbar)
+    for label in ["Open DX2 map (.gmp)", "Save draft", "Load draft",
+                  "Undo", "Redo", "Move W", "Rotate E", "Scale R"]:
+        if not compact_action_buttons.has(label):
+            push_warning("Compact DX2Ed quick action not found: " + label)
+            continue
+        var action: Button = compact_action_buttons[label]
+        action.reparent(compact_quickbar)
+        if label == "Open DX2 map (.gmp)":
+            action.text = "Open GMP..."
+    for control in [editor_view_mode_select, view_layout_select,
+                    ortho_grid_toggle, ortho_grid_spacing_control]:
+        control.reparent(compact_quickbar)
+
+    # Old controls remain fully connected; an explicit opt-in reveals the
+    # researcher-oriented controls that cannot live in the narrow quick bar.
+    _set_legacy_toolbar_visible(false)
+
 
 func _make_ui() -> void:
     var base := VBoxContainer.new()
@@ -1089,6 +1236,8 @@ func _make_ui() -> void:
     reload_button.text = "Load draft"
     reload_button.pressed.connect(_load_prop_draft)
     prop_bar.add_child(reload_button)
+
+    _install_compact_toolbar(base, toolbar, zip_bar, prop_bar)
 
     var horizontal := HSplitContainer.new()
     horizontal.size_flags_horizontal = Control.SIZE_EXPAND_FILL

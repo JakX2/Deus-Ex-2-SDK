@@ -1,5 +1,33 @@
 # DX2Ed Windows prototype 0.6.5-alpha
 
+## P108: compact toolbar layout (experimental)
+
+The former multirow research toolbar now defaults to **two compact rows**
+so that the 3D viewport has more vertical space.
+
+- **Menu row:** File, Edit, View, Geometry, Native GMP (test), Playtest.
+  Existing controls and safety gates are reused, not reimplemented.
+- **Quick row:** Open GMP, Save draft, Load draft, Undo, Redo, Move,
+  Rotate, Scale, camera view/layout selectors and grid settings.
+- **Advanced controls:** a toggle at top right restores the full old
+  research rows, including manual ZIP inputs, experiment toggles,
+  CSG catalog selector, disposable game test mode and axis nudges.
+
+Save draft stores private Godot-user-data JSON associated with the current
+source map cache. It persists preview moves, copies, brush geometry, groups,
+supported draft property overrides and private workspace settings; it is
+**not** a playable GMP/IBD. Load draft retrieves it for the same map cache.
+
+**Native GMP (test)** exposes previously existing guarded,
+source-locked binary Save As experiments; it does not gain any new writer
+permission from being moved to a menu. Native geometry, arbitrary
+doors/vending machines, BSP and collision cooking remain unavailable.
+
+Run START_DX2ED.cmd --self-test for the new compact-toolbar smoke,
+including menu-to-original-callback routing and private Save draft,
+before testing a real map in Windows.
+
+
 **Target review: November 9, 2026.** This archive is a portable research **prototype**: it contains the original-source DX2Ed Godot project and official Godot 4.3 Standard Windows x64 engine, launched in project-run mode. It is **not** a Godot exported/published standalone game, a production UnrealEd replacement, or a complete engine-native map writer.
 
 ## DX2SDK v0.27 unified build: original Actor Workbench + archive audit
