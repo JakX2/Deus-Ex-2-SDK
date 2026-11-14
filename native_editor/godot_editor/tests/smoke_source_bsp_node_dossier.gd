@@ -1,7 +1,7 @@
 extends SceneTree
 ## P105: independent Godot BSP node Inspector source provenance UI smoke.
 ## Synthetic GMP bytes only. No retail asset, map writer, BSP edit or collision.
-const Panel = preload("res://source_bsp_node_dossier_panel.gd")
+const BSPPanel = preload("res://source_bsp_node_dossier_panel.gd")
 
 
 func _initialize() -> void:
@@ -92,7 +92,7 @@ func _run() -> void:
     file.store_buffer("SOURCE_ONLY_SYNTHETIC_GMP_SENTINEL".to_utf8_buffer())
     file.close()
     var sha := FileAccess.get_sha256(gmp)
-    var panel := Panel.new()
+    var panel := BSPPanel.new()
     root.add_child(panel)
     panel.initialize()
     if panel.visible or not panel.last_report.is_empty():
