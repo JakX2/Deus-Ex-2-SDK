@@ -19,6 +19,7 @@ from .private_brush_preflight import (
     SCHEMA as PREFLIGHT_SCHEMA,
     inspect_private_box_convex,
     inspect_private_draft_copy,
+    load_private_json_text,
 )
 
 SCHEMA = "DX2SDK-private-Box-Wavefront-OBJ-v1"
@@ -189,9 +190,7 @@ def _load_private_json(path: Path) -> Any:
     if (path.suffix.lower() != ".json" or path.is_symlink()
             or not path.is_file() or not 0 < path.stat().st_size <= MAX_INPUT_BYTES):
         raise ValueError("Only regular private JSON input <=128 KiB is accepted")
-    return json.loads(path.read_text(encoding="utf-8"),
-                      parse_constant=lambda _: (_ for _ in ()).throw(
-                          ValueError("Nonfinite JSON constants refused")))
+    return load_private_json_text(path.read_text(encoding="utf-8"))
 
 
 def main(argv: list[str] | None = None) -> int:
