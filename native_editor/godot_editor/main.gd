@@ -32,6 +32,7 @@ const CapsuleContactPreview = preload("res://capsule_contact_preview.gd")
 const CapsuleSweepPanel = preload("res://capsule_sweep_panel.gd")
 const SourceSurfacePanel = preload("res://source_surface_panel.gd")
 const SourceSurfaceMatLibCrossref = preload("res://source_surface_matlib_crossref.gd")
+const SourceBSPNodeDossierPanel = preload("res://source_bsp_node_dossier_panel.gd")
 const SourceSectionTopologyPanel = preload("res://source_section_topology_panel.gd")
 const SourceSectionFillPreview = preload("res://source_section_fill_preview.gd")
 const SourceSectionEdgeOverlay = preload("res://source_section_edge_overlay.gd")
@@ -140,6 +141,7 @@ var capsule_preview_details: Label
 var interactive_capsule_panel: VBoxContainer
 var source_surface_panel: VBoxContainer
 var source_surface_matlib_crossref
+var source_bsp_node_dossier_panel: VBoxContainer
 var source_section_topology_panel
 var source_edge_transition_panel: VBoxContainer
 var source_gamesys_panel: VBoxContainer
@@ -1783,6 +1785,10 @@ func _make_ui() -> void:
     source_surface_matlib_crossref.name = "SourceSurfaceMatLibCrossref"
     inspector_pane.add_child(source_surface_matlib_crossref)
     source_surface_matlib_crossref.initialize()
+    source_bsp_node_dossier_panel = SourceBSPNodeDossierPanel.new()
+    source_bsp_node_dossier_panel.name = "SourceBSPNodeDossierPanel"
+    inspector_pane.add_child(source_bsp_node_dossier_panel)
+    source_bsp_node_dossier_panel.initialize()
     capsule_preview_details = Label.new()
     capsule_preview_details.visible = false
     capsule_preview_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -3571,11 +3577,19 @@ func load_actors(path: String) -> void:
                 last_gmp_path, path, source_gamesys_sha256, multi_scalar_worker)
         else:
             multi_native_scalar_panel.reset_context()
+    if source_bsp_node_dossier_panel != null:
+        if (last_gmp_path.is_empty()
+            or last_gmp_path.get_file().to_lower() != current_source_map_name.to_lower()
+            or not source_bsp_node_dossier_panel.configure_original(
+                last_gmp_path, source_gamesys_sha256)):
+            source_bsp_node_dossier_panel.reset_context()
     _dialogue_initialize_from_current_map()
     status_label.text = "Loaded %d actors, %d meshes. Click a mesh or select an actor." % [actors.size(), mesh_count]
 
 func _clear_current_scene() -> void:
     _clear_private_csg_preview()
+    if source_bsp_node_dossier_panel != null:
+        source_bsp_node_dossier_panel.reset_context()
     private_csg_catalog_entries.clear()
     private_csg_catalog_pending_map_cache = ""
     _sync_private_csg_catalog_ui()
