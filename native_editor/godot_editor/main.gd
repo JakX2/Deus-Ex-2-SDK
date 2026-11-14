@@ -12856,7 +12856,9 @@ func _execute_native_bulk_export() -> void:
         status_label.text = "Bulk native export cancelled: preview edits changed since confirmation."
         return
     _save_prop_draft()
-    if _draft_file_path().is_empty() or not FileAccess.file_exists(_draft_file_path()):
+    if (not status_label.text.begins_with("Saved ")
+        or _draft_file_path().is_empty()
+        or not FileAccess.file_exists(_draft_file_path())):
         status_label.text = "Bulk GMP refused: complete private preview draft could not be saved."
         return
     var plan_path := OS.get_user_data_dir().path_join("native_bulk_plan_p109.json")
