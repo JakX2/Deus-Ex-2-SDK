@@ -100,7 +100,7 @@ class GLBEquivalenceTests(unittest.TestCase):
             corrupt[-17] ^= 1
             with self.assertRaisesRegex(ValueError, 'CRC'):
                 _png_rgba(bytes(corrupt))
-            with self.assertRaisesRegex(ValueError, 'existing'):
+            with self.assertRaisesRegex(ValueError, 'must exist'):
                 verify(a, Path(directory)/'missing.glb', 'exact')
             with self.assertRaisesRegex(ValueError, 'mode'):
                 verify(a, a, 'unsupported')
