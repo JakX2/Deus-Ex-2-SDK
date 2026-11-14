@@ -110,6 +110,28 @@ func _run() -> void:
         _fail("Verified source-only BSP node dossier was not displayed")
         return
     var saved := panel.last_report.duplicate(true)
+    var legacy := saved.duplicate(true)
+    legacy["read_only_legacy_research_adapter"] = true
+    legacy["source_original_licensee"] = 65
+    legacy["general_DX2Map_writer_licensee_allowlist_extended"] = false
+    if (not panel.accept_verified_report(legacy)
+        or not panel.details.text.contains("licensee 65")
+        or not panel.details.text.contains("general GMP writer unchanged")):
+        _fail("P106 read-only legacy licensee not explicitly identified in UI")
+        return
+    var escalated := legacy.duplicate(true)
+    escalated["general_DX2Map_writer_licensee_allowlist_extended"] = true
+    if panel.accept_verified_report(escalated):
+        _fail("P106 legacy read-only BSP claimed general GMP writer support")
+        return
+    var wrong_licensee := legacy.duplicate(true)
+    wrong_licensee["source_original_licensee"] = 68
+    if panel.accept_verified_report(wrong_licensee):
+        _fail("P106 unrecognized legacy research version was accepted")
+        return
+    if not panel.accept_verified_report(saved):
+        _fail("P105 original BSP report was broken by P106 fallback")
+        return
     for changes in [
         {"source_gmp_sha256": "0".repeat(64)},
         {"native_BSP_or_Havok_collision_writer_enabled": true},

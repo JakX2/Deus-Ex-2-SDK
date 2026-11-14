@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from dx2sdk import DX2Map
+from dx2sdk.bsp_legacy_licensee_readonly import inspect_legacy_original_bsp_node
 
 
 def main(argv=None) -> int:
@@ -31,11 +32,21 @@ def main(argv=None) -> int:
             raise ValueError("Only an original .gmp World Model is accepted")
         if type(args.node) is not int or not 0 <= args.node < 20_000:
             raise ValueError("Select an original node ordinal from 0..19999")
-        world = DX2Map.open(args.gmp)
-        if world.source_sha256 != args.source_sha256.lower():
-            raise ValueError("Original GMP content SHA-256 no longer matches")
-        report = world.inspect_original_bsp_node_dossier(args.node)
-        if (report["source_gmp_sha256"] != world.source_sha256
+        try:
+            world = DX2Map.open(args.gmp)
+        except ValueError as exc:
+            # Only the precise existing public SDK version-allowlist
+            # refusal routes to the limited read-only research grammar.
+            # All other package/parse/source failures stay refused.
+            if str(exc) != "DX2SDK supports DX2 Ion Storm GMP v95 licensee 68/69 only":
+                raise
+            report = inspect_legacy_original_bsp_node(
+                args.gmp, args.source_sha256, args.node)
+        else:
+            if world.source_sha256 != args.source_sha256.lower():
+                raise ValueError("Original GMP content SHA-256 no longer matches")
+            report = world.inspect_original_bsp_node_dossier(args.node)
+        if (report["source_gmp_sha256"] != args.source_sha256.lower()
             or report["original_source_gmp_modified"] is not False
             or report["native_BSP_or_Havok_collision_writer_enabled"] is not False
             or report["original_model_full_span_ledger_verified"] is not True):

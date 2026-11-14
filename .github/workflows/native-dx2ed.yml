@@ -53,6 +53,8 @@ jobs:
         run: timeout 45s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_source_bsp_node_dossier.gd
       - name: Compile source-only BSP dossier packaged Python worker
         run: python -m py_compile native_editor/godot_editor/backend/dx2_bsp_node_dossier_worker.py research/dx2/inspect_bsp_node_dossier.py dx2sdk/bsp_node_dossier.py
+      - name: Compile original UE95 65/67 read-only BSP research adapter
+        run: python -m py_compile dx2sdk/bsp_legacy_licensee_readonly.py
       - name: Compile full DX2Ed main editor script (Godot 4.3)
         run: timeout 30s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --check-only --script res://main.gd
       - name: Compile independent multi-view camera state helpers (Godot 4.3)
