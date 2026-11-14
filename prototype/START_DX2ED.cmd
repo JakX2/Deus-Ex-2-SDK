@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 call "%~dp0CHECK_DX2ED.cmd"
 if errorlevel 1 (
@@ -67,7 +67,10 @@ if /I "%~1"=="--self-test" (
       set "DX2ED_SELFTEST_FAILED=1"
     )
   )
-  if "%DX2ED_SELFTEST_FAILED%"=="1" exit /b 1
+  if "!DX2ED_SELFTEST_FAILED!"=="1" (
+    echo DX2Ed Windows prototype self-test: FAIL
+    exit /b 1
+  )
   echo.
   echo Running project startup smoke check...
   "%DX2ED_GODOT_CONSOLE%" --headless --path "%DX2ED_PROJECT%" --quit-after 3
