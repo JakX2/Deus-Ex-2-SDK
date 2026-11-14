@@ -71,6 +71,8 @@ jobs:
         run: timeout 40s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_draft_group_hierarchy.gd
       - name: Exercise exact source actor unplace selection and refusal of mixed draft changes
         run: timeout 30s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_native_static_unplace.gd
+      - name: Exercise experimental bulk GMP menu and supported-only draft planning
+        run: timeout 40s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_native_bulk_save.gd
       - name: Exercise combined source-verified move, clone and unplace native plan
         run: timeout 35s /tmp/Godot_v4.3-stable_linux.x86_64 --headless --path native_editor/godot_editor --script res://tests/smoke_native_combined_prop_plan.gd
       - name: Verify asset-free portable native mod recipe chooser and source refusal

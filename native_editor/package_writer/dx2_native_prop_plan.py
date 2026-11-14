@@ -38,6 +38,12 @@ MAX_PER_KIND = 8
 MAX_TOTAL = 16
 MAX_PLAN_BYTES = 128 * 1024
 MAX_MANIFEST_BYTES = 1024 * 1024
+BULK_SCHEMA = "DX2Ed-experimental-native-bulk-prop-plan-v1"
+BULK_MANIFEST_SUFFIX = ".dx2ed-native-bulk-prop-plan.json"
+BULK_MAX_PER_KIND = 256
+BULK_MAX_TOTAL = 256
+BULK_MAX_PLAN_BYTES = 1024 * 1024
+BULK_MAX_MANIFEST_BYTES = 8 * 1024 * 1024
 
 
 def _exact_keys(record, expected, label):
@@ -55,20 +61,24 @@ def _position_delta(value, label):
     return [float(x) for x in value]
 
 
-def _plan(plan):
+def _plan(plan, *, bulk=False):
     """Validate exact versioned JSON before reading potentially large sources."""
     _exact_keys(plan, ("schema", "moves", "copies", "unplaces"), "plan")
-    if plan["schema"] != SCHEMA:
+    schema = BULK_SCHEMA if bulk else SCHEMA
+    per_kind = BULK_MAX_PER_KIND if bulk else MAX_PER_KIND
+    total_cap = BULK_MAX_TOTAL if bulk else MAX_TOTAL
+    minimum_kinds = 1 if bulk else 2
+    if plan["schema"] != schema:
         raise ValueError("Unsupported native prop change plan schema")
     counts = []
     for key in ("moves", "copies", "unplaces"):
         val = plan[key]
-        if type(val) is not list or len(val) > MAX_PER_KIND:
-            raise ValueError(f"Plan {key} requires <= {MAX_PER_KIND} entries")
+        if type(val) is not list or len(val) > per_kind:
+            raise ValueError(f"Plan {key} requires <= {per_kind} entries")
         counts.append(len(val))
-    if sum(counts) > MAX_TOTAL or sum(count > 0 for count in counts) < 2:
-        raise ValueError("The first combined writer needs 2 different operation kinds, <= 16 edits")
-    result = {"schema": SCHEMA, "moves": [], "copies": [], "unplaces": []}
+    if sum(counts) > total_cap or sum(count > 0 for count in counts) < minimum_kinds:
+        raise ValueError(f"Native plan needs {minimum_kinds} operation kind(s), <= {total_cap} edits")
+    result = {"schema": schema, "moves": [], "copies": [], "unplaces": []}
     seen_moved = set()
     seen_unplaced = set()
     for kind in ("moves", "copies", "unplaces"):
@@ -113,9 +123,9 @@ def _source_actors(pkg, native, plan):
     return sources
 
 
-def compile_in_memory(source: Path, *, source_sha256: str, plan: dict):
+def compile_in_memory(source: Path, *, source_sha256: str, plan: dict, bulk=False):
     """One controlled T3SDK edit transaction with independent DX2 reparse."""
-    safe_plan = _plan(plan)
+    safe_plan = _plan(plan, bulk=bulk)
     source, raw, pkg, native = _baseline(source, _pin(source_sha256))
     old_refs = pkg.level_actors()
     level = pkg.level()
@@ -229,7 +239,7 @@ def compile_in_memory(source: Path, *, source_sha256: str, plan: dict):
     if sha256(source.read_bytes()) != source_sha256:
         raise ValueError("Original GMP source changed during native plan")
     report = {
-        "schema": SCHEMA, "status": "binary-reparsed-runtime-unverified",
+        "schema": BULK_SCHEMA if bulk else SCHEMA, "status": "binary-reparsed-runtime-unverified",
         "source_name": source.name, "source_sha256": source_sha256,
         "output_sha256": sha256(candidate),
         "original_export_count": len(pkg.exports),
@@ -257,11 +267,11 @@ def compile_in_memory(source: Path, *, source_sha256: str, plan: dict):
     return report, candidate
 
 
-def _manifest_path(output: Path) -> Path:
-    return output.with_suffix(MANIFEST_SUFFIX)
+def _manifest_path(output: Path, *, bulk=False) -> Path:
+    return output.with_suffix(BULK_MANIFEST_SUFFIX if bulk else MANIFEST_SUFFIX)
 
 
-def verify_saved_plan(source: Path, output: Path, *, source_sha256: str) -> dict:
+def verify_saved_plan(source: Path, output: Path, *, source_sha256: str, bulk=False) -> dict:
     """Replay from original, compare EVERY candidate byte, not merely hashes."""
     source = _validate_input(Path(source))
     source_sha256 = _pin(source_sha256)
@@ -269,11 +279,12 @@ def verify_saved_plan(source: Path, output: Path, *, source_sha256: str) -> dict
     if (output == source or output.name.casefold() != source.name.casefold()
             or source.parent == output.parent or source.parent in output.parents):
         raise ValueError("Verification requires an isolated same-name GMP")
-    manifest = _manifest_path(output)
-    if not manifest.is_file() or not 0 < manifest.stat().st_size <= MAX_MANIFEST_BYTES:
+    manifest = _manifest_path(output, bulk=bulk)
+    max_manifest = BULK_MAX_MANIFEST_BYTES if bulk else MAX_MANIFEST_BYTES
+    if not manifest.is_file() or not 0 < manifest.stat().st_size <= max_manifest:
         raise ValueError("Missing or oversized native plan manifest")
     record = json.loads(manifest.read_text(encoding="utf8"))
-    if (not isinstance(record, dict) or record.get("schema") != SCHEMA
+    if (not isinstance(record, dict) or record.get("schema") != (BULK_SCHEMA if bulk else SCHEMA)
             or record.get("status") != "isolated-GMP-created-runtime-unverified"
             or record.get("source_sha256") != source_sha256
             or record.get("source_name") != source.name
@@ -286,7 +297,7 @@ def verify_saved_plan(source: Path, output: Path, *, source_sha256: str) -> dict
             or record.get("incoming_references_verified") is not False):
         raise ValueError("Native plan manifest source identity and safety flags differ")
     expected, rebuilt = compile_in_memory(
-        source, source_sha256=source_sha256, plan=record.get("plan"))
+        source, source_sha256=source_sha256, plan=record.get("plan"), bulk=bulk)
     actual = output.read_bytes()
     if (actual != rebuilt or sha256(actual) != record.get("output_sha256")
             or any(record.get(key) != expected[key] for key in (
@@ -294,7 +305,7 @@ def verify_saved_plan(source: Path, output: Path, *, source_sha256: str) -> dict
                 "level_actor_count_after", "moved", "copied", "unplaced"))):
         raise ValueError("Native plan GMP differs from original-reconstructed whole-file proof")
     return {
-        "schema": SCHEMA, "status": "binary-verified-runtime-unverified",
+        "schema": BULK_SCHEMA if bulk else SCHEMA, "status": "binary-verified-runtime-unverified",
         "source_sha256": source_sha256, "output_sha256": sha256(actual),
         "all_candidate_bytes_replayed": True, "native_actor_exports_deleted": False,
         "incoming_references_verified": False,
@@ -302,14 +313,14 @@ def verify_saved_plan(source: Path, output: Path, *, source_sha256: str) -> dict
     }
 
 
-def save_isolated(source: Path, output: Path, *, source_sha256: str, plan: dict):
+def save_isolated(source: Path, output: Path, *, source_sha256: str, plan: dict, bulk=False):
     source = _validate_input(Path(source))
     output, legacy_clone_manifest = _destination(source, Path(output))
-    manifest = _manifest_path(output)
+    manifest = _manifest_path(output, bulk=bulk)
     if manifest.exists() or legacy_clone_manifest.exists():
         raise FileExistsError("Refusing existing candidate provenance manifest")
     report, candidate = compile_in_memory(
-        source, source_sha256=source_sha256, plan=plan)
+        source, source_sha256=source_sha256, plan=plan, bulk=bulk)
     output.parent.mkdir(parents=True, exist_ok=True)
     written_output = False
     written_manifest = False
@@ -326,7 +337,7 @@ def save_isolated(source: Path, output: Path, *, source_sha256: str, plan: dict)
             written_manifest = True
             json.dump(report, stream, indent=2)
             stream.write("\n")
-        verify_saved_plan(source, output, source_sha256=source_sha256)
+        verify_saved_plan(source, output, source_sha256=source_sha256, bulk=bulk)
     except Exception:
         if written_manifest:
             manifest.unlink(missing_ok=True)
@@ -336,11 +347,12 @@ def save_isolated(source: Path, output: Path, *, source_sha256: str, plan: dict)
     return report
 
 
-def _read_plan(path: Path):
+def _read_plan(path: Path, *, bulk=False):
     path = Path(path)
-    if not path.is_file() or not 0 < path.stat().st_size <= MAX_PLAN_BYTES:
+    max_bytes = BULK_MAX_PLAN_BYTES if bulk else MAX_PLAN_BYTES
+    if not path.is_file() or not 0 < path.stat().st_size <= max_bytes:
         raise ValueError("Missing or oversized JSON native prop plan")
-    return _plan(json.loads(path.read_text(encoding="utf8")))
+    return _plan(json.loads(path.read_text(encoding="utf8")), bulk=bulk)
 
 
 def main(argv=None):
@@ -350,24 +362,26 @@ def main(argv=None):
     parser.add_argument("--plan-json", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--verify", action="store_true")
+    parser.add_argument("--bulk", action="store_true",
+                        help="Opt-in up to 256 existing eligible StaticMeshActor edits")
     args = parser.parse_args(argv)
     try:
         if args.verify:
             if args.plan_json is not None or args.output is None:
                 raise ValueError("--verify requires only --output, not --plan-json")
             result = verify_saved_plan(args.source, args.output,
-                                       source_sha256=args.source_sha256)
+                                       source_sha256=args.source_sha256, bulk=args.bulk)
         else:
             if args.plan_json is None:
                 raise ValueError("--plan-json is required for native prop changes")
-            plan = _read_plan(args.plan_json)
-            opts = {"source_sha256": args.source_sha256, "plan": plan}
+            plan = _read_plan(args.plan_json, bulk=args.bulk)
+            opts = {"source_sha256": args.source_sha256, "plan": plan, "bulk": args.bulk}
             if args.output is None:
                 result, _ = compile_in_memory(args.source, **opts)
             else:
                 result = save_isolated(args.source, args.output, **opts)
     except Exception as exc:
-        print(json.dumps({"schema": SCHEMA, "status": "refused",
+        print(json.dumps({"schema": BULK_SCHEMA if args.bulk else SCHEMA, "status": "refused",
                           "reason": str(exc) or type(exc).__name__,
                           "output_written": False}))
         return 2

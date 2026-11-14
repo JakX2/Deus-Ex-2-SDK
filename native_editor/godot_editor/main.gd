@@ -221,6 +221,9 @@ var native_unplace_pending: Dictionary = {}
 var native_combined_dialog: FileDialog
 var native_combined_confirmation: ConfirmationDialog
 var native_combined_pending: Dictionary = {}
+var native_bulk_dialog: FileDialog
+var native_bulk_confirmation: ConfirmationDialog
+var native_bulk_pending: Dictionary = {}
 var native_recipe_dialog: FileDialog
 var native_recipe_confirmation: ConfirmationDialog
 var native_recipe_pending: Dictionary = {}
@@ -751,7 +754,8 @@ func _install_compact_toolbar(base: VBoxContainer, toolbar: HFlowContainer,
         "Experimental Multi Duplicate Save As...",
         "Experimental Unplace Original Prop Save As...",
         "Stage/Unstage original prop", "Clear unplace stages",
-        "Experimental Combined Save As...", "Export Mod Recipe...",
+        "Experimental Combined Save As...", "Experimental Save Supported GMP...",
+        "Export Mod Recipe...",
         "Apply Mod Recipe to Isolated GMP..."])
     _add_compact_action_menu(menu_row, "Playtest", [
         "Prepare Retail Test Dossier...", "Disposable Game Trial...",
@@ -1144,6 +1148,13 @@ func _make_ui() -> void:
         + "At least two kinds of changes required; native runtime unverified.")
     combined_save_button.pressed.connect(_open_native_combined_dialog)
     prop_bar.add_child(combined_save_button)
+    var bulk_save_button := Button.new()
+    bulk_save_button.text = "Experimental Save Supported GMP..."
+    bulk_save_button.tooltip_text = (
+        "Export up to 256 eligible original static prop moves, clones or staged unplacements. "
+        + "Save the FULL preview draft too; unsupported brushes/assets/properties are NOT written into GMP.")
+    bulk_save_button.pressed.connect(_open_native_bulk_dialog)
+    prop_bar.add_child(bulk_save_button)
     var recipe_button := Button.new()
     recipe_button.text = "Export Mod Recipe..."
     recipe_button.tooltip_text = (
@@ -2705,6 +2716,16 @@ func _make_ui() -> void:
     native_combined_confirmation.title = "Confirm combined experimental DX2 static prop map edits"
     native_combined_confirmation.confirmed.connect(_execute_native_combined_export)
     add_child(native_combined_confirmation)
+    native_bulk_dialog = FileDialog.new()
+    native_bulk_dialog.access = FileDialog.ACCESS_FILESYSTEM
+    native_bulk_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+    native_bulk_dialog.filters = PackedStringArray(["*.gmp ; Experimental source-backed bulk static props"])
+    native_bulk_dialog.file_selected.connect(_stage_native_bulk_export)
+    add_child(native_bulk_dialog)
+    native_bulk_confirmation = ConfirmationDialog.new()
+    native_bulk_confirmation.title = "Save eligible native props; preview-only edits excluded"
+    native_bulk_confirmation.confirmed.connect(_execute_native_bulk_export)
+    add_child(native_bulk_confirmation)
     native_recipe_dialog = FileDialog.new()
     native_recipe_dialog.access = FileDialog.ACCESS_FILESYSTEM
     native_recipe_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -12395,8 +12416,8 @@ func _toggle_native_combined_unplace() -> void:
     if not verdict.get("eligible", false):
         status_label.text = "Stage unplace refused: " + str(verdict.get("reason", "Ineligible actor."))
         return
-    if native_staged_unplaces.size() >= 8:
-        status_label.text = "Combined native unplace staging is limited to eight actors."
+    if native_staged_unplaces.size() >= 256:
+        status_label.text = "Bulk native unplace staging is limited to 256 actors."
         return
     native_staged_unplaces[name] = int(actor["export"])
     status_label.text = "Staged " + name + " for combined native Level-list unplace; "
@@ -12650,6 +12671,260 @@ func _native_combined_export_finished(status: int, response: String,
             + str(report["unplaced"].size()) + " unplaced. Runtime unverified.")
         return
     status_label.text = "Combined native writer refused: " + _native_clone_error_reason(response)
+
+
+## P109: export ALL eligible native static-prop edits into one opt-in
+## isolated GMP, without implying native world/BSP/IBD serialization.
+## Preview-only differences are reported and preserved in Save draft.
+func _native_bulk_preview() -> Dictionary:
+    var plan := {
+        "schema": "DX2Ed-experimental-native-bulk-prop-plan-v1",
+        "moves": [], "copies": [], "unplaces": []
+    }
+    var omitted: Array[String] = []
+    if not draft_groups.is_empty():
+        omitted.append("Editor groups/parenting: private preview only")
+    if not property_overrides.is_empty():
+        omitted.append("Actor property overrides: use eligible scalar writer separately")
+    var names: Array = original_mesh_transforms.keys()
+    names.sort()
+    for key in names:
+        var name := str(key)
+        if not meshes_by_actor.has(name):
+            continue
+        var node: MeshInstance3D = meshes_by_actor[name]
+        if not is_instance_valid(node):
+            omitted.append(name + ": unavailable source mesh")
+            continue
+        var baseline: Transform3D = original_mesh_transforms[name]
+        var current := node.global_transform
+        if current.is_equal_approx(baseline):
+            continue
+        if not current.basis.is_equal_approx(baseline.basis):
+            omitted.append(name + ": rotated/scaled or corrected preview basis")
+            continue
+        if native_staged_unplaces.has(name):
+            omitted.append(name + ": moved and staged for unplacement")
+            continue
+        if not actors_by_name.has(name):
+            omitted.append(name + ": no original actor identity")
+            continue
+        var actor: Dictionary = actors_by_name[name]
+        if (str(actor.get("class", "")) != "StaticMeshActor"
+            or typeof(actor.get("export", null)) != TYPE_INT
+            or int(actor["export"]) < 1):
+            omitted.append(name + ": not an original StaticMeshActor")
+            continue
+        var shift := current.origin - baseline.origin
+        var delta := [shift.x / NATIVE_CLONE_UNREAL_METRES,
+                      shift.z / NATIVE_CLONE_UNREAL_METRES,
+                      shift.y / NATIVE_CLONE_UNREAL_METRES]
+        if (not shift.is_finite() or shift.length_squared() < 0.00000001
+            or abs(float(delta[0])) > 4096.0 or abs(float(delta[1])) > 4096.0
+            or abs(float(delta[2])) > 4096.0):
+            omitted.append(name + ": translation outside supported native limits")
+            continue
+        plan["moves"].append({"actor": name, "export": int(actor["export"]), "delta": delta})
+    var draft_names: Array = draft_prop_copies.keys()
+    draft_names.sort()
+    for key in draft_names:
+        var name := str(key)
+        if draft_brush_specs.has(name) or draft_template_provenance.has(name):
+            omitted.append(name + ": private brush or class template")
+            continue
+        var source_name := str(draft_prop_sources.get(name, ""))
+        if (not actors_by_name.has(source_name)
+            or not original_mesh_transforms.has(source_name)
+            or not meshes_by_actor.has(source_name)):
+            omitted.append(name + ": asset preview lacks original native static actor")
+            continue
+        var source: Dictionary = actors_by_name[source_name]
+        if (str(source.get("class", "")) != "StaticMeshActor"
+            or typeof(source.get("export", null)) != TYPE_INT
+            or int(source["export"]) < 1):
+            omitted.append(name + ": original source is not an eligible static actor")
+            continue
+        var node: MeshInstance3D = draft_prop_copies[name]
+        if not is_instance_valid(node):
+            omitted.append(name + ": draft mesh unavailable")
+            continue
+        var baseline: Transform3D = original_mesh_transforms[source_name]
+        if not node.global_transform.basis.is_equal_approx(baseline.basis):
+            omitted.append(name + ": clone rotated or scaled")
+            continue
+        var shift := node.global_position - baseline.origin
+        var delta := [shift.x / NATIVE_CLONE_UNREAL_METRES,
+                      shift.z / NATIVE_CLONE_UNREAL_METRES,
+                      shift.y / NATIVE_CLONE_UNREAL_METRES]
+        if (not shift.is_finite() or shift.length_squared() < 0.00000001
+            or abs(float(delta[0])) > 4096.0 or abs(float(delta[1])) > 4096.0
+            or abs(float(delta[2])) > 4096.0):
+            omitted.append(name + ": clone displacement outside native limits")
+            continue
+        plan["copies"].append({"actor": source_name, "export": int(source["export"]), "delta": delta})
+    var staged: Array = native_staged_unplaces.keys()
+    staged.sort()
+    for key in staged:
+        var name := str(key)
+        if (not actors_by_name.has(name) or not original_mesh_transforms.has(name)
+            or not meshes_by_actor.has(name)):
+            omitted.append(name + ": staged source missing")
+            continue
+        var actor: Dictionary = actors_by_name[name]
+        var node: MeshInstance3D = meshes_by_actor[name]
+        if (not is_instance_valid(node)
+            or not node.global_transform.is_equal_approx(original_mesh_transforms[name])
+            or str(actor.get("class", "")) != "StaticMeshActor"
+            or typeof(actor.get("export", null)) != TYPE_INT
+            or int(actor["export"]) != int(native_staged_unplaces[name])):
+            omitted.append(name + ": staged source transformed or identity changed")
+            continue
+        plan["unplaces"].append({"actor": name, "export": int(actor["export"])})
+    var count: int = int(plan["moves"].size()) + int(plan["copies"].size()) + int(plan["unplaces"].size())
+    return {"plan": plan, "omitted": omitted, "native_count": count,
+            "within_limit": count <= 256}
+
+
+func _open_native_bulk_dialog() -> void:
+    _finish_gizmo_drag()
+    native_bulk_pending.clear()
+    if not _native_clone_source_ready():
+        status_label.text = "Bulk GMP Save As refused: original map source missing or worker busy."
+        return
+    var report := _native_bulk_preview()
+    if report["native_count"] < 1:
+        status_label.text = ("No source-backed static prop edits to export; "
+            + str(report["omitted"].size()) + " unsupported edits remain in private draft.")
+        return
+    if not report["within_limit"]:
+        status_label.text = "Bulk native Save As exceeds 256 eligible edits; split into separate test plans."
+        return
+    var writer := ProjectSettings.globalize_path("res://../package_writer/dx2_native_prop_plan.py")
+    if not FileAccess.file_exists(writer):
+        status_label.text = "Bulk native GMP writer unavailable."
+        return
+    native_bulk_dialog.current_file = last_gmp_path.get_file()
+    native_bulk_dialog.popup_centered_ratio(0.75)
+
+
+func _stage_native_bulk_export(destination: String) -> void:
+    native_bulk_pending.clear()
+    if (not _native_clone_source_ready()
+        or destination.get_file().to_lower() != last_gmp_path.get_file().to_lower()
+        or destination == last_gmp_path):
+        status_label.text = "Bulk save needs a NEW isolated GMP with the same original basename."
+        return
+    var report := _native_bulk_preview()
+    if report["native_count"] < 1 or not report["within_limit"]:
+        status_label.text = "Bulk native source edit count changed or exceeds supported limits."
+        return
+    native_bulk_pending = {
+        "source": last_gmp_path, "source_sha256": source_gamesys_sha256,
+        "destination": destination, "report": report.duplicate(true)
+    }
+    var plan: Dictionary = report["plan"]
+    var description := (
+        "EXPERIMENTAL save of source-verified eligible StaticMeshActor edits."
+        + "\nMove originals: " + str(plan["moves"].size())
+        + "\nCopy originals: " + str(plan["copies"].size())
+        + "\nUnplace Level references: " + str(plan["unplaces"].size())
+        + "\n\nOmitted preview-only changes (NOT in playable GMP): "
+        + str(report["omitted"].size()))
+    for i in range(mini(8, report["omitted"].size())):
+        description += "\n • " + str(report["omitted"][i])
+    if report["omitted"].size() > 8:
+        description += "\n ... additional omitted edits stay in the private draft."
+    description += (
+        "\n\nNo native BSP, brush, material, gameplay script or collision rebuilding."
+        + "\nEvery eligible actor must pass source and binary package checks."
+        + "\nOriginal game files untouched; runtime behavior UNVERIFIED."
+        + "\n\nCreate candidate: " + destination)
+    native_bulk_confirmation.dialog_text = description
+    native_bulk_confirmation.popup_centered(Vector2i(850, 530))
+
+
+func _execute_native_bulk_export() -> void:
+    if native_bulk_pending.is_empty() or not _native_clone_source_ready():
+        native_bulk_pending.clear()
+        status_label.text = "Bulk native export cancelled: source unavailable or writer busy."
+        return
+    var frozen := native_bulk_pending.duplicate(true)
+    native_bulk_pending.clear()
+    if (frozen["source"] != last_gmp_path
+        or frozen["source_sha256"] != source_gamesys_sha256
+        or _native_bulk_preview() != frozen["report"]):
+        status_label.text = "Bulk native export cancelled: preview edits changed since confirmation."
+        return
+    _save_prop_draft()
+    if (not status_label.text.begins_with("Saved ")
+        or _draft_file_path().is_empty()
+        or not FileAccess.file_exists(_draft_file_path())):
+        status_label.text = "Bulk GMP refused: complete private preview draft could not be saved."
+        return
+    var plan_path := OS.get_user_data_dir().path_join("native_bulk_plan_p109.json")
+    var stream := FileAccess.open(plan_path, FileAccess.WRITE)
+    if stream == null:
+        status_label.text = "Bulk GMP refused: cannot stage private binary plan."
+        return
+    stream.store_string(JSON.stringify(frozen["report"]["plan"]))
+    stream.close()
+    frozen["plan_path"] = plan_path
+    var writer := ProjectSettings.globalize_path("res://../package_writer/dx2_native_prop_plan.py")
+    native_export_thread = Thread.new()
+    var started := native_export_thread.start(_run_native_bulk_export.bind(writer, frozen))
+    if started != OK:
+        native_export_thread = null
+        DirAccess.remove_absolute(plan_path)
+        status_label.text = "Bulk GMP refused: native writer worker unavailable."
+        return
+    status_label.text = "Bulk native GMP: replaying original, validating and creating isolated copy..."
+
+
+func _run_native_bulk_export(script: String, frozen: Dictionary) -> void:
+    var args := PackedStringArray([
+        script, str(frozen["source"]), "--source-sha256", str(frozen["source_sha256"]),
+        "--plan-json", str(frozen["plan_path"]), "--output", str(frozen["destination"]),
+        "--bulk"
+    ])
+    var output: Array = []
+    var status := OS.execute(PythonRuntime.executable(), args, output, true)
+    if status == -1:
+        var pyargs := PackedStringArray(["-3"])
+        pyargs.append_array(args)
+        output.clear()
+        status = OS.execute("py", pyargs, output, true)
+    call_deferred("_native_bulk_export_finished", status, "\n".join(output),
+        str(frozen["plan_path"]), frozen["report"].duplicate(true))
+
+
+func _native_bulk_export_finished(status: int, response: String,
+        plan_path: String, original_report: Dictionary) -> void:
+    if native_export_thread != null:
+        native_export_thread.wait_to_finish()
+        native_export_thread = null
+    if FileAccess.file_exists(plan_path):
+        DirAccess.remove_absolute(plan_path)
+    var report: Variant = JSON.parse_string(response.strip_edges())
+    var requested: Dictionary = original_report["plan"]
+    if (status == 0 and typeof(report) == TYPE_DICTIONARY
+        and report.get("schema") == "DX2Ed-experimental-native-bulk-prop-plan-v1"
+        and report.get("status") == "isolated-GMP-created-runtime-unverified"
+        and report.get("all_changes_scope_verified") == true
+        and report.get("original_source_unchanged") == true
+        and report.get("runtime_game_verified") == false
+        and report.get("game_installation_modified") == false
+        and typeof(report.get("moved", null)) == TYPE_ARRAY
+        and typeof(report.get("copied", null)) == TYPE_ARRAY
+        and typeof(report.get("unplaced", null)) == TYPE_ARRAY
+        and report["moved"].size() == requested["moves"].size()
+        and report["copied"].size() == requested["copies"].size()
+        and report["unplaced"].size() == requested["unplaces"].size()):
+        status_label.text = ("Experimental bulk GMP saved: " + str(report.get("output_file", ""))
+            + " | " + str(original_report["native_count"]) + " native static prop edits; "
+            + str(original_report["omitted"].size()) + " preview-only edits omitted from GMP."
+            + " Full editor draft preserved. Retail runtime unverified.")
+        return
+    status_label.text = "Bulk native GMP refused: " + _native_clone_error_reason(response)
 
 
 ## v0.61: share a source-pinned JSON mod recipe, never a proprietary GMP.
