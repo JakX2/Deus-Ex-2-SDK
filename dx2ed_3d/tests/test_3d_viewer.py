@@ -8,7 +8,9 @@ import unittest
 from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT/'dx2ed_3d'))
+# ROOT already is dx2ed_3d; importing from ROOT/dx2ed_3d loaded a
+# namespace package instead of the executable dx2ed_3d.py module.
+sys.path.insert(0,str(ROOT))
 import dx2ed_3d as app
 
 
