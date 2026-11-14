@@ -103,8 +103,11 @@ class NativeBulkTests(unittest.TestCase):
             _plan(plan, bulk=True)
         with self.assertRaises(ValueError):
             _plan({**self.single, "schema": SCHEMA}, bulk=True)
-        with self.assertRaises(ValueError):
-            _plan({**self.single, "copies": [copies[0], copies[0]]}, bulk=True)
+        # Reusing one original actor as a copy template is intentional;
+        # individual cloned exports receive distinct native identities.
+        twice = _plan({**self.single, "moves": [],
+                       "copies": [copies[0], copies[0]]}, bulk=True)
+        self.assertEqual(len(twice["copies"]), 2)
         with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
             compile_in_memory(self.source, source_sha256="f" * 64,
                               plan=self.single, bulk=True)
