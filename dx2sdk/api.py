@@ -574,6 +574,15 @@ class DX2Map:
         from .bsp_model_spans import inspect_original_model_span_ledger
         return inspect_original_model_span_ledger(self, node_indices)
 
+    def inspect_original_bsp_node_dossier(self, node_index: int) -> dict:
+        """Read-only original World Model BSP node plane and raw byte dossier.
+
+        This does not identify a native BSP surface material/UV table or
+        modify an original GMP, BSP, collision or game resource.
+        """
+        from .bsp_node_dossier import inspect_original_bsp_node_dossier
+        return inspect_original_bsp_node_dossier(self, node_index)
+
     def static_prop_clone_candidates(self, limit: int = 200) -> dict:
         """Read-only, conservative original T3SDK clone eligibility list."""
         from .clones import source_clone_candidates
