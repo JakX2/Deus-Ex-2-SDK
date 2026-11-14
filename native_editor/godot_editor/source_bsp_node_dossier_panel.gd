@@ -123,6 +123,16 @@ func accept_verified_report(raw: Variant) -> bool:
         or raw.get("original_model_full_span_ledger_verified", null) != true
         or not _is_sha256(str(raw.get("original_model_sha256", "")))):
         return _reject("Unsupported source, schema, native capability or model proof.")
+    var legacy: Variant = raw.get("read_only_legacy_research_adapter", false)
+    if legacy == true:
+        var licensee: Variant = raw.get("source_original_licensee", -1)
+        if (typeof(licensee) not in [TYPE_INT, TYPE_FLOAT]
+            or float(licensee) != float(int(licensee))
+            or int(licensee) not in [65, 67]
+            or raw.get("general_DX2Map_writer_licensee_allowlist_extended", true) != false):
+            return _reject("Unverified legacy source licensee or claimed GMP writer permission.")
+    elif legacy != false:
+        return _reject("Original BSP source reader capability invalid.")
     var count: Variant = raw.get("original_node_count", -1)
     var ordinal: Variant = raw.get("original_node_ordinal", -1)
     var length: Variant = raw.get("native_model_node_record_bytes", -1)
@@ -213,6 +223,10 @@ func accept_verified_report(raw: Variant) -> bool:
     node_spin.set_value_no_signal(int(ordinal))
     var parts := [
         "SOURCE ORIGINAL, READ ONLY: " + original_gmp.get_file(),
+        ("Original UE95 licensee " + str(raw["source_original_licensee"])
+         + " | RESEARCH READ ONLY, general GMP writer unchanged"
+         if legacy == true else
+         "Original v95 licensee 68/69 | source-verified read only"),
         "World Model export #" + str(raw.get("world_model_export", "?"))
         + " | Node #" + str(int(ordinal)) + " / " + str(int(count)),
         "Record: " + str(int(length)) + " bytes at Model +"
