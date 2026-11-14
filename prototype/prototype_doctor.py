@@ -27,6 +27,7 @@ REQUIRED = (
     "dx2sdk/bsp_model_noop.py",
     "dx2sdk/bsp_model_spans.py",
     "dx2sdk/bsp_node_dossier.py",
+    "dx2sdk/bsp_legacy_licensee_readonly.py",
     "dx2sdk/private_brush_preflight.py",
     "dx2sdk/private_brush_obj.py",
     "dx2sdk/private_brush_obj_audit.py",
