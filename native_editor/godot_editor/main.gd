@@ -13037,10 +13037,11 @@ func _native_bulk_export_finished(status: int, response: String,
         and report["moved"].size() == requested["moves"].size()
         and report["copied"].size() == requested["copies"].size()
         and report["unplaced"].size() == requested["unplaces"].size()):
-        status_label.text = ("Experimental bulk GMP saved: " + str(report.get("output_file", ""))
-            + " | " + str(original_report["native_count"]) + " native static prop edits; "
-            + str(original_report["omitted"].size()) + " preview-only edits omitted from GMP."
-            + " Full editor draft preserved. Retail runtime unverified.")
+        status_label.text = ("Bulk GMP CREATED, NOT INSTALLED: " + str(report.get("output_file", ""))
+            + " | " + str(original_report["native_count"]) + " native prop edits; "
+            + str(original_report["omitted"].size()) + " preview-only changes NOT exported. "
+            + "The running game still reads its own Content/DX2/Maps copy. "
+            + "Use Playtest > Disposable Game Trial (backup, stage, run copied game).")
         return
     status_label.text = "Bulk native GMP refused: " + _native_clone_error_reason(response)
 

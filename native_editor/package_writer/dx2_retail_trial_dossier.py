@@ -16,7 +16,8 @@ import re
 
 from dx2_actor_clone_probe import _pin
 from dx2_native_prop_plan import (
-    _manifest_path, MAX_MANIFEST_BYTES, compile_in_memory,
+    _manifest_path, MAX_MANIFEST_BYTES, BULK_MANIFEST_SUFFIX,
+    BULK_MAX_MANIFEST_BYTES, BULK_MAX_TOTAL, compile_in_memory,
     verify_saved_plan,
 )
 from dx2_package_roundtrip import _validate_input, sha256
@@ -34,11 +35,11 @@ REQUIRED_PHASES = (
 )
 
 
-def _read_json(path: Path, *, suffix: str) -> dict:
+def _read_json(path: Path, *, suffix: str, max_bytes: int = MAX_JSON) -> dict:
     path = Path(path).expanduser().resolve(strict=True)
     if not path.is_file() or not path.name.endswith(suffix):
         raise ValueError("Expected a source-only JSON with the correct suffix")
-    if not 0 < path.stat().st_size <= MAX_JSON:
+    if not 0 < path.stat().st_size <= max_bytes:
         raise ValueError("Source-only JSON is empty or oversized")
     doc = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(doc, dict):
@@ -65,7 +66,7 @@ def _output_paths(destination: Path, source: Path, candidate: Path) -> tuple[Pat
     return path, observations
 
 
-def _checklist(plan: dict, compilation: dict) -> list[dict]:
+def _checklist(plan: dict, compilation: dict, *, bulk: bool = False) -> list[dict]:
     checks = [{"id": name, "category": "manual-runtime", "original_actor": None,
                "expectation": desc}
               for name, desc in REQUIRED_PHASES]
@@ -94,7 +95,10 @@ def _checklist(plan: dict, compilation: dict) -> list[dict]:
             "original_actor": row["actor"], "original_export": row["export"],
             "expectation": "Confirm original prop disappears on fresh map entry and leaves no unwanted collision or script effects.",
         })
-    if len(checks) > 32 or len({c["id"] for c in checks}) != len(checks):
+    # Legacy plans retain their original 32-check limit. Bulk plans need
+    # one evidence row per supported operation, capped at 256 authoring edits.
+    limit = len(REQUIRED_PHASES) + BULK_MAX_TOTAL if bulk else 32
+    if len(checks) > limit or len({c["id"] for c in checks}) != len(checks):
         raise ValueError("Invalid or excessive retail test check IDs")
     return checks
 
@@ -104,16 +108,27 @@ def expected_dossier(source: Path, candidate: Path, *, source_sha256: str) -> di
     source = _validate_input(Path(source))
     candidate = Path(candidate).expanduser().resolve(strict=True)
     pin = _pin(source_sha256)
-    receipt = verify_saved_plan(source, candidate, source_sha256=pin)
+    legacy_manifest = _manifest_path(candidate)
+    bulk_manifest = _manifest_path(candidate, bulk=True)
+    # Never guess a manifest/schema pair. Ambiguous or missing sidecars fail
+    # closed; the existing legacy path retains its former validation.
+    if legacy_manifest.is_file() == bulk_manifest.is_file():
+        raise ValueError("Expected exactly one recognized native plan manifest (legacy or bulk)")
+    bulk = bulk_manifest.is_file()
+    receipt = verify_saved_plan(source, candidate,
+                                source_sha256=pin, bulk=bulk)
     if (receipt["all_candidate_bytes_replayed"] is not True
             or receipt["runtime_game_verified"] is not False
             or receipt["native_actor_exports_deleted"] is not False
             or receipt["game_installation_modified"] is not False):
         raise ValueError("Native GMP receipt did not prove isolated binary replay")
-    manifest = _read_json(_manifest_path(candidate), suffix=".dx2ed-native-prop-plan.json")
+    manifest_path = bulk_manifest if bulk else legacy_manifest
+    suffix = BULK_MANIFEST_SUFFIX if bulk else ".dx2ed-native-prop-plan.json"
+    manifest = _read_json(manifest_path, suffix=suffix,
+                          max_bytes=BULK_MAX_MANIFEST_BYTES if bulk else MAX_MANIFEST_BYTES)
     plan = manifest["plan"]
     compilation, generated = compile_in_memory(
-        source, source_sha256=pin, plan=plan)
+        source, source_sha256=pin, plan=plan, bulk=bulk)
     if generated != candidate.read_bytes() or receipt["output_sha256"] != sha256(generated):
         raise ValueError("Trial candidate whole-file replay failed")
     if sha256(source.read_bytes()) != pin:
@@ -131,7 +146,7 @@ def expected_dossier(source: Path, candidate: Path, *, source_sha256: str) -> di
             "copies": len(compilation["copied"]),
             "unplaces": len(compilation["unplaced"]),
         },
-        "checks": _checklist(compilation["plan"], compilation),
+        "checks": _checklist(compilation["plan"], compilation, bulk=bulk),
         "automated_whole_gmp_byte_replay_verified": True,
         "game_installation_modified": False,
         "gameplay_runtime_verified": False,
