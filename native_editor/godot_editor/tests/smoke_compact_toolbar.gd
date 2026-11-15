@@ -79,7 +79,7 @@ func _run() -> void:
         _fail("Save / Export did not save draft and explicitly refuse unsupported native output")
         return
     editor.save_export_overview.hide()
-        var native_menu: MenuButton = editor.compact_menus["Native GMP (test)"]
+    var native_menu: MenuButton = editor.compact_menus["Native GMP (test)"]
     if native_menu.get_popup().get_item_count() < 10:
         _fail("Research native Save As actions were lost")
         return
