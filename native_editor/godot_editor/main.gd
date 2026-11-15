@@ -224,6 +224,8 @@ var native_combined_pending: Dictionary = {}
 var native_bulk_dialog: FileDialog
 var native_bulk_confirmation: ConfirmationDialog
 var native_bulk_pending: Dictionary = {}
+var save_export_overview: AcceptDialog
+var save_export_native_button: Button
 var native_recipe_dialog: FileDialog
 var native_recipe_confirmation: ConfirmationDialog
 var native_recipe_pending: Dictionary = {}
@@ -693,10 +695,15 @@ func _add_compact_action_menu(parent: HBoxContainer, title: String, labels: Arra
             continue
         var source: Button = compact_action_buttons[key]
         var item_id := popup.get_item_count()
+        var visible_label := key
+        if key == "Experimental Combined Save As...":
+            visible_label = "Legacy Combined GMP (requires 2 edit kinds)..."
+        elif key == "Experimental Save Supported GMP...":
+            visible_label = "Bulk GMP: eligible static props only (up to 256)..."
         if source.toggle_mode:
-            popup.add_check_item(key, item_id)
+            popup.add_check_item(visible_label, item_id)
         else:
-            popup.add_item(key, item_id)
+            popup.add_item(visible_label, item_id)
         actions[item_id] = source
     popup.about_to_popup.connect(_compact_menu_open.bind(popup, actions))
     popup.id_pressed.connect(_compact_menu_action.bind(actions))
@@ -736,7 +743,7 @@ func _install_compact_toolbar(base: VBoxContainer, toolbar: HFlowContainer,
         "Open DX2 map (.gmp)", "IBD override...", "DX2 System folder...",
         "Shared ZIP...", "System ZIP... (optional)", "Open DX2 map ZIP...",
         "Open exported GLB", "Load actors.json", "Load demo cubes",
-        "Save draft", "Load draft"])
+        "Save draft", "Load draft", "Save / Export map..."])
     _add_compact_action_menu(menu_row, "Edit", [
         "Undo", "Redo", "Duplicate", "Reset / Delete copy",
         "Restore All", "Snap selected", "Set 3D cursor"])
@@ -777,7 +784,7 @@ func _install_compact_toolbar(base: VBoxContainer, toolbar: HFlowContainer,
     compact_quickbar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     compact_toolbar_root.add_child(compact_quickbar)
     for label in ["Open DX2 map (.gmp)", "Save draft", "Load draft",
-                  "Undo", "Redo", "Move W", "Rotate E", "Scale R"]:
+                  "Save / Export map...", "Undo", "Redo", "Move W", "Rotate E", "Scale R"]:
         if not compact_action_buttons.has(label):
             push_warning("Compact DX2Ed quick action not found: " + label)
             continue
@@ -1247,6 +1254,13 @@ func _make_ui() -> void:
     reload_button.text = "Load draft"
     reload_button.pressed.connect(_load_prop_draft)
     prop_bar.add_child(reload_button)
+    var save_export_btn := Button.new()
+    save_export_btn.text = "Save / Export map..."
+    save_export_btn.tooltip_text = (
+        "Save your current editor-only draft and show a clear list of what "
+        + "can actually become an experimental native GMP. Does not overwrite the game.")
+    save_export_btn.pressed.connect(_open_save_export_overview)
+    prop_bar.add_child(save_export_btn)
 
     _install_compact_toolbar(base, toolbar, zip_bar, prop_bar)
 
@@ -2726,6 +2740,13 @@ func _make_ui() -> void:
     native_bulk_confirmation.title = "Save eligible native props; preview-only edits excluded"
     native_bulk_confirmation.confirmed.connect(_execute_native_bulk_export)
     add_child(native_bulk_confirmation)
+    save_export_overview = AcceptDialog.new()
+    save_export_overview.title = "DX2Ed | Save editor draft and export supported map edits"
+    save_export_overview.get_ok_button().text = "Close"
+    save_export_native_button = save_export_overview.add_button(
+        "Export eligible GMP...", false, "native")
+    save_export_overview.custom_action.connect(_save_export_overview_action)
+    add_child(save_export_overview)
     native_recipe_dialog = FileDialog.new()
     native_recipe_dialog.access = FileDialog.ACCESS_FILESYSTEM
     native_recipe_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -12673,6 +12694,73 @@ func _native_combined_export_finished(status: int, response: String,
     status_label.text = "Combined native writer refused: " + _native_clone_error_reason(response)
 
 
+## P110: single obvious Save / Export entrypoint. The private project
+## and native GMP are different outputs, so never suggest a preview brush or
+## newly placed resource has become game-native data.
+func _open_save_export_overview() -> void:
+    _finish_gizmo_drag()
+    if scene_root == null or current_folder.is_empty():
+        status_label.text = "Save / Export: open a map or demo scene first."
+        return
+    _save_prop_draft()
+    var saved: bool = (
+        status_label.text.begins_with("Saved ")
+        and not _draft_file_path().is_empty()
+        and FileAccess.file_exists(_draft_file_path()))
+    var report := _native_bulk_preview()
+    var plan: Dictionary = report["plan"]
+    var native_count := int(report["native_count"])
+    var omitted: Array = report["omitted"]
+    var native_source_ready := false
+    if saved and native_count > 0 and bool(report["within_limit"]):
+        native_source_ready = _native_clone_source_ready()
+    save_export_native_button.disabled = not native_source_ready
+    var message := (
+        "EDITOR DRAFT (NOT A GAME MAP)\n"
+        + ("Saved the current editable project as private JSON.\n"
+            if saved else "SAVE FAILED: current private editor draft was NOT written.\n")
+        + "\nNATIVE GMP CANDIDATE (EXPERIMENTAL)\n"
+        + "Eligible static-prop moves: " + str(plan["moves"].size())
+        + "\nEligible static-prop copies: " + str(plan["copies"].size())
+        + "\nEligible staged unplacements: " + str(plan["unplaces"].size())
+        + "\nPreview-only or unsupported changes: " + str(omitted.size()))
+    for i in range(mini(8, omitted.size())):
+        message += "\n  - " + str(omitted[i])
+    if omitted.size() > 8:
+        message += "\n  - ... and " + str(omitted.size() - 8) + " more (kept in editor draft)"
+    if native_count < 1:
+        message += ("\n\nNo source-backed native edits were found. "
+            + "You can keep your scene as an editor draft, "
+            + "but there is no modified GMP to export.")
+    elif not bool(report["within_limit"]):
+        message += "\n\nNative edit limit exceeded (256). No GMP will be created."
+    elif not native_source_ready:
+        message += ("\n\nNative source is unavailable or not authenticated. "
+            + "Reopen an unchanged original GMP to export eligible edits.")
+    else:
+        message += ("\n\nExport eligible GMP will create a NEW isolated "
+            + "source-verified candidate with only the eligible edits.")
+    message += (
+        "\n\nCustom brushes/BSP, arbitrary new assets, rotations, scales, "
+        + "scripts and gameplay actors are not compiled to native DX2. "
+        + "Original retail map files remain unchanged.")
+    save_export_overview.dialog_text = message
+    save_export_overview.popup_centered(Vector2i(830, 540))
+    if saved:
+        status_label.text = ("Save / Export: editor draft saved. "
+            + str(native_count) + " candidate native prop edits, "
+            + str(omitted.size()) + " preview-only exclusions. See summary dialog.")
+    else:
+        status_label.text = "Save / Export: editor draft SAVE FAILED. See summary dialog."
+
+
+func _save_export_overview_action(action: String) -> void:
+    if action != "native" or save_export_native_button.disabled:
+        return
+    save_export_overview.hide()
+    _open_native_bulk_dialog()
+
+
 ## P109: export ALL eligible native static-prop edits into one opt-in
 ## isolated GMP, without implying native world/BSP/IBD serialization.
 ## Preview-only differences are reported and preserved in Save draft.
@@ -12793,8 +12881,9 @@ func _open_native_bulk_dialog() -> void:
         return
     var report := _native_bulk_preview()
     if report["native_count"] < 1:
-        status_label.text = ("No source-backed static prop edits to export; "
-            + str(report["omitted"].size()) + " unsupported edits remain in private draft.")
+        _open_save_export_overview()
+        status_label.text = ("Bulk GMP: no eligible original StaticMeshActor changes. "
+            + "Full editor draft is available; review the Save / Export summary.")
         return
     if not report["within_limit"]:
         status_label.text = "Bulk native Save As exceeds 256 eligible edits; split into separate test plans."

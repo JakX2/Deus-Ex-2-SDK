@@ -28,7 +28,7 @@ func _run() -> void:
             _fail("Uncluttered editor opened with legacy rows visible")
             return
     for name in ["Open DX2 map (.gmp)", "Save draft", "Load draft",
-                 "Undo", "Redo", "Move W", "Rotate E", "Scale R"]:
+                 "Save / Export map...", "Undo", "Redo", "Move W", "Rotate E", "Scale R"]:
         if not editor.compact_action_buttons.has(name):
             _fail("Missing quick action: " + name)
             return
@@ -68,6 +68,17 @@ func _run() -> void:
         _fail("File menu did not preserve private Save draft behavior")
         return
 
+    # The user's top-level Save / Export button saves a private draft
+    # and reports exactly ZERO game-native changes for the synthetic demo.
+    editor.compact_action_buttons["Save / Export map..."].pressed.emit()
+    if (editor.save_export_overview == null
+        or editor.save_export_native_button == null
+        or not editor.save_export_native_button.disabled
+        or editor.save_export_overview.dialog_text.find("No source-backed native edits were found") < 0
+        or not editor.status_label.text.begins_with("Save / Export: editor draft saved.")):
+        _fail("Save / Export did not save draft and explicitly refuse unsupported native output")
+        return
+    editor.save_export_overview.hide()
     var native_menu: MenuButton = editor.compact_menus["Native GMP (test)"]
     if native_menu.get_popup().get_item_count() < 10:
         _fail("Research native Save As actions were lost")
