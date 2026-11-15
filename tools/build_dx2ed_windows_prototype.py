@@ -113,6 +113,7 @@ REQUIRED = (
     "native_editor/godot_editor/tests/smoke_native_static_unplace.gd",
     "native_editor/godot_editor/tests/smoke_native_combined_prop_plan.gd",
     "native_editor/godot_editor/tests/smoke_native_bulk_save.gd",
+    "native_editor/godot_editor/tests/smoke_original_actor_json_export_id.gd",
     "native_editor/godot_editor/tests/smoke_native_mod_recipe.gd",
     "native_editor/godot_editor/tests/smoke_crosssource_reference_review.gd",
     "native_editor/godot_editor/tests/smoke_native_retail_trial_dossier.gd",

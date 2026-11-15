@@ -3706,6 +3706,24 @@ func load_glb(path: String) -> void:
         status_label.text = "3D loaded (%d meshes). Open its actors.json to inspect entities." % mesh_count
     print("DX2Ed native: GLB loaded with ", mesh_count, " mesh instances")
 
+## JSON.parse_string() returns numeric JSON IDs as floats in Godot 4.3.
+## Original UE package export indices are POSITIVE INTEGERS. Normalize only
+## exact integral, finite, bounded source IDs before any gameplay authoring
+## classifier sees the actor. No class or export identity is inferred.
+func _source_export_id_from_json(value: Variant) -> int:
+    if typeof(value) == TYPE_INT:
+        var value_int := int(value)
+        return value_int if value_int >= 1 and value_int <= 2147483647 else -1
+    if typeof(value) == TYPE_FLOAT:
+        var value_float := float(value)
+        if (not is_finite(value_float) or value_float < 1.0
+            or value_float > 2147483647.0):
+            return -1
+        var converted := int(value_float)
+        return converted if float(converted) == value_float else -1
+    return -1
+
+
 func load_actors(path: String) -> void:
     var file := FileAccess.open(path, FileAccess.READ)
     if file == null:
@@ -3723,6 +3741,11 @@ func load_actors(path: String) -> void:
     actors_by_name.clear()
     for actor in actors:
         if typeof(actor) == TYPE_DICTIONARY and actor.has("name"):
+            var source_export := _source_export_id_from_json(actor.get("export"))
+            if source_export > 0:
+                # Preserve original numeric identity exactly, converting only
+                # JSON's float representation of an integral original export.
+                actor["export"] = source_export
             actors_by_name[str(actor["name"])] = actor
     _refresh_actor_list()
     _refresh_environment_entities()
@@ -12798,10 +12821,13 @@ func _native_bulk_preview() -> Dictionary:
             omitted.append(name + ": no original actor identity")
             continue
         var actor: Dictionary = actors_by_name[name]
-        if (str(actor.get("class", "")) != "StaticMeshActor"
-            or typeof(actor.get("export", null)) != TYPE_INT
-            or int(actor["export"]) < 1):
-            omitted.append(name + ": not an original StaticMeshActor")
+        var native_class := str(actor.get("class", ""))
+        if native_class != "StaticMeshActor":
+            omitted.append(name + ": source class " + native_class
+                + " (native bulk writer supports exactly StaticMeshActor)")
+            continue
+        if _source_export_id_from_json(actor.get("export")) < 1:
+            omitted.append(name + ": original native export ID missing or invalid")
             continue
         var shift := current.origin - baseline.origin
         var delta := [shift.x / NATIVE_CLONE_UNREAL_METRES,
@@ -12827,10 +12853,13 @@ func _native_bulk_preview() -> Dictionary:
             omitted.append(name + ": asset preview lacks original native static actor")
             continue
         var source: Dictionary = actors_by_name[source_name]
-        if (str(source.get("class", "")) != "StaticMeshActor"
-            or typeof(source.get("export", null)) != TYPE_INT
-            or int(source["export"]) < 1):
-            omitted.append(name + ": original source is not an eligible static actor")
+        var native_class := str(source.get("class", ""))
+        if native_class != "StaticMeshActor":
+            omitted.append(name + ": original source class " + native_class
+                + " (not a verified native StaticMeshActor clone)")
+            continue
+        if _source_export_id_from_json(source.get("export")) < 1:
+            omitted.append(name + ": original clone source export ID missing or invalid")
             continue
         var node: MeshInstance3D = draft_prop_copies[name]
         if not is_instance_valid(node):
