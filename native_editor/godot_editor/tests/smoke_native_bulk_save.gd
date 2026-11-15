@@ -18,7 +18,7 @@ func _run() -> void:
     var native_menu: MenuButton = editor.compact_menus["Native GMP (test)"]
     var has_bulk := false
     for idx in range(native_menu.get_popup().get_item_count()):
-        if native_menu.get_popup().get_item_text(idx) == "Experimental Save Supported GMP...":
+        if native_menu.get_popup().get_item_text(idx) == "Bulk GMP: eligible static props only (up to 256)...":
             has_bulk = true
     if not has_bulk:
         _fail("Bulk GMP action is not exposed in the compact Native GMP menu")
@@ -80,6 +80,23 @@ func _run() -> void:
     if blocked["native_count"] != 0:
         _fail("Bulk native save incorrectly found exportable edit after reset")
         return
+    # Exercise the ACTUAL menu dispatch. A synthetic scene has no source
+    # GMP; triggering the bulk menu must produce BULK refusal, not the old
+    # combined-writer two-kind message left in the status bar.
+    var popup := native_menu.get_popup()
+    var bulk_item_id := -1
+    for idx in range(popup.get_item_count()):
+        if popup.get_item_text(idx).begins_with("Bulk GMP:"):
+            bulk_item_id = popup.get_item_id(idx)
+    if bulk_item_id < 0:
+        _fail("Cannot find bulk GMP action ID in menu")
+        return
+    editor.status_label.text = "stale Combined native Save As needs two change kinds"
+    popup.id_pressed.emit(bulk_item_id)
+    if not editor.status_label.text.begins_with("Bulk GMP Save As refused:"):
+        _fail("Bulk menu incorrectly routed to old Combined Save As handler: "
+            + editor.status_label.text)
+        return
     editor.queue_free()
-    print("DX2Ed P109 source-only bulk save candidate classification PASS")
+    print("DX2Ed P110 bulk menu routes correctly and preview exclusions PASS")
     quit(0)
