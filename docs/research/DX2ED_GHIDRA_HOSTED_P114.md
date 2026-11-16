@@ -95,9 +95,9 @@ just to make the automation work without understanding the risk.
 - Runs on pull requests have NO original-binary secrets. Neither
   original files nor original hashes are inferred by tests.
 - No code writes a GMP, patches DX2, or installs a retail game.
-- This branch is a draft stacked on #189, which itself has not yet
-  merged to main. GitHub schedules only execute workflows present on
-  default branch.
+- This is standalone draft PR #190 against main, combining the P113
+  survey and P114 hosted runner. No unrelated editor PR needs merging.
+  GitHub schedules only execute workflows present on the default branch.
 
 ## Results interpretation
 
