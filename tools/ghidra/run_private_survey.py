@@ -80,7 +80,10 @@ def load_manifest(path: Path) -> list[Path]:
 
 
 def headless_binary(ghidra_home: Path) -> Path:
-    root = Path(ghidra_home).resolve(strict=True)
+    try:
+        root = Path(ghidra_home).resolve(strict=True)
+    except OSError as exc:
+        raise PrivateSurveyError("Ghidra installation root unavailable") from exc
     filename = "analyzeHeadless.bat" if os.name == "nt" else "analyzeHeadless"
     launcher = root / "support" / filename
     if not launcher.is_file():
@@ -103,7 +106,7 @@ def sanitize_report(raw: dict, *, digest: str, role: str) -> dict:
             or raw.get("decompiled_code_exported") is not False
             or raw.get("engine_runtime_verified") is not False
             or type(raw.get("processor")) is not str
-            or not 1 <= len(raw["processor"]) <= 100
+            or not re.fullmatch(r"[A-Za-z0-9:._-]{1,80}", raw["processor"])
             or type(raw.get("keywords")) is not list
             or len(raw["keywords"]) != len(TERMS)):
         raise PrivateSurveyError("Ghidra report schema or bounded scan invalid")
@@ -247,7 +250,10 @@ def main(argv=None) -> int:
                           "retail_runtime_verified": False}))
         return 0
     except (OSError, ValueError) as exc:
-        print(json.dumps({"status": "refused", "reason": str(exc),
+        # No file system paths or raw Ghidra diagnostics in hosted CI logs.
+        reason = (str(exc) if isinstance(exc, PrivateSurveyError)
+                  else "Private local file or report error; inspect runner")
+        print(json.dumps({"status": "refused", "reason": reason,
                           "game_assets_included": False}))
         return 2
 
