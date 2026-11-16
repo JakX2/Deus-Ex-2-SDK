@@ -42,3 +42,10 @@
 *.bak
 *.backup
 *.journal
+
+# Private Ghidra projects / target manifests must stay outside Git
+tools/ghidra/private/
+ghidra-private/
+*.gpr
+*.rep
+*.private-targets.txt
