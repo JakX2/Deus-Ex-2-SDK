@@ -1,5 +1,23 @@
 # Deus Ex: Invisible War SDK (DX2Ed)
 
+## Opt-in Ghidra research automation
+
+The [hosted Ghidra 12.2 pipeline](docs/research/DX2ED_GHIDRA_HOSTED_P114.md)
+executes a real DX2 Java analysis script on GitHub-hosted machines, with no
+Ghidra or server required on a user's PC. PR smoke jobs use only synthetic
+programs. The owner-original hosted run is separately opted into after
+merging PR #190; the user's DX2 System.zip has been identified and
+`DX2Main.exe`/`dx2.exe` fingerprinted in a committed hash-only manifest.
+A single repository Actions secret supplies the owner Drive ZIP ID and
+automatically opts in the original analysis; absent secrets skip cleanly.
+Twice-daily scheduled processing caches
+only SHA-pinned Ghidra and bounded sanitized metadata, never game files.
+This yields reverse-engineering leads, not a native BSP compiler or new gameplay actor writer.
+
+The original [private self-hosted Ghidra survey](docs/research/DX2ED_GHIDRA_PRIVATE_HEADLESS_P113.md)
+remains available as a fallback.
+
+
 **Experimental community tooling for Deus Ex: Invisible War (2003/2004).** Not affiliated with Ion Storm, Eidos, Square Enix, Epic Games, or the Thief community.
 
 Our goal is a practical, UnrealEd-style modding SDK inspired by the original Deus Ex SDK and informed by research into Thief: Deadly Shadows' editor (T3Ed). The engine branches are related, but T3Ed has **not** been successfully ported to DX2.

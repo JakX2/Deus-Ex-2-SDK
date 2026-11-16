@@ -1,0 +1,75 @@
+name: DX2 private Ghidra headless survey
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+  push:
+    paths:
+      - 'tools/ghidra/**'
+      - '.github/workflows/dx2-ghidra-survey.yml'
+  pull_request:
+    paths:
+      - 'tools/ghidra/**'
+      - '.github/workflows/dx2-ghidra-survey.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-survey:
+    name: Asset-free automation and schema tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile private research Python sources
+        run: python -m py_compile tools/ghidra/run_private_survey.py
+      - name: Test fake PE input and sanitized output without Ghidra
+        run: python -m unittest discover -s tools/ghidra/tests -p 'test_*.py' -v
+
+  private-headless:
+    name: Original DX2 binaries on explicitly provisioned private runner
+    needs: validate-survey
+    if: >-
+      ${{ vars.DX2_GHIDRA_ENABLED == 'true' &&
+          github.ref == 'refs/heads/main' &&
+          github.event_name != 'pull_request' }}
+    runs-on: [self-hosted, Linux, dx2-private-re]
+    timeout-minutes: 35
+    concurrency:
+      group: dx2-private-ghidra
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run bounded local analysis without publishing original game files
+        shell: bash
+        env:
+          DX2_RE_MANIFEST: ${{ vars.DX2_RE_MANIFEST }}
+          GHIDRA_INSTALL_DIR: ${{ vars.DX2_RE_GHIDRA_HOME }}
+          DX2_RE_REPORT_ROOT: ${{ vars.DX2_RE_REPORT_ROOT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$DX2_RE_MANIFEST" || -z "$GHIDRA_INSTALL_DIR" || -z "$DX2_RE_REPORT_ROOT" ]]; then
+            echo "Private DX2 runner variables not configured. No analysis performed."
+            exit 2
+          fi
+          if [[ ! -d "$DX2_RE_REPORT_ROOT" ]]; then
+            echo "Private output root must already exist outside the game and repository."
+            exit 2
+          fi
+          umask 077
+          destination="$DX2_RE_REPORT_ROOT/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -m 700 "$destination"
+          python3 -B tools/ghidra/run_private_survey.py \
+            --manifest "$DX2_RE_MANIFEST" \
+            --ghidra-home "$GHIDRA_INSTALL_DIR" \
+            --report-dir "$destination"
+          echo "Ghidra completed. Private report remains ONLY on the self-hosted runner."
+          echo "No original binaries, strings, decompilation or reports uploaded to Actions."

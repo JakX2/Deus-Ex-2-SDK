@@ -1,0 +1,12 @@
+[
+  {
+    "name": "DX2Main.exe",
+    "size": 6111232,
+    "sha256": "f31db8c8d5c6ce33a4d8f4e0025e246dd3823026518f01f8bfa731a38f446692"
+  },
+  {
+    "name": "dx2.exe",
+    "size": 31232,
+    "sha256": "35ac158caa4cdd772748b587b82f108bb2902d2784d66db516979a008e61b604"
+  }
+]
