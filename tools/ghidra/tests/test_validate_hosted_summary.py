@@ -91,6 +91,26 @@ class HostedSummaryTests(unittest.TestCase):
         with self.assertRaisesRegex(EvidenceError, "addresses"):
             validate(self.summary, self.pins)
 
+    def test_refuse_malformed_address_segments(self):
+        # Colons alone and repeated separators previously passed the broad
+        # character allowlist, despite not being Ghidra address strings.
+        for malformed in (":", "::::", "00401000:", ":00401000",
+                          "00401000::00402000", "0" * 17):
+            with self.subTest(address=malformed):
+                self.body["reports"][0]["keyword_evidence"][0][
+                    "candidate_function_addresses"] = [malformed]
+                self._save()
+                with self.assertRaisesRegex(EvidenceError, "addresses"):
+                    validate(self.summary, self.pins)
+
+    def test_allow_single_segment_and_segmented_ghidra_addresses(self):
+        for address in ("005c56a0", "0001:005c56a0"):
+            with self.subTest(address=address):
+                self.body["reports"][0]["keyword_evidence"][0][
+                    "candidate_function_addresses"] = [address]
+                self._save()
+                self.assertEqual(validate(self.summary, self.pins)["module_count"], 2)
+
     def test_refuse_stale_schema_and_symlinked_summary(self):
         self.body["schema"] = "older-v0"
         self._save()
