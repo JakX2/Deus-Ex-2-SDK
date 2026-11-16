@@ -109,7 +109,7 @@ class PrivateGhidraTests(unittest.TestCase):
         doc = survey.sanitize_report(good, digest=sha, role="EXE")
         self.assertNotIn("original_game_secret", doc)
         self.assertEqual(doc["keyword_evidence"][0]["term"], ".gmp")
-        self.assertTrue(doc["candidate_function_addresses"] if False else True)
+        self.assertEqual(doc["keyword_evidence"][0]["candidate_function_addresses"], ["00401040"])
         bad = copy.deepcopy(good)
         bad["keywords"][0]["candidate_functions"] = ["PRIVATE USER PATH"]
         with self.assertRaisesRegex(survey.PrivateSurveyError, "address"):
