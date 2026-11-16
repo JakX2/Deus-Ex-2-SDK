@@ -44,7 +44,7 @@ into ephemeral runner scratch, verifies every required PE by filename,
 size, full SHA256 and valid PE header, then runs the bounded DX2 survey.
 
 **The correct ZIP is confirmed:** `DX 2 Files/System/System.zip`
-(Drive file ID `1I5LeElJswBMs-EIoDyH5sKqRTUlCW4ox`).
+(file identifier must be configured privately in GitHub Actions).
 The other `T3 Files/System/System.zip` contains the Thief 3 executable
 and must not be used. The actual DX2 archive was inspected from the
 connected owner Drive, and the two engine-relevant Windows x86 binaries
