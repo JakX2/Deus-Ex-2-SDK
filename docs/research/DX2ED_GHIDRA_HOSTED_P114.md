@@ -36,39 +36,56 @@ Actions variable:
 
     DX2_HOSTED_GHIDRA_ENABLED = true
 
-The scheduled job (03:41 UTC daily) or default-branch manual dispatch
-will download exactly **one owner-selected original System.zip** to
-ephemeral runner scratch, verify every required PE by filename, exact
-size, full original SHA256, MZ + PE signature and sane ZIP paths,
-then analyze with the existing private survey runner. Up to eight
-owner-original EXEs/DLLs per run are supported.
+The scheduled job (**03:41 and 15:41 UTC daily**) or default-branch
+manual dispatch downloads the already identified owner DX2 `System.zip`
+into ephemeral runner scratch, verifies every required PE by filename,
+size, full SHA256 and valid PE header, then runs the bounded DX2 survey.
 
-Repository Actions secrets to configure:
+**The correct ZIP is confirmed:** `DX 2 Files/System/System.zip`
+(Drive file ID `1I5LeElJswBMs-EIoDyH5sKqRTUlCW4ox`).
+The other `T3 Files/System/System.zip` contains the Thief 3 executable
+and must not be used. The actual DX2 archive was inspected from the
+connected owner Drive, and the two engine-relevant Windows x86 binaries
+were fingerprinted:
 
-- DX2_ORIGINAL_SYSTEM_ZIP_ID: the Google Drive file ID for the intended
-  owner-original ZIP; **not** the SiN IDs.
-- DX2_ORIGINAL_PE_MANIFEST_JSON: JSON array of exact original PE
-  filenames, whole-file byte sizes and full SHA256 hashes.
+| File | Bytes | SHA256 |
+|---|---:|---|
+| `DX2Main.exe` | 6,111,232 | `f31db8c8d5c6ce33a4d8f4e0025e246dd3823026518f01f8bfa731a38f446692` |
+| `dx2.exe` | 31,232 | `35ac158caa4cdd772748b587b82f108bb2902d2784d66db516979a008e61b604` |
 
-Example structural shape (NOT real DX2 hashes or filenames):
+These are the exact bytes from the user's supplied ZIP, **not proof of an
+independently authenticated retail release**. No original game executable
+bytes are checked into Git. The source-only pins are in
+`tools/ghidra/dx2_system_pe_pins.json`.
 
-    [
-      {
-        "name": "ExampleOriginal.exe",
-        "size": 1234567,
-        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      }
-    ]
+One-time repository owner configuration:
 
-Replace with the actual original values. Never copy these fictional
-values into the real secret. A Ghidra job will refuse an unknown,
-missing, modified, duplicated or incorrectly hashed image.
+1. Add GitHub Actions secret `DX2_ORIGINAL_SYSTEM_ZIP_ID` containing
+   the ID of the owner's DX2 System.zip. This is an identifier, *not*
+   a Drive authentication token; keep it out of public workflow logs.
+2. Set repository Actions variable
+   `DX2_HOSTED_GHIDRA_ENABLED=true` to opt into original binary analysis.
+3. Review and merge the standalone PR #190 into `main`, then use
+   **Actions -> DX2 hosted Ghidra 12.2 original research -> Run workflow**
+   to perform an initial original-image run. Future runs can execute
+   twice daily without the PC being on. If the Drive download is
+   inaccessible from GitHub, authenticated Drive access must be
+   configured or the download mechanism revised.
 
-The user's Drive project currently has **two candidate System.zip files**,
-one in DX 2 Files/System and another in T3 Files/System. We have
-not established which one contains the correct DX2 retail game
-executable or whether Google Drive will allow an unauthenticated
-runner download. Do not use the SiN hashes for DX2.
+No owner-supplied SHA manifest secret is required anymore: the verified
+hashes are pinned in the repository. Changing any of these files in the
+original archive requires deliberately reviewing a new hash and updating
+the manifest. Unknown or modified images are refused.
+
+**Performance:** the official Ghidra distribution ZIP is cached after
+SHA256 verification. A second cache holds **only the strictly sanitized
+research JSON** using a key that changes when the pinned original hashes,
+analyzer code or report validator changes. Every scheduled run still
+downloads and validates the original ZIP first. If a matching validated
+metadata report already exists, the expensive Ghidra reanalysis is
+skipped, and the report is revalidated against the current pins before
+creating a new artifact. Reanalysis is automatic when the inputs or
+analysis code change.
 
 **Drive privacy:** a Drive ID in GitHub Secrets is merely an obscured
 locator. It is NOT an access credential and does not make an
@@ -92,8 +109,7 @@ just to make the automation work without understanding the risk.
 - ZIP, verified PE binaries, Ghidra projects and intermediate files
   reside only on the ephemeral GitHub runner and are removed after a job.
   Only the verified public Ghidra installation ZIP is cached.
-- Runs on pull requests have NO original-binary secrets. Neither
-  original files nor original hashes are inferred by tests.
+- Runs on pull requests have NO original-binary secrets. Only the independently fingerprinted DX2 source ZIP identifies candidate originals; synthetic CI does not import the actual original game.
 - No code writes a GMP, patches DX2, or installs a retail game.
 - This is standalone draft PR #190 against main, combining the P113
   survey and P114 hosted runner. No unrelated editor PR needs merging.
