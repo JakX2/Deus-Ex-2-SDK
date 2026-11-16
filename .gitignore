@@ -42,3 +42,10 @@
 *.bak
 *.backup
 *.journal
+
+# Never commit private Ghidra projects, original target lists, or reports
+tools/ghidra/private/
+ghidra-private/
+*.gpr
+*.rep
+*.private-targets.txt
