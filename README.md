@@ -1,5 +1,17 @@
 # Deus Ex: Invisible War SDK (DX2Ed)
 
+## Ghidra reverse-engineering automation (opt-in research)
+
+The [P113 private headless survey](docs/research/DX2ED_GHIDRA_PRIVATE_HEADLESS_P113.md)
+adds a source-only testable Ghidra script and a Python runner for original
+DX2 EXE/DLL research. It can identify candidate references to GMP, IBD,
+actor, BSP and gameplay logic. Original game binaries stay on the owner's
+private computer; there is **no automatic decompilation in GitHub's public
+runners**. Real daily analysis requires an explicitly configured private
+self-hosted Actions runner after the branch is merged to main. No native
+map or gameplay feature is unlocked merely by running the survey.
+
+
 **Experimental community tooling for Deus Ex: Invisible War (2003/2004).** Not affiliated with Ion Storm, Eidos, Square Enix, Epic Games, or the Thief community.
 
 Our goal is a practical, UnrealEd-style modding SDK inspired by the original Deus Ex SDK and informed by research into Thief: Deadly Shadows' editor (T3Ed). The engine branches are related, but T3Ed has **not** been successfully ported to DX2.
