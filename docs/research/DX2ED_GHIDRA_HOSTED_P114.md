@@ -44,7 +44,7 @@ into ephemeral runner scratch, verifies every required PE by filename,
 size, full SHA256 and valid PE header, then runs the bounded DX2 survey.
 
 **The correct ZIP is confirmed:** `DX 2 Files/System/System.zip`
-(Drive file ID `1I5LeElJswBMs-EIoDyH5sKqRTUlCW4ox`).
+(file identifier must be configured privately in GitHub Actions).
 The other `T3 Files/System/System.zip` contains the Thief 3 executable
 and must not be used. The actual DX2 archive was inspected from the
 connected owner Drive, and the two engine-relevant Windows x86 binaries
@@ -81,11 +81,14 @@ the manifest. Unknown or modified images are refused.
 SHA256 verification. A second cache holds **only the strictly sanitized
 research JSON** using a key that changes when the pinned original hashes,
 analyzer code or report validator changes. Every scheduled run still
-downloads and validates the original ZIP first. If a matching validated
-metadata report already exists, the expensive Ghidra reanalysis is
-skipped, and the report is revalidated against the current pins before
-creating a new artifact. Reanalysis is automatic when the inputs or
-analysis code change.
+downloads and verifies the original ZIP and full original PE hashes first.
+If matching metadata exists, the workflow now skips **all three expensive
+steps**: Java 25 setup, Ghidra archive restoration/extraction, and Ghidra
+binary analysis. The cached report is independently revalidated against
+the pinned fingerprints before publication. When pins or analyzer code
+change, the workflow automatically performs a fresh Ghidra installation
+and analysis. A malformed cached report is rejected rather than trusted.
+An asset-free regression test checks this execution order.
 
 **Drive privacy:** a Drive ID in GitHub Secrets is merely an obscured
 locator. It is NOT an access credential and does not make an

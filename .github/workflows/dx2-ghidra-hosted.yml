@@ -121,10 +121,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '25'
       - name: Require original System.zip locator (SHA256 pins are committed)
         env:
           SOURCE_ID: ${{ secrets.DX2_ORIGINAL_SYSTEM_ZIP_ID }}
@@ -135,15 +131,6 @@ jobs:
             echo "::error::Configure DX2_ORIGINAL_SYSTEM_ZIP_ID repository Actions secret; original binaries are never uploaded to GitHub"
             exit 2
           fi
-      - uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/ghidra-archive/ghidra_12.2_PUBLIC_20261016.zip
-          key: verified-ghidra-12-2-sha256-2c2cd776
-      - name: Install verified Ghidra onto fresh hosted machine
-        run: |
-          set -euo pipefail
-          GHIDRA_HOME="$(bash tools/ghidra/install_pinned_ghidra.sh "$RUNNER_TEMP/ghidra-archive" "$RUNNER_TEMP/ghidra-installed")"
-          echo "GHIDRA_HOME=$GHIDRA_HOME" >> "$GITHUB_ENV"
       - name: Download owner original ZIP into runner-only scratch
         env:
           SOURCE_ID: ${{ secrets.DX2_ORIGINAL_SYSTEM_ZIP_ID }}
@@ -182,6 +169,24 @@ jobs:
         with:
           path: ${{ runner.temp }}/dx2-metadata/dx2_research_summary.json
           key: dx2-ghidra-strict-12-2-${{ hashFiles('tools/ghidra/dx2_system_pe_pins.json', 'tools/ghidra/scripts/Dx2SymbolSurvey.java', 'tools/ghidra/run_private_survey.py', 'tools/ghidra/validate_hosted_summary.py') }}
+      # A cache hit bypasses Ghidra's Java setup, archive restore and
+      # installation. We have already SHA-verified original inputs above.
+      - uses: actions/setup-java@v4
+        if: steps.safe-report-cache.outputs.cache-hit != 'true'
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/cache@v4
+        if: steps.safe-report-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/ghidra-archive/ghidra_12.2_PUBLIC_20261016.zip
+          key: verified-ghidra-12-2-sha256-2c2cd776
+      - name: Install verified Ghidra only when new analysis is necessary
+        if: steps.safe-report-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          GHIDRA_HOME="$(bash tools/ghidra/install_pinned_ghidra.sh "$RUNNER_TEMP/ghidra-archive" "$RUNNER_TEMP/ghidra-installed")"
+          echo "GHIDRA_HOME=$GHIDRA_HOME" >> "$GITHUB_ENV"
       - name: Run private Ghidra only if verified metadata is not already cached
         if: steps.safe-report-cache.outputs.cache-hit != 'true'
         run: |
