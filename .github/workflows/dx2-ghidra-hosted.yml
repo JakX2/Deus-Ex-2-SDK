@@ -7,7 +7,7 @@ on:
       - '.github/workflows/dx2-ghidra-hosted.yml'
   workflow_dispatch:
   schedule:
-    - cron: '41 3 * * *'
+    - cron: '41 3,15 * * *'
 
 permissions:
   contents: read
@@ -27,6 +27,7 @@ jobs:
         run: |
           python -m unittest discover -s tools/ghidra/tests -p 'test_*.py' -v
           bash -n tools/ghidra/install_pinned_ghidra.sh
+          python -c 'import sys; sys.path.insert(0,"tools/ghidra"); from stage_original_pe_from_zip import load_expectations; assert len(load_expectations(__import__("pathlib").Path("tools/ghidra/dx2_system_pe_pins.json"))) == 2'
 
   hosted-ghidra-smoke:
     name: Real Ghidra 12.2 on harmless synthetic ELF
@@ -103,15 +104,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - name: Require owner-supplied Drive locator and SHA256 manifest
+      - name: Require original System.zip locator (SHA256 pins are committed)
         env:
           SOURCE_ID: ${{ secrets.DX2_ORIGINAL_SYSTEM_ZIP_ID }}
-          EXPECTED: ${{ secrets.DX2_ORIGINAL_PE_MANIFEST_JSON }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "$SOURCE_ID" || -z "$EXPECTED" ]]; then
-            echo "::error::Owner must configure DX2_ORIGINAL_SYSTEM_ZIP_ID and DX2_ORIGINAL_PE_MANIFEST_JSON Actions secrets"
+          if [[ -z "$SOURCE_ID" ]]; then
+            echo "::error::Configure DX2_ORIGINAL_SYSTEM_ZIP_ID repository Actions secret; original binaries are never uploaded to GitHub"
             exit 2
           fi
       - uses: actions/cache@v4
@@ -126,7 +126,6 @@ jobs:
       - name: Download owner original ZIP into runner-only scratch
         env:
           SOURCE_ID: ${{ secrets.DX2_ORIGINAL_SYSTEM_ZIP_ID }}
-          EXPECTED: ${{ secrets.DX2_ORIGINAL_PE_MANIFEST_JSON }}
         run: |
           set -euo pipefail
           umask 077
@@ -137,7 +136,6 @@ jobs:
           from pathlib import Path
           import gdown
           folder = Path(os.environ["RUNNER_TEMP"])/"dx2-owner-private"
-          (folder/"expected.json").write_text(os.environ["EXPECTED"],encoding="utf-8")
           if not gdown.download(id=os.environ["SOURCE_ID"],output=str(folder/"system.zip"),quiet=True):
               raise SystemExit("Owner Google Drive download unavailable; check access and quota")
           PY
@@ -147,7 +145,7 @@ jobs:
           umask 077
           python -B tools/ghidra/stage_original_pe_from_zip.py \
             --archive "$RUNNER_TEMP/dx2-owner-private/system.zip" \
-            --manifest "$RUNNER_TEMP/dx2-owner-private/expected.json" \
+            --manifest "tools/ghidra/dx2_system_pe_pins.json" \
             --output-dir "$RUNNER_TEMP/dx2-owner-private/verified"
           python - <<'PY'
           import os
@@ -157,7 +155,14 @@ jobs:
           assert 1 <= len(images) <= 8
           (root/"originals.txt").write_text("\n".join(str(p.resolve()) for p in images)+"\n")
           PY
-      - name: Run private DX2 Ghidra survey and generate sanitized findings
+      - name: Restore sanitized evidence cache if source hashes and analyzer are unchanged
+        uses: actions/cache@v4
+        id: safe-report-cache
+        with:
+          path: ${{ runner.temp }}/dx2-metadata/dx2_research_summary.json
+          key: dx2-ghidra-strict-12-2-${{ hashFiles('tools/ghidra/dx2_system_pe_pins.json', 'tools/ghidra/scripts/Dx2SymbolSurvey.java', 'tools/ghidra/run_private_survey.py', 'tools/ghidra/validate_hosted_summary.py') }}
+      - name: Run private Ghidra only if verified metadata is not already cached
+        if: steps.safe-report-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           umask 077
@@ -165,7 +170,12 @@ jobs:
             --manifest "$RUNNER_TEMP/dx2-owner-private/originals.txt" \
             --ghidra-home "$GHIDRA_HOME" \
             --report-dir "$RUNNER_TEMP/dx2-metadata"
-          test -s "$RUNNER_TEMP/dx2-metadata/dx2_research_summary.json"
+      - name: Revalidate full pinned fingerprint set and strict metadata allowlist
+        run: |
+          set -euo pipefail
+          python -B tools/ghidra/validate_hosted_summary.py \
+            --summary "$RUNNER_TEMP/dx2-metadata/dx2_research_summary.json" \
+            --pins "tools/ghidra/dx2_system_pe_pins.json"
       - name: Upload sanitized metadata only (no retail binaries or pseudocode)
         uses: actions/upload-artifact@v4
         with:
