@@ -31,10 +31,12 @@ needed or accessed by the PR smoke job.
 
 ## Second phase: opt-in original DX2 EXE/DLL analysis
 
-Only on the **default branch** after merging and setting a repository
-Actions variable:
-
-    DX2_HOSTED_GHIDRA_ENABLED = true
+Only on the **default branch** after merging PR #190 and placing
+one owner-managed Drive ID in the repository Actions secret
+`DX2_ORIGINAL_SYSTEM_ZIP_ID`. The new lightweight `owner-input-gate`
+job detects whether this secret exists; if absent, the original-image
+job is cleanly skipped without installing Ghidra or downloading
+game files. **No extra Actions variable is required.**
 
 The scheduled job (**03:41 and 15:41 UTC daily**) or default-branch
 manual dispatch downloads the already identified owner DX2 `System.zip`
@@ -63,9 +65,7 @@ One-time repository owner configuration:
 1. Add GitHub Actions secret `DX2_ORIGINAL_SYSTEM_ZIP_ID` containing
    the ID of the owner's DX2 System.zip. This is an identifier, *not*
    a Drive authentication token; keep it out of public workflow logs.
-2. Set repository Actions variable
-   `DX2_HOSTED_GHIDRA_ENABLED=true` to opt into original binary analysis.
-3. Review and merge the standalone PR #190 into `main`, then use
+2. Review and merge the standalone PR #190 into `main`, then use
    **Actions -> DX2 hosted Ghidra 12.2 original research -> Run workflow**
    to perform an initial original-image run. Future runs can execute
    twice daily without the PC being on. If the Drive download is
