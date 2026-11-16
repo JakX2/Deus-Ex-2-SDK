@@ -8,8 +8,9 @@ Ghidra or server required on a user's PC. PR smoke jobs use only synthetic
 programs. The owner-original hosted run is separately opted into after
 merging PR #190; the user's DX2 System.zip has been identified and
 `DX2Main.exe`/`dx2.exe` fingerprinted in a committed hash-only manifest.
-A repository Actions secret supplies the owner Drive ZIP ID, while an opt-in
-variable controls original runs. Twice-daily scheduled processing caches
+A single repository Actions secret supplies the owner Drive ZIP ID and
+automatically opts in the original analysis; absent secrets skip cleanly.
+Twice-daily scheduled processing caches
 only SHA-pinned Ghidra and bounded sanitized metadata, never game files.
 This yields reverse-engineering leads, not a native BSP compiler or new gameplay actor writer.
 
