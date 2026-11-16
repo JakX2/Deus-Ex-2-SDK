@@ -81,12 +81,33 @@ jobs:
           print("DX2 real hosted Ghidra 12.2 + Java postScript synthetic PASS")
           PY
 
+  owner-input-gate:
+    name: Detect opt-in owner Drive secret without exposing it
+    if: >-
+      ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
+          github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.detect.outputs.ready }}
+    steps:
+      - name: Check for owner-controlled original Drive ID
+        id: detect
+        env:
+          SOURCE_ID: ${{ secrets.DX2_ORIGINAL_SYSTEM_ZIP_ID }}
+        run: |
+          if [[ -n "$SOURCE_ID" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "Original PE analysis is enabled by owner configuration."
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Original PE analysis not configured: no files downloaded, no Ghidra launched."
+          fi
+
   hosted-original:
     name: Opt-in owner-original DX2 PE batch on ephemeral GitHub runner
-    needs: source-fixtures
+    needs: [source-fixtures, owner-input-gate]
     if: >-
-      ${{ vars.DX2_HOSTED_GHIDRA_ENABLED == 'true' &&
-          (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
+      ${{ needs.owner-input-gate.outputs.ready == 'true' &&
           github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
