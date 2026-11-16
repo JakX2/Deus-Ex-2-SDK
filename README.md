@@ -2,13 +2,19 @@
 
 ## Opt-in Ghidra research automation
 
-The [private Ghidra headless survey](docs/research/DX2ED_GHIDRA_PRIVATE_HEADLESS_P113.md)
-adds a testable command-line research workflow for original DX2 EXE/DLL
-serialization and actor/BSP analysis. GitHub-hosted CI runs only synthetic
-fixtures. Real scheduled analysis is **disabled by default** and runs
-only on an explicitly configured private self-hosted Actions runner.
-Original game binaries never need to be committed or uploaded.
-This produces research leads, not a native map compiler.
+The [hosted Ghidra 12.2 pipeline](docs/research/DX2ED_GHIDRA_HOSTED_P114.md)
+executes a real DX2 Java analysis script on GitHub-hosted machines, with no
+Ghidra or server required on a user's PC. PR smoke jobs use only synthetic
+programs. The owner-original hosted run is separately opted into after
+merging PR #190; the user's DX2 System.zip has been identified and
+`DX2Main.exe`/`dx2.exe` fingerprinted in a committed hash-only manifest.
+A repository Actions secret supplies the owner Drive ZIP ID, while an opt-in
+variable controls original runs. Twice-daily scheduled processing caches
+only SHA-pinned Ghidra and bounded sanitized metadata, never game files.
+This yields reverse-engineering leads, not a native BSP compiler or new gameplay actor writer.
+
+The original [private self-hosted Ghidra survey](docs/research/DX2ED_GHIDRA_PRIVATE_HEADLESS_P113.md)
+remains available as a fallback.
 
 
 **Experimental community tooling for Deus Ex: Invisible War (2003/2004).** Not affiliated with Ion Storm, Eidos, Square Enix, Epic Games, or the Thief community.
