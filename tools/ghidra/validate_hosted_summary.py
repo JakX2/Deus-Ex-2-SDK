@@ -17,7 +17,7 @@ from stage_original_pe_from_zip import load_expectations
 
 MAX_BYTES = 2 * 1024 * 1024
 SHA_RE = re.compile(r"[0-9a-f]{64}\Z")
-ADDR_RE = re.compile(r"[0-9a-fA-F:]{1,32}\Z")
+ADDR_RE = re.compile(r"(?:[0-9a-fA-F]{1,16}:)?[0-9a-fA-F]{1,16}\Z")
 REPORT_KEYS = {
     "schema", "pe_sha256", "pe_role", "processor",
     "function_count", "defined_data_scanned", "scan_limit_reached",
