@@ -62,6 +62,23 @@ class TriageTests(unittest.TestCase):
             with self.subTest(hits=hits), self.assertRaises(ValueError):
                 module.triage(source)
 
+    def test_unknown_terms_are_validated_before_ignored(self):
+        source = sample()
+        source["reports"][0]["keyword_evidence"].append(
+            {"term": "untracked-topic", "defined_literal_hits": 1,
+             "candidate_function_addresses": ["00ABCDEF"]})
+        result = module.triage(source)
+        self.assertNotIn("untracked-topic", result["targets"][0]["topics"])
+        for field, value in (("defined_literal_hits", -1),
+                             ("candidate_function_addresses", ["not-hex"])):
+            bad = sample()
+            bad["reports"][0]["keyword_evidence"].append(
+                {"term": "untracked-topic", "defined_literal_hits": 1,
+                 "candidate_function_addresses": ["00ABCDEF"]})
+            bad["reports"][0]["keyword_evidence"][-1][field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                module.triage(bad)
+
     def test_refuses_unsanitized(self):
         source = sample()
         source["game_assets_included"] = True
