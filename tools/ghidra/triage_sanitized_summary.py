@@ -21,15 +21,30 @@ def triage(summary):
         raise ValueError("unexpected sanitized report schema")
     if summary.get("game_assets_included") is not False:
         raise ValueError("report is not marked asset-free")
+    if (summary.get("retail_runtime_verified") is not False or
+            summary.get("source_assets_modified") is not False):
+        raise ValueError("unsafe root verification or modification flags")
     reports = summary.get("reports")
     if not isinstance(reports, list) or not reports or len(reports) > 2:
         raise ValueError("missing reports")
     results = []
+    seen_hashes = set()
     for report in reports:
         if not isinstance(report, dict):
             raise ValueError("target must be an object")
         if report.get("game_assets_included") is not False:
             raise ValueError("target not marked asset-free")
+        pe_hash = report.get("pe_sha256")
+        if (not isinstance(pe_hash, str) or len(pe_hash) != 64 or
+                any(c not in "0123456789abcdef" for c in pe_hash) or
+                pe_hash in seen_hashes):
+            raise ValueError("invalid or duplicate PE fingerprint")
+        seen_hashes.add(pe_hash)
+        if (type(report.get("function_count")) is not int or
+                not 0 <= report["function_count"] <= 50_000_000 or
+                report.get("native_writer_ready") is not False or
+                report.get("retail_runtime_verified") is not False):
+            raise ValueError("invalid target counts or verification flags")
         by_term = {}
         seen_terms = set()
         by_address = defaultdict(set)
