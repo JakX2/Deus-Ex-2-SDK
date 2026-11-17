@@ -41,6 +41,26 @@ class HostedCachePolicyTests(unittest.TestCase):
         self.assertNotIn("DX2_ORIGINAL_PE_MANIFEST_JSON", job)
         self.assertNotIn("DX2_HOSTED_GHIDRA_ENABLED", job)
 
+    def test_cache_save_is_gated_by_strict_validation_and_upload(self):
+        """Never persist a report before fingerprint/allowlist validation."""
+        job = WORKFLOW.read_text(encoding="utf-8").split("\n  hosted-original:\n", 1)[1]
+        validation = job.index("Revalidate full pinned fingerprint set and strict metadata allowlist")
+        upload = job.index("Upload sanitized metadata only")
+        save = job.index("Save validated sanitized research cache before cleanup")
+        cleanup = job.index("Delete owner original PE images and temporary findings")
+        self.assertLess(validation, upload)
+        self.assertLess(upload, save)
+        self.assertLess(save, cleanup)
+        # An ordinary step without always()/failure() is skipped after a failed
+        # validation or upload, while cleanup must still run.
+        save_step = job[save:cleanup]
+        self.assertIn("if: steps.safe-report-cache.outputs.cache-hit != 'true'", save_step)
+        self.assertNotIn("always()", save_step)
+        self.assertNotIn("failure()", save_step)
+        self.assertIn("if: always()", job[cleanup:])
+        self.assertIn("uses: actions/cache/restore@v4", job)
+        self.assertIn("uses: actions/cache/save@v4", save_step)
+
     def test_unconfigured_owner_job_never_starts_analysis(self):
         content = WORKFLOW.read_text(encoding="utf-8")
         gate = content.split("\n  owner-input-gate:\n", 1)[1].split(
