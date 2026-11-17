@@ -62,16 +62,16 @@ public class DX2BoundedReferenceCollector extends GhidraScript {
                 if (!seen.add(key)) continue;
                 if (edges.size() == MAX_EDGES)
                     throw new IllegalStateException("Reference cap exceeded; no partial evidence written");
-                edges.add("{\\"caller\\":\\"" + from + "\\",\\"callee\\":\\"" + to +
-                          "\\",\\"reference_kind\\":\\"" + type + "\\"}");
+                edges.add("{\"caller\":\"" + from + "\",\"callee\":\"" + to +
+                          "\",\"reference_kind\":\"" + type + "\"}");
             }
         }
         // Only fixed-format addresses, kind and externally supplied hash are emitted.
-        String json = "{\\"schema\\":\\"DX2-SanitizedCallEdges-v1\\","
-            + "\\"executable_sha256\\":\\"" + args[1] + "\\","
-            + "\\"ghidra_version\\":\\"12.2\\","
-            + "\\"runtime_verified\\":false,\\"native_writer_ready\\":false,"
-            + "\\"edges\\":[" + String.join(",", edges) + "]}";
+        String json = "{\"schema\":\"DX2-SanitizedCallEdges-v1\","
+            + "\"executable_sha256\":\"" + args[1] + "\","
+            + "\"ghidra_version\":\"12.2\","
+            + "\"runtime_verified\":false,\"native_writer_ready\":false,"
+            + "\"edges\":[" + String.join(",", edges) + "]}";
         if (json.getBytes(StandardCharsets.UTF_8).length > 131072)
             throw new IllegalStateException("Evidence byte cap exceeded");
         try (Writer writer = new OutputStreamWriter(new FileOutputStream(output), StandardCharsets.UTF_8)) {
