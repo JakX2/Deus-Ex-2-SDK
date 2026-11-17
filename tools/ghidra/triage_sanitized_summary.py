@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""Produce a bounded, source-only triage of an already sanitized DX2 Ghidra summary.
+
+This is not a call graph or evidence of a functioning native writer.
+Input must first pass validate_hosted_summary.py in the hosted workflow.
+"""
+import argparse
+import json
+from collections import defaultdict
+from pathlib import Path
+
+PRIORITY = (".gmp", ".ibd", "loadpackage", "serialize", "deserialize",
+            "gamesys", "staticmeshactor", "triggerscript", "bsp",
+            "collision", "havok")
+
+
+def triage(summary):
+    if not isinstance(summary, dict):
+        raise ValueError("summary must be an object")
+    if summary.get("schema") != "DX2-GhidraPrivateSummary-v1":
+        raise ValueError("unexpected sanitized report schema")
+    if summary.get("game_assets_included") is not False:
+        raise ValueError("report is not marked asset-free")
+    if (summary.get("retail_runtime_verified") is not False or
+            summary.get("source_assets_modified") is not False):
+        raise ValueError("unsafe root verification or modification flags")
+    reports = summary.get("reports")
+    if not isinstance(reports, list) or not reports or len(reports) > 2:
+        raise ValueError("missing reports")
+    results = []
+    seen_hashes = set()
+    for report in reports:
+        if not isinstance(report, dict):
+            raise ValueError("target must be an object")
+        if report.get("game_assets_included") is not False:
+            raise ValueError("target not marked asset-free")
+        pe_hash = report.get("pe_sha256")
+        if (not isinstance(pe_hash, str) or len(pe_hash) != 64 or
+                any(c not in "0123456789abcdef" for c in pe_hash) or
+                pe_hash in seen_hashes):
+            raise ValueError("invalid or duplicate PE fingerprint")
+        seen_hashes.add(pe_hash)
+        if (type(report.get("function_count")) is not int or
+                not 0 <= report["function_count"] <= 50_000_000 or
+                report.get("native_writer_ready") is not False or
+                report.get("retail_runtime_verified") is not False):
+            raise ValueError("invalid target counts or verification flags")
+        by_term = {}
+        seen_terms = set()
+        by_address = defaultdict(set)
+        evidence = report.get("keyword_evidence", [])
+        if not isinstance(evidence, list) or len(evidence) > 64:
+            raise ValueError("invalid or unbounded keyword evidence")
+        for item in evidence:
+            if not isinstance(item, dict):
+                raise ValueError("keyword evidence must be an object")
+            term = item.get("term")
+            if not isinstance(term, str) or not term or len(term) > 128:
+                raise ValueError("invalid keyword evidence term")
+            if term in seen_terms:
+                raise ValueError("duplicate keyword evidence term")
+            seen_terms.add(term)
+            hits = item.get("defined_literal_hits", 0)
+            if type(hits) is not int or hits < 0:
+                raise ValueError("invalid literal hit count")
+            addresses = item.get("candidate_function_addresses", [])
+            if not isinstance(addresses, list):
+                raise ValueError("invalid candidate address list")
+            if len(addresses) > 64:
+                raise ValueError("unbounded candidate address list")
+            normalized = []
+            for address in addresses:
+                if not isinstance(address, str) or len(address) > 16 or not address:
+                    raise ValueError("invalid candidate address")
+                if any(c not in "0123456789abcdefABCDEF" for c in address):
+                    raise ValueError("nonhex candidate address")
+                normalized.append(address.lower())
+                if term in PRIORITY:
+                    by_address[address.lower()].add(term)
+            if term not in PRIORITY:
+                continue
+            by_term[term] = {
+                "defined_literal_hits": hits,
+                "candidate_function_addresses": sorted(set(normalized)),
+            }
+        results.append({
+            "pe_sha256": report.get("pe_sha256"),
+            "function_count": report.get("function_count"),
+            "topics": {term: by_term.get(term, {"defined_literal_hits": 0,
+                      "candidate_function_addresses": []}) for term in PRIORITY},
+            "overlaps": [{"address": address, "terms": sorted(terms)}
+                         for address, terms in sorted(by_address.items())
+                         if len(terms) > 1],
+            "native_writer_ready": report.get("native_writer_ready"),
+            "retail_runtime_verified": report.get("retail_runtime_verified"),
+        })
+    return {"schema": "DX2-SanitizedTriage-v1", "disclaimer":
+            "Keyword/function correlations only; no verified calls, loader semantics, or gameplay.",
+            "targets": results}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("summary", type=Path)
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    result = triage(json.loads(args.summary.read_text(encoding="utf-8")))
+    payload = json.dumps(result, indent=2, sort_keys=True) + "\n"
+    if args.output:
+        args.output.write_text(payload, encoding="utf-8")
+    else:
+        print(payload, end="")
+
+
+if __name__ == "__main__":
+    main()
