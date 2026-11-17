@@ -11,6 +11,7 @@ spec.loader.exec_module(module)
 
 def sample():
     return {"schema": "DX2-GhidraPrivateSummary-v1", "game_assets_included": False,
+            "retail_runtime_verified": False, "source_assets_modified": False,
             "reports": [{"game_assets_included": False, "pe_sha256": "a" * 64,
                          "function_count": 42, "native_writer_ready": False,
                          "retail_runtime_verified": False,
@@ -85,6 +86,28 @@ class TriageTests(unittest.TestCase):
                 "candidate_function_addresses": ["00ABCDEF"]}
         source["reports"][0]["keyword_evidence"].extend([item, dict(item)])
         with self.assertRaisesRegex(ValueError, "duplicate"):
+            module.triage(source)
+
+    def test_refuses_forged_fingerprints_and_flags(self):
+        for field, value in (("pe_sha256", "owner-private-path"),
+                             ("pe_sha256", "A" * 64),
+                             ("pe_sha256", "z" * 64),
+                             ("function_count", True),
+                             ("function_count", -1),
+                             ("native_writer_ready", True),
+                             ("retail_runtime_verified", True)):
+            source = sample()
+            source["reports"][0][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                module.triage(source)
+        for field in ("retail_runtime_verified", "source_assets_modified"):
+            source = sample()
+            source[field] = True
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                module.triage(source)
+        source = sample()
+        source["reports"].append(dict(source["reports"][0]))
+        with self.assertRaisesRegex(ValueError, "duplicate PE fingerprint"):
             module.triage(source)
 
     def test_refuses_unsanitized(self):
