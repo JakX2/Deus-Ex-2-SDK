@@ -31,6 +31,7 @@ def triage(summary):
         if report.get("game_assets_included") is not False:
             raise ValueError("target not marked asset-free")
         by_term = {}
+        seen_terms = set()
         by_address = defaultdict(set)
         evidence = report.get("keyword_evidence", [])
         if not isinstance(evidence, list) or len(evidence) > 64:
@@ -41,8 +42,9 @@ def triage(summary):
             term = item.get("term")
             if not isinstance(term, str) or not term or len(term) > 128:
                 raise ValueError("invalid keyword evidence term")
-            if term in by_term:
+            if term in seen_terms:
                 raise ValueError("duplicate keyword evidence term")
+            seen_terms.add(term)
             hits = item.get("defined_literal_hits", 0)
             if type(hits) is not int or hits < 0:
                 raise ValueError("invalid literal hit count")
