@@ -79,6 +79,14 @@ class TriageTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 module.triage(bad)
 
+    def test_rejects_duplicate_untracked_terms(self):
+        source = sample()
+        item = {"term": "untracked-topic", "defined_literal_hits": 1,
+                "candidate_function_addresses": ["00ABCDEF"]}
+        source["reports"][0]["keyword_evidence"].extend([item, dict(item)])
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            module.triage(source)
+
     def test_refuses_unsanitized(self):
         source = sample()
         source["game_assets_included"] = True
