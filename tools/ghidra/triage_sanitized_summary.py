@@ -39,8 +39,8 @@ def triage(summary):
             if not isinstance(item, dict):
                 raise ValueError("keyword evidence must be an object")
             term = item.get("term")
-            if term not in PRIORITY:
-                continue
+            if not isinstance(term, str) or not term or len(term) > 128:
+                raise ValueError("invalid keyword evidence term")
             if term in by_term:
                 raise ValueError("duplicate keyword evidence term")
             hits = item.get("defined_literal_hits", 0)
@@ -58,7 +58,10 @@ def triage(summary):
                 if any(c not in "0123456789abcdefABCDEF" for c in address):
                     raise ValueError("nonhex candidate address")
                 normalized.append(address.lower())
-                by_address[address.lower()].add(term)
+                if term in PRIORITY:
+                    by_address[address.lower()].add(term)
+            if term not in PRIORITY:
+                continue
             by_term[term] = {
                 "defined_literal_hits": hits,
                 "candidate_function_addresses": sorted(set(normalized)),
