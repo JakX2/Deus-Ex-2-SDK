@@ -1,0 +1,105 @@
+name: Exporter hot-path correctness and benchmark smoke
+
+on:
+  push:
+    branches: [perf/map-exporter-stdlib-bgra-dxt]
+  pull_request:
+    paths:
+      - "map_exporter/**"
+      - "tests/test_exporter_hotpaths.py"
+      - "tests/reference_legacy_exporter.py"
+      - "tools/benchmark_exporter_hotpaths.py"
+      - "tools/profile_dx2_map_export.py"
+      - "tests/test_exporter_full_map_profile.py"
+      - "tests/test_exporter_png_preset.py"
+      - "tools/verify_dx2_glb_equivalence.py"
+      - "tests/test_exporter_glb_equivalence.py"
+      - ".github/workflows/exporter-hotpaths.yml"
+
+jobs:
+  synthetic-hotpath:
+    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile source and tests
+        run: python -m py_compile map_exporter/dx2textures.py map_exporter/dx2level.py tests/reference_legacy_exporter.py tests/test_exporter_hotpaths.py tests/test_exporter_full_map_profile.py tests/test_exporter_png_preset.py tests/test_exporter_glb_equivalence.py tools/verify_dx2_glb_equivalence.py tools/benchmark_exporter_hotpaths.py tools/profile_dx2_map_export.py
+      - name: Synthetic byte-equivalence tests (no retail assets)
+        run: python -m unittest discover -s tests -p "test_exporter_hotpaths.py" -v
+      - name: HTML template runtime and injection tests (no retail assets)
+        run: python -m unittest discover -s tests -p "test_exporter_html_templates.py" -v
+      - name: Asset-free whole-map profiling harness regression
+        run: python -m unittest discover -s tests -p "test_exporter_full_map_profile.py" -v
+      - name: Fast PNG preset pixel-identity and default-byte regression
+        run: python -m unittest discover -s tests -p "test_exporter_png_preset.py" -v
+      - name: Consolidated exact-GLB and decoded-PNG semantic integration
+        run: python -m unittest discover -s tests -p "test_exporter_glb_equivalence.py" -v
+      - name: Equivalence CLI help smoke
+        run: python tools/verify_dx2_glb_equivalence.py --help
+      - name: Map exporter fast PNG CLI help smoke
+        run: python map_exporter/dx2_map_exporter.py export --help
+      - name: Whole-map CLI help smoke (no retail assets)
+        run: python tools/profile_dx2_map_export.py --help
+      - name: Benchmark smoke without perf assertions
+        run: python tools/benchmark_exporter_hotpaths.py --size 64 --vectors 1000 --repeats 2
+
+  source-only-comparison-bundle:
+    name: Prepare comparable main vs optimized exporter sources
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact candidate PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: candidate
+          persist-credentials: false
+      - name: Checkout original main baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: baseline
+          persist-credentials: false
+      - name: Record source revisions and check baseline/candidate tree shape
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import subprocess
+          a = lambda path: subprocess.check_output(["git", "-C", path, "rev-parse", "HEAD"], text=True).strip()
+          for folder in ("candidate", "baseline"):
+              for required in ("map_exporter/dx2level.py", "map_exporter/dx2textures.py", "map_exporter/dx2_map_exporter.py"):
+                  assert (Path(folder) / required).is_file(), (folder, required)
+          manifest = {
+              "schema": "DX2SDK-main-vs-optimized-source-bundle-v1",
+              "baseline_branch": "main", "baseline_sha": a("baseline"),
+              "candidate_sha": a("candidate"),
+              "source_only": True,
+              "original_retail_assets_included": False,
+          }
+          Path("comparison_manifest.json").write_text(json.dumps(manifest, indent=2)+"\n", encoding="utf-8")
+          assert json.loads(Path("comparison_manifest.json").read_text(encoding="utf-8")) == manifest
+          print(json.dumps(manifest, indent=2))
+          PY
+      - name: Upload source-only A/B comparison files (NO game data)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DX2_exporter_main_vs_optimized_source
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            comparison_manifest.json
+            baseline/map_exporter/
+            candidate/map_exporter/
+            candidate/tools/profile_dx2_map_export.py
+            candidate/map_exporter/BENCHMARKING.md

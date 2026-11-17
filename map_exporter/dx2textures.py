@@ -15,6 +15,7 @@ import argparse
 import base64
 from collections import Counter
 from dataclasses import dataclass
+from functools import lru_cache
 import hashlib
 import html
 import io
@@ -120,56 +121,176 @@ def _palette(colorblock,transparent):
     return [colors[(mask>>(2*i))&3] for i in range(16)]
 
 
+
+@lru_cache(maxsize=32768)
+def _dxt1_rgba_palette(c0, c1):
+    """Immutable four-color DXT1 block palette, memoized by RGB565 endpoints.
+
+    Limited to 32768 16-bit endpoint pairs, avoiding unbounded state across
+    long asset processing sessions. DXT1's three-color+transparent mode is
+    preserved exactly; DXT3/DXT5 use their existing separate decoder path.
+    """
+    p0 = _rgb565(c0)
+    p1 = _rgb565(c1)
+    if c0 > c1:
+        p2 = tuple((2*a+b)//3 for a,b in zip(p0,p1))
+        p3 = tuple((a+2*b)//3 for a,b in zip(p0,p1))
+        return (bytes((*p0,255)), bytes((*p1,255)),
+                bytes((*p2,255)), bytes((*p3,255)))
+    p2 = tuple((a+b)//2 for a,b in zip(p0,p1))
+    return (bytes((*p0,255)), bytes((*p1,255)),
+            bytes((*p2,255)), b'\x00\x00\x00\x00')
+
+
+def _dxt1_rgba_rows(w, h, raw, blocks_across):
+    """Decode row-aligned DXT1 pixels with no per-pixel RGBA allocations."""
+    out = bytearray(w*h*4)
+    for by in range((h+3)//4):
+        for bx in range(blocks_across):
+            c0, c1, color_mask = struct.unpack_from(
+                '<HHI', raw, (by*blocks_across+bx)*8)
+            colors = _dxt1_rgba_palette(c0,c1)
+            width = min(4,w-bx*4)
+            height = min(4,h-by*4)
+            for yy in range(height):
+                row_mask = (color_mask>>(yy*8)) & 255
+                if width == 4:
+                    pixels = (colors[row_mask&3]
+                              + colors[(row_mask>>2)&3]
+                              + colors[(row_mask>>4)&3]
+                              + colors[(row_mask>>6)&3])
+                else:
+                    pixels = b''.join(colors[(row_mask>>(2*xx))&3]
+                                      for xx in range(width))
+                offset = ((by*4+yy)*w+bx*4)*4
+                out[offset:offset+width*4] = pixels
+    return bytes(out)
+
+
+
+@lru_cache(maxsize=32768)
+def _dxt3_rgb_palette(c0, c1):
+    """RGBA output's RGB low 24 bits for the four opaque DXT3 colors.
+
+    DXT3 always uses four-color interpolation regardless of endpoint order.
+    The 32-bit packed value leaves the top alpha byte free for a 4-bit
+    explicit-alpha expansion. Only 32768 endpoint pairs are cached.
+    """
+    p0 = _rgb565(c0)
+    p1 = _rgb565(c1)
+    p2 = tuple((2*a+b)//3 for a,b in zip(p0,p1))
+    p3 = tuple((a+2*b)//3 for a,b in zip(p0,p1))
+    return tuple(p[0] | (p[1]<<8) | (p[2]<<16) for p in (p0,p1,p2,p3))
+
+
+def _dxt3_rgba_rows(w, h, raw, blocks_across):
+    """Decode DXT3 scanlines using packed uint32 RGBA pixels.
+
+    This preserves the old explicit alpha/interpolated RGB rules exactly,
+    including clamping of cropped 4x4 blocks on non-multiple-of-4 images.
+    """
+    out = bytearray(w*h*4)
+    for by in range((h+3)//4):
+        for bx in range(blocks_across):
+            offset=(by*blocks_across+bx)*16
+            alpha_bits=struct.unpack_from('<Q',raw,offset)[0]
+            c0,c1,color_bits=struct.unpack_from('<HHI',raw,offset+8)
+            colors=_dxt3_rgb_palette(c0,c1)
+            width=min(4,w-bx*4)
+            height=min(4,h-by*4)
+            for yy in range(height):
+                alpha=(alpha_bits>>(16*yy))&65535
+                mask=(color_bits>>(8*yy))&255
+                p0=colors[mask&3] | (((alpha&15)*17)<<24)
+                p1=colors[(mask>>2)&3] | (((alpha>>4&15)*17)<<24)
+                p2=colors[(mask>>4)&3] | (((alpha>>8&15)*17)<<24)
+                p3=colors[(mask>>6)&3] | (((alpha>>12&15)*17)<<24)
+                target=((by*4+yy)*w+bx*4)*4
+                if width == 4:
+                    struct.pack_into('<4I',out,target,p0,p1,p2,p3)
+                else:
+                    for xx, packed in enumerate((p0,p1,p2,p3)[:width]):
+                        struct.pack_into('<I',out,target+xx*4,packed)
+    return bytes(out)
+
+
 def rgba_pixels(tex,face=0):
+    """Decode the first mip into RGBA8, without optional third-party packages.
+
+    Bulk strided copies handle uncompressed BGRA; compressed DXT blocks are
+    assembled one scanline at a time. Neither path changes source textures.
+    """
     w,h,raw=tex.mipmaps[0]
     if tex.faces is not None:
         if not 0<=face<6:raise ValueError('Invalid cubemap face index')
         raw=tex.faces[0][face]
     if w*h>8192*8192:raise ValueError('Image too large')
     if tex.fmt in ('BGRA8','BGRX8'):
+        if len(raw)!=w*h*4:raise ValueError('Incorrect BGRA mip length')
         out=bytearray(w*h*4)
-        for i in range(w*h):
-            b,g,r,a=raw[i*4:i*4+4]
-            out[i*4:i*4+4]=bytes((r,g,b,a if tex.fmt=='BGRA8' else 255))
+        # Strided slice assignment runs the channel shuffle in C, avoiding
+        # w*h allocations/slice writes from the legacy per-pixel loop.
+        out[0::4]=raw[2::4]
+        out[1::4]=raw[1::4]
+        out[2::4]=raw[0::4]
+        out[3::4]=(raw[3::4] if tex.fmt=='BGRA8'
+                    else bytes((255,))*(w*h))
         return w,h,bytes(out)
+    if tex.fmt not in ('DXT1','DXT3','DXT5'):
+        raise ValueError('Unsupported compressed texture format')
     block_bytes=8 if tex.fmt=='DXT1' else 16
+    blocks_across=(w+3)//4
+    if len(raw)!=blocks_across*((h+3)//4)*block_bytes:
+        raise ValueError('Incorrect DXT mip length')
+    if tex.fmt=='DXT1':
+        return w,h,_dxt1_rgba_rows(w,h,raw,blocks_across)
+    if tex.fmt=='DXT3':
+        return w,h,_dxt3_rgba_rows(w,h,raw,blocks_across)
     out=bytearray(w*h*4)
     for by in range((h+3)//4):
-        for bx in range((w+3)//4):
-            at=(by*((w+3)//4)+bx)*block_bytes
+        for bx in range(blocks_across):
+            at=(by*blocks_across+bx)*block_bytes
             block=raw[at:at+block_bytes]
             colors=_palette(block[-8:],tex.fmt=='DXT1')
             if tex.fmt=='DXT3':
-                a=struct.unpack_from('<Q',block)[0]
-                alphas=[((a>>(4*i))&15)*17 for i in range(16)]
+                alpha_bits=struct.unpack_from('<Q',block)[0]
+                alphas=[((alpha_bits>>(4*i))&15)*17 for i in range(16)]
             elif tex.fmt=='DXT5':
                 a0,a1=block[:2];bits=int.from_bytes(block[2:8],'little')
                 if a0>a1: table=[a0,a1]+[((7-j)*a0+j*a1)//7 for j in range(1,7)]
                 else:table=[a0,a1]+[((5-j)*a0+j*a1)//5 for j in range(1,5)]+[0,255]
                 alphas=[table[(bits>>(3*i))&7] for i in range(16)]
             else:alphas=None
-            for yy in range(4):
-                for xx in range(4):
-                    x=bx*4+xx;y=by*4+yy
-                    if x>=w or y>=h:continue
-                    i=yy*4+xx
-                    r,g,b,aa=colors[i]
-                    out[4*(y*w+x):4*(y*w+x)+4]=bytes((r,g,b,alphas[i] if alphas is not None else aa))
+            width=min(4,w-4*bx)
+            height=min(4,h-4*by)
+            for yy in range(height):
+                row=yy*4
+                # Concatenate up to four pixels in C, then make ONE output
+                # slice assignment per block-row (instead of one per pixel).
+                if alphas is None:
+                    pixels=b''.join(bytes(colors[row+xx]) for xx in range(width))
+                else:
+                    pixels=b''.join(bytes((*colors[row+xx][:3],alphas[row+xx]))
+                                    for xx in range(width))
+                offset=((by*4+yy)*w+bx*4)*4
+                out[offset:offset+width*4]=pixels
     return w,h,bytes(out)
 
-
-def png_bytes(w,h,rgba):
+def png_bytes(w,h,rgba,compression_level=7):
+    # Fast encoding is OPT-IN; the historical level 7 stays byte-exact.
+    if type(compression_level) is not int or not 1<=compression_level<=9:
+        raise ValueError('PNG compression level must be an integer from 1 to 9')
     if len(rgba)!=w*h*4:raise ValueError('Incorrect RGBA buffer')
     raw=b''.join(b'\0'+rgba[y*w*4:(y+1)*w*4] for y in range(h))
     def chunk(tag,payload):return struct.pack('>I',len(payload))+tag+payload+struct.pack('>I',zlib.crc32(tag+payload)&0xffffffff)
     return (b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,6,0,0,0))+
-            chunk(b'IDAT',zlib.compress(raw,7))+chunk(b'IEND',b''))
+            chunk(b'IDAT',zlib.compress(raw,compression_level))+chunk(b'IEND',b''))
 
 
-def to_png(tex):
+def to_png(tex,compression_level=7):
     if tex.faces is None:
         w,h,raw=rgba_pixels(tex)
-        return png_bytes(w,h,raw)
+        return png_bytes(w,h,raw,compression_level)
     # 3 by 2 contact sheet for six cubemap faces; no orientation assumed.
     w,h=tex.width,tex.height
     atlas=bytearray(3*w*2*h*4)
@@ -179,7 +300,7 @@ def to_png(tex):
         for y in range(h):
             target=((oy+y)*3*w+ox)*4
             atlas[target:target+w*4]=rgba[y*w*4:(y+1)*w*4]
-    return png_bytes(3*w,2*h,bytes(atlas))
+    return png_bytes(3*w,2*h,bytes(atlas),compression_level)
 
 
 def to_dds(tex):
@@ -242,11 +363,7 @@ def gallery(textures,materials,out):
                         'size':f'{t.width} × {t.height}','bundle':t.source,'materials':used[t.name.casefold()],
                         'src':'data:image/png;base64,'+png})
     jsondata=json.dumps(records,separators=(',',':')).replace('</','<\\/')
-    page='''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DX2 Texture Explorer v0.5</title>
-<style>body{background:#101721;color:#edf3f9;font:14px system-ui;margin:0}header{padding:20px 28px;background:#1d293a;position:sticky;top:0;z-index:1}h1{margin:0;font-size:23px}p{color:#aabccc}input,select{border:1px solid #4a5e75;background:#111d2e;color:white;padding:10px;border-radius:6px}main{padding:22px;display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:14px}.tile{background:#1c2837;border:1px solid #33475c;border-radius:8px;padding:10px;overflow:hidden}.pic{height:120px;display:grid;place-items:center;background:repeating-conic-gradient(#3a4553 0% 25%,#242e3b 0% 50%) 0 0/16px 16px}.pic img{max-width:100%;max-height:116px;image-rendering:pixelated}.name{overflow-wrap:anywhere;margin:10px 0 5px;font-weight:600}.dim{color:#a9bed1;font-size:12px}.count{margin-left:8px;font-size:12px;color:#9ac7ed}</style>
-<header><h1>DX2 Texture Explorer <span style="color:#69d7bc">v0.5</span></h1><p>Personal retail resources • read-only decoded previews • DXT1, DXT3, DXT5 and BGRA8 • originally supplied data, no network needed</p><input id="q" placeholder="Filter texture or bundle…" size="36"> <select id="usage"><option value="">All texture usages</option><option>diffuse</option><option>normal</option><option>specular</option><option>mask</option><option>environment</option></select><span id="count" class="count"></span></header><main id="gallery"></main>
-<script>const data=/*DATA*/;const q=document.getElementById('q'), usage=document.getElementById('usage'),grid=document.getElementById('gallery');function update(){const s=q.value.toLowerCase(),u=usage.value;const items=data.filter(t=>(!u||t.usage===u)&&(t.name.toLowerCase().includes(s)||t.bundle.toLowerCase().includes(s)));grid.replaceChildren();const frag=document.createDocumentFragment();for(const t of items){const d=document.createElement('article');d.className='tile';const pic=document.createElement('div');pic.className='pic';const img=document.createElement('img');img.loading='lazy';img.src=t.src;img.alt=t.name;pic.append(img);const title=document.createElement('div');title.className='name';title.textContent=t.name;const detail=document.createElement('div');detail.className='dim';detail.textContent=[t.size,t.format,t.usage,`${t.materials} material refs`,t.bundle].join(' · ');d.append(pic,title,detail);frag.append(d)}grid.append(frag);document.getElementById('count').textContent=`${items.length} / ${data.length} unique textures`}q.addEventListener('input',update);usage.addEventListener('change',update);update();</script></html>'''
+    page=(Path(__file__).resolve().parent/'templates'/'texture_gallery.html').read_text(encoding='utf-8')
     out=Path(out);out.parent.mkdir(parents=True,exist_ok=True)
     out.write_text(page.replace('/*DATA*/',jsondata),encoding='utf-8')
     return out
