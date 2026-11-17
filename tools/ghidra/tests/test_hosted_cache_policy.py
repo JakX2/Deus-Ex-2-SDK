@@ -28,9 +28,16 @@ class HostedCachePolicyTests(unittest.TestCase):
         self.assertLess(run, check)
         self.assertLess(check, upload)
         self.assertIn("if: steps.safe-report-cache.outputs.cache-hit != 'true'", job)
+        # The explicit save action is also guarded against cache hits.
         self.assertEqual(
-            job.count("if: steps.safe-report-cache.outputs.cache-hit != 'true'"), 4
+            job.count("if: steps.safe-report-cache.outputs.cache-hit != 'true'"), 5
         )
+        save = job.index("Save validated sanitized research cache before cleanup")
+        cleanup = job.index("Delete owner original PE images and temporary findings")
+        self.assertLess(upload, save)
+        self.assertLess(save, cleanup)
+        self.assertIn("uses: actions/cache/save@v4", job)
+        self.assertIn("key: ${{ steps.safe-report-cache.outputs.cache-primary-key }}", job)
         self.assertNotIn("DX2_ORIGINAL_PE_MANIFEST_JSON", job)
         self.assertNotIn("DX2_HOSTED_GHIDRA_ENABLED", job)
 
