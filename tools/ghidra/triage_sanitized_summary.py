@@ -15,23 +15,37 @@ PRIORITY = (".gmp", ".ibd", "loadpackage", "serialize", "deserialize",
 
 
 def triage(summary):
+    if not isinstance(summary, dict):
+        raise ValueError("summary must be an object")
     if summary.get("schema") != "DX2-GhidraPrivateSummary-v1":
         raise ValueError("unexpected sanitized report schema")
     if summary.get("game_assets_included") is not False:
         raise ValueError("report is not marked asset-free")
     reports = summary.get("reports")
-    if not isinstance(reports, list) or not reports:
+    if not isinstance(reports, list) or not reports or len(reports) > 2:
         raise ValueError("missing reports")
     results = []
     for report in reports:
+        if not isinstance(report, dict):
+            raise ValueError("target must be an object")
         if report.get("game_assets_included") is not False:
             raise ValueError("target not marked asset-free")
         by_term = {}
         by_address = defaultdict(set)
-        for item in report.get("keyword_evidence", []):
+        evidence = report.get("keyword_evidence", [])
+        if not isinstance(evidence, list) or len(evidence) > 64:
+            raise ValueError("invalid or unbounded keyword evidence")
+        for item in evidence:
+            if not isinstance(item, dict):
+                raise ValueError("keyword evidence must be an object")
             term = item.get("term")
-            if term not in PRIORITY or term in by_term:
+            if term not in PRIORITY:
                 continue
+            if term in by_term:
+                raise ValueError("duplicate keyword evidence term")
+            hits = item.get("defined_literal_hits", 0)
+            if type(hits) is not int or hits < 0:
+                raise ValueError("invalid literal hit count")
             addresses = item.get("candidate_function_addresses", [])
             if not isinstance(addresses, list):
                 raise ValueError("invalid candidate address list")
@@ -46,7 +60,7 @@ def triage(summary):
                 normalized.append(address.lower())
                 by_address[address.lower()].add(term)
             by_term[term] = {
-                "defined_literal_hits": item.get("defined_literal_hits", 0),
+                "defined_literal_hits": hits,
                 "candidate_function_addresses": sorted(set(normalized)),
             }
         results.append({
