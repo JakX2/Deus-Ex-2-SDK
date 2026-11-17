@@ -33,6 +33,35 @@ class TriageTests(unittest.TestCase):
         self.assertFalse(target["native_writer_ready"])
         self.assertIn("no verified calls", result["disclaimer"])
 
+    def test_rejects_duplicate_terms_instead_of_hiding_evidence(self):
+        source = sample()
+        source["reports"][0]["keyword_evidence"].append(
+            {"term": "bsp", "defined_literal_hits": 999,
+             "candidate_function_addresses": ["1234"]})
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            module.triage(source)
+
+    def test_rejects_malformed_or_unbounded_report_structure(self):
+        for bad in (None, [], "not an object"):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                module.triage(bad)
+        source = sample()
+        source["reports"].append(source["reports"][0])
+        source["reports"].append(source["reports"][0])
+        with self.assertRaises(ValueError):
+            module.triage(source)
+        source = sample()
+        source["reports"][0]["keyword_evidence"] = "not a list"
+        with self.assertRaises(ValueError):
+            module.triage(source)
+
+    def test_rejects_invalid_hit_counts(self):
+        for hits in (-1, True, "3"):
+            source = sample()
+            source["reports"][0]["keyword_evidence"][0]["defined_literal_hits"] = hits
+            with self.subTest(hits=hits), self.assertRaises(ValueError):
+                module.triage(source)
+
     def test_refuses_unsanitized(self):
         source = sample()
         source["game_assets_included"] = True
