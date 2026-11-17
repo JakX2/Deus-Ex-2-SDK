@@ -5,6 +5,7 @@ An accepted edge is static reference evidence, never proof of an engine API,
 GMP/IBD loading, actor registration, or in-game behavior.
 """
 import argparse
+import io
 import json
 import re
 import unittest
@@ -23,6 +24,27 @@ def canonical_address(value):
         segment, offset = value.split(":")
         return (int(segment, 16), int(offset, 16))
     return (None, int(value, 16))
+
+
+MAX_INPUT_BYTES = 131072
+
+
+def load_bounded_json(source):
+    """Reject oversized or ambiguous JSON before accepting any evidence."""
+    payload = source.read(MAX_INPUT_BYTES + 1)
+    if len(payload) > MAX_INPUT_BYTES:
+        raise ValueError("oversized evidence input")
+
+    def unique_pairs(pairs):
+        obj = {}
+        for key, value in pairs:
+            if key in obj:
+                raise ValueError("duplicate JSON key")
+            obj[key] = value
+        return obj
+
+    return json.loads(payload, object_pairs_hook=unique_pairs,
+                      parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite JSON value")))
 
 
 def validate(doc):
@@ -97,6 +119,16 @@ class SyntheticContractTests(unittest.TestCase):
             with self.subTest(doc=doc), self.assertRaises(ValueError):
                 validate(doc)
 
+    def test_reject_ambiguous_or_oversized_json(self):
+        raw = json.dumps(self.fixture())
+        self.assertEqual(validate(load_bounded_json(io.StringIO(raw)))["edge_count"], 1)
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            load_bounded_json(io.StringIO(raw.replace('"schema":', '"schema": "spoof", "schema":', 1)))
+        with self.assertRaisesRegex(ValueError, "oversized evidence input"):
+            load_bounded_json(io.StringIO(" " * (MAX_INPUT_BYTES + 1)))
+        with self.assertRaisesRegex(ValueError, "nonfinite JSON value"):
+            load_bounded_json(io.StringIO(raw.replace("false", "NaN", 1)))
+
     def test_reject_equivalent_hex_spellings(self):
         doc = self.fixture()
         doc["edges"].append({"caller": "0x0", "callee": "005c5c69", "reference_kind": "CALL"})
@@ -126,7 +158,7 @@ def main():
         if not args.input:
             parser.error("input required without --self-test")
         with open(args.input, encoding="utf-8") as source:
-            print(json.dumps(validate(json.load(source)), sort_keys=True))
+            print(json.dumps(validate(load_bounded_json(source)), sort_keys=True))
 
 
 if __name__ == "__main__":
