@@ -17,6 +17,14 @@ EDGE = {"caller", "callee", "reference_kind"}
 KINDS = {"CALL", "JUMP", "DATA"}
 
 
+def canonical_address(value):
+    """Normalize equivalent hexadecimal spellings for duplicate detection."""
+    if ":" in value:
+        segment, offset = value.split(":")
+        return (int(segment, 16), int(offset, 16))
+    return (None, int(value, 16))
+
+
 def validate(doc):
     if type(doc) is not dict or set(doc) != TOP:
         raise ValueError("unexpected top-level fields")
@@ -38,7 +46,7 @@ def validate(doc):
                 raise ValueError("invalid edge address")
         if type(edge["reference_kind"]) is not str or edge["reference_kind"] not in KINDS:
             raise ValueError("invalid reference kind")
-        key = (edge["caller"].lower(), edge["callee"].lower(), edge["reference_kind"])
+        key = (canonical_address(edge["caller"]), canonical_address(edge["callee"]), edge["reference_kind"])
         if key in seen:
             raise ValueError("duplicate edge")
         seen.add(key)
@@ -88,6 +96,21 @@ class SyntheticContractTests(unittest.TestCase):
         for doc in cases:
             with self.subTest(doc=doc), self.assertRaises(ValueError):
                 validate(doc)
+
+    def test_reject_equivalent_hex_spellings(self):
+        doc = self.fixture()
+        doc["edges"].append({"caller": "0x0", "callee": "005c5c69", "reference_kind": "CALL"})
+        with self.assertRaises(ValueError):
+            validate(doc)
+        doc = self.fixture()
+        doc["edges"].append({"caller": "5C56A0", "callee": "0000005C5C69", "reference_kind": "CALL"})
+        with self.assertRaisesRegex(ValueError, "duplicate edge"):
+            validate(doc)
+        doc = self.fixture()
+        doc["edges"] = [{"caller": "0001:000a", "callee": "0002:00ff", "reference_kind": "DATA"},
+                        {"caller": "1:A", "callee": "2:FF", "reference_kind": "DATA"}]
+        with self.assertRaisesRegex(ValueError, "duplicate edge"):
+            validate(doc)
 
 
 def main():
