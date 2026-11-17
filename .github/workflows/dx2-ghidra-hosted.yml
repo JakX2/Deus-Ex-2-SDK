@@ -163,8 +163,9 @@ jobs:
           assert 1 <= len(images) <= 8
           (root/"originals.txt").write_text("\n".join(str(p.resolve()) for p in images)+"\n")
           PY
+      # Explicit restore/save avoids post-job cache writes after secure cleanup.
       - name: Restore sanitized evidence cache if source hashes and analyzer are unchanged
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         id: safe-report-cache
         with:
           path: ${{ runner.temp }}/dx2-metadata/dx2_research_summary.json
@@ -209,6 +210,14 @@ jobs:
           path: ${{ runner.temp }}/dx2-metadata/dx2_research_summary.json
           if-no-files-found: error
           retention-days: 7
+      # Save only the strict-allowlisted, validated summary before secure cleanup.
+      # actions/cache@v4 saves at post-job time, after cleanup has removed the file.
+      - name: Save validated sanitized research cache before cleanup
+        if: steps.safe-report-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/dx2-metadata/dx2_research_summary.json
+          key: ${{ steps.safe-report-cache.outputs.cache-primary-key }}
       - name: Delete owner original PE images and temporary findings
         if: always()
         run: |
