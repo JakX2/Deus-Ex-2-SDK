@@ -68,9 +68,16 @@ def publish_report(doc, output):
                 os.fsync(directory_fd)
             finally:
                 os.close(directory_fd)
-        except OSError:
-            # Directory sync is not supported on every filesystem/platform.
-            pass
+        except OSError as exc:
+            # Only documented unsupported directory-sync operations are optional.
+            # An actual I/O failure must be reported even though the final name
+            # has already been published and must not be deleted.
+            import errno
+            unsupported = {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}
+            if os.name == "nt":
+                unsupported.add(errno.EACCES)  # Windows may refuse directory handles.
+            if exc.errno not in unsupported:
+                raise
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)

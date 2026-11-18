@@ -55,6 +55,42 @@ class PublicationFailureTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
         self.assert_no_temporary_files()
 
+    def test_directory_sync_io_error_is_reported_after_publication(self):
+        original_fsync = collector.os.fsync
+        calls = 0
+
+        def fail_directory_sync(fd):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError(5, "directory I/O error")
+            return original_fsync(fd)
+
+        with mock.patch.object(collector.os, "fsync", side_effect=fail_directory_sync):
+            with self.assertRaises(OSError):
+                collector.publish_report(self.doc, self.output)
+        self.assertEqual(calls, 2)
+        self.assertTrue(self.output.is_file())
+        self.assert_no_temporary_files()
+
+    def test_unsupported_directory_sync_preserves_report(self):
+        import errno
+        original_fsync = collector.os.fsync
+        calls = 0
+
+        def unsupported_directory_sync(fd):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError(errno.EINVAL, "directory sync unsupported")
+            return original_fsync(fd)
+
+        with mock.patch.object(collector.os, "fsync", side_effect=unsupported_directory_sync):
+            collector.publish_report(self.doc, self.output)
+        self.assertEqual(calls, 2)
+        self.assertTrue(self.output.is_file())
+        self.assert_no_temporary_files()
+
     def test_race_with_existing_destination_never_overwrites(self):
         def competing_writer(_src, dst):
             Path(dst).write_bytes(b"competing report")
