@@ -23,7 +23,7 @@ def authenticate(image, pins):
     if len(rows) != 1:
         raise ValueError("expected exactly one DX2Main pin")
     pin = rows[0]
-    if image.name != pin["name"] or image.stat().st_size != pin["size"]:
+    if image.name.lower() != pin["name"].lower() or image.stat().st_size != pin["size"]:
         raise ValueError("original PE name or size mismatch")
     with image.open("rb") as src:
         digest = hashlib.file_digest(src, "sha256").hexdigest()
