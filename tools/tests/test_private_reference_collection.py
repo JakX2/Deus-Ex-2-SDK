@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "ghidra" / "run_private_reference_collection.py"
 spec = importlib.util.spec_from_file_location("private_refs", SCRIPT)
@@ -37,6 +38,40 @@ class PrivateReferenceHarnessTests(unittest.TestCase):
                     report(fingerprint="b"*64)):
             with self.subTest(doc=doc), self.assertRaises(ValueError):
                 harness.check_scope(doc, digest)
+
+
+    def test_atomic_publication(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "evidence.json"
+            harness.publish_report({"edges": []}, destination)
+            self.assertEqual(destination.read_text(), '{"edges": []}\\n')
+            with self.assertRaises(FileExistsError):
+                harness.publish_report({"edges": [1]}, destination)
+            self.assertEqual(destination.read_text(), '{"edges": []}\\n')
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["evidence.json"])
+
+    def test_serialization_failure_leaves_no_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "evidence.json"
+            with self.assertRaises(TypeError):
+                harness.publish_report({"bad": object()}, destination)
+            self.assertEqual(list(Path(tmp).iterdir()), [])
+
+    def test_link_failure_cleans_temporary_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "evidence.json"
+            with mock.patch.object(harness.os, "link", side_effect=OSError("synthetic link failure")):
+                with self.assertRaises(OSError):
+                    harness.publish_report({"edges": []}, destination)
+            self.assertEqual(list(Path(tmp).iterdir()), [])
+
+    def test_write_failure_cleans_temporary_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "evidence.json"
+            with mock.patch.object(harness.os, "fsync", side_effect=OSError("synthetic sync failure")):
+                with self.assertRaises(OSError):
+                    harness.publish_report({"edges": []}, destination)
+            self.assertEqual(list(Path(tmp).iterdir()), [])
 
 
 if __name__ == "__main__":
