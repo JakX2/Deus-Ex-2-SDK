@@ -30,7 +30,7 @@ jobs:
           python -c 'import sys; sys.path.insert(0,"tools/ghidra"); from stage_original_pe_from_zip import load_expectations; assert len(load_expectations(__import__("pathlib").Path("tools/ghidra/dx2_system_pe_pins.json"))) == 2'
 
   hosted-ghidra-smoke:
-    name: Real Ghidra 12.2 on harmless synthetic ELF
+    name: Real Ghidra 12.2 on harmless synthetic ELF and PE
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     needs: source-fixtures
     runs-on: ubuntu-latest
@@ -80,6 +80,11 @@ jobs:
           assert result["retail_runtime_verified"] is False
           print("DX2 real hosted Ghidra 12.2 + Java postScript synthetic PASS")
           PY
+
+      - name: Execute bounded reference collector on synthetic Windows PE
+        run: |
+          set -euo pipefail
+          bash tools/ghidra/run_synthetic_reference_smoke.sh "$GHIDRA_HOME/support/analyzeHeadless"
 
   owner-input-gate:
     name: Detect opt-in owner Drive secret without exposing it
