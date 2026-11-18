@@ -44,6 +44,38 @@ def check_scope(doc, digest):
             raise ValueError("reference destination outside candidate scope")
 
 
+def publish_report(doc, output):
+    """Publish validated evidence without partial files or destination replacement."""
+    output = output.absolute()
+    if output.exists() or output.is_symlink():
+        raise FileExistsError("refusing to overwrite evidence")
+    payload = (json.dumps(doc, sort_keys=True) + "\n").encode("utf-8")
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="wb", dir=output.parent,
+                                         prefix=".dx2-evidence-", suffix=".tmp",
+                                         delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # A hard link atomically creates the final name only if it does not exist.
+        # os.replace would silently overwrite an existing evidence report.
+        os.link(temporary, output)
+        try:
+            directory_fd = os.open(output.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError:
+            # Directory sync is not supported on every filesystem/platform.
+            pass
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def main():
     from validate_sanitized_call_edges import load_bounded_json, validate
     parser = argparse.ArgumentParser(description=__doc__)
@@ -74,9 +106,7 @@ def main():
         summary = validate(doc)
         check_scope(doc, digest)
         authenticate(image, pins)
-        with args.output.open("x", encoding="utf-8") as out:
-            json.dump(doc, out, sort_keys=True)
-            out.write("\n")
+        publish_report(doc, args.output)
         print(json.dumps(summary, sort_keys=True))
 
 
