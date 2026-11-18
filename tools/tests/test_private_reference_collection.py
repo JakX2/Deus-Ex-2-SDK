@@ -44,10 +44,10 @@ class PrivateReferenceHarnessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / "evidence.json"
             harness.publish_report({"edges": []}, destination)
-            self.assertEqual(destination.read_text(), '{"edges": []}\\n')
+            self.assertEqual(destination.read_text(), '{"edges": []}\n')
             with self.assertRaises(FileExistsError):
                 harness.publish_report({"edges": [1]}, destination)
-            self.assertEqual(destination.read_text(), '{"edges": []}\\n')
+            self.assertEqual(destination.read_text(), '{"edges": []}\n')
             self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["evidence.json"])
 
     def test_serialization_failure_leaves_no_report(self):
