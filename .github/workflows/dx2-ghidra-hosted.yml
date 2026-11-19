@@ -236,12 +236,22 @@ jobs:
             --image "$RUNNER_TEMP/dx2-owner-private/verified/dx2main.exe" \
             --headless "$GHIDRA_HOME/support/analyzeHeadless" \
             --output "$RUNNER_TEMP/dx2-metadata/dx2_reference_edges.json"
-      - name: Upload validated static reference metadata only
+      # Address-level references and executable fingerprints remain runner-private.
+      # Only an allowlisted, address-free coverage report may leave the runner.
+      - name: Generate address-free static reference coverage
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          umask 077
+          python -B tools/ghidra/summarize_reference_coverage.py \
+            "$RUNNER_TEMP/dx2-metadata/dx2_reference_edges.json" \
+            > "$RUNNER_TEMP/dx2-metadata/dx2_reference_coverage.json"
+      - name: Upload address-free reference coverage only
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: dx2-static-reference-edges-${{ github.run_id }}
-          path: ${{ runner.temp }}/dx2-metadata/dx2_reference_edges.json
+          name: dx2-static-reference-coverage-${{ github.run_id }}
+          path: ${{ runner.temp }}/dx2-metadata/dx2_reference_coverage.json
           if-no-files-found: error
           retention-days: 7
       - name: Delete owner original PE images and temporary findings
