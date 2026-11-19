@@ -38,6 +38,42 @@ class CoverageTests(unittest.TestCase):
         self.assertNotIn("abcdef", str(result))
         self.assertNotIn("a" * 64, str(result))
 
+    def test_full_bounded_collection_counts_without_leaking_addresses(self):
+        doc = self.fixture()
+        doc["edges"] = [
+            {"caller": format(0x1000 + i, "x"),
+             "callee": "005c56a0" if i % 2 == 0 else "005c5c69",
+             "reference_kind": ("CALL", "JUMP", "DATA")[i % 3]}
+            for i in range(512)
+        ]
+        before = copy.deepcopy(doc)
+        result = summarize(doc)
+        self.assertEqual(doc, before)
+        self.assertEqual(result["reference_count"], 512)
+        self.assertEqual(result["targets_with_references"], 2)
+        self.assertEqual(result["targets_without_references"], 9)
+        self.assertEqual(sum(result["reference_kinds"].values()), 512)
+        self.assertEqual(result["out_of_scope_destinations"], 0)
+        self.assertFalse(result["runtime_verified"])
+        self.assertNotIn("005c56a0", str(result))
+        self.assertNotIn(doc["executable_sha256"], str(result))
+
+    def test_reject_over_limit_and_canonical_duplicate_edges(self):
+        doc = self.fixture()
+        doc["edges"] = [
+            {"caller": format(0x1000 + i, "x"),
+             "callee": "005c56a0", "reference_kind": "CALL"}
+            for i in range(513)
+        ]
+        with self.assertRaisesRegex(ValueError, "invalid edge collection"):
+            summarize(doc)
+        doc["edges"] = [
+            {"caller": "0100", "callee": "005c56a0", "reference_kind": "CALL"},
+            {"caller": "100", "callee": "5C56A0", "reference_kind": "CALL"},
+        ]
+        with self.assertRaisesRegex(ValueError, "duplicate edge"):
+            summarize(doc)
+
     def test_reject_unvalidated_private_fields(self):
         doc = self.fixture()
         doc["raw_strings"] = "must never appear"
