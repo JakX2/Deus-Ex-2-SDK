@@ -1,0 +1,74 @@
+name: DX2 texture writer source-only bundle
+on:
+  push:
+    paths:
+      - 'tools/maps/dx2_texture_writer.py'
+      - 'tools/maps/dx2_logo_trial.py'
+      - 'tools/maps/dx2_ibd_repack.py'
+      - 'tools/maps/dx2bundles.py'
+      - 'map_exporter/dx2textures.py'
+      - 'tools/maps/dx2_ibd_integrity.py'
+      - 'tests/test_dx2_texture_writer.py'
+      - 'tests/test_dx2_logo_trial.py'
+      - 'tests/test_dx2_ibd_integrity.py'
+      - 'tests/test_dx2_ibd_repack.py'
+      - '.github/workflows/dx2-texture-writer.yml'
+  pull_request:
+    paths:
+      - 'tools/maps/dx2_texture_writer.py'
+      - 'tools/maps/dx2_logo_trial.py'
+      - 'tools/maps/dx2_ibd_repack.py'
+      - 'tools/maps/dx2bundles.py'
+      - 'map_exporter/dx2textures.py'
+      - 'tools/maps/dx2_ibd_integrity.py'
+      - 'tests/test_dx2_texture_writer.py'
+      - 'tests/test_dx2_logo_trial.py'
+      - 'tests/test_dx2_ibd_integrity.py'
+      - 'tests/test_dx2_ibd_repack.py'
+      - '.github/workflows/dx2-texture-writer.yml'
+permissions:
+  contents: read
+jobs:
+  source-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run native texture and IBD regression tests
+        run: python -m unittest discover -s tests -p 'test_dx2_*.py' -v
+      - name: Package explicit source-only allowlist
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/dx2-texture-source"
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          import os
+          allowed = [
+              "tools/maps/dx2bundles.py",
+              "tools/maps/dx2_ibd_integrity.py",
+              "tools/maps/dx2_ibd_repack.py",
+              "tools/maps/dx2_texture_writer.py",
+              "tools/maps/dx2_logo_trial.py",
+              "map_exporter/dx2textures.py",
+              "tests/test_dx2_ibd_integrity.py",
+              "tests/test_dx2_ibd_repack.py",
+              "tests/test_dx2_texture_writer.py",
+              "tests/test_dx2_logo_trial.py",
+          ]
+          out=Path(os.environ["RUNNER_TEMP"])/"dx2-texture-source"/"DX2TextureSource.zip"
+          with ZipFile(out,"w",ZIP_DEFLATED) as z:
+              for name in allowed:
+                  z.write(name,name)
+          PY
+      - name: Upload source-only tool bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: DX2TextureSource
+          path: ${{ runner.temp }}/dx2-texture-source/DX2TextureSource.zip
+          if-no-files-found: error
+          retention-days: 7
