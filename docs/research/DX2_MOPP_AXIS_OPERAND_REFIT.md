@@ -88,7 +88,7 @@ requires three additional spatial bytes; the club requires two. All 140
 affected-triangle point comparisons pass both original offline query modes.
 The club still fails the coupled geometry gate. Four synthetic tests pass.
 No root quantization change, instruction relocation, native output or
-Havok runtime verification is implied. Integrated corpus validation pending.
+Havok runtime verification is implied. Integrated packaged verification of the two original refusal cases passed.
 
     python research/dx2/inspect_vbsp_coupled_corners.py MAP.gmp --delta-d -1 --rebase-rescale-offsets
 
@@ -97,3 +97,12 @@ streams checked 3,126 upper-lab and 2,423 club leaf triangle centroids
 (including untouched geometry), using both original offline query modes.
 All 5,549 intended triangle IDs were recovered by each mode. This is
 additional point-query evidence, not retail collision verification.
+
+The source-only portable ZIP built from 580a0066a53c10c07f1da68d6ffe6176cba4ceef
+was independently extracted and run with --delta-d -1 --rebase-rescale-offsets
+on the two original refusal maps. Both fallback attempts passed; the packaged
+command reproduced seven changed code bytes and 140 samples with zero misses
+under each offline walker. Original bytecode had 31 new sample misses in
+these two partial geometry candidates. Both retained the root origin/scale
+formula; only the upper lab passed the separate complete geometry gate.
+No candidate GMP was emitted, and no runtime behavior was tested.
