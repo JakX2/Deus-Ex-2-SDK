@@ -31,6 +31,7 @@ import inspect_level_world_model as world
 from inspect_vbsp_leaf_bounds import verify_leaf_boxes,sync_leaf_boxes
 from inspect_vbsp_portal_sync import sync_portals
 from inspect_vbsp_navigation_impact import audit_navigation_impact
+from inspect_model_ancestor_constraints import ancestor_regressions,classify_plane_aliases
 
 SCHEMA='DX2SDK-joint-render-collision-model-research-v1'
 TOL=.15
@@ -101,8 +102,8 @@ def model_sync(model,polygons,new_polys,faces):
         i,j,k=e['parent'],e['child'],e['compact_field']
         if relation(nodes[i],nodes[j],k) and not relation(n2[i],n2[j],k):
             counts['model_new_link_geometry_violations']+=1
-    # Distinct nodes sharing an original splitter plane may need a coupled
-    # update even when a polygon association is absent. Do not guess it.
+    # Distinct coplanar nodes may own stationary geometry. Only retain them
+    # when the original and candidate geometric crosswalk proves independence.
     aliases=set()
     for i in moved_planes:
         a=nodes[i][0]
@@ -110,10 +111,14 @@ def model_sync(model,polygons,new_polys,faces):
             if j in updated:continue
             if min(max(abs(x-y) for x,y in zip(a,b)),max(abs(x+y) for x,y in zip(a,b)))<=ROUND_TOL:
                 aliases.add(j)
-    counts['model_unupdated_original_plane_aliases']=len(aliases)
+    stationary,unresolved=classify_plane_aliases(aliases,updated,links,polygons,new_polys,nodes,n2)
+    counts['model_stationary_coplanar_nodes_retained']=len(stationary)
+    counts['model_unupdated_original_plane_aliases']=len(unresolved)
+    counts.update(ancestor_regressions(graph['graph_edges'],nodes,n2,polygons,new_polys,links))
     counts['model_changed_bytes']=sum(a!=b for a,b in zip(model,out))
     passed=not any(counts[k] for k in ('model_unresolved_moved_faces','model_candidate_links_changed',
-        'model_new_link_geometry_violations','model_unupdated_original_plane_aliases'))
+        'model_new_link_geometry_violations','model_unupdated_original_plane_aliases',
+        'model_new_ancestor_center_violations','model_new_ancestor_polygon_violations'))
     return out,dict(counts),passed
 
 

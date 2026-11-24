@@ -142,3 +142,34 @@ the Model and splitter/portal stages without a graph/grid sample warning.
 Do not interpret that as permission to emit playable GMP files: unknown
 graph/grid semantics, continuous collision and retail execution remain
 unverified. Four synthetic tests pass locally. No graph/grid changes.
+
+## Independent stationary coplanar nodes and Model ancestor checks
+
+The three WTO Terminal Lower nodes previously refused as unmoved plane
+aliases have separate bidirectionally unique matches to unchanged
+expanded polygons. Identical original plane coefficients alone do not
+prove shared node ownership. The revised gate retains a stationary
+coplanar node only if its unique original polygon and candidate polygon
+records are identical and its own node spatial record is identical.
+Unresolved associations are still refused. Existing exact graph and
+candidate association list checks remain in place.
+
+The additional ancestor audit checks field-3/4 hypothesized halfspaces
+along the entire ancestor path of every affected node, not just the
+direct parent. Every affected center and uniquely matched polygon is
+checked for newly introduced halfspace violations. Field 5 is still
+handled by the direct coplanar-link check rather than inherited as a
+halfspace. Source semantics are provisional; unmapped nodes have only
+center evidence. No native ownership is claimed.
+
+All 20 geometry-approved signed trials passed the integrated splitter,
+portal and navigation-impact audit again. 921 affected ancestor center
+constraints and 911 mapped polygon constraints were checked (10 unmapped
+center-only checks); zero new violations. Six stationary coplanar node
+occurrences were retained, recovering both WTO Terminal Lower signs.
+18/20 pass the Model/render/collision/splitter/portal stage, and 10 of
+those have no graph/grid point-sample warning. The two campus entrance
+trials remain refused: their two unmatched polygons per sign have no
+unique Model match; nearest same-plane nodes have centers 64 source
+units away and incompatible radii. Three synthetic tests passed locally.
+No candidate GMP written, graph/grid rebuilt or runtime verified.
