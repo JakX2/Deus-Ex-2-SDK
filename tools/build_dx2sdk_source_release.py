@@ -74,6 +74,7 @@ REQUIRED = (
     "research/dx2/inspect_mopp_diagonal_refit.py",
     "research/dx2/inspect_mopp_rescale_rebase.py",
     "research/dx2/inspect_vbsp_render_sync.py",
+    "research/dx2/inspect_vbsp_joint_sync.py",
     "research/dx2/inspect_bsp_mopp_plane_impact.py",
     "dx2sdk/catalog.py",
     "dx2sdk/scalars.py",
