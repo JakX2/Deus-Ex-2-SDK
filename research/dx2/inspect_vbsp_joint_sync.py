@@ -2,7 +2,7 @@
 """In-memory coupled render/flat/MOPP and candidate Model synchronization.
 
 No native file writer. Model correspondence remains geometric; the separate
-splitter planes, portals and navigation dependencies remain unmodified.
+navigation and grid dependencies remain unmodified.
 """
 from collections import Counter
 import argparse
@@ -29,6 +29,7 @@ from inspect_vbsp_candidate_collision import triangle_samples
 import inspect_level_mopp_triangle_tree as mopp
 import inspect_level_world_model as world
 from inspect_vbsp_leaf_bounds import verify_leaf_boxes,sync_leaf_boxes
+from inspect_vbsp_portal_sync import sync_portals
 
 SCHEMA='DX2SDK-joint-render-collision-model-research-v1'
 TOL=.15
@@ -235,6 +236,16 @@ def audit_map(path,delta):
                 raise ValueError('Leaf-bound synchronization changed original ownership or spatial topology')
             verify_leaf_boxes(t3,p3)
             counts.update(lc); counts['joint_leaf_bounds_passed']=1
+            # Portal motion is a separate gate; retain the earlier result on refusal.
+            spatial,sc=sync_portals(changed,t3,polys,po,owners,pi,delta)
+            counts.update(sc)
+            if spatial is not None:
+                sp=BytePatch(raw); sp.add(at,spatial)
+                t4,p4,o4,b4,l4,c4=load_context(path,sp.finish())
+                if (p4,o4,b4,l4,c4)!=(po,owners,bl,li,co) or any(t4[k]!=t3[k] for k in ('nodes','portals','portal_leaf_links','leaves')):
+                    raise ValueError('Splitter/portal package reparse changed original ownership')
+                changed=spatial
+                counts['joint_splitter_portal_passed']=1
             try:
                 m2,mc,mp=model_sync(model,polys,po,faces); counts.update(mc)
                 counts['model_candidate_gate_passed']=int(mp)
@@ -244,6 +255,7 @@ def audit_map(path,delta):
                     if (q2.names,q2.imports,q2.exports,e2,lv2,mo2,li2,co2,en2)!=(pkg.names,pkg.imports,pkg.exports,exp,changed,m2,links,collision,end):
                         raise ValueError('Combined candidate reparse failed')
                     counts['joint_model_render_collision_passed']=1
+                    counts['joint_model_splitter_portal_passed']=int(spatial is not None)
                     status='joint_model_render_collision_passed'
             except (ValueError,struct.error,IndexError,KeyError,OverflowError) as exc:
                 counts['model_candidate_exception']=1;reason=str(exc)
@@ -251,7 +263,7 @@ def audit_map(path,delta):
             counts['joint_render_collision_refused']=1; status='joint_render_collision_refused';reason=str(exc)
     if hashlib.sha256(path.read_bytes()).hexdigest()!=pin:raise ValueError('Original GMP changed')
     return {'source_map':path.name,'source_sha256':pin,'plane_index':pi,'delta_d':delta,'status':status,'reason':reason,'counts':dict(counts),
-            'vbsp_planes_portals_and_navigation_unmodified':True,'native_geometry_writer_enabled':False,'retail_runtime_verified':False}
+            'vbsp_splitter_portal_updated':bool(counts['joint_splitter_portal_passed']),'navigation_and_grids_unmodified':True,'native_geometry_writer_enabled':False,'retail_runtime_verified':False}
 
 
 def main(argv=None):

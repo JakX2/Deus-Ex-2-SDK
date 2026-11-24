@@ -90,3 +90,27 @@ The earlier statement that the entire spatial prefix is untouched is
 superseded only for these leaf AABB records. Splitter plane D, portal
 coordinates, navigation graph, grid semantics, visibility and actual
 retail loading remain unresolved. No candidate GMP is emitted.
+
+## Fixed-width splitter and coupled portal vertices
+
+The next stage updates a selected splitter D and original portal corner
+positions, retaining all vertex counts, loop order, plane references and
+owner ranges. Exact coincident portal corners share one displacement.
+Original incident portal support planes and leaf path contacts within
+.002 units constrain that displacement. Coincident render corners must
+already satisfy the same motion equations; otherwise refuse. Check all
+original render polygons and portal loops for new per-path halfspace
+violations, preserve original conforming render centroid classification,
+require convexity and orientation of changed portal loops, and retain
+ordered two-sided portal centroid classifications. These tests do not
+prove visibility compiler or near-contact/T-junction semantics.
+
+All 20 previous geometry-approved signed candidates passed the actual
+in-memory package roundtrip after this stage (16 with the Model gate).
+The source contact solver identified 16 active portal corner groups, all
+with exact coincident render corner candidates. Across the 20 trials,
+24 portals were affected and 40 original portal vertex occurrences moved.
+75 splitter/portal bytes changed. No new path violations or owner/portal
+probe regressions. Three synthetic tests pass locally, including refusal
+of a stationary render contact. Navigation-like graph, grids, pre-Model
+fields and runtime semantics remain unresolved. No candidate GMP emitted.
