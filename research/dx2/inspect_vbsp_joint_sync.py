@@ -30,6 +30,7 @@ import inspect_level_mopp_triangle_tree as mopp
 import inspect_level_world_model as world
 from inspect_vbsp_leaf_bounds import verify_leaf_boxes,sync_leaf_boxes
 from inspect_vbsp_portal_sync import sync_portals
+from inspect_vbsp_navigation_impact import audit_navigation_impact
 
 SCHEMA='DX2SDK-joint-render-collision-model-research-v1'
 TOL=.15
@@ -246,6 +247,14 @@ def audit_map(path,delta):
                     raise ValueError('Splitter/portal package reparse changed original ownership')
                 changed=spatial
                 counts['joint_splitter_portal_passed']=1
+                refinfo=world._parse_world_model(pkg)
+                cur=world.Cursor(level,refinfo['level_model_ref_offset_in_level'])
+                if cur.ci()!=refinfo['world_model_export_ref']:
+                    raise ValueError('Original Model reference changed')
+                nav=audit_navigation_impact(level,cur.at,tail,t4,polys,po,pi)
+                counts.update(nav['counts'])
+                counts['graph_grid_dependency_warning']=int(nav['graph_grid_dependency_warning'])
+                counts['graph_grid_probe_passed_without_warning']=int(not nav['graph_grid_dependency_warning'])
             try:
                 m2,mc,mp=model_sync(model,polys,po,faces); counts.update(mc)
                 counts['model_candidate_gate_passed']=int(mp)

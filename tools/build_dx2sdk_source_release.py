@@ -77,6 +77,7 @@ REQUIRED = (
     "research/dx2/inspect_vbsp_joint_sync.py",
     "research/dx2/inspect_vbsp_leaf_bounds.py",
     "research/dx2/inspect_vbsp_portal_sync.py",
+    "research/dx2/inspect_vbsp_navigation_impact.py",
     "research/dx2/inspect_bsp_mopp_plane_impact.py",
     "dx2sdk/catalog.py",
     "dx2sdk/scalars.py",

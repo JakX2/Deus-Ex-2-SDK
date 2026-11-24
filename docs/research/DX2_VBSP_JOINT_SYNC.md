@@ -114,3 +114,31 @@ with exact coincident render corner candidates. Across the 20 trials,
 probe regressions. Three synthetic tests pass locally, including refusal
 of a stationary render contact. Navigation-like graph, grids, pre-Model
 fields and runtime semantics remain unresolved. No candidate GMP emitted.
+
+## Navigation-like graph and grid dependency audit
+
+The read-only audit uses the original validated graph framing to sample
+all triangle corners and centroids, edge endpoints and midpoints, grid
+origins and directional positions. It compares the exact old and new
+splitter decisions, traversing the original tree where the decision may
+change; upward-offset probes are evaluated independently. It also finds
+exact source-corner contact candidates and hypothetically tests their
+motion without modifying any graph/grid bytes. This is not a navigation
+compiler and these samples are not a proof of continuous free space.
+
+All 20 geometry-approved signed trials passed the structural portal stage.
+Record occurrences are counted, including repeated coordinates and both
+signed trials.
+The exact inventory is 77,721 graph triangle corners, 25,907 triangle
+centroids, 111,716 edge endpoints, 55,858 edge midpoints, 3,031 grid origins
+and 1,769 directional positions; 276,002 total original point occurrences,
+plus the same number of upward probes. 22 triangle corner occurrences
+have exact moved source contacts; hypothetical contact motion preserves
+all their original point classifications. Unchanged positions produce
+12 newly solid triangle corners, 2 centroids, 4 edge endpoints, 2 edge
+midpoints and 1 grid origin; the upward probes find the same counts.
+Eight trials have a dependency warning; twelve do not. Eight pass both
+the Model and splitter/portal stages without a graph/grid sample warning.
+Do not interpret that as permission to emit playable GMP files: unknown
+graph/grid semantics, continuous collision and retail execution remain
+unverified. Four synthetic tests pass locally. No graph/grid changes.
