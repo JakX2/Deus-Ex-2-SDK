@@ -120,6 +120,29 @@ class CustomImportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"isolated"):
             write_trial(*self.args(),self.dds_path,output)
 
+    def test_unsafe_windows_candidate_destination_refused(self):
+        for name in ("CON.ibd","bad:stream.ibd","bad?.ibd"):
+            with self.subTest(name=name):
+                with zipfile.ZipFile(self.ibd_zip,"w") as z:
+                    z.writestr(name,self.raw)
+                self.ip=sha256(self.ibd_zip.read_bytes())
+                with self.assertRaisesRegex(ValueError,"portable output path"):
+                    plan(*self.args(),self.dds)
+
+    def test_disagreeing_bundled_material_instances_refused(self):
+        b=verify_bundle(self.raw)
+        rows=_parts(self.raw,b)
+        i=select_material(b,"test_material").index
+        rows[i]=list(rows[i])
+        rows[i][1]=struct.pack("<I",7)
+        disagreeing=_build(self.raw,b,rows)
+        with zipfile.ZipFile(self.ibd_zip,"w") as z:
+            z.writestr("A.ibd",self.raw)
+            z.writestr("B.ibd",disagreeing)
+        self.ip=sha256(self.ibd_zip.read_bytes())
+        with self.assertRaisesRegex(ValueError,"instances disagree"):
+            plan(*self.args(),self.dds)
+
     def test_original_dds_still_creates_new_texture(self):
         b=verify_bundle(self.raw)
         layout=inspect_layout(b,select_texture(b,"fixture_tex"))
