@@ -153,6 +153,8 @@ def scan(pe, lines, candidates):
     slots=pe.import_slots()
     refs={name:set() for name in literals}
     call_sites={addr:set() for addresses in candidates.values() for addr in addresses}
+    for addr in call_sites:
+        pe.offset(addr,1,code=True)
     jump_sites={addr:set() for addr in call_sites}
     imports={name:set() for name in IMPORTS}
     tracked={}
@@ -201,8 +203,8 @@ def scan(pe, lines, candidates):
                 tracked.pop(dest,None)
                 if mnemonic=="mov" and len(operands)==1:
                     value,kind=operands[0]
-                    if (kind=="absolute_memory" and value in slots and
-                        struct.pack("<I",value) in raw and operand.startswith(dest+",dword ptr")):
+                    if (dest!="esp" and kind=="absolute_memory" and value in slots and
+                        struct.pack("<I",value) in raw and operand.partition(",")[2].strip().startswith("dword ptr")):
                         tracked[dest]=(slots[value],va)
             else:
                 tracked.clear()  # conservative: partial-register or memory writes
@@ -255,9 +257,21 @@ def main():
         raise ValueError("DX2Main owner input does not match committed pin")
     original=json.loads(args.summary.read_text())
     entry=next(x for x in original["reports"] if x["pe_sha256"]==expected[1])
-    candidates={row["term"]:{int(a,16) for a in row["candidate_function_addresses"]}
-                for row in entry["keyword_evidence"] if row["term"] in (".gmp",".ibd","loadpackage","staticmeshactor","serialize","gamesys")}
-    print(json.dumps(analyze(args.image,candidates),sort_keys=True,indent=2))
+    candidates={}
+    for row in entry["keyword_evidence"]:
+        if row["term"] not in (".gmp",".ibd","loadpackage","staticmeshactor","serialize","gamesys"):
+            continue
+        addresses=row["candidate_function_addresses"]
+        if any(not re.fullmatch(r"[0-9a-fA-F]{1,8}",a) for a in addresses):
+            raise ValueError("Expected flat PE32 candidate addresses")
+        normalized={int(a,16) for a in addresses}
+        if len(normalized)!=len(addresses):
+            raise ValueError("Duplicate canonical candidate address")
+        candidates[row["term"]]=normalized
+    report=analyze(args.image,candidates)
+    if hashlib.sha256(args.image.read_bytes()).hexdigest()!=expected[1]:
+        raise ValueError("Owner PE changed during analysis")
+    print(json.dumps(report,sort_keys=True,indent=2))
 
 
 if __name__=="__main__":
