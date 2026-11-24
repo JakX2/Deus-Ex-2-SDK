@@ -61,6 +61,7 @@ REQUIRED = (
     "research/dx2/inspect_level_expanded_polygons.py",
     "research/dx2/experimental_polygon_uv.py",
     "research/dx2/inspect_world_position_dependencies.py",
+    "research/dx2/inspect_level_prefix_graph.py",
     "research/dx2/inspect_bsp_mopp_plane_impact.py",
     "dx2sdk/catalog.py",
     "dx2sdk/scalars.py",

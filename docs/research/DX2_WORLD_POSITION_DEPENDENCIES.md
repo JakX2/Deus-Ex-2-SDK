@@ -30,6 +30,36 @@ expected if any independent gate fails.
     python research/dx2/inspect_world_position_dependencies.py MAP.gmp --delta .125 0 0
 
 Run with root, map_exporter and research/dx2 on PYTHONPATH. Corpus
-results for the integrated tool and rigid experiment are pending.
+results are recorded below.
 This is not a native BSP compiler, actor relocation or playable level
 translation. The large opaque Level prefix remains an important blocker.
+
+## Integrated 19-map corpus results
+
+The source-only portable ZIP built from 4c0b961090f77b336baca87b67e70708d36a9609
+passed the dependency audit on all 19 maps. In addition to the initial
+counts above, every one of 52,696 shadow cap candidates resolves to a
+unique original render triangle index locator. 358 shadow vertices have
+multiple nearby XYZ candidates; a cap-level intersection resolves these.
+The maximum nearest-render shadow vertex distance is 0.3001012671.
+
+A fixed translation of +0.125 source units on X passed all structural,
+reparse and reversal gates on 18 maps. One map was correctly rejected
+because a previously degenerate collision triangle became nonzero-area
+after float32 conversion. Its +0.125 Y and Z translations passed instead;
+several X offsets were independently refused. No validation gate was relaxed.
+
+One accepted experiment per map (18 X, one Y) then compared every original
+reachable MOPP leaf triangle centroid, not just the default sample.
+All 43,152 centroid candidate sets remained identical under the existing
+conservative axis-only interpreter; no new centroid misses were observed.
+MOPP bytecode and original leaf IDs remained identical. This does not
+prove Havok runtime equivalence or correctness at every possible query
+position. The original maps were not modified, and the in-memory
+candidates were not saved or launched.
+
+The 5,944,040 bytes of unchanged Level prefix (including actor list and
+other header fields) are a blocker for whole-level translation. Follow-up
+research identifies a navigation-like triangle/edge graph within that
+prefix (see DX2_LEVEL_PREFIX_TRIANGLE_EDGE_GRAPH.md). This is why the
+experiment does not produce a playable edited GMP.
