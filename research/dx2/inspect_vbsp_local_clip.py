@@ -25,6 +25,8 @@ from inspect_level_spatial_vbsp import (
 )
 from inspect_vbsp_plane_dependencies import leaf_paths, NORMAL_TOL
 from inspect_level_polygon_uv_basis import fit_affine_uv,preview_uv,UV_PREVIEW_TOL,POSITION_TOL
+from inspect_vbsp_preview_seams import (source_seam_inventory,inspect_preview_seams,
+    attach_original_triangle_provenance)
 import inspect_level_world_model as world
 
 SCHEMA = "DX2SDK-VBSP-portal-reconstruction-local-clip-v1"
@@ -273,10 +275,26 @@ def face_preview(poly,owner,original_basis,new_basis,candidate):
             or any(math.dist(v[3:6],vs[0][3:6])>NORMAL_TOL for v in vs)):
         raise ValueError("Source material patch does not pass texture basis gate")
     result=[]
+    source_projected=[project(v,original_basis) for v in xyz]
+    shift=tuple(a-b for a,b in zip(new_basis[0],original_basis[0]))
+    used=set()
     for p in candidate:
-        source_position=lift(p,original_basis)
-        tex,method=preview_uv(fit,xyz,uv,source_position)
-        result.append({"xyz":lift(p,new_basis),"primary_uv":tex,"uv_method":method})
+        matches=[j for j,v in enumerate(source_projected) if math.dist(v,p)<=CLIP_EPS]
+        if len(matches)>1 or (matches and matches[0] in used):
+            raise ValueError("Ambiguous surviving source corner in clipped preview")
+        if matches:
+            j=matches[0]
+            used.add(j)
+            position=tuple(x+d for x,d in zip(xyz[j],shift)) if any(shift) else xyz[j]
+            tex,method=tuple(uv[j]),"original"
+        else:
+            j=None
+            source_position=lift(p,original_basis)
+            tex,method=preview_uv(fit,xyz,uv,source_position)
+            if method!="affine":
+                raise ValueError("Unresolved source corner association")
+            position=lift(p,new_basis)
+        result.append({"xyz":position,"primary_uv":tex,"uv_method":method,"source_corner":j})
     return {"source_polygon":poly["polygon"],"owner_leaf":owner,
             "material":poly.get("material"),"normal":vs[0][3:6],
             "source_vertex_count":len(vs),"vertices":result,
@@ -306,13 +324,15 @@ def inspect_local_edit(tail,polygons,owners,*,plane_index=None,delta_d=None,incl
     if include_preview and plane_index is None:
         raise ValueError("Private geometry preview requires a hypothetical plane offset")
     preview={"faces":[],"portals":[]}
+    states={}
+    seam_inventory,source_points=source_seam_inventory(polygons,owners)
     changed=list(planes)
     if plane_index is not None:
         p=planes[plane_index]
         changed[plane_index]=(*p[:3],p[3]+delta_d)
     extent=4*max(abs(x) for row in tail["leaves"] for x in row[5:11])+1024
     vertices=_portal_vertices(tail)
-    counts=Counter()
+    counts=Counter(seam_inventory)
     max_error=0.
     tested_constraints=0
     for portal_index,(a,b,c,d,ref,_) in enumerate(tail["portals"]):
@@ -398,12 +418,14 @@ def inspect_local_edit(tail,polygons,owners,*,plane_index=None,delta_d=None,incl
         if plane_index is None or not any(j==plane_index for j,_ in path):
             continue
         counts["affected_faces"]+=1
+        states[i]="source_gate_refused"
         if status!="match" or _path_violation(xyz,planes,path):
             counts["affected_faces_source_gate_refused"]+=1
             continue
         supporting=_supporting_candidates(xyz,normal,planes,path)
         if plane_index in supporting and len(supporting)!=1:
             counts["affected_faces_ambiguous_support_refused"]+=1
+            states[i]="ambiguous_support_refused"
             continue
         if supporting==[plane_index]:
             n=planes[plane_index][:3]
@@ -418,9 +440,11 @@ def inspect_local_edit(tail,polygons,owners,*,plane_index=None,delta_d=None,incl
         candidate=clip_paths(original,new_basis,changed,path)
         if not candidate:
             counts["affected_faces_removed_preview"]+=1
+            states[i]="removed"
             continue
         if not convex(candidate):
             counts["affected_faces_invalid_preview_refused"]+=1
+            states[i]="invalid_preview_refused"
             continue
         counts["affected_faces_preview_passed"]+=1
         counts["affected_faces_preview_vertex_count_changed"]+=int(len(candidate)!=len(original))
@@ -429,13 +453,25 @@ def inspect_local_edit(tail,polygons,owners,*,plane_index=None,delta_d=None,incl
         if include_preview:
             try:
                 entry=face_preview(poly,owners[i],basis,new_basis,candidate)
+                if _path_violation([v["xyz"] for v in entry["vertices"]],changed,path):
+                    raise ValueError("Preserved source corner violates edited leaf path")
             except ValueError:
                 counts["affected_faces_textured_preview_refused"]+=1
+                states[i]="textured_preview_refused"
             else:
+                states[i]="preview_passed"
                 preview["faces"].append(entry)
                 counts["affected_faces_textured_preview_passed"]+=1
                 counts["affected_faces_preview_affine_uv_vertices"]+=sum(
                     v["uv_method"]=="affine" for v in entry["vertices"])
+    if include_preview:
+        seam_counts,issues=inspect_preview_seams(polygons,owners,source_points,preview["faces"],states)
+        counts.update(seam_counts)
+        preview["face_states"]=[{"source_polygon":i,"owner_leaf":owners[i],"state":state}
+                                for i,state in sorted(states.items())]
+        preview["source_seam_issues"]=issues
+        preview["seam_tolerance_source_units"]=.002
+        preview["watertightness_verified"]=False
     return {"counts":dict(counts),"max_portal_boundary_error":max_error,
             "hypothetical_plane_index":plane_index,"hypothetical_delta_d":delta_d,
             "newly_exposed_surface_generated":False,"native_geometry_writer_enabled":False,
@@ -461,6 +497,9 @@ def audit_map(path,*,plane_index=None,delta_d=None,include_preview=False):
     _,owners=validate_leaf_render_ownership(tail,polys,links,collision,frame)
     report=inspect_local_edit(tail,polys,owners,plane_index=plane_index,delta_d=delta_d,
                               include_preview=include_preview)
+    if include_preview:
+        report["counts"].update(attach_original_triangle_provenance(
+            report["private_preview_geometry"],links,collision))
     if hashlib.sha256(path.read_bytes()).hexdigest()!=pin:
         raise ValueError("Original GMP changed during clipping audit")
     return {"source_map":path.name,"source_sha256":pin,**report}

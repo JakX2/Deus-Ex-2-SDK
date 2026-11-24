@@ -30,4 +30,6 @@ geometry and UV rotation writers must handle tangent encoding explicitly.
     python research/dx2/inspect_level_polygon_uv_basis.py MAP.gmp
 
 Use root, map_exporter and research/dx2 on PYTHONPATH. Source-only
-aggregate audit; no map modification. Packaged corpus validation pending.
+aggregate audit; no map modification. The source-only portable ZIP from 69ff6c12eebc4c9d21ca4d75db2ff45cdb8b38f7
+passed all 19 original maps and reproduced every exploratory count above.
+Maximum original UV fit residual was 0.0013427734375.

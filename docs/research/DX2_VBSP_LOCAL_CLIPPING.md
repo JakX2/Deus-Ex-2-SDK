@@ -72,5 +72,38 @@ printed on stdout or included in public CI artifacts.
     python research/dx2/inspect_vbsp_local_clip.py MAP.gmp --plane 0 --delta-d 1 --include-preview-geometry --report PRIVATE.json
 
 The primary UV basis and packed tangent evidence are separately audited by
-inspect_level_polygon_uv_basis.py. Packaged validation of the new preview
-export and UV audit is pending.
+inspect_level_polygon_uv_basis.py. Packaged validation of the preview and UV audit is recorded below.
+
+## Original UV and textured-preview validation
+
+The portable source ZIP from 69ff6c12eebc4c9d21ca4d75db2ff45cdb8b38f7
+reproduced the 19-map primary UV basis audit. On the same 19 deterministic
+plane offsets, all 62 affected face previews passed the texture and
+triangulation gate, and all 28 previously accepted portal previews were
+exportable. The first preview implementation projected surviving corners
+back onto a face basis; this could classify a surviving nonplanar source
+corner as an interpolated UV. The follow-up uses source projected corner
+identity and preserves original XYZ plus only the requested translation,
+and original UV verbatim. Newly clipped points retain the affine gate.
+
+## Exact-position seam and original triangle diagnostics
+
+Every original material corner and undirected boundary edge is grouped by
+exact source XYZ, without assuming a native vertex weld or topological
+connection between coincident geometry. The exploratory 19-map inventory
+has 22,388 distinct positions, 22,140 shared by multiple polygons and
+12,935 crossing source leaves. 76,484 of 76,732 corner occurrences belong
+to shared groups. 40,026 distinct boundary edges include 36,685 shared
+groups, 36,673 with two occurrences and 12 with more than two. 13,270
+edge groups cross leaf boundaries.
+
+The private report now compares surviving source corners to stationary
+neighbor polygons and other accepted previews. A separation beyond .002
+source units, a refused neighbor, or removed source corner with surviving
+neighbors is recorded. These are conservative seam warnings, not proof
+of a crack or complete watertightness; T-junctions and coincident unrelated
+surfaces remain unresolved. Every affected face (including refused ones)
+is also linked to exact original flat render triangle and reachable MOPP
+IDs. The link is source provenance, not a regenerated collision mesh.
+No native write or runtime execution. Follow-up integrated corpus results
+are pending.

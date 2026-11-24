@@ -31,12 +31,23 @@ class LocalClipTests(unittest.TestCase):
         self.assertTrue(all(v["primary_uv"]==(v["xyz"][1]/4,v["xyz"][2]/4)
                             for v in entry["vertices"]))
         self.assertFalse(entry["native_write_allowed"])
+        self.assertEqual(sum(v["source_corner"] is not None for v in entry["vertices"]),2)
         # Preserve collinear boundary vertices rather than writing zero-area ears.
         loop=[(0.,0.),(1.,0.),(2.,0.),(2.,2.),(0.,2.)]
         tris=triangulate_convex(loop)
         self.assertEqual(len(tris),3)
         self.assertEqual(set(j for t in tris for j in t),set(range(5)))
         self.assertAlmostEqual(sum(signed_area([loop[j] for j in t]) for t in tris),4.)
+
+    def test_surviving_corner_preserves_nonplanar_source_xyz_and_uv(self):
+        xyz=[(0.,0.,0.),(0.,2.,0.),(.01,2.,2.),(0.,0.,2.)]
+        poly={"polygon":0,"vertices":[(*p,1.,0.,0.,p[1]/2,p[2]/2) for p in xyz]}
+        basis=plane_basis((1.,0.,0.,0.))
+        projected=[project(v,basis) for v in xyz]
+        result=face_preview(poly,0,basis,basis,projected)
+        self.assertEqual([v["xyz"] for v in result["vertices"]],xyz)
+        self.assertEqual([v["source_corner"] for v in result["vertices"]],list(range(4)))
+        self.assertTrue(all(v["uv_method"]=="original" for v in result["vertices"]))
 
     def test_plane_basis(self):
         basis=plane_basis((1.,0.,0.,-2.))
