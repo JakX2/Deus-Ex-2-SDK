@@ -91,3 +91,9 @@ No root quantization change, instruction relocation, native output or
 Havok runtime verification is implied. Integrated corpus validation pending.
 
     python research/dx2/inspect_vbsp_coupled_corners.py MAP.gmp --delta-d -1 --rebase-rescale-offsets
+
+An additional independent complete-centroid sweep of the two recovered
+streams checked 3,126 upper-lab and 2,423 club leaf triangle centroids
+(including untouched geometry), using both original offline query modes.
+All 5,549 intended triangle IDs were recovered by each mode. This is
+additional point-query evidence, not retail collision verification.
