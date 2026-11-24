@@ -74,3 +74,11 @@ preserves the original pre-Model Level prefix, actor exports and all
 non-coordinate fields, and still requires independent package reparse,
 exact reversal and original MOPP leaf coverage. No GMP output is enabled.
 See DX2_LEVEL_SPATIAL_VBSP.md.
+
+The portable a6fa08dc6b55e8e74305d619dd5620a831030b57 implementation was
+privately tested on all 19 Seattle maps with spatial prefix enabled and
+all original collision centroid candidates compared. All passed with
+18 X and one Y translation, 43,152 unchanged centroid candidate sets,
+16,789 unchanged source leaf ownership associations, and 5,252 unchanged
+portal side probes. Original package reversal was exact. These are
+in-memory dry runs only, not native geometry compilation or runtime tests.

@@ -78,5 +78,21 @@ The integrated position dependency CLI now offers
 --include-spatial-prefix to translate the decoded post-Model prefix
 together with the other known world geometry. It verifies original and
 candidate native leaf ownership and unchanged portal side associations.
-No actor positions or pre-Model prefix fields are edited. Full combined
-corpus verification is pending.
+No actor positions or pre-Model prefix fields are edited. Full combined corpus verification passed as documented below.
+
+## Combined source-corpus validation
+
+The actual source-only ZIP built from a6fa08dc6b55e8e74305d619dd5620a831030b57
+passed the leaf/render ownership audit on all 19 original Seattle maps.
+The combined position dependency experiment with --include-spatial-prefix
+then passed on every map (18 with +0.125 X and one with +0.125 Y to preserve
+original collision triangle degeneracy). Full package reversal, source
+reparse, 16,789 polygon leaf associations, 5,252 portal side probes and
+all 43,152 conservative MOPP centroid candidate sets remained valid.
+No original or translated centroid misses or changed candidate sets.
+Across the accepted experiments, 237,594 decoded prefix position spans
+were patched, 302,045 prefix bytes and 948,392 total package bytes changed.
+Original hashes were unchanged. The post-Model prefix is fully framed;
+48,062 aggregate pre-Model prefix bytes and actor exports remain unmodified.
+Unassigned flags and saved pointer words remain preserved; no runtime
+visibility, navigation, collision engine or playable level is verified.
