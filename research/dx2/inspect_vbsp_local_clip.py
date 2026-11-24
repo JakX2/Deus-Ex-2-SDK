@@ -24,6 +24,7 @@ from inspect_level_spatial_vbsp import (
     parse_spatial_tail, validate_leaf_render_ownership, locate_point,
 )
 from inspect_vbsp_plane_dependencies import leaf_paths, NORMAL_TOL
+from inspect_level_polygon_uv_basis import fit_affine_uv,preview_uv,UV_PREVIEW_TOL,POSITION_TOL
 import inspect_level_world_model as world
 
 SCHEMA = "DX2SDK-VBSP-portal-reconstruction-local-clip-v1"
@@ -229,10 +230,65 @@ def _surface_basis(xyz,normal):
     return plane_basis((*n,-dot(n,xyz[0])))
 
 
-def inspect_local_edit(tail,polygons,owners,*,plane_index=None,delta_d=None):
+def triangulate_convex(loop):
+    """Preview-only triangulation preserving boundary corners and winding."""
+    if not convex(loop):
+        raise ValueError("Cannot triangulate invalid convex preview")
+    remaining=list(range(len(loop)))
+    area=signed_area(loop)
+    sign=1 if area>0 else -1
+    triangles=[]
+    while len(remaining)>3:
+        found=False
+        for pos,i in enumerate(remaining):
+            a,b,c=remaining[pos-1],i,remaining[(pos+1)%len(remaining)]
+            ear=sign*signed_area([loop[a],loop[b],loop[c]])
+            if ear<=CLIP_EPS:
+                continue
+            rest=remaining[:pos]+remaining[pos+1:]
+            if sign*signed_area([loop[j] for j in rest])<=CLIP_EPS:
+                continue
+            triangles.append((a,b,c))
+            remaining=rest
+            found=True
+            break
+        if not found:
+            raise ValueError("Convex preview triangulation stalled")
+    triangles.append(tuple(remaining))
+    if (len(triangles)!=len(loop)-2 or set(j for t in triangles for j in t)!=set(range(len(loop)))
+            or any(sign*signed_area([loop[j] for j in t])<=CLIP_EPS for t in triangles)
+            or not math.isclose(sum(signed_area([loop[j] for j in t]) for t in triangles),
+                                area,rel_tol=1e-7,abs_tol=1e-6)):
+        raise ValueError("Preview triangulation area or winding mismatch")
+    return triangles
+
+
+def face_preview(poly,owner,original_basis,new_basis,candidate):
+    """Create private geometry only; no native tangent, index or material writer."""
+    vs=poly["vertices"]
+    xyz=[v[:3] for v in vs]
+    uv=[v[6:8] for v in vs]
+    fit=fit_affine_uv(xyz,uv)
+    if (fit["max_uv_error"]>UV_PREVIEW_TOL or fit["max_plane_error"]>POSITION_TOL
+            or any(math.dist(v[3:6],vs[0][3:6])>NORMAL_TOL for v in vs)):
+        raise ValueError("Source material patch does not pass texture basis gate")
+    result=[]
+    for p in candidate:
+        source_position=lift(p,original_basis)
+        tex,method=preview_uv(fit,xyz,uv,source_position)
+        result.append({"xyz":lift(p,new_basis),"primary_uv":tex,"uv_method":method})
+    return {"source_polygon":poly["polygon"],"owner_leaf":owner,
+            "material":poly.get("material"),"normal":vs[0][3:6],
+            "source_vertex_count":len(vs),"vertices":result,
+            "preview_triangles":triangulate_convex(candidate),
+            "texture_mapping":"surface-locked-affine",
+            "native_write_allowed":False}
+
+
+def inspect_local_edit(tail,polygons,owners,*,plane_index=None,delta_d=None,include_preview=False):
     """Audit all original portals and faces; optionally preview one plane offset.
 
-    Geometry is never returned or written. Existing face patches may be
+    Geometry is returned only for explicit private previews. Existing face patches may be
     translated or clipped, but never extended into newly exposed regions.
     Portal candidates are accepted only after reproducing the source portal
     and checking original two-sided traversal for the modified tree.
@@ -247,6 +303,9 @@ def inspect_local_edit(tail,polygons,owners,*,plane_index=None,delta_d=None):
             or type(delta_d) not in (int,float) or not math.isfinite(delta_d)
             or not 0<abs(delta_d)<=MAX_DELTA):
         raise ValueError("Invalid hypothetical VBSP plane offset")
+    if include_preview and plane_index is None:
+        raise ValueError("Private geometry preview requires a hypothetical plane offset")
+    preview={"faces":[],"portals":[]}
     changed=list(planes)
     if plane_index is not None:
         p=planes[plane_index]
@@ -256,7 +315,7 @@ def inspect_local_edit(tail,polygons,owners,*,plane_index=None,delta_d=None):
     counts=Counter()
     max_error=0.
     tested_constraints=0
-    for a,b,c,d,ref,_ in tail["portals"]:
+    for portal_index,(a,b,c,d,ref,_) in enumerate(tail["portals"]):
         pi=plane_ref(ref)
         xyz=vertices[c:d]
         constraints=tuple(sorted(set(k for leaf in (a,b) for k in paths[leaf])))
@@ -309,6 +368,12 @@ def inspect_local_edit(tail,polygons,owners,*,plane_index=None,delta_d=None):
             continue
         counts["affected_portals_preview_passed"]+=1
         counts["affected_portals_preview_vertex_count_changed"]+=int(len(new)!=len(result))
+        if include_preview:
+            if signed_area(new)*signed_area(original)<0:
+                new=list(reversed(new))
+            preview["portals"].append({"source_portal":portal_index,"owner_leaves":[a,b],
+                "source_plane":pi,"vertices_xyz":[lift(v,new_basis) for v in new],
+                "preview_triangles":triangulate_convex(new),"native_write_allowed":False})
     for i,poly in enumerate(polygons):
         if poly["polygon"]!=i or owners[i] not in paths:
             raise ValueError("Invalid expanded polygon ordinal or leaf")
@@ -361,12 +426,23 @@ def inspect_local_edit(tail,polygons,owners,*,plane_index=None,delta_d=None):
         counts["affected_faces_preview_vertex_count_changed"]+=int(len(candidate)!=len(original))
         counts["affected_faces_preview_area_reduced"]+=int(
             abs(signed_area(candidate))<abs(signed_area(original))-AREA_ABS_TOL)
+        if include_preview:
+            try:
+                entry=face_preview(poly,owners[i],basis,new_basis,candidate)
+            except ValueError:
+                counts["affected_faces_textured_preview_refused"]+=1
+            else:
+                preview["faces"].append(entry)
+                counts["affected_faces_textured_preview_passed"]+=1
+                counts["affected_faces_preview_affine_uv_vertices"]+=sum(
+                    v["uv_method"]=="affine" for v in entry["vertices"])
     return {"counts":dict(counts),"max_portal_boundary_error":max_error,
             "hypothetical_plane_index":plane_index,"hypothetical_delta_d":delta_d,
-            "newly_exposed_surface_generated":False,"native_geometry_writer_enabled":False}
+            "newly_exposed_surface_generated":False,"native_geometry_writer_enabled":False,
+            **({"private_preview_geometry":preview} if include_preview else {})}
 
 
-def audit_map(path,*,plane_index=None,delta_d=None):
+def audit_map(path,*,plane_index=None,delta_d=None,include_preview=False):
     path=Path(path)
     if (path.suffix.casefold()!=".gmp" or not path.is_file() or path.is_symlink()
             or path.stat().st_size>MAX_GMP):
@@ -383,18 +459,21 @@ def audit_map(path,*,plane_index=None,delta_d=None):
     graph=parse_prefix_graph(level,cursor.at,stop)
     tail=parse_spatial_tail(level,graph["graph_end"],stop)
     _,owners=validate_leaf_render_ownership(tail,polys,links,collision,frame)
-    report=inspect_local_edit(tail,polys,owners,plane_index=plane_index,delta_d=delta_d)
+    report=inspect_local_edit(tail,polys,owners,plane_index=plane_index,delta_d=delta_d,
+                              include_preview=include_preview)
     if hashlib.sha256(path.read_bytes()).hexdigest()!=pin:
         raise ValueError("Original GMP changed during clipping audit")
     return {"source_map":path.name,"source_sha256":pin,**report}
 
 
-def audit_maps(paths,*,plane_index=None,delta_d=None):
+def audit_maps(paths,*,plane_index=None,delta_d=None,include_preview=False):
     if not 1<=len(paths)<=world.MAX_MAPS or len({Path(p).resolve() for p in paths})!=len(paths):
         raise ValueError("Expected 1..64 distinct original maps")
     if (plane_index is not None or delta_d is not None) and len(paths)!=1:
         raise ValueError("A hypothetical offset requires exactly one original map")
-    rows=[audit_map(p,plane_index=plane_index,delta_d=delta_d) for p in paths]
+    if include_preview and (len(paths)!=1 or plane_index is None):
+        raise ValueError("Private preview requires exactly one map and one plane offset")
+    rows=[audit_map(p,plane_index=plane_index,delta_d=delta_d,include_preview=include_preview) for p in paths]
     counts=Counter()
     for row in rows:
         counts.update(row["counts"])
@@ -403,7 +482,8 @@ def audit_maps(paths,*,plane_index=None,delta_d=None):
             "hypothetical_plane_index":plane_index,"hypothetical_delta_d":delta_d,
             "source_files_modified":False,"gmp_output_enabled":False,
             "newly_exposed_surface_generated":False,"native_geometry_writer_enabled":False,
-            "collision_rebuilt":False,"retail_runtime_verified":False,"maps":rows}
+            "collision_rebuilt":False,"retail_runtime_verified":False,
+            "private_preview_geometry_included":include_preview,"maps":rows}
 
 
 def main(argv=None):
@@ -412,9 +492,13 @@ def main(argv=None):
     p.add_argument("--plane",type=int)
     p.add_argument("--delta-d",type=float)
     p.add_argument("--report",type=Path)
+    p.add_argument("--include-preview-geometry",action="store_true",help="Include private polygon/portal preview in fresh JSON report")
     a=p.parse_args(argv)
     try:
-        result=audit_maps(a.maps,plane_index=a.plane,delta_d=a.delta_d)
+        if a.include_preview_geometry and not a.report:
+            raise ValueError("Private preview geometry requires a fresh local report path")
+        result=audit_maps(a.maps,plane_index=a.plane,delta_d=a.delta_d,
+                          include_preview=a.include_preview_geometry)
         if a.report:
             world.write_report(result,a.report,a.maps)
         print(json.dumps({k:v for k,v in result.items() if k!="maps"},indent=2,allow_nan=False))

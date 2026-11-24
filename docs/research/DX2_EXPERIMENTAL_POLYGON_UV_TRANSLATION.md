@@ -3,8 +3,10 @@
 All 76,732 expanded vertices in the 19 original Seattle maps have four
 byte-identical 8-byte UV pairs at record-relative offsets 24, 68, 76 and
 84; the intervening 36 bytes at +32 are zero. The corresponding packed
-32-byte render vertex has primary UV at +16 and a distinct secondary pair
-at +24. The role of the latter is not decoded here and it is untouched.
+32-byte render vertex has primary UV at +16 and two distinct packed words
+at +24. The previous tentative label secondary UV was incorrect: later
+research finds an apparent packed texture tangent and a constant all-FF
+word. These words are untouched; exact encoder semantics are unverified.
 
 The source-pinned experimental UV translator accepts a single expanded
 polygon ordinal and a finite bounded float32-representable translation.

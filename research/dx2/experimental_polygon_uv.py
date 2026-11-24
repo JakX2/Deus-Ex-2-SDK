@@ -2,7 +2,7 @@
 """Source-pinned experimental fixed-width Level polygon UV translation.
 
 Only the primary UV and its three identical expanded copies are changed.
-No geometry, topology, Model node, packed secondary UV, material, collision
+No geometry, topology, Model node, packed trailing words, material, collision
 or game installation changes. A runtime visual effect is not yet verified.
 """
 from __future__ import annotations

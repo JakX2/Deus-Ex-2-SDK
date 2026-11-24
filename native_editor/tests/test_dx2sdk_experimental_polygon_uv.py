@@ -29,7 +29,7 @@ def fixture():
 
 
 class ExperimentalPolygonUVTests(unittest.TestCase):
-    def test_exact_reverse_and_secondary_uv_unchanged(self):
+    def test_exact_reverse_and_trailing_words_unchanged(self):
         level,row,link,blocks=fixture()
         edited,spans=_patch_level(level,row,link,blocks,(.125,.25))
         self.assertEqual(len(spans),20)

@@ -65,6 +65,7 @@ REQUIRED = (
     "research/dx2/inspect_level_spatial_vbsp.py",
     "research/dx2/inspect_vbsp_plane_dependencies.py",
     "research/dx2/inspect_vbsp_local_clip.py",
+    "research/dx2/inspect_level_polygon_uv_basis.py",
     "research/dx2/inspect_bsp_mopp_plane_impact.py",
     "dx2sdk/catalog.py",
     "dx2sdk/scalars.py",

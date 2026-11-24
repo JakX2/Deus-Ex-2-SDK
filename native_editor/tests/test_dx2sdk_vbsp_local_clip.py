@@ -3,6 +3,7 @@ import unittest
 from inspect_vbsp_local_clip import (
     clip_halfspace,convex,signed_area,boundary_error,portal_geometry,
     compare_loops,edge_dependencies,inspect_local_edit,plane_basis,project,lift,
+    triangulate_convex,face_preview,
 )
 
 
@@ -16,6 +17,26 @@ class LocalClipTests(unittest.TestCase):
         self.assertEqual(clip_halfspace(sq,1.,0.,-3.),[])
         self.assertEqual(boundary_error(sq,list(reversed(sq))),0.)
         self.assertFalse(convex([(0.,0.),(2.,0.),(1.,.5),(2.,2.),(0.,2.)]))
+
+    def test_textured_clip_preview_preserves_uv_and_winding(self):
+        xyz=[(0.,-2.,-2.),(0.,2.,-2.),(0.,2.,2.),(0.,-2.,2.)]
+        poly={"polygon":0,"material":"synthetic","vertices":[
+            (*p,1.,0.,0.,p[1]/4,p[2]/4) for p in xyz]}
+        basis=plane_basis((1.,0.,0.,0.))
+        old=[project(p,basis) for p in xyz]
+        new=clip_halfspace(old,1.,0.,0.)
+        entry=face_preview(poly,0,basis,basis,new)
+        self.assertEqual(len(entry["preview_triangles"]),2)
+        self.assertEqual(sum(v["uv_method"]=="affine" for v in entry["vertices"]),2)
+        self.assertTrue(all(v["primary_uv"]==(v["xyz"][1]/4,v["xyz"][2]/4)
+                            for v in entry["vertices"]))
+        self.assertFalse(entry["native_write_allowed"])
+        # Preserve collinear boundary vertices rather than writing zero-area ears.
+        loop=[(0.,0.),(1.,0.),(2.,0.),(2.,2.),(0.,2.)]
+        tris=triangulate_convex(loop)
+        self.assertEqual(len(tris),3)
+        self.assertEqual(set(j for t in tris for j in t),set(range(5)))
+        self.assertAlmostEqual(sum(signed_area([loop[j] for j in t]) for t in tris),4.)
 
     def test_plane_basis(self):
         basis=plane_basis((1.,0.,0.,-2.))
@@ -51,12 +72,16 @@ class LocalClipTests(unittest.TestCase):
                (1,2,1,1,-1,-2.,-2.,-2.,0.,2.,2.,0,0)],
               "portals":[(0,1,0,4,0,0)],"counts":{"vbsp_portal_vertices":4},
               "coordinates":[(i*12,v) for i,v in enumerate(xyz)]}
-        polys=[{"polygon":i,"vertices":[(*v,n,0.,0.) for v in xyz]}
+        polys=[{"polygon":i,"vertices":[(*v,n,0.,0.,v[1]/4,v[2]/4) for v in xyz]}
                for i,n in enumerate((1.,-1.))]
         counts=inspect_local_edit(tail,polys,[0,1],plane_index=1,delta_d=-1.)["counts"]
         self.assertEqual(counts["portal_rebuild_eligible"],1)
         self.assertEqual(counts["affected_portals_preview_passed"],1)
         self.assertEqual(counts["affected_faces_preview_area_reduced"],2)
+        result=inspect_local_edit(tail,polys,[0,1],plane_index=1,delta_d=-1.,include_preview=True)
+        self.assertEqual(len(result["private_preview_geometry"]["faces"]),2)
+        self.assertEqual(len(result["private_preview_geometry"]["portals"]),1)
+        self.assertEqual(result["counts"]["affected_faces_textured_preview_passed"],2)
         counts=inspect_local_edit(tail,polys,[0,1],plane_index=0,delta_d=.25)["counts"]
         self.assertEqual(counts["affected_faces_support_translated"],2)
         self.assertEqual(counts["affected_portals_preview_passed"],1)
