@@ -35,3 +35,20 @@ Use --include-private-polygons --report PRIVATE.json only for local source
 research. No original map, geometry report, or retail assets belong in git.
 Native Model vertex/surface arrays, BSP tree rebuild, Havok MOPP cooking
 and retail runtime validity are still separate unsolved problems.
+
+## Packaged corpus verification and counted block framing
+
+The source-only SDK ZIP built from eaf6f11c8a72ee098a54aed660a6b278e277c8cc
+passed the complete 19-map audit. The expanded records occupy 7,459,923
+bytes and are followed by 900,019 zero bytes in aggregate. All 43,152
+reachable original MOPP terminal triangles are attributed to an expanded
+polygon; two original triangles are nonleaves. 16,787 polygons have all
+of their triangles represented by MOPP leaves.
+
+A separate framing probe showed that provenance field A indexes a native
+u32-counted array of u32-length-prefixed render blocks. Empty entries are
+exactly zero-length records, including leading and internal gaps. Across
+the 19 maps, 3,106 native entries contain 3,002 nonempty blocks and 104
+empty entries. All nonempty spans match the independent packed parser
+exactly, and the array ends precisely at the expanded polygon stream.
+The decoder now checks this counted framing as an additional source gate.

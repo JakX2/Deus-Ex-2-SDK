@@ -32,6 +32,66 @@ CENTER_BUCKET = .25
 NEIGHBORS = tuple(product((-1,0,1), repeat=3))
 
 
+def validate_counted_render_array(level, blocks, source_rows):
+    """Recover the native u32 count and length-prefixed block sequence.
+
+    Provenance field A supplies the independently checked original block
+    ordinals. A leading empty entry occupies exactly one u32 zero length.
+    Nonempty entries must match every validated packed render span in order.
+    """
+    if not isinstance(level,bytes) or not blocks or len(blocks)>5000:
+        raise ValueError("Invalid counted render block input")
+    block_ids={}
+    for row in source_rows:
+        bi=row["render_locator"][0]
+        native=row["source_provenance_block_field_a"]
+        if (type(bi) is not int or not 0<=bi<len(blocks)
+                or type(native) is not int or not 0<=native<5000):
+            raise ValueError("Invalid native render block provenance ordinal")
+        if bi in block_ids and block_ids[bi]!=native:
+            raise ValueError("Inconsistent provenance block ordinal")
+        block_ids[bi]=native
+    if set(block_ids)!=set(range(len(blocks))):
+        raise ValueError("Incomplete native block provenance")
+    native_ids=[block_ids[i] for i in range(len(blocks))]
+    if native_ids!=sorted(set(native_ids)):
+        raise ValueError("Nonmonotone native render block ordinals")
+    start=blocks[0]["offset"]-4*(native_ids[0]+2)
+    if start<0 or start+4>len(level):
+        raise ValueError("Counted render block header outside source")
+    count=struct.unpack_from("<I",level,start)[0]
+    if not len(blocks)<=count<=5000 or native_ids[-1]>=count:
+        raise ValueError("Invalid counted native render block array size")
+    at=start+4
+    nonempty=0
+    empty=0
+    for native in range(count):
+        if at+4>len(level):
+            raise ValueError("Truncated native render block length")
+        n=struct.unpack_from("<I",level,at)[0]
+        at+=4
+        if n==0:
+            if nonempty<len(blocks) and native==native_ids[nonempty]:
+                raise ValueError("Expected nonempty native render block")
+            empty+=1
+            continue
+        if (nonempty>=len(blocks) or native!=native_ids[nonempty]
+                or at+n>len(level)):
+            raise ValueError("Unexpected nonempty native render block")
+        b=blocks[nonempty]
+        if (b["offset"]!=at or b["id"]!=n or b["end"]!=at+n):
+            raise ValueError("Counted native render block span mismatch")
+        at+=n
+        nonempty+=1
+    if nonempty!=len(blocks) or count!=nonempty+empty:
+        raise ValueError("Counted render block array does not cover inventory")
+    return {"render_block_count_offset":start,
+            "render_block_array_end":at,
+            "native_render_block_entries":count,
+            "native_render_nonempty_blocks":nonempty,
+            "native_render_empty_blocks":empty}
+
+
 def parse_expanded_polygons(level, start, end, expected_vertices):
     """Read until independently validated render vertex count is exhausted.
 
@@ -256,13 +316,15 @@ def audit_map(path, *, include_details=False):
     if any(a["end"]>b["offset"]-4 for a,b in zip(blocks,blocks[1:])):
         raise ValueError("Overlapping packed block source envelopes")
     source_rows,provenance=_source_triangle_rows(level,blocks)
-    start=blocks[-1]["end"]
+    block_frame=validate_counted_render_array(level,blocks,source_rows)
+    start=block_frame["render_block_array_end"]
     end=provenance["triangle_provenance_start_in_level"]-24
     polygons,framing=parse_expanded_polygons(
         level,start,end,sum(len(b["vertices"]) for b in blocks))
     counts,links=match_expanded_render(polygons,blocks)
     candidate_counts,candidates=match_model_candidates(polygons,nodes)
     counts.update(candidate_counts)
+    counts.update({k:v for k,v in block_frame.items() if k.startswith("native_render_")})
     counts.update({k:v for k,v in framing.items()
                    if k.endswith("_bytes")})
     by_locator={tuple(r["render_locator"]):r for r in source_rows}
@@ -291,7 +353,7 @@ def audit_map(path, *, include_details=False):
     result={"counts":counts,"source_map":path.name,"source_sha256":pin,
             "source_level_sha256":hashlib.sha256(level).hexdigest(),
             "source_model_sha256":hashlib.sha256(model).hexdigest(),
-            "expanded_polygon_stream_start":start,**framing}
+            "expanded_polygon_stream_start":start,**framing,**block_frame}
     if include_details:
         result["private_polygons"]=[{**row,**link,"model_candidates":cand,
               "native_model_ownership_verified":False,"native_write_allowed":False}

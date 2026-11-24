@@ -27,3 +27,15 @@ not floating-point subtraction of a translation.
 This is a controlled native render-data patch, NOT native BSP geometry
 editing, surface ownership decoding, collision rebuilding, or runtime
 verification. No retail assets or edited packages belong in git or CI.
+
+## Private source-corpus verification
+
+The SDK ZIP built from 44dc199276258de88c18bc7b404e04ffcaed2f89 was used
+for 19 in-memory translations (one polygon per original map) using the
+exact binary deltas +0.125 U and +0.25 V. All passed: 82 source vertices,
+410 UV pairs, and 996 changed bytes in aggregate. All original package
+bytes were restored exactly. Five additional distinct polygons with
+nonzero integer-repeat offsets also passed, including both observed f32
+rounding exceptions. An isolated private GMP output was written and
+read back successfully; an attempted overwrite was rejected and the
+trial copy was removed. No gameplay or runtime visual test was performed.

@@ -15,7 +15,8 @@ from pathlib import Path
 import struct
 
 from inspect_level_expanded_polygons import (
-    parse_expanded_polygons, match_expanded_render, STRIDE, UV_REPEAT_TOL,
+    parse_expanded_polygons, match_expanded_render, validate_counted_render_array,
+    STRIDE, UV_REPEAT_TOL,
 )
 import inspect_level_world_model as world
 import inspect_world_bsp_node_boundaries as boundaries
@@ -137,11 +138,13 @@ def _read_context(path,raw):
     if any(a["end"]>b["offset"]-4 for a,b in zip(blocks,blocks[1:])):
         raise ValueError("Overlapping render block envelopes")
     collision,prov=_source_triangle_rows(level,blocks)
-    start=blocks[-1]["end"]
+    block_frame=validate_counted_render_array(level,blocks,collision)
+    start=block_frame["render_block_array_end"]
     end=prov["triangle_provenance_start_in_level"]-24
     polygons,framing=parse_expanded_polygons(level,start,end,sum(
         len(b["vertices"]) for b in blocks))
     counts,links=match_expanded_render(polygons,blocks)
+    counts.update({k:v for k,v in block_frame.items() if k.startswith("native_render_")})
     seen=[tuple(k) for link in links for k in link["triangle_locators"]]
     expected={tuple(r["render_locator"]) for r in collision}
     if len(seen)!=len(expected) or set(seen)!=expected:

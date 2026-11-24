@@ -4,6 +4,7 @@ import struct
 import unittest
 from inspect_level_expanded_polygons import (
     parse_expanded_polygons,match_expanded_render,match_model_candidates,
+    validate_counted_render_array,
 )
 
 
@@ -23,6 +24,25 @@ def fixture():
 
 
 class ExpandedPolygonTests(unittest.TestCase):
+    def test_counted_block_array_with_empty_native_entries(self):
+        level=(b"head"+struct.pack("<II",5,0)+struct.pack("<I",3)+b"abc"
+               +struct.pack("<II",0,2)+b"xy"+struct.pack("<I",0)+b"tail")
+        blocks=[{"offset":16,"id":3,"end":19},{"offset":27,"id":2,"end":29}]
+        rows=[{"render_locator":[0,0,0],"source_provenance_block_field_a":1},
+              {"render_locator":[1,0,0],"source_provenance_block_field_a":3}]
+        proof=validate_counted_render_array(level,blocks,rows)
+        self.assertEqual(proof["render_block_count_offset"],4)
+        self.assertEqual(proof["render_block_array_end"],33)
+        self.assertEqual(proof["native_render_block_entries"],5)
+        self.assertEqual(proof["native_render_empty_blocks"],3)
+        bad=bytearray(level)
+        struct.pack_into("<I",bad,4,2)
+        with self.assertRaises(ValueError):
+            validate_counted_render_array(bytes(bad),blocks,rows)
+        with self.assertRaises(ValueError):
+            validate_counted_render_array(level,blocks,[
+                rows[0],dict(rows[1],source_provenance_block_field_a=2)])
+
     def test_exact_stream_and_indexed_disk(self):
         level,block=fixture()
         rows,framing=parse_expanded_polygons(level,6,len(level),4)
