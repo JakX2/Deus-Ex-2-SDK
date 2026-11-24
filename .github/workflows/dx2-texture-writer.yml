@@ -4,6 +4,8 @@ on:
     paths:
       - 'tools/maps/dx2_texture_writer.py'
       - 'tools/maps/dx2_material_writer.py'
+      - 'tools/maps/dx2_mesh_writer.py'
+      - 'tools/maps/dx2_obj_import.py'
       - 'tools/maps/dx2_custom_texture_import.py'
       - 'tools/maps/dx2_material_audit.py'
       - 'tools/maps/dx2_logo_trial.py'
@@ -13,6 +15,8 @@ on:
       - 'tools/maps/dx2_ibd_integrity.py'
       - 'tests/test_dx2_texture_writer.py'
       - 'tests/test_dx2_material_writer.py'
+      - 'tests/test_dx2_mesh_writer.py'
+      - 'tests/test_dx2_obj_import.py'
       - 'tests/test_dx2_custom_texture_import.py'
       - 'tests/test_dx2_material_audit.py'
       - 'tests/test_dx2_logo_trial.py'
@@ -23,6 +27,8 @@ on:
     paths:
       - 'tools/maps/dx2_texture_writer.py'
       - 'tools/maps/dx2_material_writer.py'
+      - 'tools/maps/dx2_mesh_writer.py'
+      - 'tools/maps/dx2_obj_import.py'
       - 'tools/maps/dx2_custom_texture_import.py'
       - 'tools/maps/dx2_material_audit.py'
       - 'tools/maps/dx2_logo_trial.py'
@@ -32,6 +38,8 @@ on:
       - 'tools/maps/dx2_ibd_integrity.py'
       - 'tests/test_dx2_texture_writer.py'
       - 'tests/test_dx2_material_writer.py'
+      - 'tests/test_dx2_mesh_writer.py'
+      - 'tests/test_dx2_obj_import.py'
       - 'tests/test_dx2_custom_texture_import.py'
       - 'tests/test_dx2_material_audit.py'
       - 'tests/test_dx2_logo_trial.py'
@@ -66,6 +74,8 @@ jobs:
               "tools/maps/dx2_ibd_repack.py",
               "tools/maps/dx2_texture_writer.py",
               "tools/maps/dx2_material_writer.py",
+              "tools/maps/dx2_mesh_writer.py",
+              "tools/maps/dx2_obj_import.py",
               "tools/maps/dx2_custom_texture_import.py",
               "tools/maps/dx2_material_audit.py",
               "tools/maps/dx2_logo_trial.py",
@@ -74,6 +84,8 @@ jobs:
               "tests/test_dx2_ibd_repack.py",
               "tests/test_dx2_texture_writer.py",
               "tests/test_dx2_material_writer.py",
+              "tests/test_dx2_mesh_writer.py",
+              "tests/test_dx2_obj_import.py",
               "tests/test_dx2_custom_texture_import.py",
               "tests/test_dx2_material_audit.py",
               "tests/test_dx2_logo_trial.py",
