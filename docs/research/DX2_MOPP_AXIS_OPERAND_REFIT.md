@@ -44,3 +44,27 @@ therefore cannot authorize native map output; the diagonal model needs
 further verification and refitting, and Model, portal, shadow, navigation
 and full Havok runtime validation remain outstanding. No original assets
 modified or committed. Seven synthetic regression tests passed locally.
+
+## Experimental diagonal operand refit
+
+A separate opt-in mode uses the existing source-derived diagonal projection
+hypotheses to derive the minimum/maximum integer operand constraints on
+all original and changed triangle corners along their original paths.
+It refuses any source violation, unknown 0x1b opcode or infeasible bound.
+Only diagonal operand bytes may change; an independently decoded original
+control-flow graph and exact reverse proof are required. It runs only
+following an accepted axis refit. No candidate package is emitted.
+
+    python research/dx2/inspect_vbsp_coupled_corners.py MAP.gmp --delta-d 1 --refit-derived-diagonals
+
+The same 38 signed experiments on the private 19-map corpus reproduced all
+36 accepted axis refits. Each also passed the experimental diagonal refit.
+For +1, four streams required seven additional diagonal byte changes;
+for -1, two streams required seven additional diagonal byte changes.
+All 1,673 positive and 1,631 accepted negative candidate point samples
+were recovered by the independent derived-diagonal walker. The prior 30
+derived-diagonal misses were eliminated. The two unrepresentable negative
+axis candidates remain refused. Three additional synthetic tests passed.
+This is still a source-model result, not verification of Havok's actual
+integer arithmetic, diagonal semantics, swept collision or retail loading.
+The combined axis-only geometry/header gate is not upgraded by this mode.

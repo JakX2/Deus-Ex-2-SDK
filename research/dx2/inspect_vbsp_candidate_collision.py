@@ -55,7 +55,7 @@ def compare_triangle(walker,tid,old,new):
     return counts
 
 
-def inspect_candidate_collision(level,blocks,polygons,links,source_rows,preview,*,refit_axis=False):
+def inspect_candidate_collision(level,blocks,polygons,links,source_rows,preview,*,refit_axis=False,refit_diagonal=False):
     """Compare accepted private face subset; do not cook or write collision."""
     flat,_=inspect_flat_exact(level,blocks)
     proof=mopp.inspect_mopp_link(level,blocks)
@@ -132,7 +132,7 @@ def inspect_candidate_collision(level,blocks,polygons,links,source_rows,preview,
             "original_bytecode_recompiled":False,"collision_coverage_proven":False,
             "retail_runtime_verified":False}
 
-    if refit_axis:
+    if refit_axis or refit_diagonal:
         from inspect_mopp_axis_refit import refit_axis_bounds,diagonal_diagnostics
         original=[tuple(before[j] for j in ids[3*i:3*i+3]) for i in range(n)]
         candidate=[tuple(after[j] for j in ids[3*i:3*i+3]) for i in range(n)]
@@ -156,4 +156,21 @@ def inspect_candidate_collision(level,blocks,polygons,links,source_rows,preview,
                         "collision_zero_area_candidate_triangles","collision_reversed_candidate_triangles",
                         "collision_affected_nonleaf_triangles","collision_original_sample_misses"))))
         result["axis_refit"]=refit
+        if refit_diagonal:
+            from inspect_mopp_diagonal_refit import refit_diagonal_bounds
+            diagonal={"refit_passed":False,"axis_refit_required":True,
+                      "diagonal_refit_bytes_changed":0,"sample_count":0,"sample_misses":0,
+                      "projection_hypotheses_runtime_verified":False}
+            if code is not None:
+                patched,diagonal=refit_diagonal_bounds(code,original,candidate,origin)
+                diagonal.update(sample_count=0,sample_misses=0)
+                if patched is not None:
+                    updated=ConservativeMoppPointCandidates(patched,n,origin)
+                    for tid in sorted(seen_triangles & updated.complete_leaf_set):
+                        for point in triangle_samples(candidate[tid]):
+                            diagonal["sample_count"]+=1
+                            diagonal["sample_misses"]+=int(tid not in updated.point(point,diagonal_mode="derived_diagonals")["candidate_triangle_ids"])
+                    if diagonal["sample_misses"]:
+                        raise ValueError("Diagonal refit disagrees with independent projection walker")
+            result["experimental_diagonal_refit"]=diagonal
     return result
