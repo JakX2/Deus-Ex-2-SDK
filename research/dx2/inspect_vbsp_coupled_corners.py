@@ -29,6 +29,7 @@ from inspect_level_polygon_uv_basis import fit_affine_uv, UV_PREVIEW_TOL
 from inspect_vbsp_preview_seams import (
     source_seam_inventory, inspect_preview_seams, attach_original_triangle_provenance,
 )
+from inspect_vbsp_junctions import junction_inventory,inspect_junction_motion
 import inspect_level_world_model as world
 
 SCHEMA = "DX2SDK-coupled-source-corner-motion-v1"
@@ -176,6 +177,8 @@ def coupled_preview(tail,polygons,owners,pi,delta,*,blocks=None,links=None,inclu
     inventory,points=source_seam_inventory(polygons,owners)
     supports,counts=support_inventory(tail,polygons,owners,paths)
     counts.update(inventory)
+    junction_counts,junctions,near=junction_inventory(polygons,points)
+    counts.update(junction_counts)
     changed=list(planes)
     changed[pi]=(*planes[pi][:3],planes[pi][3]+delta)
     # All corners of the selected supporting faces, plus original contacts
@@ -236,7 +239,9 @@ def coupled_preview(tail,polygons,owners,pi,delta,*,blocks=None,links=None,inclu
             counts["stationary_new_leaf_violations"]+=1
     seam_counts,issues=inspect_preview_seams(polygons,owners,points,faces,states)
     counts.update(seam_counts)
-    ready=bool(active) and not refused and not any(state!="preview_passed" for state in states.values()) and not issues and not counts["stationary_new_leaf_violations"]
+    motion_counts,junction_issues=inspect_junction_motion(points,junctions,near,moved,refused,states)
+    counts.update(motion_counts)
+    ready=bool(active) and not refused and not any(state!="preview_passed" for state in states.values()) and not issues and not junction_issues and not counts["stationary_new_leaf_violations"]
     result={"counts":dict(counts),"plane_index":pi,"delta_d":delta,
             "coupled_corner_preview_passed":ready,
             "watertightness_verified":False,"native_geometry_writer_enabled":False,
@@ -245,7 +250,7 @@ def coupled_preview(tail,polygons,owners,pi,delta,*,blocks=None,links=None,inclu
         result["private_preview_geometry"]={"faces":faces,
             "face_states":[{"source_polygon":i,"owner_leaf":owners[i],"state":s}
                            for i,s in sorted(states.items())],
-            "source_seam_issues":issues}
+            "source_seam_issues":issues,"source_junction_issues":junction_issues}
     return result
 
 

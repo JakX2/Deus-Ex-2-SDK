@@ -32,3 +32,15 @@ No GMP output. A passed preview is not proof of watertightness:
 T-junctions, noncoincident nearby corners, unrelated coincident faces,
 portals, navigation and MOPP still require independent validation.
 Corpus verification pending.
+
+## Point-on-edge and near-coincident position checks
+
+Independent exploratory measurement on 19 original Seattle maps found
+722 interior corner/edge candidate pairs (627 within 1e-7 of their
+supporting line, nine farther than 1e-4), and 24 distinct position pairs
+within .002 source units. These are geometric relationships, not native
+T-junction IDs. The portable solver now inventories them with a bounded
+sorted-axis scan. After a proposed coupled displacement, every affected
+relationship must retain its point-on-segment or near-position condition;
+refused neighboring faces remain unresolved and fail the combined gate.
+No original geometry is merged or split, and no native writer is enabled.
