@@ -6,6 +6,7 @@ on:
       - 'tools/maps/dx2_material_writer.py'
       - 'tools/maps/dx2_mesh_writer.py'
       - 'tools/maps/dx2_hull_writer.py'
+      - 'tools/maps/dx2_geometry_scale.py'
       - 'tools/maps/dx2_obj_import.py'
       - 'tools/maps/dx2_custom_texture_import.py'
       - 'tools/maps/dx2_material_audit.py'
@@ -18,6 +19,7 @@ on:
       - 'tests/test_dx2_material_writer.py'
       - 'tests/test_dx2_mesh_writer.py'
       - 'tests/test_dx2_hull_writer.py'
+      - 'tests/test_dx2_geometry_scale.py'
       - 'tests/test_dx2_obj_import.py'
       - 'tests/test_dx2_custom_texture_import.py'
       - 'tests/test_dx2_material_audit.py'
@@ -31,6 +33,7 @@ on:
       - 'tools/maps/dx2_material_writer.py'
       - 'tools/maps/dx2_mesh_writer.py'
       - 'tools/maps/dx2_hull_writer.py'
+      - 'tools/maps/dx2_geometry_scale.py'
       - 'tools/maps/dx2_obj_import.py'
       - 'tools/maps/dx2_custom_texture_import.py'
       - 'tools/maps/dx2_material_audit.py'
@@ -43,6 +46,7 @@ on:
       - 'tests/test_dx2_material_writer.py'
       - 'tests/test_dx2_mesh_writer.py'
       - 'tests/test_dx2_hull_writer.py'
+      - 'tests/test_dx2_geometry_scale.py'
       - 'tests/test_dx2_obj_import.py'
       - 'tests/test_dx2_custom_texture_import.py'
       - 'tests/test_dx2_material_audit.py'
@@ -80,6 +84,7 @@ jobs:
               "tools/maps/dx2_material_writer.py",
               "tools/maps/dx2_mesh_writer.py",
               "tools/maps/dx2_hull_writer.py",
+              "tools/maps/dx2_geometry_scale.py",
               "tools/maps/dx2_obj_import.py",
               "tools/maps/dx2_custom_texture_import.py",
               "tools/maps/dx2_material_audit.py",
@@ -91,6 +96,7 @@ jobs:
               "tests/test_dx2_material_writer.py",
               "tests/test_dx2_mesh_writer.py",
               "tests/test_dx2_hull_writer.py",
+              "tests/test_dx2_geometry_scale.py",
               "tests/test_dx2_obj_import.py",
               "tests/test_dx2_custom_texture_import.py",
               "tests/test_dx2_material_audit.py",
