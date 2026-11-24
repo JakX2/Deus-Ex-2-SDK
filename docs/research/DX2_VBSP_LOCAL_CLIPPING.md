@@ -105,5 +105,26 @@ of a crack or complete watertightness; T-junctions and coincident unrelated
 surfaces remain unresolved. Every affected face (including refused ones)
 is also linked to exact original flat render triangle and reachable MOPP
 IDs. The link is source provenance, not a regenerated collision mesh.
-No native write or runtime execution. Follow-up integrated corpus results
-are pending.
+No native write or runtime execution. Follow-up integrated corpus results are recorded below.
+
+## Integrated seam/provenance verification
+
+The source-only ZIP from 1e46bd539b00575b5f9b766a6d7aa79c02f2c0be
+passed all 19 original-map baseline audits and reproduced every source
+corner/edge inventory count above. The same 19 deterministic plane offsets
+passed 62 textured face previews (20 support translations, 4 reduced-area
+patches, 1 changed vertex count) and 28 portal previews, with 12 portals
+refused by the original reconstruction gate. Exactly 32 preview vertices
+used the affine UV projection; surviving source vertices kept their XYZ
+(up to the requested translation) and UV associations.
+
+The affected faces link to 125 original flat triangles, all original MOPP
+leaf IDs. Of 139 affected shared source XYZ groups, 53 fully agree, 60
+have separated surviving positions and 28 have removed original corners
+alongside surviving neighbors. Warning categories can overlap. These are
+geometric dependency diagnostics, not authenticated native welds or proof
+of cracks. No watertightness, collision rebuild, native writer or retail
+execution is claimed. Independent face clipping cannot be promoted to a
+native geometry writer: a coupled corner/edge constraint solver, T-junction
+handling, newly exposed surfaces and synchronized collision cooking remain
+required. Original maps were not modified; private geometry was not committed.
