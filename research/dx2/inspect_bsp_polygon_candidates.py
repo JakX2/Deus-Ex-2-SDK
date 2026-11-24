@@ -298,6 +298,7 @@ def join_polygon_collision(polygons, rows, triangle_locators, *, include_details
         raise ValueError("Collision and render triangle inventory/order disagree")
     seen, seen_nodes = set(), set()
     counts = Counter()
+    surface_groups = defaultdict(list)
     details = []
     for polygon in polygons:
         i = polygon["source_node"]
@@ -315,11 +316,38 @@ def join_polygon_collision(polygons, rows, triangle_locators, *, include_details
         counts["collision_crosswalk_nonleaves"] += len(entries)-leaves
         coverage = "all" if leaves == len(entries) else "partial" if leaves else "none"
         counts["collision_crosswalk_" + coverage + "_leaf_polygons"] += 1
+        if polygon.get("assignment_method") == "unique_complete_cover_hypothesis":
+            counts["collision_recovered_polygons"] += 1
+            counts["collision_recovered_leaf_triangles"] += leaves
+        raw_surface = polygon.get("raw_candidate_surface_value")
+        if raw_surface is not None:
+            if type(raw_surface) is not int or raw_surface < -1:
+                raise ValueError("Invalid raw candidate surface field")
+            if raw_surface >= 0:
+                block_ids = {r["source_provenance_block_field_a"] for r in entries}
+                sections = {tuple(r["render_locator"][:2]) for r in entries}
+                if any(type(v) is not int or v < 0 for v in block_ids):
+                    raise ValueError("Invalid original provenance block field")
+                surface_groups[raw_surface].append((block_ids, sections))
+                counts["surface_compared_polygons"] += 1
+                counts["surface_equals_all_provenance_A_polygons"] += int(block_ids == {raw_surface})
+                counts["surface_polygon_multiple_render_sections"] += int(len(sections) > 1)
+            else:
+                counts["surface_negative_sentinel_polygons"] += 1
         if include_details:
             details.append({"source_node": i, "leaf_coverage": coverage,
                             "original_triangle_rows": entries,
                             "engine_ownership_verified": False,
                             "native_write_allowed": False})
+    for group in surface_groups.values():
+        blocks = set().union(*(v[0] for v in group))
+        sections = set().union(*(v[1] for v in group))
+        reused = len(group) > 1
+        counts["surface_compared_groups"] += 1
+        counts["surface_reused_groups"] += int(reused)
+        counts["surface_single_provenance_A_groups"] += int(len(blocks) == 1)
+        counts["surface_single_render_section_groups"] += int(len(sections) == 1)
+        counts["surface_reused_single_render_section_groups"] += int(reused and len(sections) == 1)
     counts["collision_source_render_triangles"] = len(rows)
     counts["collision_source_mopp_leaves"] = sum(
         r["original_mopp_terminal_leaf_present"] for r in rows)
@@ -330,7 +358,7 @@ def join_polygon_collision(polygons, rows, triangle_locators, *, include_details
 
 
 def analyze_polygons(nodes, triangles, *, include_polygons=False, recover_ambiguous=False):
-    """Use only uniquely matched triangles; exclude every ambiguous node.
+    """By default use only uniquely matched triangles; optionally solve ambiguity.
 
     nodes contain a validated plane, spatial sphere and source slot count.
     triangles contain the previous Level render locator and XYZ triplet.
@@ -463,7 +491,8 @@ def audit_maps(paths, *, include_polygons=False, recover_ambiguous=False, includ
             "private_preview_geometry_included":include_polygons,
             "ambiguity_recovery_requested":recover_ambiguous,
             "source_mopp_crosswalk_requested":include_mopp,
-            "unique_cover_is_native_ownership":False}
+            "unique_cover_is_native_ownership":False,
+            "raw_surface_field_is_level_provenance_id":False}
 
 
 def main(argv=None):

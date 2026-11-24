@@ -65,11 +65,17 @@ class PolygonCollisionTests(unittest.TestCase):
         level,blocks,_=fixture(separate_blocks=True)
         rows,_=_source_triangle_rows(level,blocks)
         locs=[k for k,_ in triangles(blocks)]
-        poly={"source_node":0,"original_render_triangle_locators":locs}
+        poly={"source_node":0,"original_render_triangle_locators":locs,
+              "raw_candidate_surface_value":0,
+              "assignment_method":"unique_complete_cover_hypothesis"}
         report=join_polygon_collision([poly],rows,locs)
         self.assertEqual(report["counts"]["collision_crosswalk_mopp_leaves"],2)
         self.assertEqual(report["counts"]["collision_crosswalk_all_leaf_polygons"],1)
         self.assertNotIn("polygon_collision_crosswalk",report)
+        self.assertEqual(report["counts"]["collision_recovered_leaf_triangles"],2)
+        self.assertEqual(report["counts"]["surface_compared_groups"],1)
+        self.assertEqual(report["counts"]["surface_equals_all_provenance_A_polygons"],0)
+        self.assertEqual(report["counts"]["surface_polygon_multiple_render_sections"],1)
         details=join_polygon_collision([poly],rows,locs,include_details=True)
         self.assertEqual([r["source_provenance_block_field_a"] for r in
                           details["polygon_collision_crosswalk"][0]["original_triangle_rows"]],[0,2])
