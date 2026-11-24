@@ -31,7 +31,7 @@ Run with root, map_exporter and research/dx2 on PYTHONPATH.
 No GMP output. A passed preview is not proof of watertightness:
 T-junctions, noncoincident nearby corners, unrelated coincident faces,
 portals, navigation and MOPP still require independent validation.
-Corpus verification pending.
+Initial corpus verification is recorded below.
 
 ## Point-on-edge and near-coincident position checks
 
@@ -44,3 +44,34 @@ sorted-axis scan. After a proposed coupled displacement, every affected
 relationship must retain its point-on-segment or near-position condition;
 refused neighboring faces remain unresolved and fail the combined gate.
 No original geometry is merged or split, and no native writer is enabled.
+
+## First coupled solver corpus
+
+The portable ZIP from 59796e8c1166dc426bc8bdc1bc996058ce734009 ran one
++1 D experiment per original Seattle GMP. 77 active groups (266 corner
+occurrences) affected 136 faces. 62 groups solved rank 3 and two solved
+rank 2; 13 were refused for inconsistent equations. 90 faces passed and
+46 were refused. 239 original triangle windings were verified; all
+358 affected original triangles were MOPP leaves. Nine of 19 map
+experiments passed the initial exact-coincidence and stationary-face gate.
+193 of 323 affected shared-position groups agreed; 130 were unresolved.
+No separated groups were emitted among resolved previews. Refusals are
+not waived: 36 faces had unresolved constraints, six initially convex
+faces became nonconvex, three source faces were already nonconvex under
+the strict test, and one failed the UV basis gate. Only two of the 13
+inconsistent corner systems involved a nearly identical plane alias.
+
+An independent original MOPP query experiment on the 239 accepted
+triangles sampled three corners, three edge midpoints and a centroid
+on both original and candidate coordinates, using the original spatial
+origin/scale and unchanged code. 1,673 comparisons yielded zero source
+misses, 68 new misses across 21 triangles, and 180 changed candidate
+sets. Even within the nine passing geometry experiments there were 53
+new misses across 11 triangles. This is a reproducible counterexample to
+reusing the original collision bytecode for arbitrary local geometry
+motion. The new integrated preflight checks the exact source flat array,
+rounds candidate coordinates to source float32, compares winding/area,
+checks source origin/scale formulas against the changed bounds and runs
+the same conservative point sample test. A passing sample is not full
+MOPP coverage, collision cooking or retail runtime verification. The
+combined gate still excludes portal, Model and navigation changes.

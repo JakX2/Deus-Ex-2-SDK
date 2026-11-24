@@ -69,6 +69,7 @@ REQUIRED = (
     "research/dx2/inspect_vbsp_preview_seams.py",
     "research/dx2/inspect_vbsp_coupled_corners.py",
     "research/dx2/inspect_vbsp_junctions.py",
+    "research/dx2/inspect_vbsp_candidate_collision.py",
     "research/dx2/inspect_bsp_mopp_plane_impact.py",
     "dx2sdk/catalog.py",
     "dx2sdk/scalars.py",

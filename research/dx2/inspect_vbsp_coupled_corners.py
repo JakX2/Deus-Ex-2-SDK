@@ -30,6 +30,7 @@ from inspect_vbsp_preview_seams import (
     source_seam_inventory, inspect_preview_seams, attach_original_triangle_provenance,
 )
 from inspect_vbsp_junctions import junction_inventory,inspect_junction_motion
+from inspect_vbsp_candidate_collision import inspect_candidate_collision
 import inspect_level_world_model as world
 
 SCHEMA = "DX2SDK-coupled-source-corner-motion-v1"
@@ -254,7 +255,7 @@ def coupled_preview(tail,polygons,owners,pi,delta,*,blocks=None,links=None,inclu
     return result
 
 
-def load_context(path,raw):
+def load_context(path,raw,*,include_level=False):
     pkg,exp,level,model,blocks,polys,links,collision,inventory,end=_read_context(path,raw)
     ref=world._parse_world_model(pkg)
     cursor=world.Cursor(level,ref["level_model_ref_offset_in_level"])
@@ -265,7 +266,8 @@ def load_context(path,raw):
     graph=parse_prefix_graph(level,cursor.at,stop)
     tail=parse_spatial_tail(level,graph["graph_end"],stop)
     _,owners=validate_leaf_render_ownership(tail,polys,links,collision,frame)
-    return tail,polys,owners,blocks,links,collision
+    context=(tail,polys,owners,blocks,links,collision)
+    return (*context,level) if include_level else context
 
 
 def select_plane(tail,polygons,owners):
@@ -292,10 +294,15 @@ def audit_map(path,*,plane_index=None,delta_d=1.,include_geometry=False):
         raise ValueError("Expected bounded original user-owned GMP")
     raw=path.read_bytes()
     pin=hashlib.sha256(raw).hexdigest()
-    tail,polys,owners,blocks,links,collision=load_context(path,raw)
+    tail,polys,owners,blocks,links,collision,level=load_context(path,raw,include_level=True)
     pi=select_plane(tail,polys,owners) if plane_index is None else plane_index
     report=coupled_preview(tail,polys,owners,pi,delta_d,blocks=blocks,links=links,include_geometry=True)
     report["counts"].update(attach_original_triangle_provenance(report["private_preview_geometry"],links,collision))
+    collision_report=inspect_candidate_collision(level,blocks,polys,links,collision,report["private_preview_geometry"])
+    report["counts"].update(collision_report.pop("counts"))
+    report["unchanged_mopp_candidate_preflight"]=collision_report
+    report["combined_offline_preflight_passed"]=bool(report["coupled_corner_preview_passed"]
+        and collision_report["sampled_unchanged_mopp_preflight_passed"])
     if not include_geometry:
         del report["private_preview_geometry"]
     if hashlib.sha256(path.read_bytes()).hexdigest()!=pin:
@@ -313,6 +320,8 @@ def audit_maps(paths,*,plane_index=None,delta_d=1.,include_geometry=False):
     for row in rows:
         counts.update(row["counts"])
         counts["map_previews_passed"]+=int(row["coupled_corner_preview_passed"])
+        counts["map_collision_sample_preflights_passed"]+=int(row["unchanged_mopp_candidate_preflight"]["sampled_unchanged_mopp_preflight_passed"])
+        counts["map_combined_offline_preflights_passed"]+=int(row["combined_offline_preflight_passed"])
     return {"schema":SCHEMA,"map_count":len(rows),"summary":dict(counts),
             "source_files_modified":False,"native_geometry_writer_enabled":False,
             "retail_runtime_verified":False,"maps":rows}
