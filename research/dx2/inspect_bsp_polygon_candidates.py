@@ -141,7 +141,195 @@ def classify_polygon(plane, sphere, count, triangles):
     return evidence,loop if evidence["preview_candidate"] else None
 
 
-def analyze_polygons(nodes, triangles, *, include_polygons=False):
+
+# Search caps apply per connected ambiguity component. A capped search is
+# inconclusive, even if one solution has already been found.
+MAX_AMBIGUOUS_NODES = 12
+MAX_AMBIGUOUS_TRIANGLES = 24
+MAX_SUBSET_TRIALS = 4096
+MAX_COVER_STEPS = 20000
+
+
+def recover_ambiguous_polygons(nodes, by_locator, matches):
+    """Find uniquely solvable complete covers under the strict polygon model.
+
+    Unique spatial matches are treated as required, ambiguous matches must
+    be assigned exactly once, and nodes without required triangles may be
+    unused. These assumptions are not native ownership evidence.
+    """
+    from itertools import combinations
+
+    required, shared, owners = defaultdict(set), defaultdict(set), {}
+    for match in matches:
+        loc = tuple(match["triangle"])
+        ids = tuple(match["candidate_nodes"])
+        if len(ids) == 1:
+            required[ids[0]].add(loc)
+        elif len(ids) > 1:
+            owners[loc] = ids
+            for i in ids:
+                shared[i].add(loc)
+    counts = Counter()
+    recovered = []
+    remaining = set(shared)
+    while remaining:
+        seed = min(remaining)
+        component, locators = {seed}, set()
+        stack = [seed]
+        while stack:
+            i = stack.pop()
+            for loc in shared[i] - locators:
+                locators.add(loc)
+                for j in owners[loc]:
+                    if j not in component:
+                        component.add(j)
+                        stack.append(j)
+        remaining.difference_update(component)
+        counts["ambiguity_components"] += 1
+        counts["ambiguity_component_nodes"] += len(component)
+        counts["ambiguity_component_triangles"] += len(locators)
+        if (len(component) > MAX_AMBIGUOUS_NODES
+                or len(locators) > MAX_AMBIGUOUS_TRIANGLES):
+            counts["ambiguity_capped_components"] += 1
+            continue
+
+        options = {}
+        trials = 0
+        capped = False
+        for i in sorted(component):
+            node = nodes[i]
+            fixed = required[i]
+            n = node["count"] - 2 - len(fixed)
+            variants = []
+            if not fixed:
+                variants.append((frozenset(), (), None))
+            if 0 <= n <= len(shared[i]):
+                trials += math.comb(len(shared[i]), n)
+                if trials > MAX_SUBSET_TRIALS:
+                    capped = True
+                    break
+                for subset in combinations(sorted(shared[i]), n):
+                    all_locs = tuple(sorted(fixed.union(subset)))
+                    evidence, loop = classify_polygon(
+                        node["plane"], node["sphere"], node["count"],
+                        [by_locator[k] for k in all_locs])
+                    if loop is not None:
+                        variants.append((frozenset(subset), all_locs, loop))
+            options[i] = variants
+        if capped:
+            counts["ambiguity_capped_components"] += 1
+            continue
+        if any(not v for v in options.values()):
+            counts["ambiguity_no_cover_components"] += 1
+            continue
+
+        order = sorted(component, key=lambda i: (len(options[i]), i))
+        suffix = [set() for _ in range(len(order)+1)]
+        for pos in range(len(order)-1, -1, -1):
+            suffix[pos] = suffix[pos+1].union(*(v[0] for v in options[order[pos]]))
+        solutions, steps = [], 0
+
+        def visit(pos, used, chosen):
+            nonlocal steps, capped
+            if capped or len(solutions) >= 2:
+                return
+            steps += 1
+            if steps > MAX_COVER_STEPS:
+                capped = True
+                return
+            if not locators - used <= suffix[pos]:
+                return
+            if pos == len(order):
+                if used == locators:
+                    solutions.append(tuple(chosen))
+                return
+            i = order[pos]
+            for option in options[i]:
+                if not used.intersection(option[0]):
+                    visit(pos+1, used.union(option[0]), chosen+[(i, option)])
+                if capped or len(solutions) >= 2:
+                    return
+
+        visit(0, set(), [])
+        if capped:
+            counts["ambiguity_capped_components"] += 1
+        elif not solutions:
+            counts["ambiguity_no_cover_components"] += 1
+        elif len(solutions) != 1:
+            counts["ambiguity_multiple_cover_components"] += 1
+        else:
+            counts["ambiguity_unique_cover_components"] += 1
+            counts["ambiguity_assigned_triangles"] += len(locators)
+            for i, (_, locs, loop) in solutions[0]:
+                if loop is None:
+                    continue
+                recovered.append(_preview_record(nodes[i], i, locs, loop,
+                                                 "unique_complete_cover_hypothesis"))
+                counts["ambiguity_recovered_preview_polygons"] += 1
+    return dict(counts), sorted(recovered, key=lambda row: row["source_node"])
+
+
+def _preview_record(node, i, locators, loop, method):
+    return {"source_node": i,
+            "raw_candidate_vertex_start": node.get("vertex_start"),
+            "raw_candidate_surface_value": node.get("surface"),
+            "source_vertex_slots": node["count"],
+            "inferred_boundary_xyz": loop,
+            "original_render_triangle_locators": list(locators),
+            "render_section_locators": sorted(set(k[:2] for k in locators)),
+            "assignment_method": method,
+            "engine_ownership_verified": False,
+            "native_write_allowed": False}
+
+
+def join_polygon_collision(polygons, rows, triangle_locators, *, include_details=False):
+    """Join inferred polygons to validated original flat triangle/leaf IDs."""
+    triangle_locators = [tuple(k) for k in triangle_locators]
+    by_locator = {}
+    for ordinal, row in enumerate(rows):
+        loc = tuple(row["render_locator"])
+        if (len(loc) != 3 or loc in by_locator
+                or type(row["flattened_triangle_id"]) is not int
+                or row["flattened_triangle_id"] != ordinal
+                or type(row["original_mopp_terminal_leaf_present"]) is not bool):
+            raise ValueError("Invalid validated collision triangle inventory")
+        by_locator[loc] = row
+    if list(by_locator) != triangle_locators:
+        raise ValueError("Collision and render triangle inventory/order disagree")
+    seen, seen_nodes = set(), set()
+    counts = Counter()
+    details = []
+    for polygon in polygons:
+        i = polygon["source_node"]
+        locs = [tuple(k) for k in polygon["original_render_triangle_locators"]]
+        if (i in seen_nodes or not locs or len(set(locs)) != len(locs)
+                or seen.intersection(locs) or not set(locs) <= by_locator.keys()):
+            raise ValueError("Polygon source node or render locator conflict")
+        seen_nodes.add(i)
+        seen.update(locs)
+        entries = [by_locator[k] for k in locs]
+        leaves = sum(r["original_mopp_terminal_leaf_present"] for r in entries)
+        counts["collision_crosswalk_polygons"] += 1
+        counts["collision_crosswalk_render_triangles"] += len(entries)
+        counts["collision_crosswalk_mopp_leaves"] += leaves
+        counts["collision_crosswalk_nonleaves"] += len(entries)-leaves
+        coverage = "all" if leaves == len(entries) else "partial" if leaves else "none"
+        counts["collision_crosswalk_" + coverage + "_leaf_polygons"] += 1
+        if include_details:
+            details.append({"source_node": i, "leaf_coverage": coverage,
+                            "original_triangle_rows": entries,
+                            "engine_ownership_verified": False,
+                            "native_write_allowed": False})
+    counts["collision_source_render_triangles"] = len(rows)
+    counts["collision_source_mopp_leaves"] = sum(
+        r["original_mopp_terminal_leaf_present"] for r in rows)
+    counts["collision_unassigned_mopp_leaves"] = (
+        counts["collision_source_mopp_leaves"] - counts["collision_crosswalk_mopp_leaves"])
+    return {"counts": dict(counts),
+            **({"polygon_collision_crosswalk": details} if include_details else {})}
+
+
+def analyze_polygons(nodes, triangles, *, include_polygons=False, recover_ambiguous=False):
     """Use only uniquely matched triangles; exclude every ambiguous node.
 
     nodes contain a validated plane, spatial sphere and source slot count.
@@ -189,20 +377,22 @@ def analyze_polygons(nodes, triangles, *, include_polygons=False):
             if len(section_ids)==1:
                 counts["single_section_preview_candidates"]+=1
             if include_polygons:
-                preview.append({"source_node":i,
-                                "raw_candidate_vertex_start":node.get("vertex_start"),
-                                "raw_candidate_surface_value":node.get("surface"),
-                                "source_vertex_slots":node["count"],
-                                "inferred_boundary_xyz":loop,
-                                "original_render_triangle_locators":locators,
-                                "render_section_locators":section_ids,
-                                "engine_ownership_verified":False,
-                                "native_write_allowed":False})
+                preview.append(_preview_record(node, i, locators, loop,
+                                               "unique_spatial_matches"))
+    if recover_ambiguous:
+        extra_counts, recovered = recover_ambiguous_polygons(
+            nodes, by_locator, matches["candidate_triangle_nodes"])
+        counts.update(extra_counts)
+        counts["total_preview_candidates_with_recovery"] = (
+            counts["preview_candidate"] + len(recovered))
+        if include_polygons:
+            preview.extend(recovered)
+            preview.sort(key=lambda row: row["source_node"])
     return {"counts":dict(counts),
             **({"preview_polygons":preview} if include_polygons else {})}
 
 
-def audit_map(path, *, include_polygons=False):
+def audit_map(path, *, include_polygons=False, recover_ambiguous=False, include_mopp=False):
     path=Path(path)
     if path.suffix.casefold()!=".gmp" or not path.is_file() or path.is_symlink() or path.stat().st_size>boundaries.world.MAX_MAP_BYTES:
         raise ValueError("Expected bounded original user-owned GMP")
@@ -228,8 +418,24 @@ def audit_map(path, *, include_polygons=False):
     blocks=find_bsp(pkg)
     if not blocks:
         raise ValueError("No validated original Level render blocks")
-    result=analyze_polygons(nodes,spatial._triangles_from_render_blocks(blocks),
-                            include_polygons=include_polygons)
+    triangles=list(spatial._triangles_from_render_blocks(blocks))
+    result=analyze_polygons(nodes,triangles,
+                            include_polygons=include_polygons or include_mopp,
+                            recover_ambiguous=recover_ambiguous)
+    if include_mopp:
+        from dx2sdk.bsp_mopp_plane_impact import _source_triangle_rows
+        levels=[e for e in pkg.exports if pkg.class_name(e)=="Level" and e["size"]>0]
+        if len(levels)!=1:
+            raise ValueError("Expected exactly one nonempty Level export")
+        level=pkg.payload(levels[0])
+        rows,_provenance=_source_triangle_rows(level,blocks)
+        joined=join_polygon_collision(result["preview_polygons"],rows,
+                                      (loc for loc,_ in triangles),
+                                      include_details=include_polygons)
+        result["counts"].update(joined.pop("counts"))
+        result.update(joined)
+        if not include_polygons:
+            del result["preview_polygons"]
     if hashlib.sha256(path.read_bytes()).hexdigest()!=pin:
         raise ValueError("Original GMP changed during audit")
     return {"source_map":path.name,"source_sha256":pin,"licensee":pkg.licensee,
@@ -238,12 +444,13 @@ def audit_map(path, *, include_polygons=False):
             "render_blocks":len(blocks),**result}
 
 
-def audit_maps(paths, *, include_polygons=False):
+def audit_maps(paths, *, include_polygons=False, recover_ambiguous=False, include_mopp=False):
     if not 1<=len(paths)<=boundaries.world.MAX_MAPS:
         raise ValueError("Expected 1..64 original GMP paths")
     if len({Path(p).resolve() for p in paths})!=len(paths):
         raise ValueError("Duplicate GMP path")
-    rows=[audit_map(p,include_polygons=include_polygons) for p in paths]
+    rows=[audit_map(p,include_polygons=include_polygons, recover_ambiguous=recover_ambiguous,
+                    include_mopp=include_mopp) for p in paths]
     total=Counter()
     for row in rows:
         total.update(row["counts"])
@@ -253,7 +460,10 @@ def audit_maps(paths, *, include_polygons=False):
             "native_surface_array_decoded":False,"engine_ownership_verified":False,
             "native_BSP_writer_enabled":False,"collision_writer_enabled":False,
             "retail_runtime_verified":False,"source_modified":False,
-            "private_preview_geometry_included":include_polygons}
+            "private_preview_geometry_included":include_polygons,
+            "ambiguity_recovery_requested":recover_ambiguous,
+            "source_mopp_crosswalk_requested":include_mopp,
+            "unique_cover_is_native_ownership":False}
 
 
 def main(argv=None):
@@ -261,11 +471,15 @@ def main(argv=None):
     p.add_argument("maps",nargs="+",type=Path)
     p.add_argument("--report",type=Path)
     p.add_argument("--include-preview-polygons",action="store_true")
+    p.add_argument("--recover-ambiguous",action="store_true",help="Try bounded unique complete polygon covers")
+    p.add_argument("--include-mopp-crosswalk",action="store_true",help="Validate and join original Level collision leaf IDs")
     a=p.parse_args(argv)
     try:
         if a.include_preview_polygons and a.report is None:
             raise ValueError("Private preview geometry requires an explicit local report path")
-        report=audit_maps(a.maps,include_polygons=a.include_preview_polygons)
+        report=audit_maps(a.maps,include_polygons=a.include_preview_polygons,
+                          recover_ambiguous=a.recover_ambiguous,
+                          include_mopp=a.include_mopp_crosswalk)
         if a.report is not None:
             boundaries.world.write_report(report,a.report,a.maps)
             print(json.dumps({"status":"ok","summary":report["summary"]},sort_keys=True))
