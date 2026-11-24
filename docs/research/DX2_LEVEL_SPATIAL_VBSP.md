@@ -16,9 +16,8 @@ Magic is VBSP and version 2. Saved 32-bit pointer differences independently
 validate the array boundaries. Never dereference these values. Serialized
 arrays in order: 36-byte node, 52-byte leaf, 16-byte plane, 24-byte portal,
 12-byte portal vertex, final u32 candidate leaf IDs. Two zero counts and
-three additional header words have unassigned semantics. Leaf range
-fields and the final leaf-ID array are preserved, not treated as visibility
-sets.
+three additional header words have unassigned semantics. The final leaf-ID array is preserved, not treated as a visibility set.
+The leaf range fields are independently identified below.
 
 A node's first word is (plane index << 2) | child flags. Child bit set
 means leaf index; clear means node index; -1 is a solid sentinel. Root is
@@ -44,9 +43,40 @@ edge endpoints, grid origins, directional point XYZ, leaf bounds, portal
 XYZ and plane D in memory. All indices, normals, grid payload, saved
 addresses, and unassigned fields stay unchanged. The original Level
 span is recovered by exact byte reversal. No GMP output or runtime
-verification. Integrated packaged corpus and translation tests pending.
+verification. The packaged corpus and translation tests are recorded below.
 
     python research/dx2/inspect_level_spatial_vbsp.py MAP.gmp
     python research/dx2/inspect_level_spatial_vbsp.py MAP.gmp --delta .125 0 0
 
 Run with repository root, map_exporter and research/dx2 on PYTHONPATH.
+
+## Packaged validation and native leaf ownership
+
+The portable ZIP from 1c0afc836ae461826c713f85f4d3e2270b709298 passed
+all 19 original-map spatial audits and +0.125 X prefix-only translations.
+All 5,252 portal side probes retained their original leaf pairs. The
+experiment patched 237,594 position/plane spans (302,576 changed bytes)
+with exact original reversal and no source changes. The post-Model
+prefix span is fully framed: 4,788,774 graph bytes plus 1,107,204 spatial
+tail bytes, including 809,028 VBSP bytes. Opaque record fields remain.
+
+Independent original-map crosswalks resolve both leaf ranges:
+the first is a half-open range in the actual expanded polygon stream,
+the second is a half-open range of portals with this leaf as first owner.
+All 3,106 second ranges agree exactly with the independent portal table.
+The first ranges partition all 16,789 expanded polygon ordinals once;
+all 76,732 polygon vertices lie within the corresponding leaf AABB.
+The 3,106 leaf ordinals are also the original native render block
+ordinals. All 43,154 flattened render triangle provenance field A values
+agree with their owning leaf, including all 3,002 nonempty render leaves
+and 104 empty leaves. 16,787 of 16,789 +0.1 normal-offset polygon
+centroid probes also classify to the expected leaf; the two exceptions
+are retained as diagnostics, not discarded or treated as source ownership
+failures. Source range and provenance identity are stronger evidence.
+
+The integrated position dependency CLI now offers
+--include-spatial-prefix to translate the decoded post-Model prefix
+together with the other known world geometry. It verifies original and
+candidate native leaf ownership and unchanged portal side associations.
+No actor positions or pre-Model prefix fields are edited. Full combined
+corpus verification is pending.

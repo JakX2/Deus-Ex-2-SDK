@@ -306,7 +306,7 @@ def _centroid_comparison(level,changed,flat_proof,mopp_proof,limit):
     return dict(counts)
 
 
-def audit_map(path,*,delta=None,centroids=64):
+def audit_map(path,*,delta=None,centroids=64,include_spatial_prefix=False):
     path=Path(path)
     if (path.suffix.casefold()!=".gmp" or not path.is_file() or path.is_symlink()
             or path.stat().st_size>MAX_GMP):
@@ -328,12 +328,28 @@ def audit_map(path,*,delta=None,centroids=64):
     counts.update(model_counts)
     counts["model_zero_reserved_records"]=len(nodes)
     counts["unmodified_level_prefix_bytes"]=prefix
+    if include_spatial_prefix:
+        from inspect_level_prefix_graph import parse_prefix_graph
+        from inspect_level_spatial_vbsp import (parse_spatial_tail,translate_spatial_prefix,
+                                               validate_leaf_render_ownership)
+        cursor=world.Cursor(level,ref["level_model_ref_offset_in_level"])
+        if cursor.ci()!=ref["world_model_export_ref"]:
+            raise ValueError("Original Level Model reference changed")
+        graph=parse_prefix_graph(level,cursor.at,prefix)
+        spatial=parse_spatial_tail(level,graph["graph_end"],prefix)
+        owner_counts,owners=validate_leaf_render_ownership(spatial,polys,links,collision,block_frame)
+        counts.update(owner_counts)
+        counts["unmodified_level_prefix_bytes"]=cursor.at
+        counts["framed_post_model_prefix_bytes"]=prefix-cursor.at
     counts["original_mopp_leaves"]=mopp_proof["unique_valid_mopp_triangle_leaves"]
     result={"source_map":path.name,"source_sha256":pin,"counts":dict(counts),
             "max_shadow_nearest_distance":max_shadow}
     if delta is not None:
         delta=validate_delta(delta)
         level2,drift=translate_level(level,blocks,polys,flat_proof,mopp_proof,delta)
+        if include_spatial_prefix:
+            level2,spatial_counts=translate_spatial_prefix(level2,graph,spatial,delta)
+            counts.update(spatial_counts)
         model2=translate_model(model,frame,nodes,delta)
         me=pkg.exports[ref["world_model_export_ref"]-1]
         patch=BytePatch(raw)
@@ -349,8 +365,19 @@ def audit_map(path,*,delta=None,centroids=64):
         if (p2.names!=pkg.names or p2.imports!=pkg.imports or p2.exports!=pkg.exports
                 or e2!=exp or l2!=level2 or m2!=model2 or links!=links2
                 or collision!=col2 or inventory!=inv2 or end!=end2
-                or level[:prefix]!=l2[:prefix]):
+                or level[:counts["unmodified_level_prefix_bytes"]]!=l2[:counts["unmodified_level_prefix_bytes"]]):
             raise ValueError("Translated package reparse or source structure mismatch")
+        if include_spatial_prefix:
+            graph2=parse_prefix_graph(l2,cursor.at,prefix)
+            spatial2=parse_spatial_tail(l2,graph2["graph_end"],prefix)
+            owner_counts2,owners2=validate_leaf_render_ownership(spatial2,poly2,links2,col2,block_frame)
+            diagnostic="vbsp_polygon_normal_probe_owner_matches"
+            if (owners!=owners2 or spatial["portal_leaf_links"]!=spatial2["portal_leaf_links"]
+                    or {k:v for k,v in owner_counts.items() if k!=diagnostic}!=
+                       {k:v for k,v in owner_counts2.items() if k!=diagnostic}):
+                raise ValueError("Translated VBSP leaf/render ownership changed")
+            counts["translated_vbsp_polygon_normal_probe_matches"]=owner_counts2[diagnostic]
+            counts["translated_vbsp_leaf_render_ownership_verified"]=len(owners2)
         packed2,shadow_links2,_=inspect_packed_positions(l2,b2)
         flat2,exact2=inspect_flat_exact(l2,b2)
         mopp2=mopp.inspect_mopp_link(l2,b2)
@@ -379,10 +406,10 @@ def audit_map(path,*,delta=None,centroids=64):
     return result
 
 
-def audit_maps(paths,*,delta=None,centroids=64):
+def audit_maps(paths,*,delta=None,centroids=64,include_spatial_prefix=False):
     if not 1<=len(paths)<=world.MAX_MAPS or len({Path(p).resolve() for p in paths})!=len(paths):
         raise ValueError("Expected 1..64 distinct original maps")
-    rows=[audit_map(p,delta=delta,centroids=centroids) for p in paths]
+    rows=[audit_map(p,delta=delta,centroids=centroids,include_spatial_prefix=include_spatial_prefix) for p in paths]
     counts=Counter()
     for row in rows:
         counts.update(row["counts"])
@@ -390,7 +417,8 @@ def audit_maps(paths,*,delta=None,centroids=64):
             "max_shadow_nearest_distance":max(r["max_shadow_nearest_distance"] for r in rows),
             "max_root_quantized_drift":max((r.get("root_quantized_max_drift",0.) for r in rows)),
             "translation":delta,"source_files_modified":False,"gmp_output_enabled":False,
-            "level_prefix_position_semantics_decoded":False,"actors_translated":False,
+            "level_prefix_position_semantics_decoded":False,
+            "post_model_spatial_prefix_included":include_spatial_prefix,"actors_translated":False,
             "native_csg_rebuilt":False,"mopp_compiler_implemented":False,
             "retail_runtime_verified":False,"maps":rows}
 
@@ -400,10 +428,11 @@ def main(argv=None):
     p.add_argument("maps",type=Path,nargs="+")
     p.add_argument("--delta",type=float,nargs=3,metavar=("DX","DY","DZ"))
     p.add_argument("--centroids",type=int,default=64,help="Per-map deterministic centroid sample cap; 0 disables")
+    p.add_argument("--include-spatial-prefix",action="store_true",help="Also validate and translate decoded post-Model spatial structures")
     p.add_argument("--report",type=Path)
     a=p.parse_args(argv)
     try:
-        result=audit_maps(a.maps,delta=a.delta,centroids=a.centroids)
+        result=audit_maps(a.maps,delta=a.delta,centroids=a.centroids,include_spatial_prefix=a.include_spatial_prefix)
         if a.report:
             world.write_report(result,a.report,a.maps)
         print(json.dumps({k:v for k,v in result.items() if k!="maps"},indent=2,allow_nan=False))

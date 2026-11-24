@@ -63,3 +63,14 @@ other header fields) are a blocker for whole-level translation. Follow-up
 research identifies a navigation-like triangle/edge graph within that
 prefix (see DX2_LEVEL_PREFIX_TRIANGLE_EDGE_GRAPH.md). This is why the
 experiment does not produce a playable edited GMP.
+
+## Optional synchronized spatial prefix
+
+The follow-up VBSP/grid decoder frames the entire post-Model prefix
+and validates exact leaf ownership of the expanded and packed polygon
+inventory. The optional --include-spatial-prefix flag now incorporates
+these known position spans into the original rigid experiment. It
+preserves the original pre-Model Level prefix, actor exports and all
+non-coordinate fields, and still requires independent package reparse,
+exact reversal and original MOPP leaf coverage. No GMP output is enabled.
+See DX2_LEVEL_SPATIAL_VBSP.md.

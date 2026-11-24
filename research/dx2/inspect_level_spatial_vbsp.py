@@ -8,7 +8,7 @@ No GMP output, runtime visibility solver, or native tree compiler.
 from __future__ import annotations
 
 import argparse
-from collections import Counter
+from collections import Counter, defaultdict
 import hashlib
 import json
 import math
@@ -195,6 +195,25 @@ def parse_spatial_tail(level,start,end):
         portals.append(row)
     if vertex_cursor!=nv:
         raise ValueError("VBSP portal vertex ranges do not cover array")
+    # Both leaf range arrays have complete one-to-one ordinal coverage.
+    # Expanded polygon inventory is independently checked in the crosswalk.
+    owners=Counter()
+    owner_count=0
+    by_first_owner=defaultdict(list)
+    for i,portal in enumerate(portals):
+        by_first_owner[portal[0]].append(i)
+    for i,row in enumerate(leaves):
+        a,b,c,d=row[:4]
+        if b-a>nref or owner_count+b-a>nref:
+            raise ValueError("VBSP polygon ranges exceed total inventory")
+        owners.update(range(a,b))
+        owner_count+=b-a
+        if list(range(c,d))!=by_first_owner[i]:
+            raise ValueError("VBSP leaf portal range disagrees with first owner")
+    if len(owners)!=nref or any(v!=1 for v in owners.values()):
+        raise ValueError("VBSP polygon range partition has a gap or overlap")
+    counts["vbsp_leaf_portal_ranges_verified"]=nl
+    counts["vbsp_polygon_range_ordinals"]=nref
     vertices=[]
     for _ in range(nv):
         row=take("<3f")
@@ -232,8 +251,62 @@ def parse_spatial_tail(level,start,end):
         for i,row in enumerate(leaves))
     return {"counts":dict(counts),"vbsp_start":vbsp_at,"end":end,
             "coordinates":coordinates,"plane_offsets":plane_offsets,
-            "nodes":nodes,"planes":planes,"portal_leaf_links":point_links,
+            "nodes":nodes,"planes":planes,"leaves":leaves,"portals":portals,
+            "portal_leaf_links":point_links,
             "source_noop_byte_identical":True}
+
+
+def validate_leaf_render_ownership(tail,polygons,links,source_rows,block_frame):
+    """Cross-check native VBSP leaf polygon ranges with independent Level data.
+
+    Polygon order is the actual expanded stream order; packed block ordinal
+    comes from the independently verified Level provenance table. No inferred
+    Model node association is used here.
+    """
+    leaves=tail["leaves"]
+    if (len(polygons)!=len(links)
+            or len(polygons)!=tail["counts"]["vbsp_polygon_range_ordinals"]
+            or len(leaves)!=block_frame["native_render_block_entries"]):
+        raise ValueError("VBSP leaf/polygon/render-block inventories disagree")
+    by_locator={tuple(row["render_locator"]):row for row in source_rows}
+    if len(by_locator)!=len(source_rows):
+        raise ValueError("Duplicate source triangle provenance locator")
+    counts=Counter()
+    owners=[None]*len(polygons)
+    seen=set()
+    for i,row in enumerate(leaves):
+        lo,hi=row[5:8],row[8:11]
+        a,b=row[:2]
+        counts["vbsp_nonempty_render_leaves"]+=int(b>a)
+        counts["vbsp_empty_render_leaves"]+=int(b==a)
+        for j in range(a,b):
+            poly,link=polygons[j],links[j]
+            if (poly["polygon"]!=j or link["polygon"]!=j or owners[j] is not None):
+                raise ValueError("VBSP polygon source ordinal mismatch")
+            owners[j]=i
+            vs=poly["vertices"]
+            if not vs or not all(all(l-PORTAL_TOL<=x<=h+PORTAL_TOL
+                          for x,l,h in zip(v[:3],lo,hi)) for v in vs):
+                raise ValueError("Expanded polygon lies outside assigned VBSP leaf bounds")
+            counts["vbsp_polygon_vertices_in_owner_bounds"]+=len(vs)
+            locs=[tuple(k) for k in link["triangle_locators"]]
+            if (not locs or len(set(locs))!=len(locs) or seen.intersection(locs)
+                    or not set(locs)<=by_locator.keys()):
+                raise ValueError("VBSP polygon triangle provenance incomplete or reused")
+            if any(by_locator[k]["source_provenance_block_field_a"]!=i for k in locs):
+                raise ValueError("VBSP leaf differs from native render block provenance ID")
+            seen.update(locs)
+            counts["vbsp_owned_render_triangles"]+=len(locs)
+            counts["vbsp_owned_expanded_polygons"]+=1
+            center=tuple(sum(v[k] for v in vs)/len(vs) for k in range(3))
+            probe=tuple(x+PORTAL_PROBE*y for x,y in zip(center,vs[0][3:6]))
+            counts["vbsp_polygon_normal_probe_owner_matches"]+=int(
+                locate_point(tail["nodes"],tail["planes"],probe)==i)
+    if (None in owners or seen!=set(by_locator)
+            or counts["vbsp_nonempty_render_leaves"]!=block_frame["native_render_nonempty_blocks"]
+            or counts["vbsp_empty_render_leaves"]!=block_frame["native_render_empty_blocks"]):
+        raise ValueError("VBSP leaf ownership does not cover complete native render inventory")
+    return dict(counts),owners
 
 
 def translate_spatial_prefix(level,graph,tail,delta):
@@ -301,7 +374,9 @@ def audit_map(path,*,delta=None):
     stop=frame["render_block_count_offset"]
     graph=parse_prefix_graph(level,cursor.at,stop)
     tail=parse_spatial_tail(level,graph["graph_end"],stop)
+    owner_counts,_=validate_leaf_render_ownership(tail,polys,links,collision,frame)
     counts=Counter(tail["counts"])
+    counts.update(owner_counts)
     counts["post_model_prefix_bytes"]=stop-cursor.at
     counts["post_model_prefix_graph_bytes"]=graph["graph_end"]-cursor.at
     if delta is not None:
