@@ -37,8 +37,13 @@ def _parts(raw, bundle):
     return result
 
 
-def _build(raw, bundle, rows):
+def _build(raw, bundle, rows, *, record_templates=None):
     n = len(rows)
+    if record_templates is not None and (
+            len(record_templates) != n or any(len(r) != ENTRY_SIZE for r in record_templates)):
+        raise ValueError("Invalid resource record templates")
+    if n > 200000 or sum(len(row) for row in rows) > 2000000:
+        raise ValueError("Repacked IBD exceeds table limits")
     lengths = [len(part) for row in rows for part in row]
     sizes = [sum(map(len, row)) for row in rows]
     if not n or not lengths or any(not size for size in sizes):
@@ -62,7 +67,8 @@ def _build(raw, bundle, rows):
     for index, (row, size) in enumerate(zip(rows, sizes)):
         at = HEADER_SIZE + index * ENTRY_SIZE
         # Retain all unknown record bytes, names, resource type, and ordering.
-        output[at:at+ENTRY_SIZE] = raw[at:at+ENTRY_SIZE]
+        output[at:at+ENTRY_SIZE] = (raw[at:at+ENTRY_SIZE] if record_templates is None
+                                    else record_templates[index])
         padded = align_up(size, alignment)
         struct.pack_into("<5I", output, at, cursor, size, padded-size, first, len(row))
         pos = cursor
