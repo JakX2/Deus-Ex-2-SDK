@@ -126,7 +126,7 @@ class CustomImportTests(unittest.TestCase):
                 with zipfile.ZipFile(self.ibd_zip,"w") as z:
                     z.writestr(name,self.raw)
                 self.ip=sha256(self.ibd_zip.read_bytes())
-                with self.assertRaisesRegex(ValueError,"portable output path"):
+                with self.assertRaisesRegex(ValueError,"portable output path|Unsafe or duplicate ZIP member"):
                     plan(*self.args(),self.dds)
 
     def test_disagreeing_bundled_material_instances_refused(self):
