@@ -75,3 +75,35 @@ checks source origin/scale formulas against the changed bounds and runs
 the same conservative point sample test. A passing sample is not full
 MOPP coverage, collision cooking or retail runtime verification. The
 combined gate still excludes portal, Model and navigation changes.
+
+## Integrated 76-experiment source-corpus validation
+
+The actual portable ZIP built from ff6d1a1dd162b8fe2273ce8555dc799417186c22
+was run on all 19 original Seattle GMPs with four signed D offsets, using
+the same deterministic source-only plane selection. The native-format
+junction inventory independently reproduced all 722 point-on-edge pairs,
+627 exact-line pairs, nine approximate-line pairs, and 24 near distinct
+position pairs after 732,749 bounded search comparisons. Six interior
+point/edge relationships were affected in each sweep: two preserved and
+four unresolved in refused face groups. No affected near pair was found.
+No relationship was silently welded, removed or split.
+
+| D offset | Face previews passed | Geometry gate maps | Sampled triangles | Point comparisons | New MOPP misses | Changed sets | Combined offline gate maps |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| +1 | 90 | 9 | 239 | 1673 | 68 | 180 | 3 |
+| +0.125 | 90 | 9 | 239 | 1673 | 0 | 0 | 8 |
+| -0.125 | 94 | 11 | 253 | 1771 | 0 | 0 | 10 |
+| -1 | 94 | 11 | 253 | 1771 | 84 | 128 | 6 |
+
+Every sweep had 77 active groups, 64 solved, 13 inconsistent, 136 affected
+faces, 20 supporting faces and 358 affected original render triangle IDs,
+all reachable original MOPP leaves. Each sweep had zero source point misses,
+zero candidate zero-area or reversed scaled triangles among emitted previews,
+and 18 maps meeting the original MOPP origin/scale formula on the accepted
+partial face subset. The geometry gate is not a complete CSG or watertightness
+proof. The sampled collision gate is a conservative axis-only interpreter,
+not Havok runtime. The combined gate passed 27 of 76 experiments; this does
+not authorize any GMP write. Model node and portal geometry, navigation,
+light/shadow data and full MOPP branch bounds remain separate dependencies.
+Every source map retained its original SHA-256; no private geometry or map
+bytes were committed.
