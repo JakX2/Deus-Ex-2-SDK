@@ -60,3 +60,33 @@ Use root, map_exporter and research/dx2 on PYTHONPATH. Spatial prefix
 graph) remains unchanged. This is NOT a complete native level editor,
 a visibility/CSG compiler or a playable modified map. No private asset
 bytes are committed or emitted.
+
+## Complete root-requantization centroid sweep
+
+Both Inclinator signed candidates contain 2,550 original leaf IDs. All
+5,100 candidate centroid queries per offline interpreter recover their
+intended triangle (zero original and candidate misses). Candidate lists
+changed at 47 and 32 centroids in conservative mode, and at 61 and 49
+in derived-diagonal mode, respectively. This is coverage evidence, not
+proof of identical broadphase behavior or retail collision execution.
+
+## Exact render-leaf AABB rule and synchronized bounds
+
+Source audit of all 19 original Seattle GMPs shows all 3,002 nonempty
+VBSP leaf boxes equal the AABB of their owned expanded polygon corners
+exactly; all 104 empty leaves have all-zero bounds. Including the portal
+vertices in the box would incorrectly change many original bounds.
+The new module validates exact source boxes, reconstructs candidate
+boxes from unchanged serialized polygon ranges, verifies original leaf
+record bytes at the computed array span, and changes only 24-byte box
+spans. Full joint package reparse verifies source leaf/triangle ownership,
+unchanged splitter nodes, planes, portal records and portal side probes.
+
+All 20 previously geometry-approved signed experiments passed this
+additional gate, changing 25 leaf bounds (34 bytes) in aggregate.
+All 16 previous joint Model candidates still pass, while the four
+Model association/alias failures remain. Three synthetic tests pass.
+The earlier statement that the entire spatial prefix is untouched is
+superseded only for these leaf AABB records. Splitter plane D, portal
+coordinates, navigation graph, grid semantics, visibility and actual
+retail loading remain unresolved. No candidate GMP is emitted.

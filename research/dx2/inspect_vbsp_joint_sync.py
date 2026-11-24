@@ -2,7 +2,7 @@
 """In-memory coupled render/flat/MOPP and candidate Model synchronization.
 
 No native file writer. Model correspondence remains geometric; the separate
-spatial graph, visibility and navigation dependencies remain unmodified.
+splitter planes, portals and navigation dependencies remain unmodified.
 """
 from collections import Counter
 import argparse
@@ -28,6 +28,7 @@ from inspect_mopp_axis_point_candidates import ConservativeMoppPointCandidates
 from inspect_vbsp_candidate_collision import triangle_samples
 import inspect_level_mopp_triangle_tree as mopp
 import inspect_level_world_model as world
+from inspect_vbsp_leaf_bounds import verify_leaf_boxes,sync_leaf_boxes
 
 SCHEMA='DX2SDK-joint-render-collision-model-research-v1'
 TOL=.15
@@ -211,7 +212,7 @@ def audit_map(path,delta):
     if (p2,b2,l2,c2)!=(polys,blocks,links,collision):raise ValueError('Source contexts disagree')
     pi=select_plane(tail,polys,owners)
     preview=coupled_preview(tail,polys,owners,pi,delta,blocks=blocks,links=links,include_geometry=True)
-    counts=Counter(); status='geometry_refused'; reason=None
+    counts=Counter(verify_leaf_boxes(tail,polys)); status='geometry_refused'; reason=None
     if preview['coupled_corner_preview_passed']:
         counts['geometry_gate_passed']=1
         try:
@@ -227,6 +228,13 @@ def audit_map(path,delta):
             if inspect_packed_positions(lv,bl)[1]!=shadows:raise ValueError('Joint shadow association changed')
             counts.update(rc); counts.update(cc); counts['joint_render_collision_passed']=1
             status='joint_render_collision_passed'
+            changed,lc=sync_leaf_boxes(changed,tail,polys,po)
+            lp=BytePatch(raw); lp.add(at,changed); leaf_candidate=lp.finish()
+            t3,p3,o3,b3,l3,c3=load_context(path,leaf_candidate)
+            if (p3,o3,b3,l3,c3)!=(po,owners,bl,li,co) or any(t3[k]!=tail[k] for k in ('nodes','planes','portals','portal_leaf_links')):
+                raise ValueError('Leaf-bound synchronization changed original ownership or spatial topology')
+            verify_leaf_boxes(t3,p3)
+            counts.update(lc); counts['joint_leaf_bounds_passed']=1
             try:
                 m2,mc,mp=model_sync(model,polys,po,faces); counts.update(mc)
                 counts['model_candidate_gate_passed']=int(mp)
@@ -243,7 +251,7 @@ def audit_map(path,delta):
             counts['joint_render_collision_refused']=1; status='joint_render_collision_refused';reason=str(exc)
     if hashlib.sha256(path.read_bytes()).hexdigest()!=pin:raise ValueError('Original GMP changed')
     return {'source_map':path.name,'source_sha256':pin,'plane_index':pi,'delta_d':delta,'status':status,'reason':reason,'counts':dict(counts),
-            'spatial_prefix_updated':False,'native_geometry_writer_enabled':False,'retail_runtime_verified':False}
+            'vbsp_planes_portals_and_navigation_unmodified':True,'native_geometry_writer_enabled':False,'retail_runtime_verified':False}
 
 
 def main(argv=None):
