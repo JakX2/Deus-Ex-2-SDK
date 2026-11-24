@@ -58,6 +58,7 @@ REQUIRED = (
     "research/dx2/inspect_level_mopp_triangle_tree.py",
     "research/dx2/inspect_bsp_render_spatial_candidates.py",
     "research/dx2/inspect_bsp_polygon_candidates.py",
+    "research/dx2/inspect_level_expanded_polygons.py",
     "research/dx2/inspect_bsp_mopp_plane_impact.py",
     "dx2sdk/catalog.py",
     "dx2sdk/scalars.py",
