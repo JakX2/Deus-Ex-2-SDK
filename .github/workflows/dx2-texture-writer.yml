@@ -3,14 +3,28 @@ on:
   push:
     paths:
       - 'tools/maps/dx2_texture_writer.py'
+      - 'tools/maps/dx2_logo_trial.py'
+      - 'tools/maps/dx2_ibd_repack.py'
+      - 'tools/maps/dx2bundles.py'
+      - 'map_exporter/dx2textures.py'
       - 'tools/maps/dx2_ibd_integrity.py'
       - 'tests/test_dx2_texture_writer.py'
+      - 'tests/test_dx2_logo_trial.py'
+      - 'tests/test_dx2_ibd_integrity.py'
+      - 'tests/test_dx2_ibd_repack.py'
       - '.github/workflows/dx2-texture-writer.yml'
   pull_request:
     paths:
       - 'tools/maps/dx2_texture_writer.py'
+      - 'tools/maps/dx2_logo_trial.py'
+      - 'tools/maps/dx2_ibd_repack.py'
+      - 'tools/maps/dx2bundles.py'
+      - 'map_exporter/dx2textures.py'
       - 'tools/maps/dx2_ibd_integrity.py'
       - 'tests/test_dx2_texture_writer.py'
+      - 'tests/test_dx2_logo_trial.py'
+      - 'tests/test_dx2_ibd_integrity.py'
+      - 'tests/test_dx2_ibd_repack.py'
       - '.github/workflows/dx2-texture-writer.yml'
 permissions:
   contents: read
@@ -39,10 +53,12 @@ jobs:
               "tools/maps/dx2_ibd_integrity.py",
               "tools/maps/dx2_ibd_repack.py",
               "tools/maps/dx2_texture_writer.py",
+              "tools/maps/dx2_logo_trial.py",
               "map_exporter/dx2textures.py",
               "tests/test_dx2_ibd_integrity.py",
               "tests/test_dx2_ibd_repack.py",
               "tests/test_dx2_texture_writer.py",
+              "tests/test_dx2_logo_trial.py",
           ]
           out=Path(os.environ["RUNNER_TEMP"])/"dx2-texture-source"/"DX2TextureSource.zip"
           with ZipFile(out,"w",ZIP_DEFLATED) as z:
