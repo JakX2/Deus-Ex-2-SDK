@@ -68,3 +68,26 @@ axis candidates remain refused. Three additional synthetic tests passed.
 This is still a source-model result, not verification of Havok's actual
 integer arithmetic, diagonal semantics, swept collision or retail loading.
 The combined axis-only geometry/header gate is not upgraded by this mode.
+
+## Local rescale-coordinate recovery
+
+The two negative-axis refusals are local unsigned filter underflows, not
+root origin errors. A separate bounded experimental rebase searches nearby
+ancestor rescale coordinate bytes (at most 32 single-byte trials, offsets
+within four units), then recomputes all source-tree axis and experimental
+diagonal operand intervals in that new coordinate system. The original
+source paths must pass before search, and every candidate path must pass
+afterward. Control-flow comparison deliberately excludes the changed local
+spatial affine transforms but includes opcode, size, original PC/base,
+ordered destinations and terminal triangle ownership. All unrelated bytes
+must reverse exactly. Shared path contexts are refused.
+
+Private targeted verification: both formerly refused -1 candidates now
+pass in their first trial, each changing one rescale byte. The upper lab
+requires three additional spatial bytes; the club requires two. All 140
+affected-triangle point comparisons pass both original offline query modes.
+The club still fails the coupled geometry gate. Four synthetic tests pass.
+No root quantization change, instruction relocation, native output or
+Havok runtime verification is implied. Integrated corpus validation pending.
+
+    python research/dx2/inspect_vbsp_coupled_corners.py MAP.gmp --delta-d -1 --rebase-rescale-offsets

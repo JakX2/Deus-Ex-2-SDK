@@ -55,7 +55,7 @@ def compare_triangle(walker,tid,old,new):
     return counts
 
 
-def inspect_candidate_collision(level,blocks,polygons,links,source_rows,preview,*,refit_axis=False,refit_diagonal=False):
+def inspect_candidate_collision(level,blocks,polygons,links,source_rows,preview,*,refit_axis=False,refit_diagonal=False,rebase_rescale_offsets=False):
     """Compare accepted private face subset; do not cook or write collision."""
     flat,_=inspect_flat_exact(level,blocks)
     proof=mopp.inspect_mopp_link(level,blocks)
@@ -132,7 +132,7 @@ def inspect_candidate_collision(level,blocks,polygons,links,source_rows,preview,
             "original_bytecode_recompiled":False,"collision_coverage_proven":False,
             "retail_runtime_verified":False}
 
-    if refit_axis or refit_diagonal:
+    if refit_axis or refit_diagonal or rebase_rescale_offsets:
         from inspect_mopp_axis_refit import refit_axis_bounds,diagonal_diagnostics
         original=[tuple(before[j] for j in ids[3*i:3*i+3]) for i in range(n)]
         candidate=[tuple(after[j] for j in ids[3*i:3*i+3]) for i in range(n)]
@@ -156,7 +156,7 @@ def inspect_candidate_collision(level,blocks,polygons,links,source_rows,preview,
                         "collision_zero_area_candidate_triangles","collision_reversed_candidate_triangles",
                         "collision_affected_nonleaf_triangles","collision_original_sample_misses"))))
         result["axis_refit"]=refit
-        if refit_diagonal:
+        if refit_diagonal or rebase_rescale_offsets:
             from inspect_mopp_diagonal_refit import refit_diagonal_bounds
             diagonal={"refit_passed":False,"axis_refit_required":True,
                       "diagonal_refit_bytes_changed":0,"sample_count":0,"sample_misses":0,
@@ -173,4 +173,23 @@ def inspect_candidate_collision(level,blocks,polygons,links,source_rows,preview,
                     if diagonal["sample_misses"]:
                         raise ValueError("Diagonal refit disagrees with independent projection walker")
             result["experimental_diagonal_refit"]=diagonal
+            if rebase_rescale_offsets:
+                rebase={"attempted":False,"refit_passed":False,"trial_count":0,
+                        "rescale_bytes_changed":0,"spatial_bytes_changed":0,
+                        "sample_count":0,"sample_misses":0,"derived_sample_misses":0,
+                        "reason":"ordinary_refit_passed" if diagonal["refit_passed"] else "no_refit"}
+                if not diagonal["refit_passed"]:
+                    from inspect_mopp_rescale_rebase import rebase_rescale
+                    rebased,rebase=rebase_rescale(level[ca:ce],original,candidate,origin)
+                    rebase.update(attempted=True,sample_count=0,sample_misses=0,derived_sample_misses=0)
+                    if rebased is not None:
+                        updated=ConservativeMoppPointCandidates(rebased,n,origin)
+                        for tid in sorted(seen_triangles & updated.complete_leaf_set):
+                            for point in triangle_samples(candidate[tid]):
+                                rebase["sample_count"]+=1
+                                rebase["sample_misses"]+=int(tid not in updated.point(point)["candidate_triangle_ids"])
+                                rebase["derived_sample_misses"]+=int(tid not in updated.point(point,diagonal_mode="derived_diagonals")["candidate_triangle_ids"])
+                        if rebase["sample_misses"] or rebase["derived_sample_misses"]:
+                            raise ValueError("Rebase path proof disagrees with independent point walker")
+                result["experimental_rescale_rebase"]=rebase
     return result
