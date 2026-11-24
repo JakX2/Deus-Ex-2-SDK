@@ -177,14 +177,33 @@ def clone_and_bind(raw, material_name, new_name, *, palette=None):
     return candidate
 
 
-def restore_clone_trial(candidate, original, material_name, new_name, *, palette=None):
-    """Verify an exact reproducible candidate; recover original bytes in memory.
+def reverse_clone_trial(candidate, original_pin, material_name, old_name, new_name, *, palette=None):
+    """Reconstruct the pinned pre-clone archive from a reproducible candidate.
 
-    Not an arbitrary deletion API. The caller must retain the original.
+    Not a general deletion API: last entry must be the planned clone, and
+    the recovered bytes must match the independently known original SHA-256.
+    No source or candidate is written to disk.
     """
-    if clone_and_bind(original,material_name,new_name,palette=palette) != candidate:
-        raise ValueError("Candidate does not reproduce from original clone plan")
-    return original
+    if not re.fullmatch(r"[0-9a-f]{64}",original_pin):
+        raise ValueError("Expected lowercase original SHA-256")
+    bundle = verify_bundle(candidate)
+    rebuild_canonical(candidate)
+    material = select_material(bundle,material_name)
+    mat = inspect_material(bundle,material)
+    clone = select_texture(bundle,new_name)
+    old = select_texture(bundle,old_name)
+    if (clone.index != len(bundle.resources)-1 or old.index == clone.index or
+            mat.stages[0] != clone.name):
+        raise ValueError("Candidate does not match append-only clone trial")
+    rows = _parts(candidate,bundle)[:-1]
+    # Preserve original reference spelling, which need not equal the table name.
+    rows[material.index] = _new_binding(mat,old_name)
+    restored = _build(candidate,bundle,rows)
+    if sha256(restored) != original_pin:
+        raise ValueError("Reconstructed source does not match original SHA-256")
+    if clone_and_bind(restored,material_name,new_name,palette=palette) != candidate:
+        raise ValueError("Candidate does not reproduce from recovered clone plan")
+    return restored
 
 
 def write_candidate(source,output,pin,material,*,target=None,new_name=None,palette=None):
