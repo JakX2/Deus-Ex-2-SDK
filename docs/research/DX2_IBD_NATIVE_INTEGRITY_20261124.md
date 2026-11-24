@@ -79,6 +79,47 @@ headers/resources, same-size replacement and reversal, rejected
 unsupported sizes/indexes, ZIP audit/duplicate names, original pins
 and isolated no-overwrite output.
 
+## Canonical full-archive repacker
+
+A separate independent private reconstruction experiment checked all 12
+IBD members in Maps code.zip:
+
+- All resource extents are contiguous and in table order, beginning at
+  data_start and ending exactly at EOF.
+- All part spans are contiguous and in table order; all 42,953 part
+  slots are accounted for.
+- Header padding and resource padding are zero. The data region starts
+  at the first 2 KiB-aligned boundary covering all table entries.
+- Header dwords at offsets 16 and 20 contain the maximum unpadded
+  resource size and maximum individual part size, respectively.
+- Independent no-op rebuild of the header, tables, resources, padding
+  and hashes produces **12/12 byte-identical original IBD files**.
+- Appending 2,048 bytes to the first part of the first resource relocates
+  subsequent resource extents; reparsed part payloads and every digest
+  match the plan in all 12 cases. Removing the inserted bytes and
+  repacking gives **12/12 byte-identical reversals**.
+
+`tools/maps/dx2_ibd_repack.py` implements this canonical layout. It
+retains existing resource identities, unknown resource record tail
+bytes, table order and exact part count, while updating part lengths,
+resource sizes/padding/offsets, header maxima and all integrity fields.
+The entire original must pass digest verification and a byte-identical
+no-op rebuild before any edit is allowed. Noncanonical layouts fail
+closed. The candidate is fully reparsed and each part compared to the
+requested plan. The CLI uses a source SHA-256 pin and a new isolated
+output; original files are never overwritten.
+
+    python tools/maps/dx2_ibd_repack.py audit-rebuild "/owned/map.ibd"
+    python tools/maps/dx2_ibd_repack.py replace-parts "/owned/map.ibd" --index 0 --parts-dir "/private/parts" --source-sha256 <64-hex-original-sha256> --output "/isolated/map.ibd"
+
+The parts directory must contain exactly one file per original slot,
+named 000000.bin, 000001.bin, and so on. The supplied part payloads must
+remain semantically correct for their original resource type. No
+automatic asset conversion, new resource insertion or game runtime
+verification is implied. The five new synthetic tests cover canonical
+no-op, growth and reversal, multiple replacements, invalid requests,
+and isolated disk output.
+
 ## Related GMP observations
 
 The original PE contains a package magic comparison and a separate
@@ -99,8 +140,8 @@ solely on this basis.
 - Validate resource payload semantics for one deliberately selected
   edit (e.g. an existing known texture or TriggerScript scalar).
 - Retail runtime A/B test in a disposable game copy.
-- Recover size-changing IBD table rebuilding, alignment handling,
-  resource-specific serialization, and map/resource linkage.
+- Extend the verified canonical size-changing IBD repacker with
+  resource-specific serialization, new resource insertion and map/resource linkage.
 - GMP native actor and BSP/collision writing remain separate tasks.
 
 No new gameplay or native geometry functionality is claimed.
