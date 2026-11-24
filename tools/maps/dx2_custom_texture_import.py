@@ -31,6 +31,8 @@ from dx2_texture_writer import (
 
 SCHEMA = "DX2-CoordinatedCustomDDS-v1"
 MAX_SELECTED = 32
+MAX_SELECTED_BYTES = 256 * 1024 * 1024
+WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1,10)), *(f"LPT{i}" for i in range(1,10))}
 
 
 def import_clone(raw, material, new_name, dds):
@@ -119,6 +121,17 @@ def _check_name(new_name):
     return new_name.casefold()
 
 
+def _portable_parts(parts):
+    """Refuse ambiguous Windows destinations, including NTFS stream names."""
+    if not parts or any(
+            not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_. -]{0,127}", p)
+            or p.endswith((".", " "))
+            or p.split(".",1)[0].upper() in WINDOWS_RESERVED
+            for p in parts):
+        raise ValueError("Unsafe or unsupported portable output path")
+    return parts
+
+
 def _actual_member_names(path):
     with zipfile.ZipFile(path) as archive:
         return {i.filename.replace("\\","/").casefold():i.filename.replace("\\","/")
@@ -144,6 +157,7 @@ def plan(ibd_zip, mlb_zip, ibd_pin, mlb_pin, library, material, new_name, dds):
     standalone = []
     total_libraries = 0
     total_bundles = 0
+    selected_bytes = 0
 
     for path, raw in members(mlb_zip, ".mlb", MAX_MLB_SIZE):
         total_libraries += 1
@@ -176,12 +190,14 @@ def plan(ibd_zip, mlb_zip, ibd_pin, mlb_pin, library, material, new_name, dds):
                 if select_material(bundle,material).index != r.index:
                     raise ValueError("Ambiguous material instance")
                 file_name = PurePosixPath(originals[path]).name
+                _portable_parts((file_name,))
                 if file_name.casefold() in used_names:
                     raise ValueError("Selected bundles collide by destination filename")
                 used_names.add(file_name.casefold())
                 selected.append((file_name,raw,r.name,mat))
-                if len(selected) > MAX_SELECTED:
-                    raise ValueError("Selected instance limit exceeded")
+                selected_bytes += len(raw)
+                if len(selected) > MAX_SELECTED or selected_bytes > MAX_SELECTED_BYTES:
+                    raise ValueError("Selected instance or byte limit exceeded")
     if not selected:
         raise ValueError("No matching bundled material instances")
 
@@ -194,10 +210,15 @@ def plan(ibd_zip, mlb_zip, ibd_pin, mlb_pin, library, material, new_name, dds):
     # Preserve source path case from archive entry, starting at MatLib.
     lib_parts = PurePosixPath(library_names[lib_path]).parts
     start = next(i for i,p in enumerate(lib_parts) if p.casefold()=="matlib")
-    output_lib = "/".join(lib_parts[start:])
+    output_lib = "/".join(_portable_parts(lib_parts[start:]))
     outputs = {output_lib: (lib_raw,lib_candidate)}
+    output_bytes = len(lib_candidate)
     for file_name, raw, name, _ in selected:
-        outputs["Maps/"+file_name] = (raw,import_clone(raw,name,new_name,dds))
+        candidate = import_clone(raw,name,new_name,dds)
+        output_bytes += len(candidate)
+        if output_bytes > MAX_SELECTED_BYTES:
+            raise ValueError("Combined candidate byte limit exceeded")
+        outputs["Maps/"+file_name] = (raw,candidate)
     # Refuse stale input even if a ZIP was replaced during processing.
     _zip_pin(ibd_zip,ibd_pin)
     _zip_pin(mlb_zip,mlb_pin)
