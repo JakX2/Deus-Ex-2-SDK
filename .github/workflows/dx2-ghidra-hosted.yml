@@ -202,6 +202,22 @@ jobs:
           python -B tools/ghidra/validate_hosted_summary.py \
             --summary "$RUNNER_TEMP/dx2-metadata/dx2_research_summary.json" \
             --pins "tools/ghidra/dx2_system_pe_pins.json"
+      - name: Independently cross-check DX2Main PE loader references
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          python -B tools/ghidra/pe_loader_crosscheck.py \
+            --image "$RUNNER_TEMP/dx2-owner-private/verified/dx2main.exe" \
+            --summary "$RUNNER_TEMP/dx2-metadata/dx2_research_summary.json" \
+            > "$RUNNER_TEMP/dx2-metadata/dx2_loader_crosscheck.json"
+      - name: Upload aggregate PE loader cross-check counts only
+        uses: actions/upload-artifact@v4
+        with:
+          name: dx2-loader-crosscheck-${{ github.run_id }}
+          path: ${{ runner.temp }}/dx2-metadata/dx2_loader_crosscheck.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload sanitized metadata only (no retail binaries or pseudocode)
         uses: actions/upload-artifact@v4
         with:
