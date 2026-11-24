@@ -287,7 +287,7 @@ def select_plane(tail,polygons,owners):
     return min(candidates,key=lambda k:(paths_count[k]+portals[k],-faces[k],k))
 
 
-def audit_map(path,*,plane_index=None,delta_d=1.,include_geometry=False):
+def audit_map(path,*,plane_index=None,delta_d=1.,include_geometry=False,refit_axis=False):
     path=Path(path)
     if (path.suffix.casefold()!=".gmp" or not path.is_file() or path.is_symlink()
             or path.stat().st_size>MAX_GMP):
@@ -298,11 +298,14 @@ def audit_map(path,*,plane_index=None,delta_d=1.,include_geometry=False):
     pi=select_plane(tail,polys,owners) if plane_index is None else plane_index
     report=coupled_preview(tail,polys,owners,pi,delta_d,blocks=blocks,links=links,include_geometry=True)
     report["counts"].update(attach_original_triangle_provenance(report["private_preview_geometry"],links,collision))
-    collision_report=inspect_candidate_collision(level,blocks,polys,links,collision,report["private_preview_geometry"])
+    collision_report=inspect_candidate_collision(level,blocks,polys,links,collision,report["private_preview_geometry"],refit_axis=refit_axis)
     report["counts"].update(collision_report.pop("counts"))
     report["unchanged_mopp_candidate_preflight"]=collision_report
     report["combined_offline_preflight_passed"]=bool(report["coupled_corner_preview_passed"]
         and collision_report["sampled_unchanged_mopp_preflight_passed"])
+    if refit_axis:
+        report["combined_axis_refit_preflight_passed"]=bool(report["coupled_corner_preview_passed"]
+            and collision_report["axis_refit"]["sampled_refit_preflight_passed"])
     if not include_geometry:
         del report["private_preview_geometry"]
     if hashlib.sha256(path.read_bytes()).hexdigest()!=pin:
@@ -310,18 +313,27 @@ def audit_map(path,*,plane_index=None,delta_d=1.,include_geometry=False):
     return {"source_map":path.name,"source_sha256":pin,**report}
 
 
-def audit_maps(paths,*,plane_index=None,delta_d=1.,include_geometry=False):
+def audit_maps(paths,*,plane_index=None,delta_d=1.,include_geometry=False,refit_axis=False):
     if not 1<=len(paths)<=world.MAX_MAPS or len({Path(p).resolve() for p in paths})!=len(paths):
         raise ValueError("Expected 1..64 distinct original maps")
     if (plane_index is not None or include_geometry) and len(paths)!=1:
         raise ValueError("Explicit plane or private geometry requires one map")
-    rows=[audit_map(p,plane_index=plane_index,delta_d=delta_d,include_geometry=include_geometry) for p in paths]
+    rows=[audit_map(p,plane_index=plane_index,delta_d=delta_d,include_geometry=include_geometry,refit_axis=refit_axis) for p in paths]
     counts=Counter()
     for row in rows:
         counts.update(row["counts"])
         counts["map_previews_passed"]+=int(row["coupled_corner_preview_passed"])
         counts["map_collision_sample_preflights_passed"]+=int(row["unchanged_mopp_candidate_preflight"]["sampled_unchanged_mopp_preflight_passed"])
         counts["map_combined_offline_preflights_passed"]+=int(row["combined_offline_preflight_passed"])
+        if refit_axis:
+            refit=row["unchanged_mopp_candidate_preflight"]["axis_refit"]
+            counts["map_axis_refits_passed"]+=int(refit["refit_passed"])
+            counts["map_combined_axis_refit_preflights_passed"]+=int(row["combined_axis_refit_preflight_passed"])
+            counts["axis_refit_changed_bytes"]+=refit["refit_bytes_changed"]
+            counts["axis_refit_sample_count"]+=refit["sample_count"]
+            counts["axis_refit_sample_misses"]+=refit["axis_sample_misses"]
+            counts["axis_refit_derived_diagonal_sample_misses"]+=refit["derived_diagonal_sample_misses"]
+            counts.update(refit["diagonal_diagnostics"])
     return {"schema":SCHEMA,"map_count":len(rows),"summary":dict(counts),
             "source_files_modified":False,"native_geometry_writer_enabled":False,
             "retail_runtime_verified":False,"maps":rows}
@@ -333,13 +345,14 @@ def main(argv=None):
     p.add_argument("--plane",type=int)
     p.add_argument("--delta-d",type=float,default=1.)
     p.add_argument("--report",type=Path)
+    p.add_argument("--refit-axis-bounds",action="store_true",help="In-memory original MOPP axis-operand refit; no output bytes")
     p.add_argument("--include-preview-geometry",action="store_true")
     a=p.parse_args(argv)
     try:
         if a.include_preview_geometry and not a.report:
             raise ValueError("Private geometry requires fresh local JSON report")
         result=audit_maps(a.maps,plane_index=a.plane,delta_d=a.delta_d,
-                          include_geometry=a.include_preview_geometry)
+                          include_geometry=a.include_preview_geometry,refit_axis=a.refit_axis_bounds)
         if a.report:
             world.write_report(result,a.report,a.maps)
         print(json.dumps({k:v for k,v in result.items() if k!="maps"},indent=2,allow_nan=False))

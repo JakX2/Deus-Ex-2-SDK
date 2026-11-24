@@ -55,7 +55,7 @@ def compare_triangle(walker,tid,old,new):
     return counts
 
 
-def inspect_candidate_collision(level,blocks,polygons,links,source_rows,preview):
+def inspect_candidate_collision(level,blocks,polygons,links,source_rows,preview,*,refit_axis=False):
     """Compare accepted private face subset; do not cook or write collision."""
     flat,_=inspect_flat_exact(level,blocks)
     proof=mopp.inspect_mopp_link(level,blocks)
@@ -127,7 +127,33 @@ def inspect_candidate_collision(level,blocks,polygons,links,source_rows,preview)
         "collision_zero_area_candidate_triangles","collision_reversed_candidate_triangles",
         "collision_affected_nonleaf_triangles","collision_original_sample_misses",
         "collision_candidate_sample_misses"))
-    return {"counts":dict(counts),"sampled_unchanged_mopp_preflight_passed":bool(passed),
+    result={"counts":dict(counts),"sampled_unchanged_mopp_preflight_passed":bool(passed),
             "candidate_origin_error":origin_error,"candidate_scale_relative_error":scale_error,
             "original_bytecode_recompiled":False,"collision_coverage_proven":False,
             "retail_runtime_verified":False}
+
+    if refit_axis:
+        from inspect_mopp_axis_refit import refit_axis_bounds,diagonal_diagnostics
+        original=[tuple(before[j] for j in ids[3*i:3*i+3]) for i in range(n)]
+        candidate=[tuple(after[j] for j in ids[3*i:3*i+3]) for i in range(n)]
+        code,refit=refit_axis_bounds(level[ca:ce],original,candidate,origin)
+        refit["diagonal_diagnostics"]=diagonal_diagnostics(level[ca:ce],original,candidate,origin)
+        refit["original_origin_scale_formula_passed"]=bool(counts["collision_origin_scale_source_formula_passed"])
+        samples=misses=derived_misses=0
+        if code is not None:
+            updated=ConservativeMoppPointCandidates(code,n,origin)
+            for tid in sorted(seen_triangles & updated.complete_leaf_set):
+                for point in triangle_samples(candidate[tid]):
+                    samples+=1
+                    misses+=int(tid not in updated.point(point)["candidate_triangle_ids"])
+                    derived_misses+=int(tid not in updated.point(point,diagonal_mode="derived_diagonals")["candidate_triangle_ids"])
+            if misses:
+                raise ValueError("Refitted axis path proof disagrees with independent point interpreter")
+        refit.update(sample_count=samples,axis_sample_misses=misses,derived_diagonal_sample_misses=derived_misses,
+                     candidate_code_written=False,
+                     sampled_refit_preflight_passed=bool(code is not None and samples and not misses
+                        and counts["collision_origin_scale_source_formula_passed"] and not any(counts[k] for k in (
+                        "collision_zero_area_candidate_triangles","collision_reversed_candidate_triangles",
+                        "collision_affected_nonleaf_triangles","collision_original_sample_misses"))))
+        result["axis_refit"]=refit
+    return result
