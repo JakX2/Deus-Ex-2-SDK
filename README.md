@@ -1,111 +1,83 @@
-# Deus Ex: Invisible War SDK (DX2Ed)
+# Deus Ex: Invisible War — Engine Research
 
-## Opt-in Ghidra research automation
+An unofficial reverse-engineering and decompilation project for the engine behind **Deus Ex: Invisible War (2003/2004)**, developed by Ion Storm.
 
-The [hosted Ghidra 12.2 pipeline](docs/research/DX2ED_GHIDRA_HOSTED_P114.md)
-executes a real DX2 Java analysis script on GitHub-hosted machines, with no
-Ghidra or server required on a user's PC. PR smoke jobs use only synthetic
-programs. The owner-original hosted run is separately opted into after
-merging PR #190; the user's DX2 System.zip has been identified and
-`DX2Main.exe`/`dx2.exe` fingerprinted in a committed hash-only manifest.
-A single repository Actions secret supplies the owner Drive ZIP ID and
-automatically opts in the original analysis; absent secrets skip cleanly.
-Twice-daily scheduled processing caches
-only SHA-pinned Ghidra and bounded sanitized metadata, never game files.
-This yields reverse-engineering leads, not a native BSP compiler or new gameplay actor writer.
+## Project direction
 
-The original [private self-hosted Ghidra survey](docs/research/DX2ED_GHIDRA_PRIVATE_HEADLESS_P113.md)
-remains available as a fallback.
+The primary objective is to understand and reconstruct the original DX2 engine code through systematic binary analysis and decompilation.
 
+This repository originally focused on developing a modding SDK and level editor inspired by T3Ed, the editor for Thief: Deadly Shadows. Following community feedback, SDK and editor development have been put on hold. The immediate priority is accurate, maintainable engine research rather than building tools around incompletely understood engine behavior.
 
-**Experimental community tooling for Deus Ex: Invisible War (2003/2004).** Not affiliated with Ion Storm, Eidos, Square Enix, Epic Games, or the Thief community.
+Existing SDK prototypes are retained as historical research. They should not be treated as authoritative engine implementations or production-ready editing tools. A future editor may benefit from this work, but it is not the current development target.
 
-Our goal is a practical, UnrealEd-style modding SDK inspired by the original Deus Ex SDK and informed by research into Thief: Deadly Shadows' editor (T3Ed). The engine branches are related, but T3Ed has **not** been successfully ported to DX2.
+## Research objectives
 
-## Available now: DX2 Map Exporter 0.1
+- Identify and analyze original engine functions, executable entry points and subsystem initialization.
+- Recover class layouts, virtual tables, calling conventions, data structures and serialization routines.
+- Reconstruct readable C/C++ implementations where supported by disassembly and decompiler evidence.
+- Investigate rendering, world geometry, physics, resource loading, scripting, AI and gameplay systems.
+- Compare relevant findings with Thief: Deadly Shadows and its related engine technology, without assuming the two implementations are interchangeable.
+- Document unresolved functions and validate reconstructed behavior against the original binaries wherever possible.
 
-**[Open the standalone map exporter](map_exporter/)** or double-click [START_MAP_EXPORTER.bat](START_MAP_EXPORTER.bat) after cloning the repository and installing Python 3.9+ with Tkinter. This read-only GUI lists your installed `.gmp` maps, detects associated mission and graphics `.ibd` resources, and exports textured `.glb` scenes with JSON reports for Blender. A command-line mode is also included.
+## Research standards
 
-Tested with the retail Penthouse Upper and Lower levels: respectively 471 and 1,000 placed static meshes exported, zero missing mesh actors, 88 and 113 embedded diffuse textures. **Not a full map editor or a game-compatible import/rebuild tool.** See [exporter setup and limitations](map_exporter/README.md).
+Accuracy takes precedence over the amount of code produced.
 
-## New: DX2Ed Native Editor 0.2
+- **Binary-first:** Record the target executable or library, build fingerprint, function address and relevant disassembly or cross-references.
+- **Evidence over assumptions:** Clearly distinguish directly observed behavior, inferred interpretations and unresolved questions. Do not invent missing engine logic.
+- **Readable reconstruction:** Treat raw decompiler output as an intermediate representation, not finished source code. Recover types, names and control flow carefully.
+- **Verification:** Compilation, synthetic tests and successful file parsing are useful checks, but they do not establish equivalence to the original engine. Use original-binary comparison and runtime testing where feasible.
+- **Review:** Keep changes focused and reproducible. Make assumptions and limitations visible to other researchers.
 
-The [Godot-based native editor](native_editor/README.md) can now **open a retail `.gmp` map directly** and automatically build a private textured GLB cache plus searchable actor data. Requires Godot 4.3+ and Python 3.9+. The original game files remain untouched. This is still an experimental read-only editor, not a full level writer.
+## Current status
 
-## Project status
+**Early-stage reverse engineering.** This is not a complete engine decompilation, a buildable replacement engine, an SDK release or a working T3Ed port.
 
-This is an **early research repository**, not a downloadable full level editor.
+The current binary-analysis infrastructure targets the supplied Windows x86 images of `DX2Main.exe` and `dx2.exe`. Existing research includes package serialization, resource bundles, actor properties, TriggerScripts, world geometry and collision data. These findings are useful leads for identifying engine routines, but earlier experimental implementations require further review before they can be considered faithful reconstructions.
 
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/de511541-593d-471e-b042-dc1883511ce0" />
+### Ghidra analysis
 
+The repository includes an [opt-in GitHub-hosted Ghidra pipeline](docs/research/DX2ED_GHIDRA_HOSTED_P114.md) using Ghidra 12.2, with a [private self-hosted alternative](docs/research/DX2ED_GHIDRA_PRIVATE_HEADLESS_P113.md).
 
-Work to date (validated in individual research prototypes):
-
-- Read DX2 `.gmp` maps and `.ibd` resource bundles; export textured geometry to Blender/glTF.
-- Inspect actor properties and make guarded, size-preserving position/rotation edits.
-- Modify existing scalar parameters in packaged TriggerScripts; two independent delay changes were confirmed executing in a retail Penthouse Upper level.
-- Research skeletal model UV/position layouts, mission flags, conversations, and compatibility with T3Ed.
-
-**Not yet supported:** creating arbitrary new actors or maps; authoring/recompiling scripts; editing arbitrary `.ibd` bundles; a general NPC mesh/animation importer; a finished GUI editor.
-
-## Source checked into this repository
-
-- [IBD resource and static-mesh inspector](tools/maps/dx2bundles.py), including individual-mesh GLB export, with [documentation](docs/IBD_MESH.md).
-- [Read-only TriggerScript bundle probe](tools/scripts/dx2_script_bundle_probe.py), with [documentation](docs/IBD_PROBE.md).
-- [Fixture-free tests](tests/) and [GitHub Actions syntax and test checks](.github/workflows/verify.yml).
-
-Both parsers were imported from the research source archive and verified against its original Git blob hashes. The map exporter is now integrated above. The v0.28 TriggerScript writer and the other research prototypes have **not yet** been integrated into this checkout.
-
-## Source archive
-
-A **54-file source-only starter package** has been prepared separately as `DX2Ed_GitHub_Starter_Source_0.1.zip`. This repository is being populated from that package in stages; do not mistake the current checkout for the full historical research toolkit. Existing tools may require original game files and specific runtime hashes.
-
-## Source and copyright
-
-We do **not** distribute retail binaries, game maps, textures, models, TriggerScript definitions, or prepatched game bundles. Supply files from your own installation when using a tool.
-
-Code licensing and third-party provenance audit are pending. Until these are resolved, there is no open-source license granted by this repository.
-
-## Safety
-
-Back up your game. Only test modified files on a separate installation or verified copy. Fixed-size modifications that succeeded in one game build do **not** imply general write support, and the format of some per-resource metadata fields remains unknown.
+The hosted workflow fingerprints the configured original executable images and runs a bounded symbol survey. Public pull-request smoke tests use synthetic programs only. Original-image analysis requires separate owner configuration; the published output is deliberately limited to sanitized research metadata. This survey provides research leads, not recovered engine source code.
 
 ## Roadmap
 
-1. Publish and audit the source-only research modules.
-2. Build a reusable read-only map/resource browser.
-3. Integrate actor selection, property editing and tested script editing.
-4. Develop a Windows DX2Ed desktop interface.
-5. Research new-actor serialization and mission creation.
-6. Evaluate T3Ed interoperability in a controlled environment.
+1. Establish a reproducible binary inventory, function catalog and analysis workflow.
+2. Identify engine initialization, core types and subsystem boundaries.
+3. Recover functions and class structures incrementally, with address-linked evidence.
+4. Organize reviewed C/C++ reconstructions by subsystem and document unresolved dependencies.
+5. Validate reconstructed functions against the original implementation where practical.
 
-See [Getting Started](docs/GETTING_STARTED.md), [Safety](docs/SAFETY.md), and [Provenance](docs/PROVENANCE.md).
+There is no promised completion date or decompilation percentage. Progress should be measured by the quality and verification of individual findings.
 
-**Research-stage project: contributions welcome after source licensing is settled.**
+## Previous SDK research
 
-## Actor Explorer (research prototype)
+The following experimental tools remain available for reference, but are no longer the primary development focus:
 
-The [Actor Explorer](actor_explorer/README.md) provides a read-only, offline, interactive actor view generated from your installed DX2 `.gmp` map. Search actor names, filter by class, inspect tagged/gameplay properties, and optionally join a locally generated TriggerScript logic index. Python 3.9+ is required.
+| Tool | Purpose |
+| --- | --- |
+| [Map exporter](map_exporter/README.md) | Read-only GMP/IBD inspection and textured glTF export |
+| [Actor Explorer](actor_explorer/README.md) | Offline actor and property inspection |
+| [3D Actor Explorer](dx2ed_3d/README.md) | Experimental browser-based scene and actor viewer |
+| [Native editor prototype](native_editor/README.md) | Godot-based experimental map viewer |
+| [IBD mesh research](docs/IBD_MESH.md) | Resource and static-mesh format investigation |
+| [TriggerScript research](docs/IBD_PROBE.md) | Read-only script bundle investigation |
 
-From the repository checkout on Windows:
+Earlier prototypes include limited, guarded edits to existing actor properties and script parameters. They do not establish general map-writing support or native compiler compatibility. Some historical prototypes were developed outside the current checkout.
 
-```powershell
-python .\actor_explorer\dx2_actor_explorer.py --gui
-```
+## Contributing
 
-This does **not** save changes back to the game. Future work will connect it to an editable 3D viewport.
+Technical feedback, corrections, function identifications, reproducible reverse-engineering findings and code review are welcome through GitHub issues. Please identify the binary version and addresses when reporting discoveries, and distinguish confirmed observations from hypotheses.
 
-## DX2Ed 3D Actor Explorer 0.2 (experimental alpha)
+See [provenance](docs/PROVENANCE.md), [getting started](docs/GETTING_STARTED.md) and [safety notes](docs/SAFETY.md) for existing research documentation. These documents may reflect the earlier SDK-oriented phase.
 
-The [3D Actor Explorer](dx2ed_3d/README.md) combines textured GLB scenes from the map exporter with Actor Explorer's engine and gameplay property inspector.
+## Source and copyright
 
-- Builds a textured DX2 map scene from a user-supplied `.gmp` plus the required `.ibd` bundles, or reuses a previously exported GLB with matching source-map SHA-256.
-- Displays an orbitable WebGL2 3D viewport alongside searchable actor lists and per-actor engine property panels. Mesh selection uses original `DX2ExportIndex` glTF metadata.
-- Requires Python 3.9+ and an accelerated WebGL2 browser. No Node/npm/CDN dependency. Starts a read-only HTTP server bound to `127.0.0.1`.
-- No gameplay writes, proprietary retail content, or new actor creation.
+This is an independent fan research project and is not affiliated with Ion Storm, Eidos, Square Enix, Epic Games or the Thief community.
 
-Windows users can run `START_DX2ED_3D.bat` from the repository root. The research ZIP is distributed separately. The viewport rendering is still awaiting a Windows user GPU test; headless Chromium here lacks WebGL2.
+We do not distribute retail game binaries, maps, textures, models, TriggerScript definitions or prepatched game bundles. Researchers should supply original files from their own installation. Keep proprietary input files and private analysis artifacts out of public commits and workflow artifacts.
 
-## Native 3D editor prototype
+Code licensing and third-party provenance audits remain pending. No open-source license is currently granted by this repository. Source contributions should wait until the applicable licensing and provenance requirements have been settled.
 
-The browser-based DX2Ed viewport remains experimental. The new [Godot-based native viewer](native_editor/README.md) uses Godot 4's GLB importer and built-in 3D renderer to display DX2Ed-exported scenes alongside `actors.json` entity metadata. It is read-only, not yet a standalone EXE, and Windows GPU rendering still requires hands-on validation. The ZIP release includes a wholly original two-cube fixture to help isolate renderer issues from game asset conversion.
+**The goal is to understand the original engine first.**
