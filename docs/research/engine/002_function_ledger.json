@@ -1,0 +1,301 @@
+{
+  "schema": "dx2-engine-static-function-ledger-v1",
+  "image": "DX2Main.exe",
+  "image_sha256": "f31db8c8d5c6ce33a4d8f4e0025e246dd3823026518f01f8bfa731a38f446692",
+  "image_base": "0x00400000",
+  "address_convention": "preferred VA, end exclusive",
+  "direct_call_count_method": "objdump linear disassembly; excludes virtual and indirect calls",
+  "original_runtime_verified": false,
+  "functions": [
+    {
+      "va": "0x005B6B80",
+      "end": "0x005B6BCE",
+      "sha256": "3a125f966b7b170b42f3d15e30a950f2ac313bdf90e9242a4bdef66b9600c422",
+      "direct_call_sites": 0,
+      "research_label": "archive_bit_transfer",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005B6BD0",
+      "end": "0x005B6BE7",
+      "sha256": "7a32648853333525faa75dc38d2d81d98688300f4cce47fde6ae87ecf311bb9a",
+      "direct_call_sites": 0,
+      "research_label": "archive_pointer_indirect_word_transfer",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005C1BA0",
+      "end": "0x005C1C0A",
+      "sha256": "2d36dede795766373990d70ed01f4673c896bfb64f46032888f18bd61ee423cf",
+      "direct_call_sites": 0,
+      "research_label": "linker_load_object_reference",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005C1C10",
+      "end": "0x005C1CA3",
+      "sha256": "0319c5151c0abcadce49e92a36cb9d07109dc0b91d0c93b8b7a8a5312d77fe05",
+      "direct_call_sites": 0,
+      "research_label": "linker_load_name_reference",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005C1E50",
+      "end": "0x005C1E8A",
+      "sha256": "09985ce35ab01e638651e741dc560aaf201836ff05dc6f0d7247b5abc1a913c7",
+      "direct_call_sites": 0,
+      "research_label": "linker_save_name_reference",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005C1E90",
+      "end": "0x005C1ECE",
+      "sha256": "6f3245d1fff6f61d9eb2b30847e197395ead122fbc4efba725ecbe1f075bcf44",
+      "direct_call_sites": 0,
+      "research_label": "linker_save_object_reference",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005D8910",
+      "end": "0x005D892A",
+      "sha256": "f8c1cb5c30a28bdc420c06bac29edb737eb24e7a8980ae413f8ff0469eb278cd",
+      "direct_call_sites": 5,
+      "research_label": "array_index_validity_candidate",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005DD180",
+      "end": "0x005DD2D7",
+      "sha256": "c05da97f4e6d44dfe9496a1dc08d631a6261ee3a6698c9a8e25f691e9332b373",
+      "direct_call_sites": 32,
+      "research_label": "string_serializer",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005DE1F0",
+      "end": "0x005DE2AC",
+      "sha256": "2d7ff1c8e759a270cb340dc75fead1a8e0b68c973f2e4ce0db4eddca6acfb8f8",
+      "direct_call_sites": 2,
+      "research_label": "name_entry_serializer",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005E1D40",
+      "end": "0x005E1D46",
+      "sha256": "2db31f4e09597946e56e859813bfdad7046d457c32332c3a882654d1e3ffdf67",
+      "direct_call_sites": 4,
+      "research_label": "constant_true_string_selector",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005EFCA0",
+      "end": "0x005EFCA8",
+      "sha256": "3684c22f5d776bf030ffae1640c6d0c77d6118b334174c3a1f3cac9d84a23b93",
+      "direct_call_sites": 0,
+      "research_label": "linker_save_tell_forwarder",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005EFCB0",
+      "end": "0x005EFCB8",
+      "sha256": "ebee6623603acf788337c7d3d99598052d61327cf6377a30aa2d1d52e70b3e29",
+      "direct_call_sites": 0,
+      "research_label": "linker_save_seek_forwarder",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F29A0",
+      "end": "0x005F29AB",
+      "sha256": "52bd73fb05ef43974b9bbf562ddc3acae9cb1c48e161da61e3449e6901a75f65",
+      "direct_call_sites": 0,
+      "research_label": "linker_load_seek_forwarder",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F29B0",
+      "end": "0x005F29BB",
+      "sha256": "860c0f79db3761db36570e14337ef6f034ac94b6b943741460612ecaeabc204c",
+      "direct_call_sites": 0,
+      "research_label": "linker_load_tell_forwarder",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F29C0",
+      "end": "0x005F29CB",
+      "sha256": "c2b0893c19817d1cf8c953776ad2dc34e0b1879bff39aee8979aee5632a06a83",
+      "direct_call_sites": 0,
+      "research_label": "linker_load_size_forwarder",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F29D0",
+      "end": "0x005F29DB",
+      "sha256": "ea67a8a714013f293170ca35ec67e8b094f6b805742039d9d5f39e759e622f12",
+      "direct_call_sites": 0,
+      "research_label": "linker_load_byte_forwarder",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F2B50",
+      "end": "0x005F2B6A",
+      "sha256": "1351c62a555e5dbb48da72009e6a674a18d35df27c2de3dc62ace56f48ae79d3",
+      "direct_call_sites": 0,
+      "research_label": "linker_save_name_index",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F2B70",
+      "end": "0x005F2B89",
+      "sha256": "87ea157793ce1252b96797ab4b61289b865d073eccae6201204ae9fc4c4d8677",
+      "direct_call_sites": 0,
+      "research_label": "linker_save_object_index",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F3650",
+      "end": "0x005F3762",
+      "sha256": "53939b55ee29bba60c5949c731e2031da23d2320ebf31896aa68e9b0d9dd2518",
+      "direct_call_sites": 2,
+      "research_label": "linker_base_constructor",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F53B0",
+      "end": "0x005F57A1",
+      "sha256": "0c982739a00cb030326d2ebd7690dceb414358e644dbf0064ad089b76c041a22",
+      "direct_call_sites": 4,
+      "research_label": "linker_load_resolve_object_index",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F57B0",
+      "end": "0x005F63E3",
+      "sha256": "9c4b36e0587c68d24f8373d26948710c7f4b77b805666f081f3cc0da50164be9",
+      "direct_call_sites": 1,
+      "research_label": "linker_load_constructor",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F6580",
+      "end": "0x005F69A3",
+      "sha256": "31499d2f9ea184308a49e0c58027e675009c65e98c19e88209b3919165734e09",
+      "direct_call_sites": 1,
+      "research_label": "linker_save_constructor",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F7FF0",
+      "end": "0x005F809A",
+      "sha256": "1c75ec56611d60ebc4ab54286eb730dc623d4317547f501c4a24d51de47e5892",
+      "direct_call_sites": 2,
+      "research_label": "memory_reader_constructor",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F80A0",
+      "end": "0x005F80A4",
+      "sha256": "c457a21475f0993cd612344db74fe1c4287440f229189a422307139bc254cd00",
+      "direct_call_sites": 19,
+      "research_label": "memory_reader_tell",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F80B0",
+      "end": "0x005F80B4",
+      "sha256": "34560f51dac828d02da9eeb0e1e15a69e55eb1fbb2f1a55b4f5b7c8cee424a81",
+      "direct_call_sites": 0,
+      "research_label": "memory_reader_size",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F80C0",
+      "end": "0x005F80C7",
+      "sha256": "af9ea1ce3d6cf23d1a27361b7da4fbb130d7edd087142a5d62521c69ee746be1",
+      "direct_call_sites": 0,
+      "research_label": "memory_reader_seek",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F80D0",
+      "end": "0x005F80E2",
+      "sha256": "6c1754301479bfbb63094bd021c7de583bdb17cc5f2f01e004d17b7c1a294a77",
+      "direct_call_sites": 0,
+      "research_label": "memory_reader_at_end",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x005F80F0",
+      "end": "0x005F812F",
+      "sha256": "48e758260e1dc0e58cfe237b69dc0b8da42093c6d0ef139c9357d83162a6d626",
+      "direct_call_sites": 0,
+      "research_label": "memory_reader_transfer",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    },
+    {
+      "va": "0x006065D0",
+      "end": "0x006065D8",
+      "sha256": "fef1e9b909d2e34bd30dbf43c78861ef8278c5574c2bce5d639637a134238b50",
+      "direct_call_sites": 14,
+      "research_label": "linker_save_transfer_forwarder",
+      "original_name_verified": false,
+      "evidence": "static_disassembly",
+      "runtime_verified": false
+    }
+  ]
+}
